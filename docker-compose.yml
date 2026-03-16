@@ -1,0 +1,42 @@
+version: '3.9'
+
+services:
+  # PostgreSQL 16 + TimescaleDB
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: cowtalk-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: cowtalk
+      POSTGRES_USER: cowtalk
+      POSTGRES_PASSWORD: cowtalk_dev_2025
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cowtalk']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 7
+  redis:
+    image: redis:7-alpine
+    container_name: cowtalk-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

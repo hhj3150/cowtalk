@@ -1,0 +1,47 @@
+{
+  "name": "cowtalk-v5",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CowTalk v5.0 — Livestock Digital Operating System",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=packages/server",
+    "dev:web": "npm run dev --workspace=packages/web",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:server": "npm run build --workspace=packages/server",
+    "build:web": "npm run build --workspace=packages/web",
+    "build": "npm run build:shared && npm run build:server && npm run build:web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint 'packages/*/src/**/*.{ts,tsx}'",
+    "lint:fix": "eslint 'packages/*/src/**/*.{ts,tsx}' --fix",
+    "format": "prettier --write 'packages/*/src/**/*.{ts,tsx,json}'",
+    "format:check": "prettier --check 'packages/*/src/**/*.{ts,tsx,json}'",
+    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/server/tsconfig.json && tsc --noEmit -p packages/web/tsconfig.json",
+    "db:migrate": "npm run migrate --workspace=packages/server",
+    "db:seed": "npm run seed --workspace=packages/server"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "prettier": "^3.4.0",
+    "concurrently": "^9.0.0"
+  }
+}
