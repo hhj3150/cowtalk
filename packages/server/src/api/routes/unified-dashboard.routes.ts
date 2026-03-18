@@ -174,7 +174,7 @@ unifiedDashboardRouter.get('/live-alarms', async (req: Request, res: Response, n
 
 async function queryLiveAlarms(farmId: string | null): Promise<readonly LiveAlarm[]> {
   const db = getDb();
-  const cutoff = daysAgo(2); // 48 hours
+  const cutoff = todayStart(); // 오늘 0시 이후
 
   const rows = await db.select({
     eventId: smaxtecEvents.eventId,
@@ -229,7 +229,7 @@ unifiedDashboardRouter.get('/farm-ranking', async (_req: Request, res: Response,
 
 async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
   const db = getDb();
-  const cutoff = daysAgo(2); // 48 hours
+  const cutoff = daysAgo(7); // 최근 7일
 
   // 농장별 미확인 알람 수 + 최빈 알람 유형
   const rows = await db.select({
@@ -435,39 +435,40 @@ async function queryTodoList(
       eq(smaxtecEvents.acknowledged, false),
     ));
 
-  const typeToTodo: Record<string, { label: string; category: string; icon: string; severity: TodoItem['severity'] }> = {
-    health_warning: { label: '건강 경고 확인', category: 'health', icon: 'heart-pulse', severity: 'high' },
-    temperature_warning: { label: '체온 이상 확인', category: 'health', icon: 'thermometer', severity: 'high' },
-    estrus: { label: '발정 후보 수정', category: 'fertility', icon: 'venus', severity: 'critical' },
-    calving: { label: '분만 준비', category: 'fertility', icon: 'baby', severity: 'critical' },
-    rumination_warning: { label: '반추 이상 확인', category: 'feeding', icon: 'utensils', severity: 'medium' },
-    drinking_warning: { label: '음수 이상 확인', category: 'feeding', icon: 'droplet', severity: 'medium' },
-    activity_warning: { label: '활동 이상 확인', category: 'health', icon: 'activity', severity: 'medium' },
-    feeding_warning: { label: '사양 이상 확인', category: 'feeding', icon: 'wheat', severity: 'medium' },
+  // 우선순위: 1.발정소 수정 2.아픈소 관리 3.분만 대비 4.기타
+  // 목장에서 매일 가장 중요한 업무: 발정 개체 수정 + 아픈소 조기 관리
+  const typeToTodo: Record<string, { label: string; category: string; icon: string; severity: TodoItem['severity']; priority: number }> = {
+    estrus: { label: '🔴 발정 소 수정', category: 'fertility', icon: 'venus', severity: 'critical', priority: 0 },
+    health_warning: { label: '🟠 아픈 소 관리', category: 'health', icon: 'heart-pulse', severity: 'high', priority: 1 },
+    temperature_warning: { label: '🟠 발열 소 확인', category: 'health', icon: 'thermometer', severity: 'high', priority: 2 },
+    calving: { label: '🔴 분만 준비', category: 'fertility', icon: 'baby', severity: 'critical', priority: 3 },
+    rumination_warning: { label: '🟡 반추 이상 확인', category: 'feeding', icon: 'utensils', severity: 'medium', priority: 4 },
+    activity_warning: { label: '🟡 활동 이상 확인', category: 'health', icon: 'activity', severity: 'medium', priority: 5 },
+    drinking_warning: { label: '🟡 음수 이상 확인', category: 'feeding', icon: 'droplet', severity: 'medium', priority: 6 },
+    feeding_warning: { label: '🟡 사양 이상 확인', category: 'feeding', icon: 'wheat', severity: 'medium', priority: 7 },
   };
 
   const todos: TodoItem[] = eventCounts
     .filter((e) => typeToTodo[e.eventType] !== undefined)
     .map((e) => {
-      const meta = typeToTodo[e.eventType] as { label: string; category: string; icon: string; severity: TodoItem['severity'] };
+      const meta = typeToTodo[e.eventType] as { label: string; category: string; icon: string; severity: TodoItem['severity']; priority: number };
       return {
         category: meta.category,
-        label: meta.label,
+        label: `${meta.label} (${String(Number(e.count))}두)`,
         count: Number(e.count),
         severity: meta.severity,
         icon: meta.icon,
+        _priority: meta.priority,
       };
     })
-    .sort((a, b) => {
-      const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-      return (order[a.severity] ?? 4) - (order[b.severity] ?? 4);
-    });
+    .sort((a, b) => (a as { _priority: number })._priority - (b as { _priority: number })._priority)
+    .map(({ _priority, ...rest }) => rest);
 
   const unacked = (unackedCount?.count ?? 0) as number;
   if (unacked > 0) {
     return [
       ...todos,
-      { category: 'system', label: '미확인 알림 처리', count: unacked, severity: 'info' as const, icon: 'bell' },
+      { category: 'system', label: `미확인 알림 처리 (${String(unacked)}건)`, count: unacked, severity: 'info' as const, icon: 'bell' },
     ];
   }
 

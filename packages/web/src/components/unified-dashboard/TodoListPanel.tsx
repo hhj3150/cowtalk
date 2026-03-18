@@ -23,7 +23,7 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
         className="mb-3 font-semibold"
         style={{ fontSize: '13px', color: 'var(--ct-text)' }}
       >
-        To-do 목록
+{'\uD83D\uDCCB'} 오늘 할 일
       </h3>
       <ul className="flex flex-col gap-1">
         {items.map((item) => {

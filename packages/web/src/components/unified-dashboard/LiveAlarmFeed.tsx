@@ -130,7 +130,7 @@ export function LiveAlarmFeed({ alarms }: Props): React.JSX.Element {
         className="mb-3 font-semibold"
         style={{ fontSize: '13px', color: 'var(--ct-text)' }}
       >
-        {'\uD83D\uDEA8'} 실시간 알람 피드
+        {'\uD83D\uDEA8'} 오늘 알람 피드
       </h3>
 
       {alarms.length === 0 ? (

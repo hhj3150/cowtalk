@@ -120,7 +120,7 @@ export function FarmRankingWidget({ rankings }: Props): React.JSX.Element {
         className="mb-3 font-semibold"
         style={{ fontSize: '13px', color: 'var(--ct-text)' }}
       >
-        {'\uD83D\uDCCA'} 농장 긴급도 순위
+        {'\uD83D\uDCCA'} 농장 긴급도 순위 (7일)
       </h3>
 
       {rankings.length === 0 ? (
