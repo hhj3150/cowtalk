@@ -1,6 +1,6 @@
 // 동물 (개체) + 상태 이력
 
-import type { Timestamp, SoftDelete } from './common';
+import type { Timestamp, SoftDelete } from './common.js';
 
 export type AnimalStatus =
   | 'active'

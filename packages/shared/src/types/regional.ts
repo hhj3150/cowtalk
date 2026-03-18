@@ -1,6 +1,6 @@
 // 지역 인텔리전스 + 요약
 
-import type { Coordinates, Severity } from './common';
+import type { Coordinates, Severity } from './common.js';
 
 export type RegionRiskLevel = 'normal' | 'watch' | 'warning' | 'critical';
 

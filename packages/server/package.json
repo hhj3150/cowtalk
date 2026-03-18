@@ -13,32 +13,33 @@
     "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@cowtalk/shared": "*",
-    "express": "^5.0.0",
-    "drizzle-orm": "^0.38.0",
-    "postgres": "^3.4.0",
-    "ioredis": "^5.4.0",
+    "bcryptjs": "^2.4.3",
     "bullmq": "^5.0.0",
-    "socket.io": "^4.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.38.0",
+    "express": "^5.0.0",
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.0",
+    "jsonwebtoken": "^9.0.0",
     "pino": "^9.0.0",
     "pino-pretty": "^13.0.0",
-    "zod": "^3.23.0",
-    "jsonwebtoken": "^9.0.0",
-    "bcryptjs": "^2.4.3",
-    "helmet": "^8.0.0",
-    "cors": "^2.8.5",
-    "express-rate-limit": "^7.0.0",
-    "dotenv": "^16.4.0",
-    "uuid": "^11.0.0"
+    "postgres": "^3.4.0",
+    "socket.io": "^4.8.0",
+    "uuid": "^11.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/jsonwebtoken": "^9.0.0",
     "@types/bcryptjs": "^2.4.0",
     "@types/cors": "^2.8.0",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.0",
     "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.30.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "drizzle-kit": "^0.30.0"
+    "typescript": "^5.7.0"
   }
 }

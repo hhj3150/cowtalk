@@ -53,7 +53,7 @@ export const farmQuerySchema = paginationSchema.extend({
 // === 동물 ===
 
 export const animalQuerySchema = paginationSchema.extend({
-  farmId: z.string().uuid(),
+  farmId: z.string().uuid().optional(),
   status: z.enum([
     'active', 'dry', 'pregnant', 'calving', 'sick',
     'quarantine', 'sold', 'deceased',
@@ -97,6 +97,14 @@ export const createFeedbackSchema = z.object({
   feedbackType: z.enum([
     'correct', 'incorrect', 'partially',
     'too_early', 'too_late', 'not_actionable',
+    // Phase 11 — 세부 피드백 유형
+    'estrus_confirmed', 'estrus_false', 'estrus_false_positive',
+    'insemination_done', 'pregnancy_confirmed', 'pregnancy_negative',
+    'disease_confirmed', 'disease_false', 'disease_excluded',
+    'treatment_effective', 'treatment_ineffective', 'treatment_response',
+    'alert_useful', 'alert_ignored',
+    'alert_acknowledged', 'alert_dismissed', 'alert_false_positive',
+    'action_accepted', 'action_rejected',
   ]),
   feedbackValue: z.number().int().min(1).max(5).optional(),
   notes: z.string().max(1000).optional(),
@@ -105,10 +113,14 @@ export const createFeedbackSchema = z.object({
 // === CowTalk Chat ===
 
 export const chatMessageSchema = z.object({
-  message: z.string().min(1).max(2000),
+  question: z.string().min(1).max(2000),
   farmId: z.string().uuid().optional(),
   animalId: z.string().uuid().optional(),
-  context: z.enum(['general', 'animal', 'farm', 'regional']).default('general'),
+  conversationHistory: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+  })).optional().default([]),
+  dashboardContext: z.string().max(5000).optional(),
 });
 
 // === 내보내기 ===

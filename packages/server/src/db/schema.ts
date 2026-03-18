@@ -18,6 +18,22 @@ import {
 import { relations } from 'drizzle-orm';
 
 // ======================================================================
+// A-0. 멀티테넌트
+// ======================================================================
+
+export const tenants = pgTable('tenants', {
+  tenantId: uuid('tenant_id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 200 }).notNull(),
+  tenantType: varchar('tenant_type', { length: 30 }).notNull(), // farm_owner, vet_clinic, government, feed_company, brand
+  scope: jsonb('scope').notNull().default('[]'), // farmId 배열 또는 regionId 배열
+  contactName: varchar('contact_name', { length: 100 }),
+  contactEmail: varchar('contact_email', { length: 200 }),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ======================================================================
 // A. 조직/농장
 // ======================================================================
 
@@ -40,6 +56,7 @@ export const farms = pgTable('farms', {
   capacity: integer('capacity').notNull().default(0),
   currentHeadCount: integer('current_head_count').notNull().default(0),
   status: varchar('status', { length: 20 }).notNull().default('active'),
+  tenantId: uuid('tenant_id').references(() => tenants.tenantId),
   ownerName: varchar('owner_name', { length: 100 }),
   phone: varchar('phone', { length: 20 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -66,8 +83,10 @@ export const animals = pgTable('animals', {
   externalId: varchar('external_id', { length: 100 }),
   farmId: uuid('farm_id').notNull().references(() => farms.farmId),
   earTag: varchar('ear_tag', { length: 50 }).notNull(),
+  traceId: varchar('trace_id', { length: 20 }), // 이력번호 (12자리)
   name: varchar('name', { length: 100 }),
   breed: varchar('breed', { length: 30 }).notNull().default('holstein'),
+  breedType: varchar('breed_type', { length: 10 }).notNull().default('dairy'), // dairy | beef
   sex: varchar('sex', { length: 10 }).notNull().default('female'),
   birthDate: date('birth_date'),
   parity: integer('parity').notNull().default(0),
@@ -148,6 +167,31 @@ export const sensorDailyAgg = pgTable('sensor_daily_agg', {
   count: integer('count').notNull().default(0),
 }, (table) => [
   index('sensor_daily_agg_animal_id_idx').on(table.animalId),
+]);
+
+// ======================================================================
+// C-2. smaXtec 이벤트 (신뢰 — 재판단 안 함)
+// ======================================================================
+
+export const smaxtecEvents = pgTable('smaxtec_events', {
+  eventId: uuid('event_id').primaryKey().defaultRandom(),
+  externalEventId: varchar('external_event_id', { length: 200 }),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  eventType: varchar('event_type', { length: 50 }).notNull(), // estrus, health_warning, calving, ...
+  confidence: real('confidence').notNull().default(0),
+  severity: varchar('severity', { length: 20 }).notNull().default('low'),
+  stage: varchar('stage', { length: 50 }),
+  detectedAt: timestamp('detected_at', { withTimezone: true }).notNull(),
+  details: jsonb('details').notNull().default('{}'),
+  rawData: jsonb('raw_data').notNull().default('{}'),
+  acknowledged: boolean('acknowledged').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('smaxtec_events_animal_id_idx').on(table.animalId),
+  index('smaxtec_events_farm_id_idx').on(table.farmId),
+  index('smaxtec_events_event_type_idx').on(table.eventType),
+  index('smaxtec_events_detected_at_idx').on(table.detectedAt),
 ]);
 
 // ======================================================================
@@ -446,6 +490,18 @@ export const userFarmAccess = pgTable('user_farm_access', {
   index('user_farm_access_farm_id_idx').on(table.farmId),
 ]);
 
+export const refreshTokens = pgTable('refresh_tokens', {
+  tokenId: uuid('token_id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.userId),
+  tokenHash: varchar('token_hash', { length: 500 }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('refresh_tokens_user_id_idx').on(table.userId),
+  index('refresh_tokens_token_hash_idx').on(table.tokenHash),
+]);
+
 export const auditLog = pgTable('audit_log', {
   auditId: uuid('audit_id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.userId),
@@ -510,6 +566,296 @@ export const ingestionRuns = pgTable('ingestion_runs', {
 ]);
 
 // ======================================================================
+// N. 처방전
+// ======================================================================
+
+export const drugDatabase = pgTable('drug_database', {
+  drugId: uuid('drug_id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 200 }).notNull(),
+  category: varchar('category', { length: 50 }).notNull(),
+  withdrawalMilkDays: integer('withdrawal_milk_days').notNull().default(0),
+  withdrawalMeatDays: integer('withdrawal_meat_days').notNull().default(0),
+  unit: varchar('unit', { length: 30 }).notNull().default('ml'),
+  description: text('description'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('drug_database_category_idx').on(table.category),
+]);
+
+export const prescriptions = pgTable('prescriptions', {
+  prescriptionId: uuid('prescription_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  vetId: uuid('vet_id').notNull().references(() => users.userId),
+  diagnosis: varchar('diagnosis', { length: 300 }).notNull(),
+  notes: text('notes'),
+  status: varchar('status', { length: 20 }).notNull().default('active'), // active, completed, cancelled
+  prescribedAt: timestamp('prescribed_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('prescriptions_animal_id_idx').on(table.animalId),
+  index('prescriptions_farm_id_idx').on(table.farmId),
+  index('prescriptions_vet_id_idx').on(table.vetId),
+  index('prescriptions_status_idx').on(table.status),
+]);
+
+export const prescriptionItems = pgTable('prescription_items', {
+  itemId: uuid('item_id').primaryKey().defaultRandom(),
+  prescriptionId: uuid('prescription_id').notNull().references(() => prescriptions.prescriptionId),
+  drugId: uuid('drug_id').notNull().references(() => drugDatabase.drugId),
+  dosage: varchar('dosage', { length: 100 }).notNull(),
+  frequency: varchar('frequency', { length: 100 }).notNull(),
+  durationDays: integer('duration_days').notNull(),
+  route: varchar('route', { length: 50 }).notNull().default('oral'), // oral, injection, topical
+  notes: text('notes'),
+}, (table) => [
+  index('prescription_items_prescription_id_idx').on(table.prescriptionId),
+  index('prescription_items_drug_id_idx').on(table.drugId),
+]);
+
+// ======================================================================
+// O. 백신
+// ======================================================================
+
+export const vaccineSchedules = pgTable('vaccine_schedules', {
+  scheduleId: uuid('schedule_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  vaccineName: varchar('vaccine_name', { length: 200 }).notNull(),
+  scheduledDate: date('scheduled_date').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, completed, overdue, cancelled
+  notes: text('notes'),
+  createdBy: uuid('created_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('vaccine_schedules_farm_id_idx').on(table.farmId),
+  index('vaccine_schedules_animal_id_idx').on(table.animalId),
+  index('vaccine_schedules_status_idx').on(table.status),
+  index('vaccine_schedules_scheduled_date_idx').on(table.scheduledDate),
+]);
+
+export const vaccineRecords = pgTable('vaccine_records', {
+  recordId: uuid('record_id').primaryKey().defaultRandom(),
+  scheduleId: uuid('schedule_id').references(() => vaccineSchedules.scheduleId),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  vaccineName: varchar('vaccine_name', { length: 200 }).notNull(),
+  batchNumber: varchar('batch_number', { length: 100 }),
+  administeredBy: uuid('administered_by').references(() => users.userId),
+  administeredAt: timestamp('administered_at', { withTimezone: true }).notNull(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('vaccine_records_animal_id_idx').on(table.animalId),
+  index('vaccine_records_farm_id_idx').on(table.farmId),
+]);
+
+// ======================================================================
+// P. 농장 이벤트
+// ======================================================================
+
+export const farmEvents = pgTable('farm_events', {
+  eventId: uuid('event_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  animalId: uuid('animal_id').references(() => animals.animalId),
+  eventType: varchar('event_type', { length: 50 }).notNull(), // health, breeding, feeding, movement, treatment, observation
+  subType: varchar('sub_type', { length: 50 }),
+  description: text('description').notNull(),
+  severity: varchar('severity', { length: 20 }).notNull().default('normal'),
+  recordedBy: uuid('recorded_by').notNull().references(() => users.userId),
+  eventDate: timestamp('event_date', { withTimezone: true }).notNull(),
+  metadata: jsonb('metadata').notNull().default('{}'),
+  aiProcessed: boolean('ai_processed').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('farm_events_farm_id_idx').on(table.farmId),
+  index('farm_events_animal_id_idx').on(table.animalId),
+  index('farm_events_event_type_idx').on(table.eventType),
+  index('farm_events_event_date_idx').on(table.eventDate),
+  index('farm_events_ai_processed_idx').on(table.aiProcessed),
+]);
+
+export const eventAttachments = pgTable('event_attachments', {
+  attachmentId: uuid('attachment_id').primaryKey().defaultRandom(),
+  eventId: uuid('event_id').notNull().references(() => farmEvents.eventId),
+  fileType: varchar('file_type', { length: 30 }).notNull(), // image, audio, document
+  fileUrl: text('file_url').notNull(),
+  fileName: varchar('file_name', { length: 300 }),
+  fileSizeBytes: integer('file_size_bytes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('event_attachments_event_id_idx').on(table.eventId),
+]);
+
+// ======================================================================
+// Q. 경제성
+// ======================================================================
+
+export const farmEconomics = pgTable('farm_economics', {
+  economicsId: uuid('economics_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  period: varchar('period', { length: 20 }).notNull(), // YYYY-MM
+  revenue: jsonb('revenue').notNull().default('{}'), // { milk, calves, subsidies, other }
+  costs: jsonb('costs').notNull().default('{}'), // { feed, labor, vet, equipment, other }
+  profitMargin: real('profit_margin'),
+  costPerHead: real('cost_per_head'),
+  revenuePerHead: real('revenue_per_head'),
+  notes: text('notes'),
+  recordedBy: uuid('recorded_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('farm_economics_farm_id_idx').on(table.farmId),
+  index('farm_economics_period_idx').on(table.period),
+]);
+
+export const feedPrograms = pgTable('feed_programs', {
+  programId: uuid('program_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  name: varchar('name', { length: 200 }).notNull(),
+  targetGroup: varchar('target_group', { length: 50 }).notNull(), // lactating, dry, heifer, calf
+  ingredients: jsonb('ingredients').notNull().$type<Array<{ name: string; ratio: number; costPerKg: number }>>(),
+  dailyCostPerHead: real('daily_cost_per_head'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdBy: uuid('created_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('feed_programs_farm_id_idx').on(table.farmId),
+]);
+
+// ======================================================================
+// R. 농장 학습 프로필
+// ======================================================================
+
+export const farmLearningProfiles = pgTable('farm_learning_profiles', {
+  profileId: uuid('profile_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  feedbackHistory: jsonb('feedback_history').notNull().default('[]'),
+  accuracyMetrics: jsonb('accuracy_metrics').notNull().default('{}'),
+  preferenceWeights: jsonb('preference_weights').notNull().default('{}'),
+  lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('farm_learning_profiles_farm_id_idx').on(table.farmId),
+]);
+
+// ======================================================================
+// S. 에스컬레이션
+// ======================================================================
+
+export const alertEscalations = pgTable('alert_escalations', {
+  escalationId: uuid('escalation_id').primaryKey().defaultRandom(),
+  alertId: uuid('alert_id').notNull().references(() => alerts.alertId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  escalationLevel: integer('escalation_level').notNull().default(1), // 1=farmer, 2=vet, 3=government
+  escalatedTo: uuid('escalated_to').references(() => users.userId),
+  escalatedAt: timestamp('escalated_at', { withTimezone: true }).notNull().defaultNow(),
+  acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+  acknowledgedBy: uuid('acknowledged_by').references(() => users.userId),
+  reason: text('reason'),
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, acknowledged, resolved
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('alert_escalations_alert_id_idx').on(table.alertId),
+  index('alert_escalations_farm_id_idx').on(table.farmId),
+  index('alert_escalations_status_idx').on(table.status),
+  index('alert_escalations_escalation_level_idx').on(table.escalationLevel),
+]);
+
+// ======================================================================
+// T. 알림 설정
+// ======================================================================
+
+export const notificationPreferences = pgTable('notification_preferences', {
+  preferenceId: uuid('preference_id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.userId),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  channel: varchar('channel', { length: 30 }).notNull(), // push, email, sms, kakao
+  alertTypes: jsonb('alert_types').notNull().$type<string[]>().default([]),
+  minSeverity: varchar('min_severity', { length: 20 }).notNull().default('medium'),
+  quietHoursStart: varchar('quiet_hours_start', { length: 5 }), // HH:MM
+  quietHoursEnd: varchar('quiet_hours_end', { length: 5 }),
+  isEnabled: boolean('is_enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('notification_preferences_user_id_idx').on(table.userId),
+  index('notification_preferences_farm_id_idx').on(table.farmId),
+]);
+
+// ======================================================================
+// U. 분만 체크리스트
+// ======================================================================
+
+export const calvingChecklists = pgTable('calving_checklists', {
+  checklistId: uuid('checklist_id').primaryKey().defaultRandom(),
+  calvingEventId: uuid('calving_event_id').notNull().references(() => calvingEvents.eventId),
+  calfId: uuid('calf_id').references(() => animals.animalId),
+  colostrumFed: boolean('colostrum_fed').notNull().default(false),
+  colostrumTimestamp: timestamp('colostrum_timestamp', { withTimezone: true }),
+  navelTreated: boolean('navel_treated').notNull().default(false),
+  weightKg: real('weight_kg'),
+  vitality: varchar('vitality', { length: 20 }), // strong, weak, critical
+  notes: text('notes'),
+  completedBy: uuid('completed_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('calving_checklists_calving_event_id_idx').on(table.calvingEventId),
+  index('calving_checklists_calf_id_idx').on(table.calfId),
+]);
+
+// ======================================================================
+// V. 정액/유전체
+// ======================================================================
+
+export const semenCatalog = pgTable('semen_catalog', {
+  semenId: uuid('semen_id').primaryKey().defaultRandom(),
+  bullName: varchar('bull_name', { length: 200 }).notNull(),
+  bullRegistration: varchar('bull_registration', { length: 100 }),
+  breed: varchar('breed', { length: 50 }).notNull(),
+  supplier: varchar('supplier', { length: 200 }),
+  pricePerStraw: real('price_per_straw'),
+  genomicTraits: jsonb('genomic_traits').notNull().default('{}'), // { milk, fat, protein, scs, dpr, pl }
+  availableStraws: integer('available_straws').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('semen_catalog_breed_idx').on(table.breed),
+]);
+
+export const farmSemenInventory = pgTable('farm_semen_inventory', {
+  inventoryId: uuid('inventory_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  semenId: uuid('semen_id').notNull().references(() => semenCatalog.semenId),
+  quantity: integer('quantity').notNull().default(0),
+  purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  notes: text('notes'),
+}, (table) => [
+  index('farm_semen_inventory_farm_id_idx').on(table.farmId),
+  index('farm_semen_inventory_semen_id_idx').on(table.semenId),
+]);
+
+export const genomicData = pgTable('genomic_data', {
+  genomicId: uuid('genomic_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  testDate: date('test_date').notNull(),
+  provider: varchar('provider', { length: 100 }),
+  traits: jsonb('traits').notNull().default('{}'), // { milk, fat, protein, scs, dpr, pl, type }
+  reliabilityPercent: real('reliability_percent'),
+  rawDataUrl: text('raw_data_url'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('genomic_data_animal_id_idx').on(table.animalId),
+]);
+
+// ======================================================================
 // Relations (Drizzle ORM)
 // ======================================================================
 
@@ -521,6 +867,12 @@ export const farmsRelations = relations(farms, ({ one, many }) => ({
   region: one(regions, { fields: [farms.regionId], references: [regions.regionId] }),
   animals: many(animals),
   alerts: many(alerts),
+  prescriptions: many(prescriptions),
+  vaccineSchedules: many(vaccineSchedules),
+  farmEvents: many(farmEvents),
+  economics: many(farmEconomics),
+  feedPrograms: many(feedPrograms),
+  escalations: many(alertEscalations),
 }));
 
 export const animalsRelations = relations(animals, ({ one, many }) => ({
@@ -529,6 +881,10 @@ export const animalsRelations = relations(animals, ({ one, many }) => ({
   alerts: many(alerts),
   breedingEvents: many(breedingEvents),
   healthEvents: many(healthEvents),
+  prescriptions: many(prescriptions),
+  vaccineSchedules: many(vaccineSchedules),
+  farmEvents: many(farmEvents),
+  genomicData: many(genomicData),
 }));
 
 export const predictionsRelations = relations(predictions, ({ one, many }) => ({
@@ -538,8 +894,53 @@ export const predictionsRelations = relations(predictions, ({ one, many }) => ({
   outcomeEvaluations: many(outcomeEvaluations),
 }));
 
-export const alertsRelations = relations(alerts, ({ one }) => ({
+export const alertsRelations = relations(alerts, ({ one, many }) => ({
   animal: one(animals, { fields: [alerts.animalId], references: [animals.animalId] }),
   farm: one(farms, { fields: [alerts.farmId], references: [farms.farmId] }),
   prediction: one(predictions, { fields: [alerts.predictionId], references: [predictions.predictionId] }),
+  escalations: many(alertEscalations),
+}));
+
+export const prescriptionsRelations = relations(prescriptions, ({ one, many }) => ({
+  animal: one(animals, { fields: [prescriptions.animalId], references: [animals.animalId] }),
+  farm: one(farms, { fields: [prescriptions.farmId], references: [farms.farmId] }),
+  vet: one(users, { fields: [prescriptions.vetId], references: [users.userId] }),
+  items: many(prescriptionItems),
+}));
+
+export const prescriptionItemsRelations = relations(prescriptionItems, ({ one }) => ({
+  prescription: one(prescriptions, { fields: [prescriptionItems.prescriptionId], references: [prescriptions.prescriptionId] }),
+  drug: one(drugDatabase, { fields: [prescriptionItems.drugId], references: [drugDatabase.drugId] }),
+}));
+
+export const vaccineSchedulesRelations = relations(vaccineSchedules, ({ one, many }) => ({
+  farm: one(farms, { fields: [vaccineSchedules.farmId], references: [farms.farmId] }),
+  animal: one(animals, { fields: [vaccineSchedules.animalId], references: [animals.animalId] }),
+  records: many(vaccineRecords),
+}));
+
+export const vaccineRecordsRelations = relations(vaccineRecords, ({ one }) => ({
+  schedule: one(vaccineSchedules, { fields: [vaccineRecords.scheduleId], references: [vaccineSchedules.scheduleId] }),
+  animal: one(animals, { fields: [vaccineRecords.animalId], references: [animals.animalId] }),
+  farm: one(farms, { fields: [vaccineRecords.farmId], references: [farms.farmId] }),
+}));
+
+export const farmEventsRelations = relations(farmEvents, ({ one, many }) => ({
+  farm: one(farms, { fields: [farmEvents.farmId], references: [farms.farmId] }),
+  animal: one(animals, { fields: [farmEvents.animalId], references: [animals.animalId] }),
+  recordedByUser: one(users, { fields: [farmEvents.recordedBy], references: [users.userId] }),
+  attachments: many(eventAttachments),
+}));
+
+export const eventAttachmentsRelations = relations(eventAttachments, ({ one }) => ({
+  event: one(farmEvents, { fields: [eventAttachments.eventId], references: [farmEvents.eventId] }),
+}));
+
+export const alertEscalationsRelations = relations(alertEscalations, ({ one }) => ({
+  alert: one(alerts, { fields: [alertEscalations.alertId], references: [alerts.alertId] }),
+  farm: one(farms, { fields: [alertEscalations.farmId], references: [farms.farmId] }),
+}));
+
+export const genomicDataRelations = relations(genomicData, ({ one }) => ({
+  animal: one(animals, { fields: [genomicData.animalId], references: [animals.animalId] }),
 }));

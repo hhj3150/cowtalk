@@ -1,1 +1,105 @@
 @import 'tailwindcss';
+
+/* ── CowTalk v5 Design Tokens ── */
+:root {
+  /* Primary */
+  --ct-primary: #1D9E75;
+  --ct-primary-light: #E1F5EE;
+  --ct-primary-hover: #178A66;
+
+  /* Background */
+  --ct-bg: #F8F8F6;
+  --ct-card: #FFFFFF;
+  --ct-border: #E5E5E3;
+
+  /* Text */
+  --ct-text: #1A1A1A;
+  --ct-text-secondary: #888880;
+
+  /* Severity */
+  --ct-danger: #E24B4A;
+  --ct-warning: #EF9F27;
+  --ct-info: #378ADD;
+  --ct-success: #1D9E75;
+
+  /* AI Insight */
+  --ct-ai-bg: #F0FAF5;
+  --ct-ai-border: #1D9E75;
+
+  /* Sidebar */
+  --ct-sidebar-w: 56px;
+  --ct-sidebar-highlight: #E1F5EE;
+
+  /* Font */
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ── Global resets ── */
+body {
+  background: var(--ct-bg);
+  color: var(--ct-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Card base ── */
+.ct-card {
+  background: var(--ct-card);
+  border: 0.5px solid var(--ct-border);
+  border-radius: 12px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ct-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ct-text-secondary);
+}
+
+/* ── Live dot animation ── */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.live-dot {
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* ── Feedback success animation ── */
+@keyframes feedbackSuccess {
+  0% { opacity: 0; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes feedbackFadeIn {
+  0% { opacity: 0; transform: translateX(-4px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* smaXtec Dark Theme for Unified Dashboard */
+[data-theme="dark"] {
+  --ct-bg: #0D0D0D;
+  --ct-card: #1A1A1A;
+  --ct-card-hover: #222222;
+  --ct-border: #2A2A2A;
+  --ct-text: #E8E8E8;
+  --ct-text-secondary: #888888;
+  --ct-text-muted: #555555;
+  --ct-primary: #00C853;
+  --ct-primary-light: #1B3A2A;
+  --ct-warning: #FFD600;
+  --ct-danger: #FF5252;
+  --ct-info: #40C4FF;
+  --ct-ai-bg: #0F1F15;
+  --ct-ai-border: #00C853;
+  --ct-sidebar-bg: #111111;
+  --ct-sidebar-text: #CCCCCC;
+}

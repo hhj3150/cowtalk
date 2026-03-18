@@ -1,0 +1,30 @@
+{
+  "name": "CowTalk v5.0 — 축산 디지털 운영체제",
+  "short_name": "CowTalk",
+  "description": "위내센서 + AI 해석 + 역할별 액션플랜 통합 플랫폼",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["agriculture", "productivity"],
+  "lang": "ko"
+}

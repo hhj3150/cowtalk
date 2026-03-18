@@ -1,0 +1,66 @@
+// API 라우터 등록 — 모든 라우트를 /api 하위에 마운트
+
+import { Router } from 'express';
+import { healthRouter } from './routes/health.routes.js';
+import { authRouter } from './routes/auth.routes.js';
+import { farmRouter } from './routes/farm.routes.js';
+import { animalRouter } from './routes/animal.routes.js';
+import { sensorRouter } from './routes/sensor.routes.js';
+import { predictionRouter } from './routes/prediction.routes.js';
+import { alertRouter } from './routes/alert.routes.js';
+import { feedbackRouter } from './routes/feedback.routes.js';
+import { dashboardRouter } from './routes/dashboard.routes.js';
+import { chatRouter } from './routes/chat.routes.js';
+import { regionalRouter } from './routes/regional.routes.js';
+import { actionRouter } from './routes/action.routes.js';
+import { exportRouter } from './routes/export.routes.js';
+import { userRouter } from './routes/user.routes.js';
+import { searchRouter } from './routes/search.routes.js';
+import { prescriptionRouter } from './routes/prescription.routes.js';
+import { vaccineRouter } from './routes/vaccine.routes.js';
+import { eventRouter } from './routes/event.routes.js';
+import { economicsRouter } from './routes/economics.routes.js';
+import { calvingRouter } from './routes/calving.routes.js';
+import { escalationRouter } from './routes/escalation.routes.js';
+import { notificationRouter } from './routes/notification.routes.js';
+import { lactationRouter } from './routes/lactation.routes.js';
+import { breedingRouter } from './routes/breeding.routes.js';
+import { aiPerformanceRouter } from './routes/ai-performance.routes.js';
+import { unifiedDashboardRouter } from './routes/unified-dashboard.routes.js';
+import { publicStatsRouter } from './routes/public-stats.routes.js';
+
+export function createApiRouter(): Router {
+  const api = Router();
+
+  // 공개 API (인증 불필요 — 로그인 전 히어로 섹션용)
+  api.use('/public', publicStatsRouter);
+
+  api.use('/health', healthRouter);
+  api.use('/auth', authRouter);
+  api.use('/farms', farmRouter);
+  api.use('/animals', animalRouter);
+  api.use('/sensors', sensorRouter);
+  api.use('/predictions', predictionRouter);
+  api.use('/alerts', alertRouter);
+  api.use('/feedback', feedbackRouter);
+  api.use('/dashboard', dashboardRouter);
+  api.use('/chat', chatRouter);
+  api.use('/regional', regionalRouter);
+  api.use('/actions', actionRouter);
+  api.use('/export', exportRouter);
+  api.use('/users', userRouter);
+  api.use('/search', searchRouter);
+  api.use('/prescriptions', prescriptionRouter);
+  api.use('/vaccines', vaccineRouter);
+  api.use('/events', eventRouter);
+  api.use('/economics', economicsRouter);
+  api.use('/calving', calvingRouter);
+  api.use('/escalation', escalationRouter);
+  api.use('/notifications', notificationRouter);
+  api.use('/lactation', lactationRouter);
+  api.use('/breeding', breedingRouter);
+  api.use('/ai', aiPerformanceRouter);
+  api.use('/unified-dashboard', unifiedDashboardRouter);
+
+  return api;
+}

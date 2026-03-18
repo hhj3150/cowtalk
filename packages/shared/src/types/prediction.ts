@@ -1,8 +1,8 @@
 // AI 예측 + 엔진 인터페이스 (블루프린트 PART 5)
 
-import type { Severity, ConfidenceLevel, DataQuality } from './common';
-import type { Role } from './user';
-import type { AnimalFeatures, SensorReading } from './sensor';
+import type { Severity, ConfidenceLevel, DataQuality } from './common.js';
+import type { Role } from './user.js';
+import type { AnimalFeatures, SensorReading } from './sensor.js';
 
 // === 엔진 타입 ===
 

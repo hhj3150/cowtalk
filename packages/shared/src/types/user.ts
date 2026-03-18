@@ -1,6 +1,6 @@
 // 사용자 + 역할 + 권한
 
-import type { Timestamp, SoftDelete } from './common';
+import type { Timestamp, SoftDelete } from './common.js';
 
 export type Role =
   | 'farmer'

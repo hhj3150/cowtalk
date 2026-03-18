@@ -2,8 +2,8 @@
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { getDatabaseUrl } from './index';
-import * as schema from '../db/schema';
+import { getDatabaseUrl } from './index.js';
+import * as schema from '../db/schema.js';
 
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 let sql: ReturnType<typeof postgres> | null = null;

@@ -50,6 +50,17 @@ services:
       redis:
         condition: service_healthy
 
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    container_name: cowtalk-web-prod
+    restart: always
+    ports:
+      - '80:80'
+    depends_on:
+      - server
+
 volumes:
   postgres_data:
     driver: local

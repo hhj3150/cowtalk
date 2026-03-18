@@ -35,3 +35,7 @@ redis_data/
 # Misc
 *.bak
 *.tmp
+package-lock 2.json
+*.ts 2.ts
+*schema 2.ts
+.claude/

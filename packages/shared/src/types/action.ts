@@ -1,8 +1,8 @@
 // 액션 플랜 + 추천
 
-import type { Severity } from './common';
-import type { Role } from './user';
-import type { EngineType } from './prediction';
+import type { Severity } from './common.js';
+import type { Role } from './user.js';
+import type { EngineType } from './prediction.js';
 
 export type ActionStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | 'overdue';
 

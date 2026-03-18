@@ -1,7 +1,16 @@
 // 중앙 설정 — 환경변수 → 타입 객체
 
 import { z } from 'zod';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+// 모노레포 루트 .env 로드 (packages/server/src/config/ → 4단계 상위)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootEnvPath = path.resolve(__dirname, '../../../../.env');
+
+// override: true → 환경에 빈 문자열로 존재해도 .env 값 우선
+dotenv.config({ path: rootEnvPath, override: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -23,6 +32,20 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
   LOG_LEVEL: z.string().default('debug'),
+
+  // smaXtec API
+  SMAXTEC_EMAIL: z.string().optional(),
+  SMAXTEC_PASSWORD: z.string().optional(),
+
+  // 공공데이터 API
+  PUBLIC_DATA_API_KEY: z.string().optional(),
+
+  // Anthropic Claude API — 이중 모델 구성
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
+  ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-20250514'),
+  ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(4000),
+  ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
 });
 
 const parsed = envSchema.safeParse(process.env);

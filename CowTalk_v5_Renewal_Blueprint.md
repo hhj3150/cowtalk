@@ -443,57 +443,57 @@ M. 파이프라인 감사:
 
 
 ======================================================================
-PART 5. AI Brain 재설계 — 엔진 인터페이스 통일
+PART 5. AI Brain 재설계 — Data Integration + Claude AI Interpretation
 ======================================================================
 
-모든 엔진이 동일한 인터페이스를 구현:
+핵심 전환: 6개 룰 엔진 병렬 실행 → smaXtec 신뢰 + Claude API 해석
 
-interface AIEngine {
-  engineId: string;
-  engineType: EngineType;
+■ 4층 아키텍처
 
-  // 핵심 분석
-  analyze(input: EngineInput): Promise<EngineOutput>;
+1층 Data Integration (데이터 통합):
+  - smaXtec 이벤트: 발정, 질병, 섭식이상 등 → 재판단 없이 신뢰 (95%+)
+  - 센서 원시 데이터: 체온, 활동량, 반추 → 보조 지표로 활용
+  - 공공데이터: 기상, 질병발생, 도축정보 → 맥락 보강
+  - 농장기록: 번식, 진료, 착유 → 개체 이력
+  → 이 모든 것을 통합한 AnimalProfile 생성
 
-  // 설명 생성
-  explain(output: EngineOutput, role: Role): string;
+2층 Claude AI Interpretation (AI 해석):
+  - AnimalProfile → Claude API 호출
+  - Claude가 수행하는 것:
+    a) 맥락 해석: smaXtec 이벤트의 의미를 농장 상황에 맞게 해석
+    b) 우선순위 판단: 여러 이벤트 간 긴급도 결정
+    c) 역할별 액션 생성: 6개 역할 각각에 맞는 구체적 행동 지침
+    d) 자연어 설명: 왜 이런 판단인지 사람이 이해할 수 있는 설명
+  - v4 룰 엔진 결과를 "보조 분석(context hints)"으로 프롬프트에 포함
+  - Fallback: Claude API 불가 시 v4 룰 엔진이 대체 분석 수행
 
-  // 추천 액션
-  recommend(output: EngineOutput, role: Role): ActionRecommendation;
-}
+3층 Role-Based Serving (역할별 제공):
+  - farmer: 오늘 할 일, 긴급 알림, 수익 영향
+  - veterinarian: 진료 우선순위, 진단 근거, 처치 권고
+  - inseminator: 수정 적기, 성공률 예측, 스케줄
+  - government_admin: 지역 통계, 방역 현황, 정책 지표
+  - quarantine_officer: 질병 확산 위험, 격리 대상, 이동 제한
+  - feed_company: 사료 효율, 영양 상태, 공급 계획
 
-interface EngineInput {
-  animal: Animal;
-  features: AnimalFeatures;
-  sensorData: SensorReading[];
-  events: AnimalEvent[];
-  farmContext: FarmContext;
-  environmentContext?: EnvironmentContext;
-}
+4층 Intelligence Loop (학습 루프):
+  - 수의사/농장주 피드백 수집
+  - 예측 정확도 추적 (precision/recall)
+  - 프롬프트 개선 (모델 재학습이 아닌 프롬프트 엔지니어링)
+  - 임계값 자동 조정 (v4 Threshold Learner 계승)
 
-interface EngineOutput {
-  predictionId: string;
-  engineType: EngineType;
-  farmId: string;
-  animalId: string;
-  timestamp: Date;
-  probability: number;          // 0-1
-  confidence: number;           // 0-1
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  rankScore: number;            // 정렬용
-  predictionLabel: string;      // 사람이 읽을 수 있는 라벨
-  explanationText: string;      // 왜 이런 판단인지
-  contributingFeatures: ContributingFeature[];  // 기여 피처 목록
-  recommendedAction: string;    // 뭘 해야 하는지
-  modelVersion: string;
-  roleSpecific: Record<Role, RoleSpecificOutput>;
-}
+■ v4 룰 엔진의 역할 변경
 
-핵심 변경:
-1. 모든 엔진이 같은 입출력 형식 → Decision Fusion이 깔끔
-2. contributingFeatures 필수 → 설명 가능성 보장
-3. roleSpecific 필수 → 역할별 뷰 보장
-4. 엔진은 순수 함수 → 테스트 용이
+기존: 핵심 분석 엔진 (6개 병렬 실행 → Decision Fusion)
+변경: 보조 분석 + Fallback
+  - Claude 호출 시 context hints로 포함 (예: "v4 발정 엔진: 확률 0.82")
+  - Claude API 장애 시 독립적으로 분석 결과 제공
+  - 기존 인터페이스(analyze, explain, recommend) 유지
+
+■ 핵심 변경 요약
+1. smaXtec 이벤트를 재판단하지 않음 → 신뢰 기반 설계
+2. Claude API가 핵심 해석 엔진 → 자연어 설명 + 역할별 액션
+3. v4 엔진은 보조/fallback → 완전 폐기하지 않음
+4. Intelligence Loop = 프롬프트 개선 → 모델 재학습 불필요
 
 
 ======================================================================
@@ -508,8 +508,8 @@ smaXtec API (5분 주기)
   → normalization.ts (표준 포맷 변환)
   → storage.ts (TimescaleDB 저장)
   → extractor.ts (피처 계산)
-  → ai-brain/index.ts (6개 엔진 병렬 실행)
-  → decision-fusion.ts (경합 해소)
+  → v4-engines/ (보조 분석, context hints 생성)
+  → claude-interpreter.ts (Claude API 해석, fallback 시 v4 결과 사용)
   → action-engine.ts (액션 생성)
   → alert-manager.ts (알림 생성/중복방지)
   → Redis 캐시 업데이트

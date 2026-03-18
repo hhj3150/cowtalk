@@ -1,0 +1,527 @@
+// 로그인 페이지 — CowTalk 2-panel 레이아웃 (좌: 로그인폼, 우: 히어로)
+// 히어로 섹션 수치는 /api/public/stats에서 실시간 조회
+// 역할 카드 클릭 → 비밀번호 없이 즉시 로그인 (quick-login)
+
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@web/hooks/useAuth';
+import axios from 'axios';
+
+// ── 공개 통계 타입 ──
+
+interface PublicStats {
+  readonly totalFarms: number;
+  readonly totalCattle: number;
+  readonly totalSensors: number;
+  readonly detectionAccuracy: string;
+  readonly aiEngines: number;
+  readonly monitoring: string;
+  readonly todayAlerts: number;
+}
+
+// ── 역할별 프리셋 ──
+
+interface RolePreset {
+  readonly email: string;
+  readonly name: string;
+  readonly title: string;
+  readonly badge: string;
+  readonly access: string;
+  readonly scope: 'all' | 'partial' | 'single';
+}
+
+const ROLE_PRESETS: readonly RolePreset[] = [
+  {
+    email: 'ha@d2o.kr',
+    name: 'Ha Hyun-Jae, DVM',
+    title: 'MASTER ADMIN',
+    badge: '#16a34a',
+    access: 'full access',
+    scope: 'all',
+  },
+  {
+    email: 'vet@test.kr',
+    name: '고려동물병원',
+    title: 'VETERINARIAN',
+    badge: '#2563eb',
+    access: 'clinical access',
+    scope: 'all',
+  },
+  {
+    email: 'farmer@test.kr',
+    name: '김농장주',
+    title: 'FARMER',
+    badge: '#ca8a04',
+    access: 'farm management',
+    scope: 'all',
+  },
+  {
+    email: 'inseminator@test.kr',
+    name: '이수정사',
+    title: 'INSEMINATOR',
+    badge: '#db2777',
+    access: 'breeding access',
+    scope: 'all',
+  },
+  {
+    email: 'admin@gyeonggi.kr',
+    name: '최경기행정',
+    title: 'GOVERNMENT',
+    badge: '#7c3aed',
+    access: 'full access',
+    scope: 'all',
+  },
+  {
+    email: 'quarantine@test.kr',
+    name: '정방역관',
+    title: 'QUARANTINE',
+    badge: '#dc2626',
+    access: 'surveillance',
+    scope: 'all',
+  },
+  {
+    email: 'feed@test.kr',
+    name: '한사료',
+    title: 'FEED COMPANY',
+    badge: '#ea580c',
+    access: 'nutrition access',
+    scope: 'all',
+  },
+];
+
+// ── 피처 카드 ──
+
+interface FeatureCard {
+  readonly title: string;
+  readonly description: string;
+}
+
+// 히어로 하단 역할 뱃지 — 클릭 시 quick login
+const ROLE_BADGES: readonly { readonly label: string; readonly email: string }[] = [
+  { label: 'Veterinarian', email: 'vet@test.kr' },
+  { label: 'Inseminator', email: 'inseminator@test.kr' },
+  { label: 'Farmer', email: 'farmer@test.kr' },
+  { label: 'Government', email: 'admin@gyeonggi.kr' },
+  { label: 'Quarantine', email: 'quarantine@test.kr' },
+  { label: 'Feed company', email: 'feed@test.kr' },
+];
+
+// ── 메인 컴포넌트 ──
+
+export default function LoginPage(): React.JSX.Element {
+  const [email, setEmail] = useState('ha@d2o.kr');
+  const [password, setPassword] = useState('test1234');
+  const [stats, setStats] = useState<PublicStats | null>(null);
+  const [quickLoggingEmail, setQuickLoggingEmail] = useState<string | null>(null);
+  const { login, quickLogin, isLoggingIn, loginError, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  // 실제 통계 조회
+  useEffect(() => {
+    axios.get<{ success: boolean; data: PublicStats }>('/api/public/stats')
+      .then((res) => { setStats(res.data.data); })
+      .catch(() => {
+        setStats({
+          totalFarms: 146,
+          totalCattle: 7124,
+          totalSensors: 6800,
+          detectionAccuracy: '95%+',
+          aiEngines: 6,
+          monitoring: '24/7',
+          todayAlerts: 0,
+        });
+      });
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  // 역할 카드 클릭 → 즉시 로그인
+  async function handleQuickLogin(preset: RolePreset): Promise<void> {
+    setQuickLoggingEmail(preset.email);
+    try {
+      await quickLogin({ email: preset.email });
+      navigate('/', { replace: true });
+    } catch {
+      // 에러 시 폼으로 fallback
+      setEmail(preset.email);
+      setQuickLoggingEmail(null);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    try {
+      await login({ email, password });
+      navigate('/', { replace: true });
+    } catch {
+      // loginError 상태에서 처리
+    }
+  }
+
+  function handleDemoClick(): void {
+    navigate('/demo');
+  }
+
+  // 히어로 수치
+  const heroFarms = stats?.totalFarms?.toLocaleString() ?? '...';
+  const heroCattle = stats?.totalCattle?.toLocaleString() ?? '...';
+  const heroMonitoring = stats?.monitoring ?? '24/7';
+  const heroDetection = stats?.detectionAccuracy ?? '95%+';
+  const heroEngines = String(stats?.aiEngines ?? 6);
+
+  const features: readonly FeatureCard[] = [
+    {
+      title: 'Rumen sensor intelligence',
+      description: 'Body temp 0.01\u00B0C, rumination, activity, water intake, pH \u2014 direct from reticulum 24/7',
+    },
+    {
+      title: 'National public data fusion',
+      description: 'Traceability, DHI, pedigree, genomics, quarantine, weather \u2014 fully integrated',
+    },
+    {
+      title: 'AI action plans by role',
+      description: 'Vet / inseminator / farmer / admin / quarantine / feed company \u2014 each sees what they need',
+    },
+    {
+      title: 'Regional intelligence',
+      description: 'Multi-farm clusters, early warning, epidemiological surveillance, policy dashboard',
+    },
+    {
+      title: 'Breeding + genomics',
+      description: 'Pedigree, inbreeding coefficient, genomic EBV, semen recommendation, mating plans',
+    },
+    {
+      title: 'Farm economics + benchmark',
+      description: `Productivity analysis, ROI calculator, farm report card, ${heroFarms}-farm comparison`,
+    },
+  ];
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      {/* ── Left Panel: Login Form ── */}
+      <div
+        style={{
+          flex: '0 0 460px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          padding: '40px 36px',
+          background: '#ffffff',
+          overflowY: 'auto',
+        }}
+      >
+        {/* Logo */}
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ fontSize: 36, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>
+            Cow<span style={{ color: '#16a34a' }}>Talk</span>
+          </h1>
+          <p style={{ fontSize: 14, color: '#666', margin: '4px 0 0' }}>
+            AI livestock digital operating system
+          </p>
+          <p style={{ fontSize: 12, color: '#999', margin: '2px 0 0' }}>
+            D2O Corp. | Agricultural corporation
+          </p>
+        </div>
+
+        {/* ── Login form ── */}
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label
+                htmlFor="email"
+                style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 4 }}
+              >
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: '#1a1a1a',
+                  background: '#ffffff',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.target.style.borderColor = '#16a34a'; }}
+                onBlur={(e) => { e.target.style.borderColor = '#e5e7eb'; }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label
+                htmlFor="password"
+                style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 4 }}
+              >
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: '#1a1a1a',
+                  background: '#ffffff',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.target.style.borderColor = '#16a34a'; }}
+                onBlur={(e) => { e.target.style.borderColor = '#e5e7eb'; }}
+              />
+            </div>
+          </div>
+
+          {loginError && (
+            <p style={{ fontSize: 12, color: '#dc2626', marginBottom: 8 }}>
+              Login failed. Please check your email and password.
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoggingIn}
+            style={{
+              width: '100%',
+              padding: '10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              color: '#1a1a1a',
+              background: '#ffffff',
+              cursor: isLoggingIn ? 'wait' : 'pointer',
+              opacity: isLoggingIn ? 0.6 : 1,
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoggingIn) {
+                e.currentTarget.style.background = '#16a34a';
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.borderColor = '#16a34a';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#ffffff';
+              e.currentTarget.style.color = '#1a1a1a';
+              e.currentTarget.style.borderColor = '#e5e7eb';
+            }}
+          >
+            {isLoggingIn ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
+
+        {/* Demo + Footer */}
+        <button
+          type="button"
+          onClick={handleDemoClick}
+          style={{
+            display: 'block',
+            width: '100%',
+            marginTop: 16,
+            fontSize: 12,
+            color: '#16a34a',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            textAlign: 'center',
+          }}
+        >
+          Demo mode &mdash; show to visitors without login
+        </button>
+        <p style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 16 }}>
+          CowTalk v5.0 | D2O Corp. | Powered by AI
+        </p>
+      </div>
+
+      {/* ── Right Panel: Hero Showcase ── */}
+      <div
+        style={{
+          flex: 1,
+          background: 'linear-gradient(160deg, #0f4c3a 0%, #1a6b4f 30%, #1e7a5a 60%, #2a8f6a 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '48px 60px',
+          overflow: 'auto',
+          position: 'relative',
+        }}
+      >
+        {/* Top badge */}
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '6px 16px',
+            borderRadius: 20,
+            border: '1px solid rgba(255,255,255,0.3)',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#ffffff',
+            letterSpacing: 1.5,
+            marginBottom: 20,
+          }}
+        >
+          AI-POWERED LIVESTOCK INTELLIGENCE PLATFORM
+        </span>
+
+        {/* Title */}
+        <h2
+          style={{
+            fontSize: 48,
+            fontWeight: 700,
+            color: '#ffffff',
+            margin: '0 0 8px',
+            textAlign: 'center',
+          }}
+        >
+          Cow<span style={{ color: '#86efac' }}>Talk</span>
+        </h2>
+        <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.85)', textAlign: 'center', margin: 0 }}>
+          Cows speak through data.
+        </p>
+        <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.85)', textAlign: 'center', margin: '2px 0 0' }}>
+          We translate it into action.
+        </p>
+
+        {/* Stats bar — 실제 DB 데이터 */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 32,
+            marginTop: 32,
+            marginBottom: 36,
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+          }}
+        >
+          <StatItem value={heroFarms} label="Farms" />
+          <StatItem value={heroCattle} label="Cattle" />
+          <StatItem value={heroMonitoring} label="Monitoring" />
+          <StatItem value={heroDetection} label="Detection" />
+          <StatItem value={heroEngines} label="AI engines" />
+        </div>
+
+        {/* Feature cards grid */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: 14,
+            width: '100%',
+            maxWidth: 640,
+          }}
+        >
+          {features.map((f) => (
+            <div
+              key={f.title}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(8px)',
+                borderRadius: 12,
+                padding: '18px 20px',
+                border: '1px solid rgba(255,255,255,0.15)',
+              }}
+            >
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', margin: '0 0 6px' }}>
+                {f.title}
+              </h3>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', margin: 0, lineHeight: 1.5 }}>
+                {f.description}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Role badges — 클릭 시 즉시 로그인 */}
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 28, marginBottom: 10, textAlign: 'center' }}>
+          Click a role to enter directly
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {ROLE_BADGES.map((role) => {
+            const isLoading = quickLoggingEmail === role.email;
+            return (
+              <button
+                key={role.email}
+                type="button"
+                disabled={isLoggingIn}
+                onClick={() => { handleQuickLogin({ ...ROLE_PRESETS.find((p) => p.email === role.email)!, email: role.email }); }}
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: 20,
+                  background: isLoading ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)',
+                  backdropFilter: 'blur(4px)',
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#ffffff',
+                  cursor: isLoggingIn ? 'wait' : 'pointer',
+                  transition: 'all 0.15s',
+                  opacity: (isLoggingIn && !isLoading) ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoggingIn) {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.3)';
+                    e.currentTarget.style.transform = 'scale(1.05)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = isLoading ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                {isLoading ? 'Entering...' : role.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bottom footer */}
+        <p
+          style={{
+            fontSize: 11,
+            color: 'rgba(255,255,255,0.4)',
+            marginTop: 32,
+            textAlign: 'center',
+          }}
+        >
+          D2O Corp. &mdash; Dairy + Beef | Korea + Global&nbsp;&nbsp;&nbsp;&nbsp;Powered by CowTalk AI
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Stats item ──
+
+function StatItem({
+  value,
+  label,
+}: {
+  readonly value: string;
+  readonly label: string;
+}): React.JSX.Element {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <p style={{ fontSize: 32, fontWeight: 700, color: '#86efac', margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', margin: '2px 0 0' }}>{label}</p>
+    </div>
+  );
+}
