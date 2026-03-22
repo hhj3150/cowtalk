@@ -27,8 +27,6 @@ COPY --from=builder --chown=cowtalk:cowtalk /app/packages/shared/dist ./packages
 COPY --from=builder --chown=cowtalk:cowtalk /app/packages/server/package.json ./packages/server/
 COPY --from=builder --chown=cowtalk:cowtalk /app/packages/server/dist ./packages/server/dist
 COPY --from=builder --chown=cowtalk:cowtalk /app/node_modules ./node_modules
-COPY --from=builder --chown=cowtalk:cowtalk /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=builder --chown=cowtalk:cowtalk /app/packages/server/node_modules ./packages/server/node_modules
 
 USER cowtalk
 
