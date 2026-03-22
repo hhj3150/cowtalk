@@ -8,7 +8,6 @@ import { chatMessageSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
 import { handleChatMessage, handleChatStream } from '../../chat/chat-service.js';
 import { isClaudeAvailable } from '../../ai-brain/claude-client.js';
-import '../../types/express.d.js';
 
 export const chatRouter = Router();
 

@@ -6,7 +6,6 @@ import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { milkRecords, lactationRecords, animals } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const lactationRouter = Router();
 

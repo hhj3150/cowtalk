@@ -6,7 +6,6 @@ import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
 import { evaluateEngine, compareEngines, getAccuracyTrend, evaluateByRole } from '../../intelligence-loop/model-evaluator.js';
 import { analyzeThresholds } from '../../intelligence-loop/threshold-learner.js';
-import '../../types/express.d.js';
 
 export const aiPerformanceRouter = Router();
 

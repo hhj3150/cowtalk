@@ -9,7 +9,6 @@ import { analyzeRegion } from '../../ai-brain/index.js';
 import { getDb } from '../../config/database.js';
 import { regions, farms } from '../../db/schema.js';
 import { eq, count } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const regionalRouter = Router();
 

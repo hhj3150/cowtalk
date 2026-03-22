@@ -24,7 +24,6 @@ import type {
   FarmHealthScore,
   FarmHealthFactors,
 } from '@cowtalk/shared';
-import '../../types/express.d.js';
 
 export const epidemicIntelligenceRouter = Router();
 

@@ -11,7 +11,6 @@ import { getAnimalDetail } from '../../serving/dashboard.service.js';
 import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const animalRouter = Router();
 

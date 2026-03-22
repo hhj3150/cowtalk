@@ -6,7 +6,6 @@ import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { notificationPreferences } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const notificationRouter = Router();
 

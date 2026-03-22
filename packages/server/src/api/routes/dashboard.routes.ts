@@ -13,7 +13,6 @@ import {
   vaccineSchedules, sensorDevices, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, gt, and, desc, isNull } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const dashboardRouter = Router();
 

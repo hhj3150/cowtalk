@@ -12,7 +12,6 @@ import { desc, count } from 'drizzle-orm';
 import { getFeedbackByAnimal } from '../../intelligence-loop/feedback-collector.js';
 import { getFeedbackStats } from '../../intelligence-loop/feedback-collector.js';
 import { getUnmatchedPredictions, recordOutcome } from '../../intelligence-loop/outcome-recorder.js';
-import '../../types/express.d.js';
 
 export const feedbackRouter = Router();
 

@@ -7,7 +7,6 @@ import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { calvingEvents, calvingChecklists, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const calvingRouter = Router();
 

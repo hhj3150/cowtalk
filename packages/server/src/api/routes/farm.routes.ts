@@ -9,7 +9,6 @@ import { farmQuerySchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { farms, animals, smaxtecEvents, regions } from '../../db/schema.js';
 import { eq, and, sql, count, gt } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const farmRouter = Router();
 

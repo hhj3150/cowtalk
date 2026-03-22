@@ -6,7 +6,6 @@ import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { alertEscalations, alerts, farms } from '../../db/schema.js';
 import { eq, and, count, desc } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const escalationRouter = Router();
 

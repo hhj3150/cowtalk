@@ -3,7 +3,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../../lib/auth.js';
 import { UnauthorizedError } from '../../lib/errors.js';
-import '../../types/express.d.js';
 
 export function authenticate(
   req: Request,

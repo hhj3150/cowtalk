@@ -55,7 +55,6 @@ import type {
   InseminationAnimalBriefing,
   InseminationRouteSummary,
 } from '@cowtalk/shared';
-import '../../types/express.d.js';
 
 export const unifiedDashboardRouter = Router();
 

@@ -9,7 +9,6 @@ import { sensorQuerySchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { sensorMeasurements, sensorDevices, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const sensorRouter = Router();
 

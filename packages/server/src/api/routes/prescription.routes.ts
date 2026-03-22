@@ -7,7 +7,6 @@ import { requireRole } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { prescriptions, prescriptionItems, drugDatabase, users } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const prescriptionRouter = Router();
 

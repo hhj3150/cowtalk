@@ -9,7 +9,6 @@ import { paginationSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { predictions, animals } from '../../db/schema.js';
 import { eq, desc, count } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const predictionRouter = Router();
 

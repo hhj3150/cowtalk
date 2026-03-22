@@ -22,7 +22,6 @@ import type {
   MisclassificationItem,
   DailyLabelCount,
 } from '@cowtalk/shared';
-import '../../types/express.d.js';
 
 export const labelChatRouter = Router();
 

@@ -7,7 +7,6 @@ import { requirePermission } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { alerts, farms } from '../../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const actionRouter = Router();
 

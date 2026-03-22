@@ -9,7 +9,6 @@ import { paginationSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, animals, farms } from '../../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const alertRouter = Router();
 

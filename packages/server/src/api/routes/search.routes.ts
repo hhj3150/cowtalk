@@ -6,7 +6,6 @@ import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { animals, farms } from '../../db/schema.js';
 import { sql, or, eq } from 'drizzle-orm';
-import '../../types/express.d.js';
 
 export const searchRouter = Router();
 
