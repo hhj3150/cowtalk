@@ -8,6 +8,26 @@ interface Props {
   readonly onItemClick?: (item: TodoItem) => void;
 }
 
+// Lucide 아이콘 이름 → 이모지 매핑
+const ICON_MAP: Record<string, string> = {
+  venus: '♀️',
+  baby: '👶',
+  thermometer: '🌡️',
+  'heart-pulse': '💓',
+  utensils: '🍽️',
+  activity: '📊',
+  'alert-triangle': '⚠️',
+  droplets: '💧',
+  stethoscope: '🩺',
+  syringe: '💉',
+  pill: '💊',
+  cow: '🐄',
+};
+
+function resolveIcon(icon: string): string {
+  return ICON_MAP[icon] ?? icon;
+}
+
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'var(--ct-danger)',
   high: 'var(--ct-warning)',
@@ -42,7 +62,7 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
                   onItemClick ? 'cursor-pointer hover:bg-black/5' : 'cursor-default'
                 }`}
               >
-                <span style={{ fontSize: '14px' }}>{item.icon}</span>
+                <span style={{ fontSize: '14px' }}>{resolveIcon(item.icon)}</span>
                 <span
                   className="flex-1 text-sm"
                   style={{
