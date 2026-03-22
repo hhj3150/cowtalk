@@ -1,5 +1,5 @@
 [build]
-  command = "cd ../.. && npm ci && npm run build:shared && cd packages/web && npm run build"
+  command = "cd ../.. && npm install && npm run build:shared && cd packages/web && npm run build"
   publish = "dist"
 
 [[redirects]]
