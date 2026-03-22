@@ -1,6 +1,6 @@
 [build]
   command = "cd /opt/build/repo && npm install && npm run build:shared && cd packages/web && npm run build"
-  publish = "dist"
+  publish = "packages/web/dist"
 
 [[redirects]]
   from = "/api/*"
