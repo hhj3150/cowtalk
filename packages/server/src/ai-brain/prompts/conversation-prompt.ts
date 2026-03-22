@@ -106,37 +106,75 @@ export interface ConversationTurn {
 
 function buildAnimalContext(profile: AnimalProfile): string {
   const lines: string[] = [
-    `## 맥락: 개체 ${profile.earTag}`,
+    `## 맥락: 개체 ${profile.earTag} (${profile.farmName})`,
     `- 축종: ${profile.breedType === 'dairy' ? '젖소' : '한우/비육우'} (${profile.breed})`,
-    `- 산차: ${String(profile.parity)}, 농장: ${profile.farmName}`,
+    `- 산차: ${String(profile.parity)}`,
   ];
 
+  // ── 센서 데이터 (실시간) ──
   const s = profile.latestSensor;
-  if (s.temperature !== null) lines.push(`- 최신 체온: ${String(s.temperature)}°C`);
-  if (s.rumination !== null) lines.push(`- 최신 반추: ${String(s.rumination)}분/일`);
-  if (s.activity !== null) lines.push(`- 최신 활동: ${String(s.activity)}`);
+  const sensorLines: string[] = [];
+  if (s.temperature !== null) {
+    const tempStatus = s.temperature >= 40.0 ? '🔴 발열' : s.temperature >= 39.5 ? '🟡 주의' : '🟢 정상';
+    sensorLines.push(`체온 ${String(s.temperature)}°C (${tempStatus})`);
+  }
+  if (s.rumination !== null) {
+    const rumStatus = s.rumination < 200 ? '🔴 심각 감소' : s.rumination < 300 ? '🟡 감소' : '🟢 정상';
+    sensorLines.push(`반추 ${String(s.rumination)}분/일 (${rumStatus})`);
+  }
+  if (s.activity !== null) sensorLines.push(`활동 ${String(s.activity)}`);
+  if (sensorLines.length > 0) lines.push(`- 실시간 센서: ${sensorLines.join(', ')}`);
 
+  // ── 활성 이벤트 (알람) — 가장 중요 ──
   if (profile.activeEvents.length > 0) {
-    lines.push(`- 활성 이벤트: ${profile.activeEvents.map((e) => `${e.type}(${e.severity})`).join(', ')}`);
+    lines.push(`\n### ⚠️ 현재 활성 알람`);
+    // 긴급도순 정렬
+    const sorted = [...profile.activeEvents].sort((a, b) => {
+      const order = ['critical', 'high', 'medium', 'low'];
+      return order.indexOf(a.severity) - order.indexOf(b.severity);
+    });
+    for (const e of sorted) {
+      const label = ALARM_LABELS[e.type] ?? e.type;
+      const time = e.detectedAt ? ` (${new Date(e.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})` : '';
+      lines.push(`- **${label}** [${e.severity}]${time}`);
+    }
+    lines.push(`\n→ 위 알람에 대해 원인 분석, 감별진단, 즉시 조치, 경과 관찰 포인트를 포함하여 답변하세요.`);
   }
 
+  // ── 생산 데이터 ──
   if (profile.breedType === 'dairy' && profile.production?.milkYield !== null) {
     lines.push(`- 유량: ${String(profile.production?.milkYield)}kg`);
   }
 
+  // ── 번식 상태 ──
   if (profile.pregnancyStatus) {
     lines.push(`- 임신 상태: ${profile.pregnancyStatus}`);
   }
 
-  // 7일 센서 히스토리 요약
+  // ── 7일 센서 히스토리 (추세 판단) ──
   if (profile.sensorHistory7d.length > 0) {
     const temps = profile.sensorHistory7d
-      .map((s) => s.temperature)
+      .map((h) => h.temperature)
+      .filter((v): v is number => v !== null);
+    const rums = profile.sensorHistory7d
+      .map((h) => h.rumination)
       .filter((v): v is number => v !== null);
     if (temps.length > 0) {
-      lines.push(`- 7일 체온 범위: ${String(Math.min(...temps))}~${String(Math.max(...temps))}°C (${String(temps.length)}건)`);
+      const recent3 = temps.slice(-3);
+      const trend = recent3.length >= 2 && recent3[recent3.length - 1]! > recent3[0]! ? '상승 추세' : '안정';
+      lines.push(`- 7일 체온: ${String(Math.min(...temps))}~${String(Math.max(...temps))}°C (${trend}, ${String(temps.length)}건)`);
+    }
+    if (rums.length > 0) {
+      lines.push(`- 7일 반추: ${String(Math.min(...rums))}~${String(Math.max(...rums))}분/일`);
     }
   }
+
+  // ── AI 주치의 지침 ──
+  lines.push(`\n### 답변 지침 (주치의 모드)
+- 이 소의 현재 상태에 대해 **구체적인 조치**를 알려주세요
+- "수의사를 부르세요"만으로는 부족합니다. 어떤 검사를 해야 하고, 의심 질환이 뭔지, 응급 처치는 뭔지 설명하세요
+- 새로 설치한 농가의 목장주가 질문한다고 가정하세요 — 경험이 적을 수 있습니다
+- 데이터 추세(7일)를 참고하여 급성인지 만성인지 판단하세요`);
 
   return lines.join('\n');
 }
