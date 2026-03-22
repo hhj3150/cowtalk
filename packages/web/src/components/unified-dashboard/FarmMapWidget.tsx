@@ -29,7 +29,7 @@ interface Props {
 
 // ── 상수 ──
 
-const KOREA_CENTER: readonly [number, number] = [36.0, 127.5];
+const KOREA_CENTER: [number, number] = [36.0, 127.5];
 const DEFAULT_ZOOM = 7;
 
 const STATUS_COLORS: Readonly<Record<string, string>> = {

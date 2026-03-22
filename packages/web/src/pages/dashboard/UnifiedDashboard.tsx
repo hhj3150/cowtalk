@@ -56,7 +56,8 @@ import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonito
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
-import { ROLE_LABELS } from '@web/config/dashboard-widgets';
+// ROLE_LABELS는 향후 역할별 라벨 표시에 사용 예정
+import type {} from '@web/config/dashboard-widgets';
 
 // ── Farm filter dropdown ──
 
