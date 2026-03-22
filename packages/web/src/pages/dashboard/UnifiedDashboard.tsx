@@ -490,9 +490,11 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </div>
           </>)}
 
-          {/* ── 센서 분석 ── */}
-          {(isVisible('vital_monitor_chart') || isVisible('temperature_scatter') || isVisible('event_timeline_chart')) && (<>
-          <SectionLabel>Sensor Analysis</SectionLabel>
+          {/* ── 센서 분석 (개별 농장 선택 시에만 표시) ── */}
+          {/* 수의역학 원칙: 전체 농장의 체온/반추 평균은 역학적 의미 없음 */}
+          {/* 전체 뷰 = 농장 간 비교(방역 지휘센터), 개별 뷰 = 개체 간 비교(센서 분석) */}
+          {selectedFarmId && (isVisible('vital_monitor_chart') || isVisible('temperature_scatter') || isVisible('event_timeline_chart')) && (<>
+          <SectionLabel>Sensor Analysis — {selectedFarmId ? '농장 내 개체 모니터링' : ''}</SectionLabel>
 
           {isVisible('vital_monitor_chart') && vitalData && (
             <VitalMonitorChart
