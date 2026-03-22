@@ -3736,22 +3736,25 @@ function computeBreedingKpis(
     ? Math.round(calvingIntervals.reduce((s, v) => s + v, 0) / calvingIntervals.length)
     : 0;
 
-  const inseminationTimes = bInseminations
-    .filter((e) => e.eventDate)
-    .map((e) => ({ animalId: e.animalId, time: e.eventDate!.getTime() }));
+  // 분만후 첫 수정일수 (Days to First Service)
+  const daysToFirstServiceValues: number[] = [];
+  for (const [aid, calvings] of calvingsByAnimal) {
+    const animalInseminations = bInseminations
+      .filter((e) => e.animalId === aid && e.eventDate)
+      .map((e) => e.eventDate!.getTime())
+      .sort((a, b) => a - b);
 
-  const missedEstrusCount = estrusEvents.filter((estrus) => {
-    if (!estrus.detectedAt) return false;
-    const estrusTime = estrus.detectedAt.getTime();
-    return !inseminationTimes.some(
-      (ins) => ins.animalId === estrus.animalId && Math.abs(ins.time - estrusTime) < MS_PER_DAY,
-    );
-  }).length;
-
-  const thirtyDaysAgo = Date.now() - 30 * MS_PER_DAY;
-  const inseminationCount30d = bInseminations.filter(
-    (e) => e.eventDate && e.eventDate.getTime() > thirtyDaysAgo,
-  ).length;
+    for (const calvDate of calvings) {
+      const calvTime = calvDate.getTime();
+      const firstInsAfterCalv = animalInseminations.find((t) => t > calvTime);
+      if (firstInsAfterCalv) {
+        daysToFirstServiceValues.push(Math.floor((firstInsAfterCalv - calvTime) / MS_PER_DAY));
+      }
+    }
+  }
+  const avgDaysToFirstService = daysToFirstServiceValues.length > 0
+    ? Math.round(daysToFirstServiceValues.reduce((s, v) => s + v, 0) / daysToFirstServiceValues.length)
+    : 0;
 
   const pregnancyRate = estimatedCycles > 0
     ? Math.round((pregnancies.length / estimatedCycles) * 1000) / 10
@@ -3762,8 +3765,7 @@ function computeBreedingKpis(
     estrusDetectionRate,
     avgDaysOpen,
     avgCalvingInterval,
-    missedEstrusCount,
-    inseminationCount30d,
+    avgDaysToFirstService,
     pregnancyRate,
   };
 }
@@ -3929,8 +3931,7 @@ function generateDemoBreedingData(): BreedingPipelineData {
       estrusDetectionRate: Math.round(edr * 10) / 10,
       avgDaysOpen: 120 + Math.floor(Math.random() * 40),
       avgCalvingInterval: 385 + Math.floor(Math.random() * 35),
-      missedEstrusCount: 2 + Math.floor(Math.random() * 5),
-      inseminationCount30d: 8 + Math.floor(Math.random() * 12),
+      avgDaysToFirstService: 65 + Math.floor(Math.random() * 30),
       pregnancyRate: Math.round((cr * edr / 100) * 10) / 10,
     },
     urgentActions: [
@@ -3989,8 +3990,7 @@ async function buildBreedingPipeline(farmId: string | null): Promise<BreedingPip
     estrusDetectionRate: 60 + Math.round(Math.random() * 200) / 10,
     avgDaysOpen: 120 + Math.floor(Math.random() * 40),
     avgCalvingInterval: 385 + Math.floor(Math.random() * 35),
-    missedEstrusCount: 2 + Math.floor(Math.random() * 5),
-    inseminationCount30d: 8 + Math.floor(Math.random() * 12),
+    avgDaysToFirstService: 65 + Math.floor(Math.random() * 30),
     pregnancyRate: Math.round(Math.random() * 350) / 10 + 25,
   };
 

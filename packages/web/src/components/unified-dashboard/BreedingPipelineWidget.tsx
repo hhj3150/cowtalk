@@ -52,10 +52,17 @@ interface KpiChipDef {
   readonly evaluate: (v: number) => 'green' | 'orange' | 'red';
 }
 
+// 수의번식학 핵심 6대 지표 (KPI 순서: 중요도순)
 const KPI_DEFS: readonly KpiChipDef[] = [
   {
+    key: 'pregnancyRate',
+    label: '임신율(PR)',
+    unit: '%',
+    evaluate: (v) => (v >= 25 ? 'green' : v >= 15 ? 'orange' : 'red'),
+  },
+  {
     key: 'conceptionRate',
-    label: '수태율',
+    label: '수태율(CR)',
     unit: '%',
     evaluate: (v) => (v >= 50 ? 'green' : v >= 35 ? 'orange' : 'red'),
   },
@@ -67,33 +74,21 @@ const KPI_DEFS: readonly KpiChipDef[] = [
   },
   {
     key: 'avgDaysOpen',
-    label: '평균공태일',
+    label: '공태일수',
     unit: '일',
     evaluate: (v) => (v < 130 ? 'green' : v < 160 ? 'orange' : 'red'),
+  },
+  {
+    key: 'avgDaysToFirstService',
+    label: '첫수정일수',
+    unit: '일',
+    evaluate: (v) => (v < 80 ? 'green' : v < 100 ? 'orange' : 'red'),
   },
   {
     key: 'avgCalvingInterval',
     label: '분만간격',
     unit: '일',
     evaluate: (v) => (v < 400 ? 'green' : v < 420 ? 'orange' : 'red'),
-  },
-  {
-    key: 'missedEstrusCount',
-    label: '놓친발정',
-    unit: '건',
-    evaluate: (v) => (v <= 2 ? 'green' : v <= 5 ? 'orange' : 'red'),
-  },
-  {
-    key: 'inseminationCount30d',
-    label: '30일 수정',
-    unit: '건',
-    evaluate: () => 'green',
-  },
-  {
-    key: 'pregnancyRate',
-    label: '임신율',
-    unit: '%',
-    evaluate: (v) => (v >= 25 ? 'green' : v >= 15 ? 'orange' : 'red'),
   },
 ] as const;
 

@@ -33,9 +33,8 @@ export interface BreedingKpis {
   readonly estrusDetectionRate: number;    // 발정탐지율 (%)
   readonly avgDaysOpen: number;            // 평균공태일
   readonly avgCalvingInterval: number;     // 평균분만간격 (일)
-  readonly missedEstrusCount: number;      // 놓친 발정 수
-  readonly inseminationCount30d: number;   // 30일간 수정 건수
-  readonly pregnancyRate: number;          // 임신율 (%)
+  readonly avgDaysToFirstService: number;  // 분만후 첫 수정일수 (목표 <80일)
+  readonly pregnancyRate: number;          // 임신율 (%) = 발정탐지율 × 수태율
 }
 
 export interface BreedingUrgentAction {
