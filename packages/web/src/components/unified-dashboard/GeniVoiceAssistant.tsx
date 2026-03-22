@@ -42,14 +42,19 @@ function speak(text: string, onEnd?: () => void): void {
     .replace(/\.{2,}/g, '.')
     .slice(0, 400);
 
+  // 텍스트에서 언어 자동 감지
+  const hasKorean = /[가-힣]/.test(cleanText);
+  const hasCyrillic = /[а-яА-ЯЁё]/.test(cleanText);
+  const detectedLang = hasKorean ? 'ko-KR' : hasCyrillic ? 'ru-RU' : 'en-US';
+
   const utterance = new SpeechSynthesisUtterance(cleanText);
-  utterance.lang = 'ko-KR';
+  utterance.lang = detectedLang;
   utterance.rate = 0.95;
   utterance.pitch = 1.05;
 
   const voices = window.speechSynthesis.getVoices();
-  const koVoice = voices.find((v) => v.lang.startsWith('ko'));
-  if (koVoice) utterance.voice = koVoice;
+  const matchVoice = voices.find((v) => v.lang.startsWith(detectedLang.split('-')[0]!));
+  if (matchVoice) utterance.voice = matchVoice;
 
   utterance.onend = () => onEnd?.();
   utterance.onerror = () => onEnd?.();
@@ -207,7 +212,9 @@ export function GeniVoiceAssistant({
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
-    recognition.lang = 'ko-KR';
+    // 다국어 음성 인식: 브라우저 언어 기반 + 한국어 우선
+    const browserLang = navigator.language ?? 'ko-KR';
+    recognition.lang = browserLang.startsWith('ko') ? 'ko-KR' : browserLang;
     recognition.continuous = false;
     recognition.interimResults = true;
 
