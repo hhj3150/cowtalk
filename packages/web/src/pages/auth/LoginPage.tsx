@@ -113,19 +113,19 @@ interface FeatureCard {
 
 // 히어로 하단 역할 뱃지 — 클릭 시 quick login
 const ROLE_BADGES: readonly { readonly label: string; readonly email: string }[] = [
-  { label: 'Veterinarian', email: 'vet@test.kr' },
-  { label: 'Inseminator', email: 'inseminator@test.kr' },
-  { label: 'Farmer', email: 'farmer@test.kr' },
-  { label: 'Government', email: 'admin@gyeonggi.kr' },
-  { label: 'Quarantine', email: 'quarantine@test.kr' },
-  { label: 'Feed company', email: 'feed@test.kr' },
+  { label: '수의사', email: 'vet@test.kr' },
+  { label: '수정사', email: 'inseminator@test.kr' },
+  { label: '목장주', email: 'farmer@test.kr' },
+  { label: '행정관', email: 'admin@gyeonggi.kr' },
+  { label: '방역관', email: 'quarantine@test.kr' },
+  { label: '사료회사', email: 'feed@test.kr' },
 ];
 
 // ── 메인 컴포넌트 ──
 
 export default function LoginPage(): React.JSX.Element {
-  const [email, setEmail] = useState('ha@d2o.kr');
-  const [password, setPassword] = useState('test1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [stats, setStats] = useState<PublicStats | null>(null);
   const [quickLoggingEmail, setQuickLoggingEmail] = useState<string | null>(null);
   const { login, quickLogin, isLoggingIn, loginError, isAuthenticated } = useAuth();
@@ -191,28 +191,28 @@ export default function LoginPage(): React.JSX.Element {
 
   const features: readonly FeatureCard[] = [
     {
-      title: 'Rumen sensor intelligence',
-      description: 'Body temp 0.01\u00B0C, rumination, activity, water intake, pH \u2014 direct from reticulum 24/7',
+      title: '위내센서 인텔리전스',
+      description: '체온 0.01°C 정밀도, 반추, 활동, 음수, pH — 24시간 실시간 모니터링',
     },
     {
-      title: 'National public data fusion',
-      description: 'Traceability, DHI, pedigree, genomics, quarantine, weather \u2014 fully integrated',
+      title: '국가 공공데이터 융합',
+      description: '이력추적, DHI 검정, 혈통, 유전체, 방역, 기상 — 완전 통합',
     },
     {
-      title: 'AI action plans by role',
-      description: 'Vet / inseminator / farmer / admin / quarantine / feed company \u2014 each sees what they need',
+      title: '역할별 AI 액션플랜',
+      description: '수의사 / 수정사 / 목장주 / 행정관 / 방역관 / 사료회사 — 각자 필요한 정보',
     },
     {
-      title: 'Regional intelligence',
-      description: 'Multi-farm clusters, early warning, epidemiological surveillance, policy dashboard',
+      title: '지역 방역 인텔리전스',
+      description: '다농장 클러스터, 조기경보, 역학 감시, 정책 대시보드',
     },
     {
-      title: 'Breeding + genomics',
-      description: 'Pedigree, inbreeding coefficient, genomic EBV, semen recommendation, mating plans',
+      title: '번식 + 유전체',
+      description: '혈통, 근교계수, 유전체 육종가, 정액 추천, 교배 계획',
     },
     {
-      title: 'Farm economics + benchmark',
-      description: `Productivity analysis, ROI calculator, farm report card, ${heroFarms}-farm comparison`,
+      title: `농장 성과 벤치마크`,
+      description: `생산성 분석, ROI 계산기, 농장 리포트 카드, ${heroFarms}개 농장 비교`,
     },
   ];
 
@@ -372,7 +372,7 @@ export default function LoginPage(): React.JSX.Element {
               e.currentTarget.style.borderColor = '#e5e7eb';
             }}
           >
-            {isLoggingIn ? 'Logging in...' : 'Login'}
+            {isLoggingIn ? '로그인 중...' : '로그인'}
           </button>
         </form>
 
@@ -392,7 +392,7 @@ export default function LoginPage(): React.JSX.Element {
             textAlign: 'center',
           }}
         >
-          Demo mode &mdash; show to visitors without login
+          데모 모드 &mdash; 로그인 없이 둘러보기
         </button>
         {/* 모바일: 역할 선택 버튼 */}
         {isMobile && (
@@ -534,7 +534,7 @@ export default function LoginPage(): React.JSX.Element {
 
         {/* Role badges — 클릭 시 즉시 로그인 */}
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 28, marginBottom: 10, textAlign: 'center' }}>
-          Click a role to enter directly
+          역할을 선택하여 바로 입장
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
           {ROLE_BADGES.map((role) => {
@@ -569,7 +569,7 @@ export default function LoginPage(): React.JSX.Element {
                   e.currentTarget.style.transform = 'scale(1)';
                 }}
               >
-                {isLoading ? 'Entering...' : role.label}
+                {isLoading ? '입장 중...' : role.label}
               </button>
             );
           })}

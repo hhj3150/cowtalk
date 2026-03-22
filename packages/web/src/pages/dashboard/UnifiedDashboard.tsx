@@ -486,13 +486,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 번식성적 ── */}
           {isVisible('breeding_pipeline') && (<>
-          <SectionLabel>Breeding Performance</SectionLabel>
+          <SectionLabel>번식성적 커맨드센터</SectionLabel>
           {breedingData && <BreedingPipelineWidget data={breedingData} />}
           </>)}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>
-          <SectionLabel>Epidemic Intelligence</SectionLabel>
+          <SectionLabel>방역 인텔리전스</SectionLabel>
           {isVisible('epidemic_command_center') && epidemicData && <EpidemicCommandCenter data={epidemicData} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
           {isVisible('farm_health_score') && healthScoresData && healthScoresData.length > 0 && (
             <FarmHealthScoreWidget scores={healthScoresData} onFarmClick={(fid) => selectFarm(fid)} />
@@ -502,7 +502,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 분석 차트 ── */}
           {/* 알림 트렌드: 전체 뷰에서도 의미 있음 (전국 발생 추이) */}
           {isVisible('alert_trend_chart') && (<>
-          <SectionLabel>Analytics</SectionLabel>
+          <SectionLabel>분석 차트</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: isMobile ? 12 : 16 }}>
             {isVisible('alert_trend_chart') && (
             <ChartCard title="알림 트렌드 (14일)" icon="📊" delay={100}>
@@ -530,7 +530,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* 수의역학 원칙: 전체 농장의 체온/반추 평균은 역학적 의미 없음 */}
           {/* 전체 뷰 = 농장 간 비교(방역 지휘센터), 개별 뷰 = 개체 간 비교(센서 분석) */}
           {selectedFarmId && (isVisible('vital_monitor_chart') || isVisible('temperature_scatter') || isVisible('event_timeline_chart')) && (<>
-          <SectionLabel>Sensor Analysis — {selectedFarmId ? '농장 내 개체 모니터링' : ''}</SectionLabel>
+          <SectionLabel>센서 분석 — {selectedFarmId ? '농장 내 개체 모니터링' : ''}</SectionLabel>
 
           {isVisible('vital_monitor_chart') && vitalData && (
             <VitalMonitorChart
@@ -564,7 +564,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 농장 지도 ── */}
           {isVisible('farm_map') && (<>
-          <SectionLabel>Farm Map</SectionLabel>
+          <SectionLabel>농장 지도</SectionLabel>
           {farmMapMarkers.length > 0 && (
             <FarmMapWidget
               markers={farmMapMarkers}
@@ -576,7 +576,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 운영 패널 (AI 채팅은 지니로 통합) ── */}
           {(isVisible('live_alarm_feed') || isVisible('todo_list')) && (<>
-          <SectionLabel>Operations</SectionLabel>
+          <SectionLabel>운영 현황</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
@@ -591,7 +591,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 소버린 AI 지식 강화 루프 ── */}
           {isVisible('sovereign_ai') && (<>
-          <SectionLabel>Sovereign AI Knowledge Loop</SectionLabel>
+          <SectionLabel>소버린 AI 지식 강화</SectionLabel>
           {sovereignStats && (
             <SovereignAiWidget stats={sovereignStats} />
           )}

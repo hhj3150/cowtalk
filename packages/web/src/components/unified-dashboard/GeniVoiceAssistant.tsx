@@ -48,7 +48,7 @@ function speak(text: string, onEnd?: () => void): void {
     .replace(/\n/g, ', ')
     .replace(/\s{2,}/g, ' ')
     .replace(/\.{2,}/g, '.')
-    .slice(0, 400);
+    .slice(0, 800);
 
   // 텍스트에서 언어 자동 감지
   const hasKorean = /[가-힣]/.test(cleanText);
