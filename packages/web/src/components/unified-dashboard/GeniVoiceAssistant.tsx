@@ -66,10 +66,22 @@ function speak(text: string, onEnd?: () => void): void {
   utterance.rate = detectedLang === 'ko-KR' ? 0.95 : 0.9;
   utterance.pitch = 1.05;
 
+  // 여성 음성 우선 선택 (청량한 음성)
   const voices = window.speechSynthesis.getVoices();
   const langPrefix = detectedLang.split('-')[0]!;
-  const matchVoice = voices.find((v) => v.lang.startsWith(langPrefix));
-  if (matchVoice) utterance.voice = matchVoice;
+  const langVoices = voices.filter((v) => v.lang.startsWith(langPrefix));
+
+  // 1순위: 해당 언어 + 여성 음성 (이름에 female/woman/여 포함 또는 이름 패턴)
+  const femaleKeywords = /female|woman|여|yuna|siri|samantha|karen|victoria|tessa|milena|anna|elena|google.*female/i;
+  const maleKeywords = /male|man|남|daniel|alex|thomas|jorge|ivan|dmitri|google.*male/i;
+  const femaleVoice = langVoices.find((v) => femaleKeywords.test(v.name) && !maleKeywords.test(v.name));
+
+  // 2순위: 남성 키워드가 없는 음성 (대부분 기본 여성)
+  const nonMaleVoice = langVoices.find((v) => !maleKeywords.test(v.name));
+
+  // 3순위: 아무 음성
+  const selectedVoice = femaleVoice ?? nonMaleVoice ?? langVoices[0];
+  if (selectedVoice) utterance.voice = selectedVoice;
 
   utterance.onend = () => onEnd?.();
   utterance.onerror = () => onEnd?.();
