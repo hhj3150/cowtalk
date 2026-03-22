@@ -79,8 +79,18 @@ function speak(text: string, onEnd?: () => void): void {
   // 2순위: 남성 키워드가 없는 음성 (대부분 기본 여성)
   const nonMaleVoice = langVoices.find((v) => !maleKeywords.test(v.name));
 
-  // 3순위: 아무 음성
-  const selectedVoice = femaleVoice ?? nonMaleVoice ?? langVoices[0];
+  // 3순위: 아무 해당 언어 음성
+  let selectedVoice = femaleVoice ?? nonMaleVoice ?? langVoices[0];
+
+  // 해당 언어 음성이 없으면 → 영어 여성 음성으로 fallback
+  if (!selectedVoice && langVoices.length === 0) {
+    const enVoices = voices.filter((v) => v.lang.startsWith('en'));
+    selectedVoice = enVoices.find((v) => femaleKeywords.test(v.name) && !maleKeywords.test(v.name))
+      ?? enVoices.find((v) => !maleKeywords.test(v.name))
+      ?? enVoices[0];
+    if (selectedVoice) utterance.lang = 'en-US';
+  }
+
   if (selectedVoice) utterance.voice = selectedVoice;
 
   utterance.onend = () => onEnd?.();
