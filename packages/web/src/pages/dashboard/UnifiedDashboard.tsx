@@ -9,17 +9,13 @@ import {
   useAiBriefing,
   useAlertTrend,
   useHerdComposition,
-  useFarmComparison,
   useTemperatureDistribution,
   useEventTimeline,
   useVitalMonitor,
   useFarmMapMarkers,
   useEpidemicIntelligence,
   useFarmHealthScores,
-  useVetRoute,
-  useFarmProfit,
   useBreedingPipeline,
-  useInseminationRoute,
   useSovereignAiStats,
 } from '@web/hooks/useUnifiedDashboard';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -34,20 +30,15 @@ import {
   InlineAiChat,
   HerdCompositionChart,
   AlertTrendChart,
-  FarmComparisonRadar,
   TemperatureScatter,
   EventTimelineChart,
   EpidemicCommandCenter,
   FarmHealthScoreWidget,
-  VetRouteWidget,
-  FarmProfitWidget,
   BreedingPipelineWidget,
-  InseminationRouteWidget,
   AlarmLabelChatModal,
   SovereignAiWidget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
-import { FeverRankingWidget } from '@web/components/unified-dashboard/FeverRankingWidget';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
 import { EpidemicAlertBanner } from '@web/components/epidemic/EpidemicAlertBanner';
 import { EpidemicMapWidget } from '@web/components/epidemic/EpidemicMapWidget';
@@ -345,16 +336,12 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: rankingData } = useFarmRanking();
   const { data: alertTrendData } = useAlertTrend();
   const { data: herdCompData } = useHerdComposition();
-  const { data: farmCompData } = useFarmComparison();
   const { data: tempDistData } = useTemperatureDistribution();
   const { data: timelineData } = useEventTimeline();
   const { data: vitalData } = useVitalMonitor();
   const { data: mapData } = useFarmMapMarkers();
   const { data: epidemicData } = useEpidemicIntelligence();
   const { data: healthScoresData } = useFarmHealthScores();
-  const { data: vetRouteData } = useVetRoute();
-  const { data: inseminationRouteData } = useInseminationRoute();
-  const { data: farmProfitData } = useFarmProfit();
   const { data: breedingData } = useBreedingPipeline();
   const { data: sovereignStats } = useSovereignAiStats();
   const user = useAuthStore((s) => s.user);
@@ -410,19 +397,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
     () => buildFarmMapMarkers(mapData?.markers ?? [], alarms),
     [mapData?.markers, alarms],
   );
-
-  // radar 차트 데이터 변환
-  const radarFarms = (farmCompData ?? []).map((f) => ({
-    farmName: f.farmName,
-    metrics: {
-      건강점수: f.metrics.healthScore,
-      번식성적: f.metrics.breedingScore,
-      반추활동: f.metrics.ruminationScore,
-      체온안정: f.metrics.tempStability,
-      사료효율: f.metrics.feedEfficiency,
-      센서가동률: f.metrics.sensorRate,
-    },
-  }));
 
   return (
     <div style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: '20px 24px 40px' }}>
@@ -491,14 +465,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
           </>)}
 
-          {/* ── 농장 수익성 ── */}
-          {isVisible('farm_profit') && (<>
-          <SectionLabel>Farm Economics</SectionLabel>
-          {farmProfitData && <FarmProfitWidget data={farmProfitData} />}
-          </>)}
-
           {/* ── 분석 차트 ── */}
-          {(isVisible('herd_composition_chart') || isVisible('alert_trend_chart') || isVisible('farm_comparison_radar')) && (<>
+          {(isVisible('herd_composition_chart') || isVisible('alert_trend_chart')) && (<>
           <SectionLabel>Analytics</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
             {isVisible('herd_composition_chart') && (
@@ -519,14 +487,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
             </ChartCard>
             )}
 
-            {isVisible('farm_comparison_radar') && (
-            <ChartCard title="농장 비교 (Top 3)" icon="🎯" delay={150}>
-              {radarFarms.length > 0
-                ? <FarmComparisonRadar farms={radarFarms} height={240} />
-                : LOADING_PLACEHOLDER
-              }
-            </ChartCard>
-            )}
           </div>
           </>)}
 
@@ -583,25 +543,12 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
               {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
-              {isVisible('fever_ranking') && <FeverRankingWidget farmId={selectedFarmId} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
               {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => selectFarm(fid)} />}
               {isVisible('epidemic_map') && <EpidemicMapWidget onClusterClick={(id) => setEpidemicClusterId(id)} />}
             </div>
 
             {isVisible('inline_ai_chat') && <InlineAiChat />}
           </div>
-          </>)}
-
-          {/* ── 수의사 경로 ── */}
-          {isVisible('vet_route') && (<>
-          <SectionLabel>Vet Route Optimizer</SectionLabel>
-          {vetRouteData && <VetRouteWidget data={vetRouteData} />}
-          </>)}
-
-          {/* ── 인공수정 경로 ── */}
-          {isVisible('insemination_route') && (<>
-          <SectionLabel>AI Insemination Route</SectionLabel>
-          {inseminationRouteData && <InseminationRouteWidget data={inseminationRouteData} />}
           </>)}
 
           {/* ── 소버린 AI 지식 강화 루프 ── */}
