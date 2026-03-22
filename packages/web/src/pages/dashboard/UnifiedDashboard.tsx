@@ -47,6 +47,7 @@ import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonito
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
+import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 // ROLE_LABELS는 향후 역할별 라벨 표시에 사용 예정
 import type {} from '@web/config/dashboard-widgets';
 
@@ -599,6 +600,17 @@ export default function UnifiedDashboard(): React.JSX.Element {
           onClose={() => setLabelChatAnimalId(null)}
         />
       )}
+
+      {/* 지니 AI 음성 어시스턴트 */}
+      <GeniVoiceAssistant
+        dashboardContext={data ? {
+          totalAlarms: alarms.length,
+          criticalCount: alarms.filter((a) => a.severity === 'critical').length,
+          healthIssues: data.herdOverview?.healthIssues ?? 0,
+          farmCount: data.totalFarms ?? 146,
+          animalCount: data.herdOverview?.totalAnimals ?? 7143,
+        } : undefined}
+      />
     </div>
   );
 }
