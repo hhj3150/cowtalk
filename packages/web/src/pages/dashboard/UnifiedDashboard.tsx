@@ -48,6 +48,7 @@ import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dash
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { useIsMobile } from '@web/hooks/useIsMobile';
 // ROLE_LABELS는 향후 역할별 라벨 표시에 사용 예정
 import type {} from '@web/config/dashboard-widgets';
 
@@ -75,7 +76,8 @@ function FarmFilterDropdown(): React.JSX.Element {
         padding: '8px 14px',
         fontSize: 13,
         cursor: 'pointer',
-        minWidth: 220,
+        minWidth: 0,
+        width: '100%',
         outline: 'none',
         transition: 'border-color 0.2s',
       }}
@@ -349,6 +351,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const { isVisible, roleLabel, isFarmer } = useRoleDashboard();
+  const isMobile = useIsMobile();
 
   // 농장주: 단일 농장이면 자동 선택
   useEffect(() => {
@@ -400,42 +403,73 @@ export default function UnifiedDashboard(): React.JSX.Element {
   );
 
   return (
-    <div style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: '20px 24px 40px' }}>
+    <div style={{
+      background: 'var(--ct-bg)',
+      color: 'var(--ct-text)',
+      minHeight: '100vh',
+      padding: isMobile ? '12px 10px 80px' : '20px 24px 40px',
+      maxWidth: '100vw',
+      overflowX: 'hidden',
+      boxSizing: 'border-box',
+    }}>
       {/* ── Header ── */}
       <header style={{
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'space-between',
-        marginBottom: 24,
-        paddingBottom: 16,
+        gap: isMobile ? 8 : 0,
+        marginBottom: isMobile ? 12 : 24,
+        paddingBottom: isMobile ? 10 : 16,
         borderBottom: '1px solid var(--ct-border)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <FarmFilterDropdown />
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <h1 style={{
-            fontSize: 18,
-            fontWeight: 800,
-            letterSpacing: '-0.3px',
-            background: 'linear-gradient(135deg, var(--ct-text), var(--ct-primary))',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}>
-            CowTalk 통합 대시보드
-          </h1>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-          <span style={{ color: 'var(--ct-text-secondary)', fontWeight: 500 }}>{user?.name ?? ''} ({roleLabel})</span>
-          <span style={{
-            width: 4,
-            height: 4,
-            borderRadius: '50%',
-            background: 'var(--ct-text-muted)',
-            display: 'inline-block',
-          }} />
-          <span style={{ color: 'var(--ct-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{lastUpdated}</span>
-        </div>
+        {isMobile ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h1 style={{
+                fontSize: 16,
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, var(--ct-text), var(--ct-primary))',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                margin: 0,
+              }}>
+                CowTalk
+              </h1>
+              <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>{user?.name ?? ''} ({roleLabel})</span>
+            </div>
+            <FarmFilterDropdown />
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <FarmFilterDropdown />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <h1 style={{
+                fontSize: 18,
+                fontWeight: 800,
+                letterSpacing: '-0.3px',
+                background: 'linear-gradient(135deg, var(--ct-text), var(--ct-primary))',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>
+                CowTalk 통합 대시보드
+              </h1>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+              <span style={{ color: 'var(--ct-text-secondary)', fontWeight: 500 }}>{user?.name ?? ''} ({roleLabel})</span>
+              <span style={{
+                width: 4,
+                height: 4,
+                borderRadius: '50%',
+                background: 'var(--ct-text-muted)',
+                display: 'inline-block',
+              }} />
+              <span style={{ color: 'var(--ct-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{lastUpdated}</span>
+            </div>
+          </>
+        )}
       </header>
 
       {isLoading ? (
@@ -470,7 +504,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* 알림 트렌드: 전체 뷰에서도 의미 있음 (전국 발생 추이) */}
           {isVisible('alert_trend_chart') && (<>
           <SectionLabel>Analytics</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: isMobile ? 12 : 16 }}>
             {isVisible('alert_trend_chart') && (
             <ChartCard title="알림 트렌드 (14일)" icon="📊" delay={100}>
               {alertTrendData && alertTrendData.length > 0
@@ -507,7 +541,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
 
           {(isVisible('temperature_scatter') || isVisible('event_timeline_chart')) && (
-          <div style={{ display: 'grid', gridTemplateColumns: isVisible('temperature_scatter') && isVisible('event_timeline_chart') ? '1fr 1fr' : '1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (isVisible('temperature_scatter') && isVisible('event_timeline_chart') ? '1fr 1fr' : '1fr'), gap: isMobile ? 12 : 16 }}>
             {isVisible('temperature_scatter') && (
             <ChartCard title="위내센서 체온 (24시간)" icon="🌡️" delay={200}>
               {tempDistData && tempDistData.timeline && tempDistData.timeline.length > 0
@@ -544,7 +578,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 운영 패널 ── */}
           {(isVisible('live_alarm_feed') || isVisible('todo_list') || isVisible('inline_ai_chat')) && (<>
           <SectionLabel>Operations</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: isVisible('inline_ai_chat') ? '1fr 1fr' : '1fr', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: (isMobile || !isVisible('inline_ai_chat')) ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
               {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}

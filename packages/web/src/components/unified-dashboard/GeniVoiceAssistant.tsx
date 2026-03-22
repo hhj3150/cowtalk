@@ -5,6 +5,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useFarmStore } from '@web/stores/farm.store';
+import { useIsMobile } from '@web/hooks/useIsMobile';
 import axios from 'axios';
 
 // ── 타입 ──
@@ -105,6 +106,7 @@ export function GeniVoiceAssistant({
 }: GeniVoiceAssistantProps): React.JSX.Element {
   const [state, setState] = useState<GeniState>('idle');
   const [isOpen, setIsOpen] = useState(false);
+  const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly GeniMessage[]>([]);
   const [transcript, setTranscript] = useState('');
   const [inputText, setInputText] = useState('');
@@ -331,12 +333,13 @@ export function GeniVoiceAssistant({
   return (
     <div style={{
       position: 'fixed',
-      bottom: 24,
-      right: 24,
-      width: 400,
-      maxHeight: '70vh',
+      bottom: isMobile ? 0 : 24,
+      right: isMobile ? 0 : 24,
+      left: isMobile ? 0 : undefined,
+      width: isMobile ? '100%' : 400,
+      maxHeight: isMobile ? '85vh' : '70vh',
+      borderRadius: isMobile ? '16px 16px 0 0' : 16,
       background: 'var(--ct-card, #1e293b)',
-      borderRadius: 16,
       border: '1px solid var(--ct-border, #334155)',
       boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
       display: 'flex',

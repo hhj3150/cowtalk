@@ -1,5 +1,11 @@
 @import 'tailwindcss';
 
+/* ── 모바일 좌우 스크롤 방지 ── */
+html, body, #root {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 /* ── CowTalk v5 Design Tokens ── */
 :root {
   /* Primary */

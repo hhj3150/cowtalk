@@ -7,6 +7,21 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@web/hooks/useAuth';
 import axios from 'axios';
 
+// ── 모바일 감지 훅 ──
+
+function useIsMobile(breakpoint = 768): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= breakpoint
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 // ── 공개 통계 타입 ──
 
 interface PublicStats {
@@ -115,6 +130,7 @@ export default function LoginPage(): React.JSX.Element {
   const [quickLoggingEmail, setQuickLoggingEmail] = useState<string | null>(null);
   const { login, quickLogin, isLoggingIn, loginError, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // 실제 통계 조회
   useEffect(() => {
@@ -201,17 +217,49 @@ export default function LoginPage(): React.JSX.Element {
   ];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: isMobile ? 'column' : 'row',
+      minHeight: '100vh',
+      overflow: 'hidden',
+    }}>
+      {/* ── Mobile: 상단 히어로 요약 ── */}
+      {isMobile && (
+        <div
+          style={{
+            background: 'linear-gradient(160deg, #0f4c3a 0%, #1a6b4f 50%, #2a8f6a 100%)',
+            padding: '32px 20px 24px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 }}>
+            Cow<span style={{ color: '#86efac' }}>Talk</span>
+          </h2>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', margin: '4px 0 16px' }}>
+            Cows speak through data. We translate it into action.
+          </p>
+          <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <StatItem value={heroFarms} label="Farms" />
+            <StatItem value={heroCattle} label="Cattle" />
+            <StatItem value={heroMonitoring} label="24/7" />
+            <StatItem value={heroDetection} label="Detection" />
+          </div>
+        </div>
+      )}
+
       {/* ── Left Panel: Login Form ── */}
       <div
         style={{
-          flex: '0 0 460px',
+          flex: isMobile ? '1' : '0 0 460px',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'center',
-          padding: '40px 36px',
+          justifyContent: isMobile ? 'flex-start' : 'center',
+          padding: isMobile ? '24px 20px' : '40px 36px',
           background: '#ffffff',
           overflowY: 'auto',
+          width: isMobile ? '100%' : undefined,
+          maxWidth: isMobile ? '100%' : undefined,
+          boxSizing: 'border-box',
         }}
       >
         {/* Logo */}
@@ -229,7 +277,7 @@ export default function LoginPage(): React.JSX.Element {
 
         {/* ── Login form ── */}
         <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
               <label
                 htmlFor="email"
@@ -346,13 +394,47 @@ export default function LoginPage(): React.JSX.Element {
         >
           Demo mode &mdash; show to visitors without login
         </button>
+        {/* 모바일: 역할 선택 버튼 */}
+        {isMobile && (
+          <div style={{ marginTop: 20 }}>
+            <p style={{ fontSize: 11, color: '#999', textAlign: 'center', marginBottom: 8 }}>
+              역할을 선택하여 바로 입장
+            </p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {ROLE_BADGES.map((role) => {
+                const isLoading = quickLoggingEmail === role.email;
+                return (
+                  <button
+                    key={role.email}
+                    type="button"
+                    disabled={isLoggingIn}
+                    onClick={() => { handleQuickLogin({ ...ROLE_PRESETS.find((p) => p.email === role.email)!, email: role.email }); }}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 16,
+                      background: isLoading ? '#16a34a' : '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: isLoading ? '#fff' : '#16a34a',
+                      cursor: isLoggingIn ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {isLoading ? '입장 중...' : role.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <p style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 16 }}>
           CowTalk v5.0 | D2O Corp. | Powered by AI
         </p>
       </div>
 
-      {/* ── Right Panel: Hero Showcase ── */}
-      <div
+      {/* ── Right Panel: Hero Showcase (데스크톱 전용) ── */}
+      {!isMobile && <div
         style={{
           flex: 1,
           background: 'linear-gradient(160deg, #0f4c3a 0%, #1a6b4f 30%, #1e7a5a 60%, #2a8f6a 100%)',
@@ -504,7 +586,7 @@ export default function LoginPage(): React.JSX.Element {
         >
           D2O Corp. &mdash; Dairy + Beef | Korea + Global&nbsp;&nbsp;&nbsp;&nbsp;Powered by CowTalk AI
         </p>
-      </div>
+      </div>}
     </div>
   );
 }
