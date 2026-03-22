@@ -106,6 +106,7 @@ export function GeniVoiceAssistant({
   const [transcript, setTranscript] = useState('');
   const [inputText, setInputText] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const transcriptRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
@@ -208,36 +209,41 @@ export function GeniVoiceAssistant({
     recognition.onstart = () => {
       setState('listening');
       setTranscript('');
+      transcriptRef.current = '';
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = '';
-      let final = '';
+      let finalText = '';
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         if (result && result[0]) {
           if (result.isFinal) {
-            final += result[0].transcript;
+            finalText += result[0].transcript;
           } else {
             interim += result[0].transcript;
           }
         }
       }
-      setTranscript(final || interim);
+      const text = finalText || interim;
+      setTranscript(text);
+      transcriptRef.current = text;
     };
 
     recognition.onend = () => {
-      const finalText = transcript.trim();
+      const finalText = transcriptRef.current.trim();
       if (finalText) {
         askGeni(finalText);
       } else {
         setState('idle');
       }
+      transcriptRef.current = '';
     };
 
     recognition.onerror = () => {
       setState('idle');
       setTranscript('');
+      transcriptRef.current = '';
     };
 
     recognitionRef.current = recognition;
