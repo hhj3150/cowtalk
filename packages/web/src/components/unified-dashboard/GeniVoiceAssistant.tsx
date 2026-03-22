@@ -515,9 +515,14 @@ export function GeniVoiceAssistant({
         alignItems: 'center',
       }}>
         {/* 마이크 버튼 */}
-        {hasSpeechRecognition && (
           <button
-            onClick={state === 'listening' ? stopListening : startListening}
+            onClick={() => {
+              if (!hasSpeechRecognition) {
+                askGeni('오늘 긴급한 소 알려줘');
+                return;
+              }
+              if (state === 'listening') { stopListening(); } else { startListening(); }
+            }}
             disabled={state === 'thinking'}
             style={{
               width: 40,
@@ -544,7 +549,6 @@ export function GeniVoiceAssistant({
               <line x1="12" y1="19" x2="12" y2="23" />
             </svg>
           </button>
-        )}
 
         {/* 텍스트 입력 */}
         <input
