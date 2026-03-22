@@ -82,10 +82,9 @@ function daysAgo(days: number): Date {
   return d;
 }
 
+// 최근 24시간 기준 (자정 리셋 방지 — 항상 데이터가 있도록)
 function todayStart(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+  return new Date(Date.now() - 24 * 60 * 60 * 1000);
 }
 
 // farmId 조건 빌더 — null이면 전체 농장

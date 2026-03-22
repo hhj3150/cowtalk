@@ -331,9 +331,8 @@ async function buildVetDashboard(): Promise<DashboardData> {
     .orderBy(sql`count(*) DESC`)
     .limit(10);
 
-  // 오늘 기준 이벤트 카운트 (각 농장별)
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // 최근 24시간 기준 이벤트 카운트 (자정 리셋 방지)
+  const todayStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const todayFarmEvents = await db.select({
     farmId: smaxtecEvents.farmId,
     eventCount: count(),

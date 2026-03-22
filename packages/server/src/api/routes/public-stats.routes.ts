@@ -78,10 +78,9 @@ publicStatsRouter.get('/stats', async (_req: Request, res: Response, next: NextF
           isNotNull(animals.currentDeviceId),
         )),
 
-      // 4. 금일 알림 수
+      // 4. 최근 24시간 알림 수 (자정 리셋 방지)
       (() => {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        const todayStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
         return db.select({ alertCount: count() })
           .from(smaxtecEvents)
           .where(gt(smaxtecEvents.detectedAt, todayStart));
