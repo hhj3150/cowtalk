@@ -50,18 +50,25 @@ function speak(text: string, onEnd?: () => void): void {
     .replace(/\.{2,}/g, '.')
     .slice(0, 800);
 
-  // 텍스트에서 언어 자동 감지
-  const hasKorean = /[가-힣]/.test(cleanText);
-  const hasCyrillic = /[а-яА-ЯЁё]/.test(cleanText);
-  const detectedLang = hasKorean ? 'ko-KR' : hasCyrillic ? 'ru-RU' : 'en-US';
+  // 텍스트에서 언어 자동 감지 (비율 기반 — 주 언어 판별)
+  const letters = cleanText.replace(/[^a-zA-Z가-힣а-яА-ЯЁё]/g, '');
+  const koCount = (letters.match(/[가-힣]/g) ?? []).length;
+  const cyCount = (letters.match(/[а-яА-ЯЁё]/g) ?? []).length;
+  const enCount = (letters.match(/[a-zA-Z]/g) ?? []).length;
+  const total = koCount + cyCount + enCount || 1;
+
+  let detectedLang = 'en-US';
+  if (koCount / total > 0.3) detectedLang = 'ko-KR';
+  else if (cyCount / total > 0.3) detectedLang = 'ru-RU';
 
   const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = detectedLang;
-  utterance.rate = 0.95;
+  utterance.rate = detectedLang === 'ko-KR' ? 0.95 : 0.9;
   utterance.pitch = 1.05;
 
   const voices = window.speechSynthesis.getVoices();
-  const matchVoice = voices.find((v) => v.lang.startsWith(detectedLang.split('-')[0]!));
+  const langPrefix = detectedLang.split('-')[0]!;
+  const matchVoice = voices.find((v) => v.lang.startsWith(langPrefix));
   if (matchVoice) utterance.voice = matchVoice;
 
   utterance.onend = () => onEnd?.();
