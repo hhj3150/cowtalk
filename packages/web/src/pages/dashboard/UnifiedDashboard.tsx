@@ -27,7 +27,6 @@ import {
   TodoListPanel,
   LiveAlarmFeed,
   FarmRankingWidget,
-  InlineAiChat,
   HerdCompositionChart,
   AlertTrendChart,
   TemperatureScatter,
@@ -575,18 +574,18 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
           </>)}
 
-          {/* ── 운영 패널 ── */}
-          {(isVisible('live_alarm_feed') || isVisible('todo_list') || isVisible('inline_ai_chat')) && (<>
+          {/* ── 운영 패널 (AI 채팅은 지니로 통합) ── */}
+          {(isVisible('live_alarm_feed') || isVisible('todo_list')) && (<>
           <SectionLabel>Operations</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: (isMobile || !isVisible('inline_ai_chat')) ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
               {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => selectFarm(fid)} />}
               {isVisible('epidemic_map') && <EpidemicMapWidget onClusterClick={(id) => setEpidemicClusterId(id)} />}
             </div>
-
-            {isVisible('inline_ai_chat') && <InlineAiChat />}
           </div>
           </>)}
 
@@ -594,16 +593,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {isVisible('sovereign_ai') && (<>
           <SectionLabel>Sovereign AI Knowledge Loop</SectionLabel>
           {sovereignStats && (
-            <SovereignAiWidget
-              stats={sovereignStats}
-              onOpenLabelChat={() => {
-                // 첫 번째 알람 동물을 기본값으로 사용
-                const firstAlarm = alarms[0];
-                if (firstAlarm?.animalId) {
-                  setLabelChatAnimalId(firstAlarm.animalId);
-                }
-              }}
-            />
+            <SovereignAiWidget stats={sovereignStats} />
           )}
           </>)}
           </div>
