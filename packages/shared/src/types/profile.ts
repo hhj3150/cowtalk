@@ -13,14 +13,41 @@ export type BreedType = 'dairy' | 'beef';
 // ===========================
 
 export type SmaxtecEventType =
+  // 발정
   | 'estrus'
-  | 'health_warning'
+  | 'estrus_dnb'
+  // 번식
+  | 'insemination'
+  | 'pregnancy_check'
+  | 'fertility_warning'
+  | 'no_insemination'
+  // 분만
   | 'calving'
-  | 'feeding_warning'
+  | 'calving_detection'
+  | 'calving_confirmation'
+  | 'calving_waiting'
+  | 'abortion'
+  // 체온
+  | 'temperature_high'
+  | 'temperature_low'
   | 'temperature_warning'
-  | 'activity_warning'
+  // 반추
+  | 'rumination_decrease'
   | 'rumination_warning'
-  | 'drinking_warning';
+  // 활동
+  | 'activity_increase'
+  | 'activity_decrease'
+  | 'activity_warning'
+  // 건강 종합
+  | 'health_general'
+  | 'health_warning'
+  | 'clinical_condition'
+  // 사양
+  | 'feeding_warning'
+  | 'drinking_warning'
+  // 관리
+  | 'dry_off'
+  | 'management';
 
 export interface SmaxtecEvent {
   readonly eventId: string;

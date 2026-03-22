@@ -100,6 +100,10 @@ export abstract class AbstractConnector<T = unknown> implements BaseConnector<T>
   abstract fetch(since?: Date): Promise<FetchResult<T>>;
   abstract disconnect(): Promise<void>;
 
+  getStatus(): ConnectorStatus {
+    return this.status;
+  }
+
   async healthCheck(): Promise<ConnectorHealth> {
     return {
       connectorId: this.config.id,

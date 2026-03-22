@@ -856,6 +856,86 @@ export const genomicData = pgTable('genomic_data', {
 ]);
 
 // ======================================================================
+// W. 전염병 조기경보
+// ======================================================================
+
+export const diseaseClusters = pgTable('disease_clusters', {
+  clusterId: uuid('cluster_id').primaryKey().defaultRandom(),
+  diseaseType: varchar('disease_type', { length: 100 }).notNull(),
+  centerLat: real('center_lat').notNull(),
+  centerLng: real('center_lng').notNull(),
+  radiusKm: real('radius_km').notNull(),
+  level: varchar('level', { length: 20 }).notNull().default('watch'), // normal, watch, warning, outbreak
+  status: varchar('status', { length: 20 }).notNull().default('active'), // active, monitoring, resolved, merged
+  farmCount: integer('farm_count').notNull().default(0),
+  eventCount: integer('event_count').notNull().default(0),
+  spreadRateFarmsPerDay: real('spread_rate_farms_per_day').notNull().default(0),
+  spreadRateEventsPerDay: real('spread_rate_events_per_day').notNull().default(0),
+  spreadDirection: varchar('spread_direction', { length: 50 }),
+  spreadTrend: varchar('spread_trend', { length: 20 }).notNull().default('stable'), // accelerating, stable, decelerating
+  metadata: jsonb('metadata').notNull().default('{}'),
+  firstDetectedAt: timestamp('first_detected_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUpdatedAt: timestamp('last_updated_at', { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('disease_clusters_level_idx').on(table.level),
+  index('disease_clusters_status_idx').on(table.status),
+  index('disease_clusters_disease_type_idx').on(table.diseaseType),
+  index('disease_clusters_first_detected_idx').on(table.firstDetectedAt),
+]);
+
+export const clusterFarmMemberships = pgTable('cluster_farm_memberships', {
+  membershipId: uuid('membership_id').primaryKey().defaultRandom(),
+  clusterId: uuid('cluster_id').notNull().references(() => diseaseClusters.clusterId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  eventCount: integer('event_count').notNull().default(0),
+  latestEventAt: timestamp('latest_event_at', { withTimezone: true }).notNull().defaultNow(),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('cluster_farm_memberships_cluster_id_idx').on(table.clusterId),
+  index('cluster_farm_memberships_farm_id_idx').on(table.farmId),
+  uniqueIndex('cluster_farm_unique').on(table.clusterId, table.farmId),
+]);
+
+export const epidemicWarnings = pgTable('epidemic_warnings', {
+  warningId: uuid('warning_id').primaryKey().defaultRandom(),
+  clusterId: uuid('cluster_id').notNull().references(() => diseaseClusters.clusterId),
+  level: varchar('level', { length: 20 }).notNull(), // watch, warning, outbreak
+  scope: varchar('scope', { length: 20 }).notNull().default('district'), // farm, district, province, brand, national
+  regionId: uuid('region_id').references(() => regions.regionId),
+  aiInterpretation: jsonb('ai_interpretation'),
+  status: varchar('status', { length: 20 }).notNull().default('active'), // active, acknowledged, resolved
+  acknowledgedBy: uuid('acknowledged_by').references(() => users.userId),
+  acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('epidemic_warnings_cluster_id_idx').on(table.clusterId),
+  index('epidemic_warnings_level_idx').on(table.level),
+  index('epidemic_warnings_status_idx').on(table.status),
+  index('epidemic_warnings_region_id_idx').on(table.regionId),
+]);
+
+export const epidemicDailySnapshots = pgTable('epidemic_daily_snapshots', {
+  snapshotId: uuid('snapshot_id').primaryKey().defaultRandom(),
+  date: date('date').notNull(),
+  regionId: uuid('region_id').references(() => regions.regionId),
+  clusterCount: integer('cluster_count').notNull().default(0),
+  warningLevel: varchar('warning_level', { length: 20 }).notNull().default('normal'),
+  totalHealthEvents: integer('total_health_events').notNull().default(0),
+  totalAffectedFarms: integer('total_affected_farms').notNull().default(0),
+  totalAffectedAnimals: integer('total_affected_animals').notNull().default(0),
+  metrics: jsonb('metrics').notNull().default('{}'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('epidemic_daily_snapshots_date_idx').on(table.date),
+  index('epidemic_daily_snapshots_region_id_idx').on(table.regionId),
+  uniqueIndex('epidemic_daily_snapshots_date_region_unique').on(table.date, table.regionId),
+]);
+
+// ======================================================================
 // Relations (Drizzle ORM)
 // ======================================================================
 
@@ -943,4 +1023,186 @@ export const alertEscalationsRelations = relations(alertEscalations, ({ one }) =
 
 export const genomicDataRelations = relations(genomicData, ({ one }) => ({
   animal: one(animals, { fields: [genomicData.animalId], references: [animals.animalId] }),
+}));
+
+export const diseaseClustersRelations = relations(diseaseClusters, ({ many }) => ({
+  farmMemberships: many(clusterFarmMemberships),
+  warnings: many(epidemicWarnings),
+}));
+
+// ======================================================================
+// K. 이벤트 레이블링 (강화학습 피드백)
+// ======================================================================
+
+export const eventLabels = pgTable('event_labels', {
+  labelId: uuid('label_id').primaryKey().defaultRandom(),
+  eventId: uuid('event_id').notNull().references(() => smaxtecEvents.eventId),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  // AI가 예측한 값
+  predictedType: varchar('predicted_type', { length: 50 }).notNull(),
+  predictedSeverity: varchar('predicted_severity', { length: 20 }).notNull(),
+  // 사용자가 판정한 실제 값
+  verdict: varchar('verdict', { length: 20 }).notNull(), // confirmed, false_positive, modified, missed
+  actualType: varchar('actual_type', { length: 50 }),     // 실제 이벤트 타입 (수정 시)
+  actualSeverity: varchar('actual_severity', { length: 20 }), // 실제 심각도 (수정 시)
+  actualDiagnosis: text('actual_diagnosis'),               // 실제 진단명 (자유 입력)
+  // 추가 메타
+  actionTaken: text('action_taken'),                       // 취한 조치
+  outcome: varchar('outcome', { length: 30 }),             // resolved, ongoing, worsened, no_action
+  notes: text('notes'),
+  // 추적
+  labeledBy: uuid('labeled_by').references(() => users.userId),
+  labeledAt: timestamp('labeled_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('event_labels_event_id_idx').on(table.eventId),
+  index('event_labels_farm_id_idx').on(table.farmId),
+  index('event_labels_animal_id_idx').on(table.animalId),
+  index('event_labels_labeled_at_idx').on(table.labeledAt),
+]);
+
+// 예후 추적 (Sovereign AI — 종단적 학습 데이터)
+// 진단/처방 후 시간 경과에 따른 결과 기록 → AI 인과관계 학습
+export const labelFollowUps = pgTable('label_follow_ups', {
+  followUpId: uuid('follow_up_id').primaryKey().defaultRandom(),
+  labelId: uuid('label_id').notNull().references(() => eventLabels.labelId),
+  eventId: uuid('event_id').notNull().references(() => smaxtecEvents.eventId),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  // 추적 시점
+  daysSinceLabel: integer('days_since_label').notNull(),     // D+3, D+7, D+14 등
+  followUpDate: timestamp('follow_up_date', { withTimezone: true }).notNull(),
+  // 예후 상태
+  status: varchar('status', { length: 30 }).notNull(),       // recovered, improving, unchanged, worsened, relapsed, dead
+  // 임상 관찰
+  clinicalNotes: text('clinical_notes'),                     // 현장 관찰 사항
+  temperature: real('temperature'),                           // 체온 (선택)
+  appetite: varchar('appetite', { length: 20 }),              // normal, decreased, none
+  mobility: varchar('mobility', { length: 20 }),              // normal, reduced, lame
+  milkYieldChange: varchar('milk_yield_change', { length: 20 }), // normal, decreased, increased, no_milk
+  // 추가 조치
+  additionalTreatment: text('additional_treatment'),          // 추가 처치 내용
+  treatmentChanged: boolean('treatment_changed').notNull().default(false),
+  // AI 대화 요약 (예후 기록 시 AI와 대화한 내용)
+  conversationSummary: text('conversation_summary'),
+  // 추적
+  recordedBy: uuid('recorded_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('label_follow_ups_label_id_idx').on(table.labelId),
+  index('label_follow_ups_event_id_idx').on(table.eventId),
+  index('label_follow_ups_animal_id_idx').on(table.animalId),
+  index('label_follow_ups_follow_up_date_idx').on(table.followUpDate),
+]);
+
+// ======================================================================
+// L. 임상 관찰 기록 (Sovereign AI — 수동 관찰 데이터)
+// 이벤트 유무와 관계없이 모든 소에 대한 현장 관찰 기록
+// 분만, 수정, 치료, 일반 관찰 등 센서가 잡지 못하는 모든 기록
+// ======================================================================
+
+export const clinicalObservations = pgTable('clinical_observations', {
+  observationId: uuid('observation_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  // 관찰 유형
+  observationType: varchar('observation_type', { length: 50 }).notNull(),
+  // calving, insemination, hoof_treatment, vaccination, deworming,
+  // weight_measurement, body_condition, clinical_exam, treatment,
+  // surgery, injury, behavior_change, feed_change, general_note
+  // 상세 내용
+  description: text('description').notNull(),
+  // 임상 지표 (선택)
+  temperature: real('temperature'),
+  bodyConditionScore: real('body_condition_score'),    // 1.0 ~ 5.0
+  weight: real('weight'),                              // kg
+  // 약물/처치
+  medication: text('medication'),                       // 사용 약물
+  dosage: text('dosage'),                               // 용량
+  treatmentDuration: varchar('treatment_duration', { length: 30 }), // e.g., "3일", "1회"
+  // 번식 관련 (수정, 분만 등)
+  breedingInfo: text('breeding_info'),                  // 정액 정보, 수정사 등
+  calvingInfo: text('calving_info'),                    // 송아지 성별, 난산 여부 등
+  // AI 대화 요약
+  conversationSummary: text('conversation_summary'),
+  // 추적
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  recordedBy: uuid('recorded_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('clinical_observations_animal_id_idx').on(table.animalId),
+  index('clinical_observations_farm_id_idx').on(table.farmId),
+  index('clinical_observations_type_idx').on(table.observationType),
+  index('clinical_observations_observed_at_idx').on(table.observedAt),
+]);
+
+// ======================================================================
+// M. AI 대화 세션 (Conversation-as-Record)
+// 소버린 AI 대화 이력 + 추출된 기록 추적
+// 대화 자체가 기록 수단이 되는 소버린 AI의 핵심 데이터
+// ======================================================================
+
+export const chatSessions = pgTable('chat_sessions', {
+  sessionId: uuid('session_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  userId: uuid('user_id').notNull().references(() => users.userId),
+  // 대화 이력 (jsonb: ChatSessionMessage[])
+  messages: jsonb('messages').notNull().default([]),
+  // 이 대화에서 추출/저장된 기록 ID 목록
+  extractedRecordIds: jsonb('extracted_record_ids').notNull().default([]),
+  // 연결된 smaXtec 이벤트 (알람 소 대화 시)
+  eventId: varchar('event_id', { length: 100 }),
+  // 세션 상태
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  // 타임스탬프
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+}, (table) => [
+  index('chat_sessions_animal_id_idx').on(table.animalId),
+  index('chat_sessions_farm_id_idx').on(table.farmId),
+  index('chat_sessions_user_id_idx').on(table.userId),
+  index('chat_sessions_status_idx').on(table.status),
+]);
+
+// ======================================================================
+// N. 농장 수익성 입력 데이터
+// ======================================================================
+
+export const farmProfitEntries = pgTable('farm_profit_entries', {
+  entryId: uuid('entry_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  period: varchar('period', { length: 7 }).notNull(), // YYYY-MM
+  // 수입 (KRW 정수)
+  revenueMilk: integer('revenue_milk').notNull().default(0),
+  revenueCalves: integer('revenue_calves').notNull().default(0),
+  revenueSubsidies: integer('revenue_subsidies').notNull().default(0),
+  revenueCullSales: integer('revenue_cull_sales').notNull().default(0),
+  revenueOther: integer('revenue_other').notNull().default(0),
+  // 지출 (KRW 정수)
+  costFeed: integer('cost_feed').notNull().default(0),
+  costVet: integer('cost_vet').notNull().default(0),
+  costBreeding: integer('cost_breeding').notNull().default(0),
+  costLabor: integer('cost_labor').notNull().default(0),
+  costFacility: integer('cost_facility').notNull().default(0),
+  costOther: integer('cost_other').notNull().default(0),
+  // 타임스탬프
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('farm_profit_entries_farm_period_idx').on(table.farmId, table.period),
+  index('farm_profit_entries_farm_id_idx').on(table.farmId),
+]);
+
+export const farmProfitEntriesRelations = relations(farmProfitEntries, ({ one }) => ({
+  farm: one(farms, { fields: [farmProfitEntries.farmId], references: [farms.farmId] }),
+}));
+
+export const clusterFarmMembershipsRelations = relations(clusterFarmMemberships, ({ one }) => ({
+  cluster: one(diseaseClusters, { fields: [clusterFarmMemberships.clusterId], references: [diseaseClusters.clusterId] }),
+  farm: one(farms, { fields: [clusterFarmMemberships.farmId], references: [farms.farmId] }),
+}));
+
+export const epidemicWarningsRelations = relations(epidemicWarnings, ({ one }) => ({
+  cluster: one(diseaseClusters, { fields: [epidemicWarnings.clusterId], references: [diseaseClusters.clusterId] }),
+  region: one(regions, { fields: [epidemicWarnings.regionId], references: [regions.regionId] }),
 }));

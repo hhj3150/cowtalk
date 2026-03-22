@@ -11,14 +11,25 @@ import type { AnimalProfile, FarmProfile, RegionalProfile } from '@cowtalk/share
 // ===========================
 
 let redis: Redis | null = null;
+let redisDisabled = false;
 
-export function getRedis(): Redis {
+export function getRedis(): Redis | null {
+  if (redisDisabled || !config.REDIS_ENABLED) {
+    return null;
+  }
   if (!redis) {
     redis = new Redis({
       host: config.REDIS_HOST,
       port: config.REDIS_PORT,
       password: config.REDIS_PASSWORD || undefined,
-      retryStrategy: (times) => Math.min(times * 200, 5000),
+      retryStrategy: (times) => {
+        if (times > 3) {
+          logger.warn('[Cache] Redis unavailable, disabling cache');
+          redisDisabled = true;
+          return null;
+        }
+        return Math.min(times * 200, 5000);
+      },
       lazyConnect: true,
     });
 
@@ -68,6 +79,7 @@ export async function cacheAnimalProfile(
 ): Promise<void> {
   try {
     const r = getRedis();
+    if (!r) return;
     await r.set(animalKey(profile.animalId), JSON.stringify(profile), 'EX', ttl);
   } catch (error) {
     logger.error({ err: error }, '[Cache] Failed to cache animal profile');
@@ -79,6 +91,7 @@ export async function getCachedAnimalProfile(
 ): Promise<AnimalProfile | null> {
   try {
     const r = getRedis();
+    if (!r) return null;
     const raw = await r.get(animalKey(animalId));
     return raw ? (JSON.parse(raw) as AnimalProfile) : null;
   } catch (error) {
@@ -93,6 +106,7 @@ export async function cacheFarmProfile(
 ): Promise<void> {
   try {
     const r = getRedis();
+    if (!r) return;
     await r.set(farmKey(profile.farmId), JSON.stringify(profile), 'EX', ttl);
   } catch (error) {
     logger.error({ err: error }, '[Cache] Failed to cache farm profile');
@@ -104,6 +118,7 @@ export async function getCachedFarmProfile(
 ): Promise<FarmProfile | null> {
   try {
     const r = getRedis();
+    if (!r) return null;
     const raw = await r.get(farmKey(farmId));
     return raw ? (JSON.parse(raw) as FarmProfile) : null;
   } catch (error) {
@@ -119,6 +134,7 @@ export async function cacheRegionalProfile(
   const id = profile.regionId ?? profile.tenantId ?? 'unknown';
   try {
     const r = getRedis();
+    if (!r) return;
     await r.set(regionalKey(id), JSON.stringify(profile), 'EX', ttl);
   } catch (error) {
     logger.error({ err: error }, '[Cache] Failed to cache regional profile');
@@ -130,6 +146,7 @@ export async function getCachedRegionalProfile(
 ): Promise<RegionalProfile | null> {
   try {
     const r = getRedis();
+    if (!r) return null;
     const raw = await r.get(regionalKey(regionId));
     return raw ? (JSON.parse(raw) as RegionalProfile) : null;
   } catch (error) {
@@ -145,6 +162,7 @@ export async function getCachedRegionalProfile(
 export async function invalidateAnimalCache(animalId: string): Promise<void> {
   try {
     const r = getRedis();
+    if (!r) return;
     await r.del(animalKey(animalId));
   } catch (error) {
     logger.error({ err: error }, '[Cache] Failed to invalidate animal cache');
@@ -154,6 +172,7 @@ export async function invalidateAnimalCache(animalId: string): Promise<void> {
 export async function invalidateFarmCache(farmId: string): Promise<void> {
   try {
     const r = getRedis();
+    if (!r) return;
     await r.del(farmKey(farmId));
   } catch (error) {
     logger.error({ err: error }, '[Cache] Failed to invalidate farm cache');

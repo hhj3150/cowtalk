@@ -67,6 +67,13 @@ export interface SmaxtecRawEvent {
   readonly data?: Record<string, unknown>;
 }
 
+/** smaXtec Data API raw response item */
+export interface SmaxtecSensorMetricRaw {
+  readonly metric: string;
+  readonly unit: string;
+  readonly data: readonly (readonly [string, number])[];
+}
+
 export interface SmaxtecSensorData {
   readonly animal_id: string;
   readonly metrics: Record<string, readonly { readonly ts: number; readonly value: number }[]>;
@@ -170,16 +177,38 @@ class SmaxtecApiClient {
   }
 
   // Data API (sensor)
+  // smaXtec v2 returns: [{metric, unit, data: [[ts_string, value], ...]}]
+  // We normalize to: {animal_id, metrics: {temp: [{ts, value}], act: [{ts, value}]}}
   async getSensorData(
     animalId: string,
     metrics = 'temp',
     fromDate?: string,
     toDate?: string,
   ): Promise<SmaxtecSensorData> {
-    const params = new URLSearchParams({ metrics });
+    // smaXtec requires separate `metrics` params: metrics=temp&metrics=act
+    const metricList = metrics.split(',').map((m) => m.trim()).filter(Boolean);
+    const params = new URLSearchParams();
+    for (const m of metricList) params.append('metrics', m);
     if (fromDate) params.append('from_date', fromDate);
     if (toDate) params.append('to_date', toDate);
-    return this.request(this.apiBase, `/data/animals/${animalId}.json?${params.toString()}`);
+
+    const raw = await this.request<readonly SmaxtecSensorMetricRaw[]>(
+      this.apiBase,
+      `/data/animals/${animalId}.json?${params.toString()}`,
+    );
+
+    // Normalize raw array → {metrics: {temp: [{ts, value}]}}
+    const normalized: Record<string, { ts: number; value: number }[]> = {};
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        normalized[item.metric] = item.data.map(([tsStr, value]: readonly [string, number]) => ({
+          ts: new Date(tsStr).getTime() / 1000,
+          value,
+        }));
+      }
+    }
+
+    return { animal_id: animalId, metrics: normalized };
   }
 
   invalidateToken(): void {

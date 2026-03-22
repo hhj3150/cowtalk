@@ -7,6 +7,7 @@ import { getDb } from '../config/database.js';
 import {
   animals, farms, regions, smaxtecEvents,
   sensorMeasurements, breedingEvents, healthEvents,
+  diseaseClusters, clusterFarmMemberships,
 } from '../db/schema.js';
 import { resolveBreedType } from '@cowtalk/shared';
 import type {
@@ -16,6 +17,8 @@ import type {
   FarmSummaryInProfile,
   BreedType,
 } from '@cowtalk/shared';
+import type { ClusterSignal } from '@cowtalk/shared';
+import { logger } from '../lib/logger.js';
 
 // ===========================
 // buildAnimalProfile
@@ -425,13 +428,16 @@ export async function buildRegionalProfile(
     });
   }
 
+  // 활성 질병 클러스터 조회 → clusterSignals 생성
+  const clusterSignals = await getClusterSignalsForRegion(db, regionId, regionFarms.map((f) => f.farmId));
+
   return {
     regionId,
     tenantId: null,
     farms: farmSummaries,
     totalAnimals,
     activeAlerts,
-    clusterSignals: [],
+    clusterSignals,
     summary: `${region.province} ${region.district}: ${String(regionFarms.length)}개 농장, ${String(totalAnimals)}두`,
   };
 }
@@ -628,4 +634,47 @@ function getEmptyDairyProduction(): DairyProduction {
 
 function getEmptyBeefGrowth(): BeefGrowth {
   return { weight: null, dailyGain: null, gradeEstimate: null, measureDate: null };
+}
+
+async function getClusterSignalsForRegion(
+  db: DB,
+  regionId: string,
+  regionFarmIds: readonly string[],
+): Promise<readonly ClusterSignal[]> {
+  try {
+    const activeClusters = await db
+      .select()
+      .from(diseaseClusters)
+      .where(eq(diseaseClusters.status, 'active'));
+
+    if (activeClusters.length === 0) return [];
+
+    const regionFarmIdSet = new Set(regionFarmIds);
+    const signals: ClusterSignal[] = [];
+
+    for (const cluster of activeClusters) {
+      const memberships = await db
+        .select({ farmId: clusterFarmMemberships.farmId })
+        .from(clusterFarmMemberships)
+        .where(eq(clusterFarmMemberships.clusterId, cluster.clusterId));
+
+      const affectedFarmIds = memberships
+        .map((m) => m.farmId)
+        .filter((fid) => regionFarmIdSet.has(fid));
+
+      if (affectedFarmIds.length === 0) continue;
+
+      signals.push({
+        signalType: cluster.diseaseType,
+        description: `${cluster.diseaseType} 클러스터 (${String(cluster.farmCount)}개 농장, ${cluster.level} 수준)`,
+        affectedFarms: affectedFarmIds,
+        severity: cluster.level === 'outbreak' ? 'critical' : cluster.level === 'warning' ? 'high' : 'medium',
+      });
+    }
+
+    return signals;
+  } catch (error) {
+    logger.warn({ regionId, error }, 'Failed to load cluster signals for region');
+    return [];
+  }
 }

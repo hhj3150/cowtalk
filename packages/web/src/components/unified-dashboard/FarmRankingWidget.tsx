@@ -13,6 +13,7 @@ interface FarmRanking {
 
 interface Props {
   readonly rankings: readonly FarmRanking[];
+  readonly onFarmClick?: (farmId: string) => void;
 }
 
 // ── 상수 ──
@@ -46,15 +47,22 @@ function RankingRow({
   ranking,
   index,
   maxCount,
+  onClick,
 }: {
   readonly ranking: FarmRanking;
   readonly index: number;
   readonly maxCount: number;
+  readonly onClick?: () => void;
 }): React.JSX.Element {
   const progressWidth = maxCount > 0 ? (ranking.alertCount / maxCount) * 100 : 0;
 
   return (
-    <div className="flex items-center gap-3 rounded-lg px-3 py-2">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/5"
+      style={{ cursor: onClick ? 'pointer' : 'default' }}
+    >
       {/* 순위 배지 */}
       <span className="flex-shrink-0 text-sm" style={{ width: '24px', textAlign: 'center' }}>
         {getRankBadge(index)}
@@ -103,13 +111,13 @@ function RankingRow({
       >
         {ranking.alertCount}
       </span>
-    </div>
+    </button>
   );
 }
 
 // ── 메인 컴포넌트 ──
 
-export function FarmRankingWidget({ rankings }: Props): React.JSX.Element {
+export function FarmRankingWidget({ rankings, onFarmClick }: Props): React.JSX.Element {
   const maxCount = rankings.length > 0
     ? Math.max(...rankings.map((r) => r.alertCount))
     : 0;
@@ -138,6 +146,7 @@ export function FarmRankingWidget({ rankings }: Props): React.JSX.Element {
               ranking={ranking}
               index={index}
               maxCount={maxCount}
+              onClick={onFarmClick ? () => onFarmClick(ranking.farmId) : undefined}
             />
           ))}
         </div>

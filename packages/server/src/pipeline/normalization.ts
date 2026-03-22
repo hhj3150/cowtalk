@@ -35,32 +35,87 @@ const SEVERITY_MAP: Readonly<Record<string, Severity>> = {
 };
 
 const EVENT_TYPE_MAP: Readonly<Record<string, SmaxtecEventType>> = {
+  // ── 발정 ──
   heat: 'estrus',
   estrus: 'estrus',
-  health: 'health_warning',
-  health_warning: 'health_warning',
+  heat_dnb: 'estrus_dnb',
+
+  // ── 번식 ──
+  insemination: 'insemination',
+  pregnancy_result: 'pregnancy_check',
+  fertility_105: 'fertility_warning',
+  fertility_705: 'fertility_warning',
+  no_insemination: 'no_insemination',
+
+  // ── 분만 ──
   calving: 'calving',
-  feeding: 'feeding_warning',
-  feeding_anomaly: 'feeding_warning',
-  feeding_warning: 'feeding_warning',
+  calving_detection: 'calving_detection',
+  calving_confirmation: 'calving_confirmation',
+  waiting_for_calving: 'calving_waiting',
+  abort: 'abortion',
+
+  // ── 체온 ──
+  health_104: 'temperature_high',   // 체온 상승
+  health_103: 'temperature_high',   // 체온 관련
+  health_106: 'temperature_low',    // 체온 하강
   temperature: 'temperature_warning',
   temperature_alert: 'temperature_warning',
   temperature_warning: 'temperature_warning',
-  activity: 'activity_warning',
-  activity_change: 'activity_warning',
-  activity_warning: 'activity_warning',
+
+  // ── 반추 ──
+  health_305: 'rumination_decrease',  // 반추시간 감소
+  health_301: 'rumination_decrease',
+  health_302: 'rumination_decrease',
+  health_303: 'rumination_decrease',
+  health_304: 'rumination_decrease',
+  health_306: 'rumination_decrease',
+  health_307: 'rumination_decrease',
+  health_308: 'rumination_decrease',
+  health_309: 'rumination_decrease',
+  health_310: 'rumination_decrease',  // 반추시간 변화
+  health_317: 'rumination_decrease',  // 반추 장기 감소
+  health_318: 'rumination_decrease',  // 반추 극심 감소
   rumination: 'rumination_warning',
   rumination_drop: 'rumination_warning',
   rumination_warning: 'rumination_warning',
+
+  // ── 활동 ──
+  actincrease_704: 'activity_increase',  // 활동량 증가
+  health_703: 'activity_decrease',       // 활동량 감소
+  activity: 'activity_warning',
+  activity_change: 'activity_warning',
+  activity_warning: 'activity_warning',
+
+  // ── 건강 종합 ──
+  health_101: 'health_general',      // 종합 건강 경고 1단계
+  health_109: 'health_general',      // 종합 건강 경고 기타
+  health: 'health_warning',
+  health_warning: 'health_warning',
+  clinical_condition_401: 'clinical_condition',  // 임상 증상 1단계
+  clinical_condition_402: 'clinical_condition',  // 임상 증상 2단계
+  clinical_condition_403: 'clinical_condition',  // 임상 증상 3단계
+
+  // ── 사양 ──
+  feeding: 'feeding_warning',
+  feeding_anomaly: 'feeding_warning',
+  feeding_warning: 'feeding_warning',
+  feeding_201: 'feeding_warning',
+  feeding_202: 'feeding_warning',
+  feeding_203: 'feeding_warning',
+  feeding_204: 'feeding_warning',
   drinking: 'drinking_warning',
   drinking_warning: 'drinking_warning',
+
+  // ── 관리 ──
+  dry_off: 'dry_off',
+  management_904: 'management',
 };
 
 export function normalizeSmaxtecEvent(raw: SmaxtecRawEvent): NormalizedSmaxtecEvent {
   // Real API uses _id / event_ts; legacy uses event_id / timestamp
   const eventId = raw._id ?? raw.event_id ?? '';
   const eventTimestamp = raw.event_ts ?? raw.timestamp ?? new Date().toISOString();
-  const confidence = raw.confidence ?? (raw.event_type === 'heat' ? 0.95 : 0.85);
+  const confidence = raw.confidence ?? inferConfidence(raw.event_type);
   const severity = raw.severity ?? inferSeverity(raw.event_type);
 
   // Build details from real API fields
@@ -88,18 +143,77 @@ export function normalizeSmaxtecEvent(raw: SmaxtecRawEvent): NormalizedSmaxtecEv
 }
 
 function inferSeverity(eventType: string): string {
+  // 분만 관련 — critical
+  if (eventType === 'calving_detection' || eventType === 'abort') return 'critical';
+  if (eventType === 'calving' || eventType === 'calving_confirmation') return 'high';
+  if (eventType === 'waiting_for_calving') return 'medium';
+
+  // 발정 — medium
+  if (eventType === 'heat' || eventType === 'heat_dnb') return 'medium';
+
+  // 체온 — high
+  if (eventType.startsWith('health_104') || eventType.startsWith('health_106')) return 'high';
+  if (eventType.startsWith('health_103')) return 'medium';
+
+  // 반추 감소 — 장기/극심은 high
+  if (eventType === 'health_317' || eventType === 'health_318') return 'high';
+  if (eventType.startsWith('health_3')) return 'medium';
+
+  // 활동 — low~medium
+  if (eventType === 'actincrease_704') return 'low';
+  if (eventType === 'health_703') return 'medium';
+
+  // 임상 증상 — severity by level
+  if (eventType === 'clinical_condition_403') return 'critical';
+  if (eventType === 'clinical_condition_402') return 'high';
+  if (eventType === 'clinical_condition_401') return 'medium';
+
+  // 건강 종합
+  if (eventType === 'health_101') return 'high';
+  if (eventType === 'health_109') return 'medium';
+
+  // 번식
+  if (eventType === 'insemination' || eventType === 'pregnancy_result') return 'low';
+  if (eventType === 'no_insemination') return 'medium';
+  if (eventType.startsWith('fertility')) return 'medium';
+
+  // 사양
+  if (eventType.startsWith('feeding')) return 'medium';
+
+  // 관리
+  if (eventType === 'dry_off' || eventType === 'management_904') return 'low';
+
   const severityByType: Readonly<Record<string, string>> = {
     heat: 'medium',
     estrus: 'medium',
     health: 'high',
     health_warning: 'high',
-    calving: 'critical',
+    calving: 'high',
     temperature: 'medium',
     activity: 'low',
     rumination: 'low',
     feeding: 'medium',
   };
   return severityByType[eventType] ?? 'low';
+}
+
+function inferConfidence(eventType: string): number {
+  // smaXtec 이벤트별 기본 신뢰도
+  // 발정/분만은 smaXtec 자체가 95%+ 정확도
+  if (eventType === 'heat' || eventType === 'heat_dnb') return 0.95;
+  if (eventType.startsWith('calving')) return 0.93;
+  if (eventType === 'abort') return 0.90;
+  // 번식 기록은 팩트 데이터
+  if (eventType === 'insemination' || eventType === 'pregnancy_result') return 0.99;
+  if (eventType === 'dry_off') return 0.99;
+  // 건강/센서 기반은 약간 낮음
+  if (eventType.startsWith('health_1')) return 0.85;  // 체온/종합
+  if (eventType.startsWith('health_3')) return 0.82;  // 반추
+  if (eventType.startsWith('health_7') || eventType.startsWith('actincrease')) return 0.80;  // 활동
+  if (eventType.startsWith('clinical_condition')) return 0.88;
+  if (eventType.startsWith('fertility')) return 0.85;
+  if (eventType.startsWith('feeding')) return 0.78;
+  return 0.85;
 }
 
 export function normalizeSmaxtecEvents(

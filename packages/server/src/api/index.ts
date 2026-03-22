@@ -28,6 +28,10 @@ import { breedingRouter } from './routes/breeding.routes.js';
 import { aiPerformanceRouter } from './routes/ai-performance.routes.js';
 import { unifiedDashboardRouter } from './routes/unified-dashboard.routes.js';
 import { publicStatsRouter } from './routes/public-stats.routes.js';
+import { epidemicRouter } from './routes/epidemic.routes.js';
+import { epidemicIntelligenceRouter } from './routes/epidemic-intelligence.routes.js';
+import { vitalMonitorRouter } from './routes/vital-monitor.routes.js';
+import { labelChatRouter } from './routes/label-chat.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -61,6 +65,10 @@ export function createApiRouter(): Router {
   api.use('/breeding', breedingRouter);
   api.use('/ai', aiPerformanceRouter);
   api.use('/unified-dashboard', unifiedDashboardRouter);
+  api.use('/epidemic', epidemicRouter);
+  api.use('/epidemic-intelligence', epidemicIntelligenceRouter);
+  api.use('/vital-monitor', vitalMonitorRouter);
+  api.use('/label-chat', labelChatRouter);
 
   return api;
 }

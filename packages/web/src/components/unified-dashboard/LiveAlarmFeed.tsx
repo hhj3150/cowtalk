@@ -1,6 +1,9 @@
 // 통합 대시보드 — 실시간 알람 피드 (smaXtec 이벤트)
+// 농장명 클릭 → 농장 필터, 소 귀표 클릭 → smaXtec 센서 차트
+// 레이블 버튼 클릭 → EventLabelModal
 
-import React from 'react';
+import React, { useState } from 'react';
+import { EventLabelModal } from './EventLabelModal';
 
 // ── 타입 ──
 
@@ -8,6 +11,7 @@ interface LiveAlarm {
   readonly eventId: string;
   readonly eventType: string;
   readonly earTag: string;
+  readonly animalId?: string;
   readonly farmName: string;
   readonly farmId: string;
   readonly severity: string;
@@ -19,6 +23,9 @@ interface LiveAlarm {
 
 interface Props {
   readonly alarms: readonly LiveAlarm[];
+  readonly onFarmClick?: (farmId: string) => void;
+  readonly onAnimalClick?: (animalId: string) => void;
+  readonly onAlarmClick?: (alarm: LiveAlarm) => void;
 }
 
 // ── 상수 ──
@@ -64,13 +71,23 @@ function getAlarmConfig(eventType: string): { readonly icon: string; readonly la
 
 // ── 알람 행 ──
 
-function AlarmRow({ alarm }: { readonly alarm: LiveAlarm }): React.JSX.Element {
+function AlarmRow({
+  alarm,
+  onFarmClick,
+  onAnimalClick,
+  onLabelClick,
+}: {
+  readonly alarm: LiveAlarm;
+  readonly onFarmClick?: () => void;
+  readonly onAnimalClick?: () => void;
+  readonly onLabelClick?: () => void;
+}): React.JSX.Element {
   const config = getAlarmConfig(alarm.eventType);
   const severityColor = SEVERITY_COLORS[alarm.severity] ?? 'var(--ct-text-secondary)';
 
   return (
     <div
-      className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-black/5"
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors"
       style={{
         opacity: alarm.acknowledged ? 0.5 : 1,
       }}
@@ -83,14 +100,38 @@ function AlarmRow({ alarm }: { readonly alarm: LiveAlarm }): React.JSX.Element {
         {config.icon}
       </span>
 
-      {/* 중앙: 농장명 + 귀표번호 + 알람 타입 */}
+      {/* 중앙: 농장명(클릭) + 귀표번호(클릭) + 알람 타입 */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <span
-          className="truncate text-sm"
-          style={{ color: 'var(--ct-text)' }}
-        >
-          [{alarm.farmName}] {alarm.earTag}
-        </span>
+        <div className="flex items-center gap-1 truncate text-sm">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onFarmClick?.(); }}
+            className="rounded px-1 transition-colors hover:bg-white/10"
+            style={{
+              color: 'var(--ct-text-secondary)',
+              cursor: onFarmClick ? 'pointer' : 'default',
+              textDecoration: onFarmClick ? 'underline' : 'none',
+              textDecorationColor: 'var(--ct-border)',
+              textUnderlineOffset: '2px',
+            }}
+          >
+            [{alarm.farmName}]
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onAnimalClick?.(); }}
+            className="rounded px-1 font-medium transition-colors hover:bg-white/10"
+            style={{
+              color: 'var(--ct-text)',
+              cursor: onAnimalClick ? 'pointer' : 'default',
+              textDecoration: onAnimalClick ? 'underline' : 'none',
+              textDecorationColor: 'var(--ct-primary)',
+              textUnderlineOffset: '2px',
+            }}
+          >
+            {alarm.earTag}
+          </button>
+        </div>
         <span
           className="text-xs"
           style={{ color: config.color }}
@@ -99,8 +140,19 @@ function AlarmRow({ alarm }: { readonly alarm: LiveAlarm }): React.JSX.Element {
         </span>
       </div>
 
-      {/* 우측: 시간 + severity 점 */}
+      {/* 우측: 레이블 버튼 + 시간 + severity 점 */}
       <div className="flex flex-shrink-0 items-center gap-2">
+        {onLabelClick && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onLabelClick(); }}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-xs transition-colors hover:bg-white/10"
+            style={{ color: 'var(--ct-text-secondary)' }}
+            title="레이블 달기"
+          >
+            {'\uD83C\uDFF7\uFE0F'}
+          </button>
+        )}
         <span
           className="text-xs"
           style={{ color: 'var(--ct-text-secondary)' }}
@@ -123,33 +175,56 @@ function AlarmRow({ alarm }: { readonly alarm: LiveAlarm }): React.JSX.Element {
 
 // ── 메인 컴포넌트 ──
 
-export function LiveAlarmFeed({ alarms }: Props): React.JSX.Element {
-  return (
-    <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
-      <h3
-        className="mb-3 font-semibold"
-        style={{ fontSize: '13px', color: 'var(--ct-text)' }}
-      >
-        {'\uD83D\uDEA8'} 오늘 알람 피드
-      </h3>
+export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick }: Props): React.JSX.Element {
+  const [labelTarget, setLabelTarget] = useState<LiveAlarm | null>(null);
 
-      {alarms.length === 0 ? (
-        <div
-          className="flex items-center justify-center rounded-lg px-4 py-8"
-          style={{ color: 'var(--ct-text-secondary)' }}
+  return (
+    <>
+      <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
+        <h3
+          className="mb-3 font-semibold"
+          style={{ fontSize: '13px', color: 'var(--ct-text)' }}
         >
-          <span className="text-sm">현재 활성 알람이 없습니다</span>
-        </div>
-      ) : (
-        <div
-          className="flex flex-col gap-1 overflow-y-auto"
-          style={{ maxHeight: '400px' }}
-        >
-          {alarms.map((alarm) => (
-            <AlarmRow key={alarm.eventId} alarm={alarm} />
-          ))}
-        </div>
+          {'\uD83D\uDEA8'} 오늘 알람 피드
+        </h3>
+
+        {alarms.length === 0 ? (
+          <div
+            className="flex items-center justify-center rounded-lg px-4 py-8"
+            style={{ color: 'var(--ct-text-secondary)' }}
+          >
+            <span className="text-sm">현재 활성 알람이 없습니다</span>
+          </div>
+        ) : (
+          <div
+            className="flex flex-col gap-1 overflow-y-auto"
+            style={{ maxHeight: '400px' }}
+          >
+            {alarms.map((alarm) => (
+              <AlarmRow
+                key={alarm.eventId}
+                alarm={alarm}
+                onFarmClick={onFarmClick ? () => onFarmClick(alarm.farmId) : undefined}
+                onAnimalClick={
+                  alarm.animalId && onAnimalClick
+                    ? () => onAnimalClick(alarm.animalId!)
+                    : onAlarmClick
+                      ? () => onAlarmClick(alarm)
+                      : undefined
+                }
+                onLabelClick={alarm.animalId ? () => setLabelTarget(alarm) : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {labelTarget && (
+        <EventLabelModal
+          alarm={labelTarget}
+          onClose={() => setLabelTarget(null)}
+        />
       )}
-    </div>
+    </>
   );
 }

@@ -18,15 +18,15 @@ export function createApp(): express.Express {
   // --- CORS ---
   app.use(cors({
     origin: config.NODE_ENV === 'production'
-      ? ['https://cowtalk.kr']
+      ? [/\.netlify\.app$/, /cowtalk\.kr$/, /cowtalk\.netlify\.app$/]
       : ['http://localhost:5173', 'http://localhost:3000'],
     credentials: true,
   }));
 
   // --- Rate Limiting ---
   app.use(rateLimit({
-    windowMs: 15 * 60 * 1000, // 15분
-    max: 300,
+    windowMs: 30 * 60 * 1000, // 30분
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },

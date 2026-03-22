@@ -4,6 +4,7 @@
 import { analyzeAnimal, analyzeFarm } from '../ai-brain/index.js';
 import { logger } from '../lib/logger.js';
 import type { Role } from '@cowtalk/shared';
+import { isEpidemicRelevantEvent } from '../epidemic/cluster-detector.js';
 
 // 이벤트 타입 → AI 예측 타입 매핑
 const EVENT_TO_ENGINE_MAP: Record<string, string> = {
@@ -65,6 +66,15 @@ export async function processEvent(event: FarmEvent): Promise<ProcessResult> {
     } catch (error) {
       logger.error({ eventId: event.eventId, error }, 'Failed to trigger farm analysis');
     }
+  }
+
+  // 전염병 관련 이벤트 시 epidemic 모듈에 신호 전달
+  if (isEpidemicRelevantEvent(event.eventType) && (event.severity === 'high' || event.severity === 'critical')) {
+    logger.info(
+      { eventId: event.eventId, eventType: event.eventType },
+      'Epidemic-relevant health event detected — flagged for next epidemic scan',
+    );
+    // 다음 스케줄 스캔에서 자동 감지 (즉시 스캔은 스케줄러가 담당)
   }
 
   // Claude 피드백 루프 — 이벤트를 예측 정확도 검증에 활용

@@ -11,12 +11,15 @@ import type {
   PriorityAction, AnimalHighlight,
   ClusterInterpretation, FarmRanking,
   ScheduleItem, UrgentCase,
+  EpidemicInterpretation, FarmProximityRisk,
 } from '@cowtalk/shared';
 import { callClaudeForAnalysis } from './claude-client.js';
 import { buildAnimalPrompt } from './prompts/animal-prompt.js';
 import { buildFarmPrompt } from './prompts/farm-prompt.js';
 import { buildRegionalPrompt } from './prompts/regional-prompt.js';
+import { buildEpidemicPrompt } from './prompts/epidemic-prompt.js';
 import { runV4Analysis, type V4FusionResult } from './v4-engines/index.js';
+import type { DetectedCluster } from '../epidemic/cluster-detector.js';
 import { logger } from '../lib/logger.js';
 
 // ===========================
@@ -476,6 +479,101 @@ function parseUrgentCases(val: unknown): readonly UrgentCase[] {
       recommendedAction: asString(obj.suggested_action) || asString(obj.recommended_action),
     };
   });
+}
+
+// ===========================
+// interpretEpidemic
+// ===========================
+
+export async function interpretEpidemic(
+  cluster: DetectedCluster,
+  nearbyRiskFarms: readonly FarmProximityRisk[],
+  role: Role,
+): Promise<EpidemicInterpretation> {
+  const prompt = buildEpidemicPrompt(cluster, nearbyRiskFarms, role);
+  const claudeResult = await callClaudeForAnalysis(prompt);
+
+  if (claudeResult) {
+    return mapClaudeToEpidemicInterpretation(claudeResult.parsed);
+  }
+
+  logger.warn({ diseaseType: cluster.diseaseType }, 'Claude unavailable — using epidemic fallback');
+  return buildFallbackEpidemicInterpretation(cluster, nearbyRiskFarms);
+}
+
+function mapClaudeToEpidemicInterpretation(
+  parsed: Record<string, unknown>,
+): EpidemicInterpretation {
+  const diseaseId = (parsed.disease_identification ?? {}) as Record<string, unknown>;
+  const spreadPred = (parsed.spread_prediction ?? {}) as Record<string, unknown>;
+  const quarantineActions = Array.isArray(parsed.quarantine_actions) ? parsed.quarantine_actions : [];
+
+  return {
+    riskAssessment: asString(parsed.risk_assessment),
+    diseaseIdentification: {
+      likelyDisease: asString(diseaseId.likely_disease),
+      confidence: typeof diseaseId.confidence === 'number' ? diseaseId.confidence : 0.5,
+      basis: asStringArray(diseaseId.basis),
+    },
+    spreadPrediction: {
+      predictedFarmIds: asStringArray(spreadPred.at_risk_farms),
+      timeframeHours: 72,
+      probability: 0.5,
+      direction: asString(spreadPred.direction),
+      basis: asString(spreadPred.speed),
+    },
+    quarantineActions: quarantineActions.map((qa: unknown) => {
+      const obj = (typeof qa === 'object' && qa !== null ? qa : {}) as Record<string, unknown>;
+      return {
+        actionType: asString(obj.action) as 'isolate' | 'vaccinate' | 'monitor' | 'restrict_movement' | 'test' | 'cull',
+        targetFarmIds: asStringArray(obj.target_farms),
+        urgency: asSeverity(obj.urgency) || 'medium',
+        description: asString(obj.description),
+      };
+    }),
+    roleActions: parseActions(parsed.actions) as Record<string, string>,
+    dataReferences: asStringArray(parsed.data_references),
+  };
+}
+
+function buildFallbackEpidemicInterpretation(
+  cluster: DetectedCluster,
+  nearbyRiskFarms: readonly FarmProximityRisk[],
+): EpidemicInterpretation {
+  const highRiskFarms = nearbyRiskFarms.filter((f) => f.riskScore >= 60);
+
+  return {
+    riskAssessment: `${cluster.diseaseType} 클러스터가 ${String(cluster.farms.length)}개 농장에서 감지되었습니다. ${cluster.spreadRate.trend === 'accelerating' ? '확산이 가속화되고 있어 즉각 대응이 필요합니다.' : '모니터링을 강화해야 합니다.'}`,
+    diseaseIdentification: {
+      likelyDisease: cluster.diseaseType,
+      confidence: 0.4,
+      basis: [`smaXtec 이벤트 패턴: ${String(cluster.totalEvents)}건`],
+    },
+    spreadPrediction: {
+      predictedFarmIds: highRiskFarms.slice(0, 5).map((f) => f.farmId),
+      timeframeHours: 72,
+      probability: cluster.spreadRate.trend === 'accelerating' ? 0.7 : 0.4,
+      direction: '분석 필요',
+      basis: `확산 속도 ${cluster.spreadRate.farmsPerDay.toFixed(1)} 농장/일`,
+    },
+    quarantineActions: [
+      {
+        actionType: 'monitor',
+        targetFarmIds: cluster.farms.map((f) => f.farmId),
+        urgency: cluster.level === 'outbreak' ? 'critical' : 'high',
+        description: '영향 농장 건강 모니터링 강화',
+      },
+    ],
+    roleActions: {
+      farmer: '영향 가축 격리 관찰, 체온 수동 측정 병행.',
+      veterinarian: '영향 농장 임상 검사 실시, 샘플 채취 의뢰.',
+      quarantine_officer: '이동 제한 검토, 인접 농장 통보.',
+      government_admin: '상위 기관 보고, 방역 물자 확보.',
+      inseminator: '영향 농장 인공수정 보류 검토.',
+      feed_company: '사료 변경 시 주의.',
+    },
+    dataReferences: [`smaXtec 이벤트 ${String(cluster.totalEvents)}건`, `영향 농장 ${String(cluster.farms.length)}개`],
+  };
 }
 
 function buildV4DataReferences(profile: AnimalProfile): readonly string[] {

@@ -22,13 +22,14 @@ const envSchema = z.object({
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
 
+  REDIS_ENABLED: z.coerce.boolean().default(true),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(''),
 
   JWT_ACCESS_SECRET: z.string().default('dev-access-secret-change-in-production'),
   JWT_REFRESH_SECRET: z.string().default('dev-refresh-secret-change-in-production'),
-  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
+  JWT_ACCESS_EXPIRES_IN: z.string().default('2h'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
   LOG_LEVEL: z.string().default('debug'),

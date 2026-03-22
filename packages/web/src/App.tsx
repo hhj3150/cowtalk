@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '@web/stores/auth.store';
 import { AppShell } from '@web/components/layout/AppShell';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
+import { ErrorBoundary } from '@web/components/common/ErrorBoundary';
 import type { Role } from '@cowtalk/shared';
 
 // Lazy-loaded 페이지
@@ -45,6 +46,7 @@ function RequireRole({ roles, children }: { roles: readonly Role[]; children: Re
 
 export function App(): React.JSX.Element {
   return (
+    <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Suspense fallback={<LoadingSkeleton />}>
@@ -81,5 +83,6 @@ export function App(): React.JSX.Element {
         </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

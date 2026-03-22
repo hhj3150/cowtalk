@@ -200,7 +200,7 @@ export class PipelineOrchestrator {
   private sensorOffset = 0;
 
   private async collectSensorBatch(): Promise<void> {
-    if (this.smaxtec.status !== 'connected') return;
+    if (this.smaxtec.getStatus() !== 'connected') return;
 
     const db = getDb();
     const BATCH_SIZE = 30;

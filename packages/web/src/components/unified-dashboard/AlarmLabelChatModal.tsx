@@ -1,0 +1,1835 @@
+// 소버린 AI 지식 강화 루프 — 알람 레이블 + AI 대화 모달
+// Sovereign AI Knowledge Loop: Expert labels ground truth via AI-assisted chat
+//
+// 핵심 개념:
+// smaXtec 센서(해외)는 데이터 소스일 뿐, 현장 전문가가 AI와 대화하며
+// 레이블링한 지식은 해당 국가/지역의 고유 자산(소버린 AI)이 된다.
+
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { getEventContext, streamLabelChat, submitLabel, getAnimalEvents, getLabelHistory, submitFollowUp, getAnimalInfo, submitObservation, getObservations, saveConversationRecord } from '@web/api/label-chat.api';
+import type { AnimalEvent, AnimalInfo, LabelWithFollowUps, SubmitFollowUpRequest, ClinicalObservation, SubmitObservationRequest, ExtractedRecordClient } from '@web/api/label-chat.api';
+import type { EventContext, LabelVerdict, LabelOutcome } from '@cowtalk/shared';
+import { SensorDataPanel } from './SensorDataPanel';
+import { ExtractedRecordCard } from './ExtractedRecordCard';
+
+// ── 상수 ──
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#22c55e',
+};
+
+const VERDICT_OPTIONS: readonly { readonly value: LabelVerdict; readonly label: string; readonly color: string; readonly desc: string }[] = [
+  { value: 'confirmed', label: '확인', color: '#22c55e', desc: 'AI 예측이 정확했습니다' },
+  { value: 'modified', label: '수정', color: '#eab308', desc: '이벤트는 있었으나 유형이 다릅니다' },
+  { value: 'false_positive', label: '오탐', color: '#ef4444', desc: '실제로는 이상이 없었습니다' },
+  { value: 'missed', label: '미탐', color: '#8b5cf6', desc: '다른 이상을 놓쳤습니다' },
+];
+
+const OUTCOME_OPTIONS: readonly { readonly value: LabelOutcome; readonly label: string }[] = [
+  { value: 'resolved', label: '해결됨' },
+  { value: 'ongoing', label: '진행 중' },
+  { value: 'worsened', label: '악화됨' },
+  { value: 'no_action', label: '조치 불필요' },
+];
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  temperature_high: '체온 상승',
+  clinical_condition: '임상 증상',
+  rumination_decrease: '반추 감소',
+  activity_decrease: '활동량 감소',
+  drinking_decrease: '음수량 감소',
+  health_warning: '건강 경고',
+  estrus: '발정',
+  heat: '발정',
+  calving: '분만',
+  activity_increase: '활동량 증가',
+};
+
+interface ChatMessage {
+  readonly id: string;
+  readonly role: 'user' | 'assistant' | 'system';
+  readonly content: string;
+  readonly extractedRecords?: readonly ExtractedRecordClient[];
+}
+
+interface Props {
+  readonly animalId: string;
+  readonly initialEventId?: string;
+  readonly onClose: () => void;
+}
+
+// ── ChatBubble ──
+
+function ChatBubble({ message }: {
+  readonly message: ChatMessage;
+}): React.JSX.Element {
+  const isUser = message.role === 'user';
+  const isSystem = message.role === 'system';
+
+  if (isSystem) {
+    return (
+      <div style={{
+        textAlign: 'center',
+        fontSize: 11,
+        color: 'var(--ct-text-muted)',
+        padding: '8px 0',
+        fontStyle: 'italic',
+      }}>
+        {message.content}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: isUser ? 'flex-end' : 'flex-start',
+      marginBottom: 8,
+    }}>
+      {!isUser && (
+        <div style={{
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 14,
+          flexShrink: 0,
+          marginRight: 8,
+          marginTop: 2,
+        }}>
+          🧠
+        </div>
+      )}
+      <div style={{
+        maxWidth: '80%',
+        borderRadius: 12,
+        padding: '10px 14px',
+        fontSize: 13,
+        lineHeight: 1.7,
+        whiteSpace: 'pre-wrap',
+        background: isUser ? 'var(--ct-primary)' : 'rgba(0,0,0,0.2)',
+        color: isUser ? '#ffffff' : 'var(--ct-text)',
+        border: isUser ? 'none' : '1px solid var(--ct-border)',
+      }}>
+        {message.content}
+      </div>
+    </div>
+  );
+}
+
+// ── EventSelector ──
+
+function EventSelector({ events, selectedId, onSelect }: {
+  readonly events: readonly AnimalEvent[];
+  readonly selectedId: string | null;
+  readonly onSelect: (eventId: string) => void;
+}): React.JSX.Element {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 4,
+      maxHeight: 180,
+      overflowY: 'auto',
+    }}>
+      {events.map((evt) => {
+        const isSelected = evt.eventId === selectedId;
+        const color = SEVERITY_COLORS[evt.severity] ?? '#94a3b8';
+        const d = new Date(evt.detectedAt);
+        const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+
+        return (
+          <button
+            key={evt.eventId}
+            type="button"
+            onClick={() => onSelect(evt.eventId)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: isSelected ? `1.5px solid ${color}` : '1px solid var(--ct-border)',
+              background: isSelected ? `${color}11` : 'transparent',
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+            }}
+          >
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: color,
+              flexShrink: 0,
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ct-text)' }}>
+                {EVENT_TYPE_LABELS[evt.eventType] ?? evt.eventType}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                {timeStr}
+              </div>
+            </div>
+            {evt.hasLabel && (
+              <span style={{
+                fontSize: 9,
+                padding: '1px 6px',
+                borderRadius: 4,
+                background: '#22c55e22',
+                color: '#22c55e',
+                fontWeight: 600,
+              }}>
+                레이블됨
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── LabelForm ──
+
+function LabelForm({ context: _context, onSubmit, isSubmitting }: {
+  readonly context: EventContext;
+  readonly onSubmit: (data: {
+    verdict: LabelVerdict;
+    actualDiagnosis?: string;
+    actionTaken?: string;
+    outcome?: LabelOutcome;
+    notes?: string;
+  }) => void;
+  readonly isSubmitting: boolean;
+}): React.JSX.Element {
+  const [verdict, setVerdict] = useState<LabelVerdict | null>(null);
+  const [actualDiagnosis, setActualDiagnosis] = useState('');
+  const [actionTaken, setActionTaken] = useState('');
+  const [outcome, setOutcome] = useState<LabelOutcome | null>(null);
+  const [notes, setNotes] = useState('');
+
+  const handleSubmit = (): void => {
+    if (!verdict) return;
+    onSubmit({
+      verdict,
+      actualDiagnosis: actualDiagnosis || undefined,
+      actionTaken: actionTaken || undefined,
+      outcome: outcome ?? undefined,
+      notes: notes || undefined,
+    });
+  };
+
+  return (
+    <div style={{
+      borderTop: '1px solid var(--ct-border)',
+      padding: '14px 0 0',
+    }}>
+      <div style={{
+        fontSize: 12,
+        fontWeight: 700,
+        color: 'var(--ct-text)',
+        marginBottom: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span>🏷️</span>
+        <span>현장 확인 레이블</span>
+        <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 400 }}>
+          (소버린 AI 학습 데이터)
+        </span>
+      </div>
+
+      {/* 판정 (verdict) */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {VERDICT_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setVerdict(opt.value)}
+            title={opt.desc}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 8,
+              border: verdict === opt.value
+                ? `2px solid ${opt.color}`
+                : '1px solid var(--ct-border)',
+              background: verdict === opt.value ? `${opt.color}22` : 'transparent',
+              color: verdict === opt.value ? opt.color : 'var(--ct-text-secondary)',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 확장 필드: verdict 선택 시 표시 */}
+      {verdict && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* 실제 진단 */}
+          <input
+            type="text"
+            placeholder="실제 진단 (예: 유방염, 케토시스, 사료변경 스트레스...)"
+            value={actualDiagnosis}
+            onChange={(e) => setActualDiagnosis(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.15)',
+              color: 'var(--ct-text)',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          />
+
+          {/* 취한 조치 */}
+          <input
+            type="text"
+            placeholder="취한 조치 (예: 항생제 투여, 수액 처치, 경과 관찰...)"
+            value={actionTaken}
+            onChange={(e) => setActionTaken(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.15)',
+              color: 'var(--ct-text)',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          />
+
+          {/* 결과 */}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {OUTCOME_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setOutcome(opt.value)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: outcome === opt.value
+                    ? '1.5px solid var(--ct-primary)'
+                    : '1px solid var(--ct-border)',
+                  background: outcome === opt.value ? 'rgba(0,214,126,0.1)' : 'transparent',
+                  color: outcome === opt.value ? 'var(--ct-primary)' : 'var(--ct-text-muted)',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 메모 */}
+          <textarea
+            placeholder="추가 메모 (자유 입력 — AI가 학습에 활용합니다)"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.15)',
+              color: 'var(--ct-text)',
+              fontSize: 12,
+              outline: 'none',
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+
+          {/* 제출 버튼 */}
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 10,
+              border: 'none',
+              background: isSubmitting
+                ? 'var(--ct-text-muted)'
+                : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              letterSpacing: '-0.3px',
+            }}
+          >
+            {isSubmitting ? '저장 중...' : '🏷️ 레이블 저장 → 소버린 AI 학습'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 예후 상태 상수 ──
+
+const FOLLOW_UP_STATUS_OPTIONS: readonly { readonly value: string; readonly label: string; readonly color: string }[] = [
+  { value: 'recovered', label: '완치', color: '#22c55e' },
+  { value: 'improving', label: '호전', color: '#4ade80' },
+  { value: 'unchanged', label: '변동없음', color: '#eab308' },
+  { value: 'worsened', label: '악화', color: '#f97316' },
+  { value: 'relapsed', label: '재발', color: '#ef4444' },
+  { value: 'dead', label: '폐사', color: '#991b1b' },
+];
+
+const APPETITE_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: 'normal', label: '정상' },
+  { value: 'decreased', label: '감소' },
+  { value: 'none', label: '절식' },
+];
+
+const MOBILITY_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: 'normal', label: '정상' },
+  { value: 'reduced', label: '저하' },
+  { value: 'lame', label: '파행' },
+];
+
+const MILK_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: 'normal', label: '정상' },
+  { value: 'decreased', label: '감소' },
+  { value: 'increased', label: '증가' },
+  { value: 'no_milk', label: '무유' },
+];
+
+// ── FollowUpForm ──
+
+function FollowUpForm({ labelId, eventId, animalId, onSubmit, isSubmitting: submitting }: {
+  readonly labelId: string;
+  readonly eventId: string;
+  readonly animalId: string;
+  readonly onSubmit: (data: SubmitFollowUpRequest) => void;
+  readonly isSubmitting: boolean;
+}): React.JSX.Element {
+  const [status, setStatus] = useState<string | null>(null);
+  const [clinicalNotes, setClinicalNotes] = useState('');
+  const [temperature, setTemperature] = useState('');
+  const [appetite, setAppetite] = useState<string | null>(null);
+  const [mobility, setMobility] = useState<string | null>(null);
+  const [milkYieldChange, setMilkYieldChange] = useState<string | null>(null);
+  const [additionalTreatment, setAdditionalTreatment] = useState('');
+  const [treatmentChanged, setTreatmentChanged] = useState(false);
+
+  const handleSubmit = (): void => {
+    if (!status) return;
+    onSubmit({
+      labelId,
+      eventId,
+      animalId,
+      status,
+      clinicalNotes: clinicalNotes || undefined,
+      temperature: temperature ? parseFloat(temperature) : undefined,
+      appetite: appetite ?? undefined,
+      mobility: mobility ?? undefined,
+      milkYieldChange: milkYieldChange ?? undefined,
+      additionalTreatment: additionalTreatment || undefined,
+      treatmentChanged,
+    });
+  };
+
+  return (
+    <div style={{
+      marginTop: 12,
+      padding: '12px 0 0',
+      borderTop: '1px solid var(--ct-border)',
+    }}>
+      <div style={{
+        fontSize: 12,
+        fontWeight: 700,
+        color: 'var(--ct-text)',
+        marginBottom: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span>📋</span>
+        <span>예후 추적 기록</span>
+        <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 400 }}>
+          (진단 후 경과 → AI 인과관계 학습)
+        </span>
+      </div>
+
+      {/* 예후 상태 */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
+        {FOLLOW_UP_STATUS_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setStatus(opt.value)}
+            style={{
+              padding: '5px 10px',
+              borderRadius: 6,
+              border: status === opt.value
+                ? `2px solid ${opt.color}`
+                : '1px solid var(--ct-border)',
+              background: status === opt.value ? `${opt.color}22` : 'transparent',
+              color: status === opt.value ? opt.color : 'var(--ct-text-secondary)',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {status && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* 임상 관찰 */}
+          <textarea
+            placeholder="임상 관찰 (현재 상태, 변화 사항 기록)"
+            value={clinicalNotes}
+            onChange={(e) => setClinicalNotes(e.target.value)}
+            rows={2}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.15)',
+              color: 'var(--ct-text)',
+              fontSize: 12,
+              outline: 'none',
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+
+          {/* 체온 + 임상 지표 행 */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>체온:</span>
+              <input
+                type="number"
+                step="0.1"
+                placeholder="39.0"
+                value={temperature}
+                onChange={(e) => setTemperature(e.target.value)}
+                style={{
+                  width: 70,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: '1px solid var(--ct-border)',
+                  background: 'rgba(0,0,0,0.15)',
+                  color: 'var(--ct-text)',
+                  fontSize: 11,
+                  outline: 'none',
+                }}
+              />
+              <span style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>°C</span>
+            </div>
+
+            {/* 식욕 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>식욕:</span>
+              {APPETITE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setAppetite(opt.value)}
+                  style={{
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    border: appetite === opt.value ? '1px solid var(--ct-primary)' : '1px solid var(--ct-border)',
+                    background: appetite === opt.value ? 'rgba(0,214,126,0.1)' : 'transparent',
+                    color: appetite === opt.value ? 'var(--ct-primary)' : 'var(--ct-text-muted)',
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    fontWeight: 600,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 보행 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>보행:</span>
+              {MOBILITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setMobility(opt.value)}
+                  style={{
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    border: mobility === opt.value ? '1px solid var(--ct-primary)' : '1px solid var(--ct-border)',
+                    background: mobility === opt.value ? 'rgba(0,214,126,0.1)' : 'transparent',
+                    color: mobility === opt.value ? 'var(--ct-primary)' : 'var(--ct-text-muted)',
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    fontWeight: 600,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 유량 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>유량:</span>
+              {MILK_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setMilkYieldChange(opt.value)}
+                  style={{
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    border: milkYieldChange === opt.value ? '1px solid var(--ct-primary)' : '1px solid var(--ct-border)',
+                    background: milkYieldChange === opt.value ? 'rgba(0,214,126,0.1)' : 'transparent',
+                    color: milkYieldChange === opt.value ? 'var(--ct-primary)' : 'var(--ct-text-muted)',
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    fontWeight: 600,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 추가 처치 */}
+          <input
+            type="text"
+            placeholder="추가 처치 (약물 변경, 수액 추가 등)"
+            value={additionalTreatment}
+            onChange={(e) => setAdditionalTreatment(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.15)',
+              color: 'var(--ct-text)',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          />
+
+          {/* 처방 변경 여부 */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--ct-text-secondary)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={treatmentChanged}
+              onChange={(e) => setTreatmentChanged(e.target.checked)}
+              style={{ accentColor: 'var(--ct-primary)' }}
+            />
+            처방 변경됨 (기존 처방에서 변경된 경우 체크)
+          </label>
+
+          {/* 저장 */}
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 10,
+              border: 'none',
+              background: submitting
+                ? 'var(--ct-text-muted)'
+                : 'linear-gradient(135deg, #f97316, #ef4444)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: submitting ? 'not-allowed' : 'pointer',
+              letterSpacing: '-0.3px',
+            }}
+          >
+            {submitting ? '저장 중...' : '📋 예후 기록 → 소버린 AI 인과관계 학습'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── FollowUpTimeline ──
+
+function FollowUpTimeline({ labelHistory }: {
+  readonly labelHistory: readonly LabelWithFollowUps[];
+}): React.JSX.Element {
+  if (labelHistory.length === 0) return <></>;
+
+  const statusColor = (s: string): string => {
+    const opt = FOLLOW_UP_STATUS_OPTIONS.find((o) => o.value === s);
+    return opt?.color ?? '#94a3b8';
+  };
+
+  const statusLabel = (s: string): string => {
+    const opt = FOLLOW_UP_STATUS_OPTIONS.find((o) => o.value === s);
+    return opt?.label ?? s;
+  };
+
+  const verdictLabel = (v: string): string => {
+    const opt = VERDICT_OPTIONS.find((o) => o.value === v);
+    return opt?.label ?? v;
+  };
+
+  return (
+    <div style={{
+      marginTop: 10,
+      padding: '10px 0 0',
+      borderTop: '1px solid var(--ct-border)',
+    }}>
+      <div style={{
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--ct-text-muted)',
+        marginBottom: 8,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+      }}>
+        <span>🔄</span>
+        <span>진단 → 처방 → 예후 이력</span>
+      </div>
+
+      {labelHistory.map((label) => (
+        <div key={label.labelId} style={{
+          marginBottom: 10,
+          padding: '8px 10px',
+          borderRadius: 8,
+          background: 'rgba(0,0,0,0.1)',
+          border: '1px solid var(--ct-border)',
+        }}>
+          {/* 레이블 헤더 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <span style={{ fontSize: 10 }}>🏷️</span>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: VERDICT_OPTIONS.find((o) => o.value === label.verdict)?.color ?? '#94a3b8',
+            }}>
+              {verdictLabel(label.verdict)}
+            </span>
+            {label.actualDiagnosis && (
+              <span style={{ fontSize: 10, color: 'var(--ct-text-secondary)' }}>
+                {label.actualDiagnosis}
+              </span>
+            )}
+            <span style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginLeft: 'auto' }}>
+              {new Date(label.labeledAt).toLocaleDateString('ko-KR')}
+            </span>
+          </div>
+          {label.actionTaken && (
+            <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginBottom: 4 }}>
+              조치: {label.actionTaken}
+            </div>
+          )}
+
+          {/* Follow-up 타임라인 */}
+          {label.followUps.length > 0 && (
+            <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid var(--ct-border)' }}>
+              {label.followUps.map((fu) => (
+                <div key={fu.followUpId} style={{
+                  position: 'relative',
+                  paddingLeft: 12,
+                  paddingBottom: 6,
+                  marginBottom: 4,
+                }}>
+                  {/* 타임라인 점 */}
+                  <div style={{
+                    position: 'absolute',
+                    left: -7,
+                    top: 3,
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: statusColor(fu.status),
+                    border: '2px solid var(--ct-card)',
+                  }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: statusColor(fu.status),
+                    }}>
+                      D+{fu.daysSinceLabel} {statusLabel(fu.status)}
+                    </span>
+                    {fu.temperature && (
+                      <span style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>
+                        {fu.temperature.toFixed(1)}°C
+                      </span>
+                    )}
+                    {fu.treatmentChanged && (
+                      <span style={{
+                        fontSize: 8,
+                        padding: '0 4px',
+                        borderRadius: 3,
+                        background: 'rgba(239,68,68,0.15)',
+                        color: '#ef4444',
+                        fontWeight: 700,
+                      }}>
+                        처방변경
+                      </span>
+                    )}
+                  </div>
+                  {fu.clinicalNotes && (
+                    <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginTop: 2 }}>
+                      {fu.clinicalNotes}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {label.followUps.length === 0 && (
+            <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', fontStyle: 'italic', marginTop: 4 }}>
+              예후 기록 없음 — 추적을 시작하세요
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 관찰 유형 상수 ──
+
+const OBSERVATION_TYPES: readonly { readonly value: string; readonly label: string; readonly icon: string }[] = [
+  { value: 'calving', label: '분만', icon: '🐣' },
+  { value: 'insemination', label: '수정', icon: '💉' },
+  { value: 'hoof_treatment', label: '발굽치료', icon: '🦶' },
+  { value: 'treatment', label: '치료/투약', icon: '💊' },
+  { value: 'vaccination', label: '예방접종', icon: '🛡️' },
+  { value: 'clinical_exam', label: '임상검사', icon: '🩺' },
+  { value: 'body_condition', label: '체형평가', icon: '📏' },
+  { value: 'behavior_change', label: '행동변화', icon: '👀' },
+  { value: 'feed_change', label: '사료변경', icon: '🌾' },
+  { value: 'general_note', label: '일반관찰', icon: '📝' },
+];
+
+const OBS_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  OBSERVATION_TYPES.map((t) => [t.value, `${t.icon} ${t.label}`]),
+);
+
+// ── ObservationForm ──
+
+function ObservationForm({ animalId, farmId, onSubmit, isSubmitting: submitting }: {
+  readonly animalId: string;
+  readonly farmId: string;
+  readonly onSubmit: (data: SubmitObservationRequest) => void;
+  readonly isSubmitting: boolean;
+}): React.JSX.Element {
+  const [obsType, setObsType] = useState<string | null>(null);
+  const [description, setDescription] = useState('');
+  const [temperature, setTemperature] = useState('');
+  const [medication, setMedication] = useState('');
+
+  const handleSubmit = (): void => {
+    if (!obsType || !description.trim()) return;
+    onSubmit({
+      animalId,
+      farmId,
+      observationType: obsType,
+      description: description.trim(),
+      temperature: temperature ? parseFloat(temperature) : undefined,
+      medication: medication || undefined,
+    });
+    // 제출 후 초기화
+    setObsType(null);
+    setDescription('');
+    setTemperature('');
+    setMedication('');
+  };
+
+  return (
+    <div style={{
+      marginTop: 12,
+      padding: '12px 0 0',
+      borderTop: '1px solid var(--ct-border)',
+    }}>
+      <div style={{
+        fontSize: 12,
+        fontWeight: 700,
+        color: 'var(--ct-text)',
+        marginBottom: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span>📋</span>
+        <span>임상 관찰 기록</span>
+        <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 400 }}>
+          (센서가 잡지 못하는 현장 기록 → AI 학습)
+        </span>
+      </div>
+
+      {/* 관찰 유형 선택 */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
+        {OBSERVATION_TYPES.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setObsType(obsType === opt.value ? null : opt.value)}
+            style={{
+              padding: '4px 8px',
+              borderRadius: 6,
+              border: obsType === opt.value
+                ? '2px solid var(--ct-primary)'
+                : '1px solid var(--ct-border)',
+              background: obsType === opt.value ? 'rgba(0,214,126,0.1)' : 'transparent',
+              color: obsType === opt.value ? 'var(--ct-primary)' : 'var(--ct-text-secondary)',
+              cursor: 'pointer',
+              fontSize: 10,
+              fontWeight: 600,
+            }}
+          >
+            {opt.icon} {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {obsType && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <textarea
+            placeholder="관찰 내용을 자세히 기록하세요 (예: 오늘 아침 분만, 암송아지, 정상 분만...)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.15)',
+              color: 'var(--ct-text)',
+              fontSize: 12,
+              outline: 'none',
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>체온:</span>
+              <input
+                type="number"
+                step="0.1"
+                placeholder="39.0"
+                value={temperature}
+                onChange={(e) => setTemperature(e.target.value)}
+                style={{
+                  width: 70,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: '1px solid var(--ct-border)',
+                  background: 'rgba(0,0,0,0.15)',
+                  color: 'var(--ct-text)',
+                  fontSize: 11,
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <input
+              type="text"
+              placeholder="약물/처치 (선택)"
+              value={medication}
+              onChange={(e) => setMedication(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '4px 8px',
+                borderRadius: 6,
+                border: '1px solid var(--ct-border)',
+                background: 'rgba(0,0,0,0.15)',
+                color: 'var(--ct-text)',
+                fontSize: 11,
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || !description.trim()}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 10,
+              border: 'none',
+              background: submitting || !description.trim()
+                ? 'var(--ct-text-muted)'
+                : 'linear-gradient(135deg, #06b6d4, #0284c7)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: submitting || !description.trim() ? 'not-allowed' : 'pointer',
+              letterSpacing: '-0.3px',
+            }}
+          >
+            {submitting ? '저장 중...' : '📋 관찰 기록 → 소버린 AI 학습'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ObservationTimeline ──
+
+function ObservationTimeline({ observations }: {
+  readonly observations: readonly ClinicalObservation[];
+}): React.JSX.Element {
+  if (observations.length === 0) return <></>;
+
+  return (
+    <div style={{
+      marginTop: 10,
+      padding: '10px 0 0',
+      borderTop: '1px solid var(--ct-border)',
+    }}>
+      <div style={{
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--ct-text-muted)',
+        marginBottom: 8,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+      }}>
+        <span>📋</span>
+        <span>임상 관찰 이력</span>
+        <span style={{ fontSize: 9, color: 'var(--ct-text-muted)', fontWeight: 400 }}>
+          ({observations.length}건)
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {observations.slice(0, 10).map((obs) => (
+          <div key={obs.observationId} style={{
+            padding: '6px 10px',
+            borderRadius: 6,
+            background: 'rgba(0,0,0,0.08)',
+            border: '1px solid var(--ct-border)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#06b6d4' }}>
+                {OBS_TYPE_LABELS[obs.observationType] ?? obs.observationType}
+              </span>
+              <span style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginLeft: 'auto' }}>
+                {new Date(obs.observedAt).toLocaleDateString('ko-KR')}
+              </span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--ct-text-secondary)', lineHeight: 1.5 }}>
+              {obs.description.length > 80 ? obs.description.slice(0, 80) + '...' : obs.description}
+            </div>
+            {(obs.temperature ?? obs.medication) && (
+              <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginTop: 2 }}>
+                {obs.temperature ? `${obs.temperature.toFixed(1)}°C` : ''}
+                {obs.temperature && obs.medication ? ' · ' : ''}
+                {obs.medication ?? ''}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── 메인 모달 ──
+
+export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props): React.JSX.Element {
+  const [events, setEvents] = useState<readonly AnimalEvent[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(initialEventId ?? null);
+  const [context, setContext] = useState<EventContext | null>(null);
+  const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [labelSuccess, setLabelSuccess] = useState(false);
+  const [labelHistory, setLabelHistory] = useState<readonly LabelWithFollowUps[]>([]);
+  const [isFollowUpSubmitting, setIsFollowUpSubmitting] = useState(false);
+  const [followUpSuccess, setFollowUpSuccess] = useState(false);
+  const [sensorSummary, setSensorSummary] = useState<string | null>(null);
+  const [animalInfo, setAnimalInfo] = useState<AnimalInfo | null>(null);
+  const [observations, setObservations] = useState<readonly ClinicalObservation[]>([]);
+  const [isObsSubmitting, setIsObsSubmitting] = useState(false);
+  const [obsSuccess, setObsSuccess] = useState(false);
+  const [savingRecordId, setSavingRecordId] = useState<string | null>(null);
+  const [savedRecordIds, setSavedRecordIds] = useState<ReadonlySet<string>>(new Set());
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cancelStreamRef = useRef<(() => void) | null>(null);
+
+  // 동물 기본 정보 + 이벤트 목록 + 관찰 기록 로드
+  useEffect(() => {
+    getAnimalInfo(animalId).then((info) => setAnimalInfo(info)).catch(() => {});
+    getObservations(animalId).then((data) => setObservations(data)).catch(() => {});
+    getAnimalEvents(animalId).then((data) => {
+      setEvents(data);
+      if (!selectedEventId && data.length > 0) {
+        setSelectedEventId(data[0]!.eventId);
+      }
+    }).catch(() => {
+      // ignore
+    });
+  }, [animalId, selectedEventId]);
+
+  // 이벤트 선택 시 컨텍스트 로드 / 이벤트 없는 소는 바로 AI 대화 시작
+  useEffect(() => {
+    if (selectedEventId) {
+      // 이벤트가 있는 경우
+      setContext(null);
+      setMessages([]);
+      setLabelSuccess(false);
+      setFollowUpSuccess(false);
+      setLabelHistory([]);
+
+      getEventContext(selectedEventId).then((ctx) => {
+        setContext(ctx);
+        setMessages([{
+          id: 'system-0',
+          role: 'system',
+          content: `${ctx.farmName} | ${ctx.earTag} | ${EVENT_TYPE_LABELS[ctx.eventType] ?? ctx.eventType} (${ctx.severity}) — AI와 대화하며 현장 확인 결과를 레이블링하세요.`,
+        }]);
+      }).catch(() => {});
+
+      getLabelHistory(selectedEventId).then((history) => {
+        setLabelHistory(history);
+      }).catch(() => {});
+    } else if (animalInfo && events.length === 0) {
+      // 이벤트가 없는 정상 소 → AI 대화만 가능
+      setMessages([{
+        id: 'system-0',
+        role: 'system',
+        content: `${animalInfo.farmName} | ${animalInfo.earTag} | 이벤트 없음 (정상) — AI와 대화하며 정상 확인 또는 관찰 소견을 기록하세요.`,
+      }]);
+    }
+  }, [selectedEventId, animalInfo, events.length]);
+
+  // 자동 스크롤
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // 메시지 전송
+  // AI 채팅 가능 여부: 이벤트 컨텍스트가 있거나, 이벤트 없는 소의 기본 정보가 있으면 가능
+  const canChat = context !== null || (animalInfo !== null && events.length === 0);
+
+  const handleSend = useCallback((): void => {
+    if (!input.trim() || isStreaming || !canChat) return;
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: input.trim(),
+    };
+
+    const assistantMessage: ChatMessage = {
+      id: `assistant-${Date.now()}`,
+      role: 'assistant',
+      content: '',
+    };
+
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+    setInput('');
+    setIsStreaming(true);
+
+    const history = messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+    // 이벤트 컨텍스트를 직렬화하여 AI에 전달 (센서 데이터 + 동물 프로필 포함)
+    const eventContextStr = context
+      ? [
+          `이벤트ID: ${context.eventId}`,
+          `이벤트타입: ${context.eventType} (smaXtec: ${context.smaxtecOriginalType})`,
+          `심각도: ${context.severity}`,
+          `감지시간: ${context.detectedAt}`,
+          `동물: ${context.earTag} (${context.animalId})`,
+          `농장: ${context.farmName} (${context.farmId})`,
+          `센서요약: ${context.sensorSummary}`,
+          `최근이력: ${context.recentHistory.slice(0, 5).map((h) => `${h.eventType}(${h.severity}) ${h.detectedAt}`).join(', ')}`,
+          context.currentLabels.length > 0
+            ? `기존레이블: ${context.currentLabels.map((l) => `${l.verdict}${l.actualDiagnosis ? ': ' + l.actualDiagnosis : ''}`).join(', ')}`
+            : '기존레이블: 없음',
+          sensorSummary ? `\n--- 실시간 센서 데이터 ---\n${sensorSummary}` : '',
+        ].filter(Boolean).join('\n')
+      : [
+          `동물: ${animalInfo?.earTag ?? '?'} (${animalId})`,
+          `농장: ${animalInfo?.farmName ?? '?'} (${animalInfo?.farmId ?? '?'})`,
+          `품종: ${animalInfo?.breed ?? '?'} | 성별: ${animalInfo?.sex ?? '?'}`,
+          '이벤트: 없음 (정상 상태 확인)',
+          sensorSummary ? `\n--- 실시간 센서 데이터 ---\n${sensorSummary}` : '',
+        ].filter(Boolean).join('\n');
+
+    const cancel = streamLabelChat(
+      {
+        question: input.trim(),
+        eventId: context?.eventId ?? `normal-check-${animalId}`,
+        animalId: context?.animalId ?? animalId,
+        farmId: context?.farmId ?? animalInfo?.farmId,
+        conversationHistory: history,
+        eventContext: eventContextStr,
+      },
+      (chunk) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant') {
+            updated[updated.length - 1] = { ...last, content: last.content + chunk };
+          }
+          return updated;
+        });
+      },
+      () => setIsStreaming(false),
+      () => setIsStreaming(false),
+      (records) => {
+        // AI가 대화에서 기록을 추출함 → 마지막 어시스턴트 메시지에 첨부
+        if (records.length > 0) {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            const last = updated[lastIdx];
+            if (last && last.role === 'assistant') {
+              updated[lastIdx] = { ...last, extractedRecords: records };
+            }
+            return updated;
+          });
+        }
+      },
+    );
+
+    cancelStreamRef.current = cancel;
+  }, [input, isStreaming, canChat, context, animalInfo, animalId, messages, sensorSummary]);
+
+  // 추출된 기록 확인 & 저장
+  const handleConfirmRecord = useCallback(async (record: ExtractedRecordClient): Promise<void> => {
+    const recordKey = `${record.eventType}-${record.summary}`;
+    setSavingRecordId(recordKey);
+    try {
+      const conversationSummary = messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => `[${m.role}]: ${m.content.slice(0, 200)}`)
+        .join('\n');
+
+      await saveConversationRecord({
+        animalId: context?.animalId ?? animalId,
+        farmId: context?.farmId ?? animalInfo?.farmId ?? '',
+        record,
+        conversationSummary,
+      });
+
+      setSavedRecordIds((prev) => new Set([...prev, recordKey]));
+
+      // 관찰 기록 목록 갱신
+      if (animalId) {
+        getObservations(animalId).then(setObservations).catch(() => {});
+      }
+    } catch {
+      // 에러 시 무시 (UI에서 버튼 다시 시도 가능)
+    } finally {
+      setSavingRecordId(null);
+    }
+  }, [messages, context, animalId, animalInfo]);
+
+  // 레이블 제출
+  const handleLabelSubmit = useCallback(async (data: {
+    verdict: LabelVerdict;
+    actualDiagnosis?: string;
+    actionTaken?: string;
+    outcome?: LabelOutcome;
+    notes?: string;
+  }): Promise<void> => {
+    if (!context) return;
+    setIsSubmitting(true);
+
+    // AI 대화 요약 생성
+    const assistantMessages = messages.filter((m) => m.role === 'assistant' && m.content);
+    const conversationSummary = assistantMessages.length > 0
+      ? assistantMessages.map((m) => m.content).join(' | ').slice(0, 500)
+      : undefined;
+
+    try {
+      await submitLabel({
+        eventId: context.eventId,
+        animalId: context.animalId,
+        farmId: context.farmId,
+        verdict: data.verdict,
+        actualDiagnosis: data.actualDiagnosis,
+        actionTaken: data.actionTaken,
+        outcome: data.outcome,
+        notes: data.notes,
+        conversationSummary,
+      });
+      setLabelSuccess(true);
+
+      // 이벤트 목록 + 레이블 히스토리 새로고침
+      const refreshed = await getAnimalEvents(animalId);
+      setEvents(refreshed);
+      const history = await getLabelHistory(context.eventId);
+      setLabelHistory(history);
+    } catch {
+      // ignore — error shown in UI
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [context, messages, animalId]);
+
+  // 예후 기록 제출
+  const handleFollowUpSubmit = useCallback(async (data: SubmitFollowUpRequest): Promise<void> => {
+    if (!context) return;
+    setIsFollowUpSubmitting(true);
+
+    // AI 대화 요약 (예후 기록 시에도 AI와 대화한 내용 포함)
+    const assistantMessages = messages.filter((m) => m.role === 'assistant' && m.content);
+    const conversationSummary = assistantMessages.length > 0
+      ? assistantMessages.map((m) => m.content).join(' | ').slice(0, 500)
+      : undefined;
+
+    try {
+      await submitFollowUp({ ...data, conversationSummary });
+      setFollowUpSuccess(true);
+
+      // 레이블 히스토리 새로고침
+      const history = await getLabelHistory(context.eventId);
+      setLabelHistory(history);
+
+      // 3초 후 성공 메시지 숨김
+      setTimeout(() => setFollowUpSuccess(false), 3000);
+    } catch {
+      // ignore
+    } finally {
+      setIsFollowUpSubmitting(false);
+    }
+  }, [context, messages]);
+
+  // 임상 관찰 기록 제출
+  const handleObservationSubmit = useCallback(async (data: SubmitObservationRequest): Promise<void> => {
+    setIsObsSubmitting(true);
+
+    const assistantMessages = messages.filter((m) => m.role === 'assistant' && m.content);
+    const conversationSummary = assistantMessages.length > 0
+      ? assistantMessages.map((m) => m.content).join(' | ').slice(0, 500)
+      : undefined;
+
+    try {
+      await submitObservation({ ...data, conversationSummary });
+      setObsSuccess(true);
+      const refreshed = await getObservations(animalId);
+      setObservations(refreshed);
+      setTimeout(() => setObsSuccess(false), 3000);
+    } catch {
+      // ignore
+    } finally {
+      setIsObsSubmitting(false);
+    }
+  }, [messages, animalId]);
+
+  // 키보드 단축키
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // 추천 질문
+  const earTag = context?.earTag ?? animalInfo?.earTag ?? '?';
+  const suggestedQuestions = context
+    ? [
+        `이 ${EVENT_TYPE_LABELS[context.eventType] ?? context.eventType} 알람의 원인으로 뭐가 의심돼?`,
+        `${earTag}번 소의 최근 이력을 보고 현재 상태를 분석해줘`,
+        '이 이벤트가 오탐일 가능성은?',
+        '어떤 조치를 취해야 하는지 추천해줘',
+      ]
+    : animalInfo
+      ? [
+          `${earTag}번 소의 센서 데이터를 분석해줘`,
+          `${earTag}번 소의 현재 건강 상태를 종합 평가해줘`,
+          '이 소의 비유 성적은 어떤 수준이야?',
+          '주의해야 할 점이 있어?',
+        ]
+      : [];
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(4px)',
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        width: '95vw',
+        maxWidth: 1500,
+        height: '88vh',
+        background: 'var(--ct-card)',
+        borderRadius: 18,
+        border: '1px solid var(--ct-border)',
+        display: 'flex',
+        overflow: 'hidden',
+      }}>
+        {/* ── 좌측: 이벤트 컨텍스트 패널 ── */}
+        <div style={{
+          width: 260,
+          borderRight: '1px solid var(--ct-border)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          {/* 헤더 */}
+          <div style={{
+            padding: '16px 14px',
+            borderBottom: '1px solid var(--ct-border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 16 }}>🧠</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ct-text)' }}>
+                소버린 AI 레이블링
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                현장 확인 → AI 지식 강화
+              </div>
+            </div>
+          </div>
+
+          {/* 동물 정보 카드 (이벤트 유무와 관계없이 항상 표시) */}
+          {animalInfo && (
+            <div style={{
+              padding: '12px 14px',
+              borderBottom: '1px solid var(--ct-border)',
+            }}>
+              <div style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: context
+                  ? `${SEVERITY_COLORS[context.severity] ?? '#94a3b8'}11`
+                  : 'rgba(34,197,94,0.06)',
+                border: context
+                  ? `1px solid ${SEVERITY_COLORS[context.severity] ?? '#94a3b8'}33`
+                  : '1px solid rgba(34,197,94,0.2)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ct-text)' }}>
+                    {animalInfo.earTag}
+                  </span>
+                  {context ? (
+                    <span style={{
+                      fontSize: 9,
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      background: `${SEVERITY_COLORS[context.severity] ?? '#94a3b8'}22`,
+                      color: SEVERITY_COLORS[context.severity] ?? '#94a3b8',
+                      fontWeight: 600,
+                    }}>
+                      {context.severity}
+                    </span>
+                  ) : (
+                    <span style={{
+                      fontSize: 9,
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      background: 'rgba(34,197,94,0.15)',
+                      color: '#22c55e',
+                      fontWeight: 600,
+                    }}>
+                      정상
+                    </span>
+                  )}
+                  <span style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>
+                    {animalInfo.breed} · {animalInfo.sex === 'female' ? '♀' : '♂'}
+                  </span>
+                </div>
+
+                {context ? (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ct-text-secondary)', marginBottom: 2 }}>
+                      {EVENT_TYPE_LABELS[context.eventType] ?? context.eventType}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                      {context.farmName} | {new Date(context.detectedAt).toLocaleString('ko-KR')}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4 }}>
+                      {context.sensorSummary}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 2 }}>
+                      최근 7일 이벤트 없음
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                      {animalInfo.farmName} | 정상 확인 레이블 가능
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                      센서 데이터를 확인하고 AI와 대화하며
+                      정상 상태 확인 또는 관찰 소견을 기록하세요.
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 이벤트 목록 */}
+          <div style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '12px 14px',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ct-text-muted)', marginBottom: 8 }}>
+              {events.length > 0 ? `최근 이벤트 (${events.length}건)` : '최근 이벤트 없음'}
+            </div>
+            {events.length > 0 ? (
+              <EventSelector
+                events={events}
+                selectedId={selectedEventId}
+                onSelect={setSelectedEventId}
+              />
+            ) : (
+              <div style={{
+                padding: '16px 12px',
+                textAlign: 'center',
+                fontSize: 11,
+                color: 'var(--ct-text-muted)',
+                borderRadius: 8,
+                background: 'rgba(0,0,0,0.05)',
+              }}>
+                <div style={{ fontSize: 20, marginBottom: 6 }}>✅</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>이벤트가 없는 정상 개체</div>
+                <div style={{ fontSize: 10, lineHeight: 1.5 }}>
+                  정상 개체도 관찰 기록을 남길 수 있습니다.
+                  AI와 대화하며 현재 상태를 확인하세요.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 소버린 AI 배지 */}
+          <div style={{
+            padding: '10px 14px',
+            borderTop: '1px solid var(--ct-border)',
+            background: 'rgba(99,102,241,0.05)',
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#6366f1', marginBottom: 2 }}>
+              🌏 Sovereign AI Knowledge Loop
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', lineHeight: 1.5 }}>
+              현장 전문가의 레이블이 국가별 고유 AI 지식으로 축적됩니다.
+              센서는 해외 기술이지만, 레이블 데이터는 대한민국의 소버린 자산입니다.
+            </div>
+          </div>
+        </div>
+
+        {/* ── 중앙: 센서 데이터 차트 + 동물 프로필 ── */}
+        <SensorDataPanel
+          animalId={animalId}
+          selectedEventId={selectedEventId}
+          onDataLoaded={setSensorSummary}
+        />
+
+        {/* ── 우측: AI 대화 + 레이블 ── */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          {/* 헤더 */}
+          <div style={{
+            padding: '12px 18px',
+            borderBottom: '1px solid var(--ct-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: '#22c55e',
+                boxShadow: '0 0 6px #22c55e88',
+              }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>
+                AI 레이블링 어시스턴트
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--ct-text-muted)',
+                cursor: 'pointer',
+                fontSize: 18,
+                lineHeight: 1,
+                padding: '4px 8px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* 채팅 영역 */}
+          <div style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '16px 18px',
+          }}>
+            {messages.map((msg) => (
+              <React.Fragment key={msg.id}>
+                <ChatBubble message={msg} />
+                {msg.extractedRecords && msg.extractedRecords.length > 0 && (
+                  <div style={{ padding: '0 4px' }}>
+                    {msg.extractedRecords.map((rec) => {
+                      const recordKey = `${rec.eventType}-${rec.summary}`;
+                      return (
+                        <ExtractedRecordCard
+                          key={recordKey}
+                          record={rec}
+                          onConfirm={handleConfirmRecord}
+                          onDismiss={() => {
+                            setMessages((prev) => prev.map((m) =>
+                              m.id === msg.id
+                                ? { ...m, extractedRecords: m.extractedRecords?.filter((r) => r !== rec) }
+                                : m,
+                            ));
+                          }}
+                          saving={savingRecordId === recordKey}
+                          saved={savedRecordIds.has(recordKey)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+            {isStreaming && (
+              <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', padding: '4px 0' }}>
+                AI 응답 중...
+              </div>
+            )}
+            <div ref={chatEndRef} />
+
+            {/* 추천 질문 (대화 시작 전) */}
+            {messages.length <= 1 && canChat && suggestedQuestions.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginBottom: 8 }}>
+                  AI에게 물어보세요:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {suggestedQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setInput(q);
+                        inputRef.current?.focus();
+                      }}
+                      style={{
+                        textAlign: 'left',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--ct-border)',
+                        background: 'rgba(0,0,0,0.1)',
+                        color: 'var(--ct-text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                      }}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 입력 영역 */}
+          <div style={{
+            padding: '12px 18px',
+            borderTop: '1px solid var(--ct-border)',
+          }}>
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              marginBottom: canChat ? 12 : 0,
+            }}>
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={context ? 'AI에게 이 알람에 대해 질문하세요...' : 'AI에게 이 소에 대해 질문하세요...'}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isStreaming || !canChat}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid var(--ct-border)',
+                  background: 'rgba(0,0,0,0.15)',
+                  color: 'var(--ct-text)',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={isStreaming || !input.trim() || !canChat}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: isStreaming || !input.trim()
+                    ? 'var(--ct-text-muted)'
+                    : 'var(--ct-primary)',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: isStreaming || !input.trim() ? 'not-allowed' : 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                전송
+              </button>
+            </div>
+
+            {/* 레이블 폼 */}
+            {context && !labelSuccess && (
+              <LabelForm
+                context={context}
+                onSubmit={handleLabelSubmit}
+                isSubmitting={isSubmitting}
+              />
+            )}
+
+            {/* 레이블 성공 메시지 */}
+            {labelSuccess && (
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: 10,
+                background: 'rgba(34,197,94,0.1)',
+                border: '1px solid rgba(34,197,94,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                marginTop: 12,
+              }}>
+                <span style={{ fontSize: 20 }}>✅</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>
+                    레이블 저장 완료
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
+                    소버린 AI 지식 강화 루프에 반영되었습니다. 아래에서 예후를 추적하세요.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 예후 추적: 기존 레이블이 있으면 follow-up 폼 표시 */}
+            {context && labelHistory.length > 0 && (
+              <>
+                <FollowUpTimeline labelHistory={labelHistory} />
+                <FollowUpForm
+                  labelId={labelHistory[0]!.labelId}
+                  eventId={context.eventId}
+                  animalId={context.animalId}
+                  onSubmit={handleFollowUpSubmit}
+                  isSubmitting={isFollowUpSubmitting}
+                />
+              </>
+            )}
+
+            {/* 예후 성공 메시지 */}
+            {followUpSuccess && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: 'rgba(249,115,22,0.1)',
+                border: '1px solid rgba(249,115,22,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 8,
+              }}>
+                <span style={{ fontSize: 16 }}>📋</span>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#f97316' }}>
+                  예후 기록 저장 — 소버린 AI가 인과관계를 학습합니다
+                </div>
+              </div>
+            )}
+
+            {/* ── 임상 관찰 기록 (모든 소 공통) ── */}
+            {animalInfo && (
+              <>
+                <ObservationTimeline observations={observations} />
+                <ObservationForm
+                  animalId={animalId}
+                  farmId={context?.farmId ?? animalInfo.farmId}
+                  onSubmit={handleObservationSubmit}
+                  isSubmitting={isObsSubmitting}
+                />
+              </>
+            )}
+
+            {/* 관찰 기록 성공 메시지 */}
+            {obsSuccess && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: 'rgba(6,182,212,0.1)',
+                border: '1px solid rgba(6,182,212,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 8,
+              }}>
+                <span style={{ fontSize: 16 }}>📋</span>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#06b6d4' }}>
+                  임상 관찰 기록 저장 — 소버린 AI 학습 자료로 축적됩니다
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -86,20 +86,218 @@ body {
 
 /* smaXtec Dark Theme for Unified Dashboard */
 [data-theme="dark"] {
-  --ct-bg: #0D0D0D;
-  --ct-card: #1A1A1A;
-  --ct-card-hover: #222222;
-  --ct-border: #2A2A2A;
-  --ct-text: #E8E8E8;
-  --ct-text-secondary: #888888;
-  --ct-text-muted: #555555;
-  --ct-primary: #00C853;
-  --ct-primary-light: #1B3A2A;
-  --ct-warning: #FFD600;
-  --ct-danger: #FF5252;
-  --ct-info: #40C4FF;
-  --ct-ai-bg: #0F1F15;
-  --ct-ai-border: #00C853;
-  --ct-sidebar-bg: #111111;
-  --ct-sidebar-text: #CCCCCC;
+  --ct-bg: #0a0f14;
+  --ct-card: #111920;
+  --ct-card-hover: #1a2330;
+  --ct-border: #1e2a38;
+  --ct-text: #e8edf2;
+  --ct-text-secondary: #7a8a9e;
+  --ct-text-muted: #4a5568;
+  --ct-primary: #00d67e;
+  --ct-primary-light: #0d2e1f;
+  --ct-warning: #fbbf24;
+  --ct-danger: #f43f5e;
+  --ct-info: #38bdf8;
+  --ct-ai-bg: #0c1f18;
+  --ct-ai-border: #00d67e;
+  --ct-sidebar-bg: #0d1117;
+  --ct-sidebar-text: #b0bec5;
+  --ct-glow-primary: rgba(0, 214, 126, 0.08);
+  --ct-glow-danger: rgba(244, 63, 94, 0.08);
+  --ct-glow-warning: rgba(251, 191, 36, 0.08);
+  --ct-glow-info: rgba(56, 189, 248, 0.08);
+}
+
+/* ── Dashboard section label ── */
+.ct-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--ct-text-muted);
+  margin-bottom: 4px;
+}
+.ct-section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--ct-border), transparent);
+}
+
+/* ── Glass card ── */
+.ct-glass {
+  background: linear-gradient(135deg, rgba(17,25,32,0.95) 0%, rgba(17,25,32,0.80) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* ── KPI card glow on hover ── */
+.ct-kpi-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.ct-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.ct-kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--kpi-accent, var(--ct-primary));
+  opacity: 0.8;
+}
+
+/* ── Chart card hover ── */
+.ct-chart-card {
+  transition: box-shadow 0.25s ease;
+}
+.ct-chart-card:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+
+/* ── Fade-in animation ── */
+@keyframes ct-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ct-fade-up {
+  animation: ct-fade-up 0.4s ease-out both;
+}
+.ct-fade-up-1 { animation-delay: 0.05s; }
+.ct-fade-up-2 { animation-delay: 0.1s; }
+.ct-fade-up-3 { animation-delay: 0.15s; }
+.ct-fade-up-4 { animation-delay: 0.2s; }
+
+/* ── Shimmer for loading ── */
+@keyframes ct-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.ct-shimmer {
+  background: linear-gradient(90deg, var(--ct-card) 25%, var(--ct-card-hover) 50%, var(--ct-card) 75%);
+  background-size: 200% 100%;
+  animation: ct-shimmer 1.5s ease-in-out infinite;
+}
+
+/* ── Critical pulse for epidemic alerts ── */
+@keyframes ct-critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 16px 4px rgba(239, 68, 68, 0.15); }
+}
+.ct-pulse-critical {
+  animation: ct-critical-pulse 2s ease-in-out infinite;
+}
+
+/* ── Mobile Responsive ── */
+@media (max-width: 768px) {
+  /* 사이드바 숨기기 */
+  [data-sidebar] {
+    display: none !important;
+  }
+
+  /* 메인 컨텐츠 전체 너비 */
+  main {
+    margin-left: 0 !important;
+    padding: 8px !important;
+  }
+
+  /* 2열 그리드 → 1열 */
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="gridTemplateColumns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* KPI 카드 그리드 → 2열 */
+  [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* 폰트 크기 조정 */
+  h1, [style*="fontSize: 24"], [style*="font-size: 24px"] {
+    font-size: 18px !important;
+  }
+
+  /* 헤더 간소화 — 세로 스택 */
+  header {
+    padding: 8px 12px !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+  header > div:nth-child(2) {
+    display: none !important;
+  }
+
+  /* 모달 모바일 대응 */
+  [style*="position: fixed"][style*="inset: 0"] > div,
+  [style*="position: fixed"][style*="top: 0"] > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* 소버린 AI 모달 모바일 레이아웃 */
+  [style*="grid-template-columns: 240px"] {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr !important;
+  }
+
+  [style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 차트 카드 최소 높이 */
+  .ct-chart-card {
+    min-height: auto !important;
+  }
+
+  /* 테이블 스크롤 */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* 태블릿 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  main {
+    padding: 12px !important;
+  }
+
+  [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* 터치 디바이스 최적화 */
+@media (hover: none) and (pointer: coarse) {
+  button, [role="button"], a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .ct-kpi-card:hover {
+    transform: none;
+  }
+
+  /* 스크롤바 숨기기 (모바일) */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    scrollbar-width: none;
+  }
 }

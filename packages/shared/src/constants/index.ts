@@ -25,3 +25,13 @@ export {
   resolveBreedType,
 } from './breed-config.js';
 export type { BreedConfig } from './breed-config.js';
+export {
+  CLUSTER_DETECTION,
+  ALERT_LEVEL_THRESHOLDS,
+  SPREAD_RATE,
+  PROXIMITY_RISK_RADIUS,
+  ESCALATION_TARGETS,
+  EPIDEMIC_SCAN_INTERVAL_MS,
+  EPIDEMIC_RELEVANT_EVENT_TYPES,
+  DISEASE_PATTERN_MAP,
+} from './epidemic-thresholds.js';
