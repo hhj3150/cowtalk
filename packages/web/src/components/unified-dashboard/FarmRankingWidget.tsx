@@ -22,13 +22,27 @@ const RANK_BADGES: readonly string[] = ['\uD83D\uDD34', '\uD83D\uDFE0', '\uD83D\
 
 const ALARM_TYPE_LABELS: Record<string, string> = {
   temperature_warning: '체온 이상',
+  temperature_high: '고체온',
+  temperature_low: '저체온',
   rumination_warning: '반추 이상',
+  rumination_decrease: '반추 감소',
   activity_warning: '활동 이상',
+  activity_increase: '활동 증가',
   drinking_warning: '음수 이상',
   feeding_warning: '사양 이상',
   health_warning: '건강 경고',
   estrus: '발정 의심',
+  estrus_detected: '발정 감지',
+  insemination: '수정 완료',
+  pregnancy_check: '임신 검진',
+  pregnancy_confirmed: '임신 확인',
   calving: '분만 감지',
+  calving_expected: '분만 예정',
+  calving_confirmation: '분만 확인',
+  dry_off: '건유 전환',
+  vaccination: '백신 접종',
+  treatment: '치료 기록',
+  management: '관리 기록',
 };
 
 // ── 유틸 ──
