@@ -4,6 +4,9 @@
 // 각 커넥터 독립 실행 (하나 실패해도 나머지 정상)
 
 import { logger } from '../lib/logger.js';
+import { getDb } from '../config/database.js';
+import { animals, sensorMeasurements } from '../db/schema.js';
+import { eq, and, isNotNull } from 'drizzle-orm';
 import { SmaxtecConnector } from './connectors/smaxtec.connector.js';
 import {
   TraceabilityConnector,
@@ -177,11 +180,95 @@ export class PipelineOrchestrator {
         );
       }
 
+      // 3. Sensor data batch (랜덤 30마리씩 수집)
+      void this.collectSensorBatch().catch((err) => {
+        logger.error({ err }, '[Pipeline] Sensor batch collection failed');
+      });
+
       this.state = { ...this.state, lastRealtimeRun: new Date() };
     } catch (error) {
       logger.error({ err: error }, '[Pipeline] Realtime cycle error');
     } finally {
       this.state = { ...this.state, isCycleRunning: false };
+    }
+  }
+
+  // ===========================
+  // 센서 데이터 배치 수집
+  // ===========================
+
+  private sensorOffset = 0;
+
+  private async collectSensorBatch(): Promise<void> {
+    if (this.smaxtec.status !== 'connected') return;
+
+    const db = getDb();
+    const BATCH_SIZE = 30;
+
+    // 활성 동물 중 센서 있는 것만 (offset으로 순환)
+    const activeAnimals = await db
+      .select({ animalId: animals.animalId, externalId: animals.externalId })
+      .from(animals)
+      .where(and(isNotNull(animals.externalId), eq(animals.status, 'active')))
+      .limit(BATCH_SIZE)
+      .offset(this.sensorOffset);
+
+    if (activeAnimals.length === 0) {
+      this.sensorOffset = 0; // 끝까지 갔으면 처음부터
+      return;
+    }
+    this.sensorOffset += BATCH_SIZE;
+
+    const now = new Date();
+    const from = new Date(now.getTime() - 30 * 60 * 1000); // 최근 30분
+    const fromStr = from.toISOString().split('T')[0]!;
+    const toStr = now.toISOString().split('T')[0]!;
+
+    let totalStored = 0;
+
+    const metricTypeMap: Readonly<Record<string, string>> = {
+      temp: 'temperature',
+      act: 'activity',
+    };
+
+    for (const animal of activeAnimals) {
+      if (!animal.externalId) continue;
+
+      try {
+        for (const metric of ['temp', 'act']) {
+          const data = await this.smaxtec.fetchSensorData(
+            animal.externalId, metric, fromStr, toStr,
+          );
+          if (!data?.metrics) continue;
+
+          const metricData = data.metrics[metric];
+          if (!metricData || metricData.length === 0) continue;
+
+          // 최근 30분 데이터만 필터
+          const recentData = metricData.filter((d) => d.ts * 1000 > from.getTime());
+          if (recentData.length === 0) continue;
+
+          const values = recentData.map((d) => ({
+            animalId: animal.animalId,
+            timestamp: new Date(d.ts * 1000),
+            metricType: metricTypeMap[metric] ?? metric,
+            value: d.value,
+            qualityFlag: 'good' as const,
+          }));
+
+          await db.insert(sensorMeasurements).values(values);
+          totalStored += values.length;
+        }
+      } catch {
+        // 개별 동물 실패 무시
+      }
+    }
+
+    if (totalStored > 0) {
+      logger.info(
+        { stored: totalStored, animals: activeAnimals.length, offset: this.sensorOffset },
+        '[Pipeline] Sensor batch collected',
+      );
     }
   }
 
