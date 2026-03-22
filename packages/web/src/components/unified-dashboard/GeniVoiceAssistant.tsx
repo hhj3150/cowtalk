@@ -25,6 +25,14 @@ interface StreamChunk {
 
 // ── 음성 합성 (TTS) ──
 
+// iOS Safari에서 TTS를 사용하려면 사용자 제스처 직후에 한 번 호출해야 함
+function unlockTts(): void {
+  if (!('speechSynthesis' in window)) return;
+  const dummy = new SpeechSynthesisUtterance('');
+  dummy.volume = 0;
+  window.speechSynthesis.speak(dummy);
+}
+
 function speak(text: string, onEnd?: () => void): void {
   if (!('speechSynthesis' in window)) {
     onEnd?.();
@@ -132,10 +140,14 @@ export function GeniVoiceAssistant({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // TTS 보이스 로드
+  // TTS 보이스 로드 (일부 브라우저는 비동기 로드)
   useEffect(() => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.getVoices();
+      // Chrome/Safari: voiceschanged 이벤트 후 보이스 사용 가능
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
     }
   }, []);
 
@@ -209,6 +221,8 @@ export function GeniVoiceAssistant({
     if (!hasSpeechRecognition) return;
 
     stopSpeaking();
+    // iOS Safari: 사용자 제스처 직후에 TTS 잠금 해제
+    unlockTts();
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
@@ -274,6 +288,8 @@ export function GeniVoiceAssistant({
     const text = inputText.trim();
     if (!text) return;
     setInputText('');
+    // iOS Safari: 사용자 제스처 직후에 TTS 잠금 해제
+    unlockTts();
     askGeni(text);
   }, [inputText, askGeni]);
 
@@ -425,7 +441,7 @@ export function GeniVoiceAssistant({
               {suggestions.map((q) => (
                 <button
                   key={q}
-                  onClick={() => askGeni(q)}
+                  onClick={() => { unlockTts(); askGeni(q); }}
                   style={{
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid var(--ct-border, #334155)',
