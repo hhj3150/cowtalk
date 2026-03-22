@@ -295,6 +295,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
 
   // 타임라인 데이터를 차트 포맷으로 변환
   const chartData = useMemo(() => {
+    if (!data.timeline || data.timeline.length === 0) return [];
     const sliced = data.timeline.slice(-selectedPeriod);
     return sliced.map((point) => ({
       date: point.date,
@@ -578,7 +579,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
       )}
 
       {/* 이상 개체 테이블 */}
-      <AnomalyTable anomalies={data.anomalies} onAnimalClick={onAnimalClick} />
+      <AnomalyTable anomalies={data.anomalies ?? []} onAnimalClick={onAnimalClick} />
     </div>
   );
 }
