@@ -6,6 +6,8 @@
 // 레이블링한 지식은 해당 국가/지역의 고유 자산(소버린 AI)이 된다.
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useVoiceInput } from '@web/hooks/useVoiceInput';
+import { MicButton } from '@web/components/common/MicButton';
 import { getEventContext, streamLabelChat, submitLabel, getAnimalEvents, getLabelHistory, submitFollowUp, getAnimalInfo, submitObservation, getObservations, saveConversationRecord } from '@web/api/label-chat.api';
 import type { AnimalEvent, AnimalInfo, LabelWithFollowUps, SubmitFollowUpRequest, ClinicalObservation, SubmitObservationRequest, ExtractedRecordClient } from '@web/api/label-chat.api';
 import type { EventContext, LabelVerdict, LabelOutcome } from '@cowtalk/shared';
@@ -1083,6 +1085,15 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelStreamRef = useRef<(() => void) | null>(null);
 
+  const handleVoiceResult = useCallback((text: string) => {
+    setInput(text);
+    setTimeout(() => {
+      const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement | null;
+      sendBtn?.click();
+    }, 100);
+  }, []);
+  const voice = useVoiceInput(handleVoiceResult);
+
   // 동물 기본 정보 + 이벤트 목록 + 관찰 기록 로드
   useEffect(() => {
     getAnimalInfo(animalId).then((info) => setAnimalInfo(info)).catch(() => {});
@@ -1689,11 +1700,17 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
               gap: 8,
               marginBottom: canChat ? 12 : 0,
             }}>
+              <MicButton
+                isListening={voice.isListening}
+                onClick={voice.isListening ? voice.stopListening : voice.startListening}
+                disabled={isStreaming || !canChat}
+                size={34}
+              />
               <input
                 ref={inputRef}
                 type="text"
-                placeholder={context ? 'AI에게 이 알람에 대해 질문하세요...' : 'AI에게 이 소에 대해 질문하세요...'}
-                value={input}
+                placeholder={voice.isListening ? '듣는 중...' : (context ? 'AI에게 이 알람에 대해 질문하세요...' : 'AI에게 이 소에 대해 질문하세요...')}
+                value={voice.isListening ? voice.transcript : input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={isStreaming || !canChat}
@@ -1710,6 +1727,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
               />
               <button
                 type="button"
+                data-send-btn
                 onClick={handleSend}
                 disabled={isStreaming || !input.trim() || !canChat}
                 style={{

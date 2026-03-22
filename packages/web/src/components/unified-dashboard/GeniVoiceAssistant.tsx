@@ -34,14 +34,17 @@ function speak(text: string, onEnd?: () => void): void {
 
   const cleanText = text
     .replace(/[#*_`>\-|]/g, '')
+    .replace(/\d+\.\s/g, ', ')
     .replace(/\n{2,}/g, '. ')
-    .replace(/\n/g, '. ')
-    .slice(0, 500);
+    .replace(/\n/g, ', ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\.{2,}/g, '.')
+    .slice(0, 400);
 
   const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = 'ko-KR';
-  utterance.rate = 1.05;
-  utterance.pitch = 1.0;
+  utterance.rate = 0.95;
+  utterance.pitch = 1.05;
 
   const voices = window.speechSynthesis.getVoices();
   const koVoice = voices.find((v) => v.lang.startsWith('ko'));
@@ -140,7 +143,7 @@ export function GeniVoiceAssistant({
       const response = await axios.post<string>(
         '/api/chat/stream',
         {
-          question,
+          question: `[음성 대화 모드] 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.\n\n질문: ${question}`,
           role: user?.role ?? 'farm_owner',
           farmId: selectedFarmId ?? undefined,
           dashboardContext: dashboardContext

@@ -1,8 +1,10 @@
 // 통합 대시보드 — 인라인 AI 채팅 패널 (대시보드 내장형)
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useFarmStore } from '@web/stores/farm.store';
+import { useVoiceInput } from '@web/hooks/useVoiceInput';
+import { MicButton } from '@web/components/common/MicButton';
 import axios from 'axios';
 
 // ── 타입 ──
@@ -133,6 +135,11 @@ export function InlineAiChat(): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const accessToken = useAuthStore((s) => s.accessToken);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+
+  const handleVoiceResult = useCallback((text: string) => {
+    handleSend(text);
+  }, []);
+  const voice = useVoiceInput(handleVoiceResult);
 
   // 스크롤 자동 하단 이동
   useEffect(() => {
@@ -289,14 +296,20 @@ export function InlineAiChat(): React.JSX.Element {
         className="flex items-center gap-2 border-t px-4 py-3"
         style={{ borderColor: 'var(--ct-border)', background: 'var(--ct-card)' }}
       >
+        <MicButton
+          isListening={voice.isListening}
+          onClick={voice.isListening ? voice.stopListening : voice.startListening}
+          disabled={isStreaming}
+          size={34}
+        />
         <input
           ref={inputRef}
           type="text"
-          value={input}
+          value={voice.isListening ? voice.transcript : input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="무엇이든 물어보세요..."
-          disabled={isStreaming}
+          placeholder={voice.isListening ? '듣는 중...' : '무엇이든 물어보세요...'}
+          disabled={isStreaming || voice.isListening}
           className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none transition-colors"
           style={{
             borderColor: 'var(--ct-border)',
