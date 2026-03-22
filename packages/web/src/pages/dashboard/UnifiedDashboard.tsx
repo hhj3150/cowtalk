@@ -466,22 +466,24 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </>)}
 
           {/* ── 분석 차트 ── */}
-          {(isVisible('herd_composition_chart') || isVisible('alert_trend_chart')) && (<>
+          {/* 알림 트렌드: 전체 뷰에서도 의미 있음 (전국 발생 추이) */}
+          {isVisible('alert_trend_chart') && (<>
           <SectionLabel>Analytics</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-            {isVisible('herd_composition_chart') && (
-            <ChartCard title="축군 구성" icon="🐄" delay={50}>
-              {herdCompData && herdCompData.length > 0
-                ? <HerdCompositionChart data={[...herdCompData]} height={240} />
+            {isVisible('alert_trend_chart') && (
+            <ChartCard title="알림 트렌드 (14일)" icon="📊" delay={100}>
+              {alertTrendData && alertTrendData.length > 0
+                ? <AlertTrendChart data={[...alertTrendData]} height={240} />
                 : LOADING_PLACEHOLDER
               }
             </ChartCard>
             )}
 
-            {isVisible('alert_trend_chart') && (
-            <ChartCard title="알림 트렌드 (14일)" icon="📊" delay={100}>
-              {alertTrendData && alertTrendData.length > 0
-                ? <AlertTrendChart data={[...alertTrendData]} height={240} />
+            {/* 축군 구성: 개별 농장에서만 의미 있음 */}
+            {selectedFarmId && isVisible('herd_composition_chart') && (
+            <ChartCard title="축군 구성" icon="🐄" delay={50}>
+              {herdCompData && herdCompData.length > 0
+                ? <HerdCompositionChart data={[...herdCompData]} height={240} />
                 : LOADING_PLACEHOLDER
               }
             </ChartCard>
