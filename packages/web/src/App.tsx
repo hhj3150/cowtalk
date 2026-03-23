@@ -15,6 +15,7 @@ const LoginPage = lazy(() => import('@web/pages/auth/LoginPage'));
 const UnifiedDashboard = lazy(() => import('@web/pages/dashboard/UnifiedDashboard'));
 const DemoModePage = lazy(() => import('@web/pages/demo/DemoModePage'));
 const RegionalMapPage = lazy(() => import('@web/pages/regional/RegionalMapPage'));
+const CowProfilePage = lazy(() => import('@web/pages/cow/CowProfilePage'));
 const NotificationSettingsPage = lazy(() => import('@web/pages/settings/NotificationSettingsPage'));
 
 // 관리자 전용
@@ -60,6 +61,7 @@ export function App(): React.JSX.Element {
               {/* 모든 역할 → 통합 대시보드 (smaXtec 위젯 + AI 채팅) */}
               <Route index element={<UnifiedDashboard />} />
               <Route path="/regional-map" element={<RegionalMapPage />} />
+              <Route path="/cow/:id" element={<CowProfilePage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
 
               {/* 관리자 전용 */}
