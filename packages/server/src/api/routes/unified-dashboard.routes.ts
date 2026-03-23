@@ -2081,6 +2081,9 @@ async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
   const db = getDb();
   const cutoff = daysAgo(7); // 최근 7일
 
+  // farmIds 필터 (농장 그룹)
+  const farmFilter = farmCondition(farms.farmId, null);
+
   // 농장별 미확인 알람 수 + 최빈 알람 유형
   const rows = await db.select({
     farmId: farms.farmId,
@@ -2094,6 +2097,7 @@ async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
       eq(smaxtecEvents.acknowledged, false),
       gte(smaxtecEvents.detectedAt, cutoff),
     ))
+    .where(farmFilter ?? undefined)
     .groupBy(farms.farmId, farms.name)
     .having(sql`COUNT(${smaxtecEvents.eventId}) > 0`)
     .orderBy(desc(count(smaxtecEvents.eventId)))
