@@ -1,6 +1,7 @@
 // 수정사 전용 대시보드 위젯 — 오늘 수정할 소 + 경로 + 번식 통계
 import React, { useEffect, useState } from 'react';
 import { apiGet } from '@web/api/client';
+import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface FarmEstrus {
   readonly farmId: string;
@@ -22,8 +23,22 @@ interface Props {
   readonly onFarmClick?: (farmId: string) => void;
 }
 
+function formatOptimalTime(detectedAt: string): string {
+  const detected = new Date(detectedAt);
+  const optimal12h = new Date(detected.getTime() + 12 * 60 * 60 * 1000);
+  const optimal18h = new Date(detected.getTime() + 18 * 60 * 60 * 1000);
+  const now = new Date();
+
+  const fmt = (d: Date): string => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  if (now > optimal18h) return '⏰ 적기 지남';
+  if (now > optimal12h) return `🔴 지금! (~${fmt(optimal18h)})`;
+  return `${fmt(optimal12h)}~${fmt(optimal18h)}`;
+}
+
 export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): React.JSX.Element {
   const [data, setData] = useState<InseminatorStats | null>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     // 발정 알람을 농장별로 그룹핑
@@ -87,7 +102,7 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
         <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 12px' }}>
           💉 오늘 번식 현황
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 8 }}>
           {[
             { label: '발정 감지', count: data.todayEstrus, color: '#ef4444', icon: '🐄' },
             { label: '수정 완료', count: data.todayInseminated, color: '#3b82f6', icon: '✅' },
@@ -175,27 +190,36 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
                     {farm.estrusCount}두
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', paddingLeft: 30 }}>
-                  {farm.animals.slice(0, 8).map((a) => (
-                    <span
-                      key={a.animalId}
-                      onClick={(e) => { e.stopPropagation(); onAnimalClick?.(a.animalId); }}
-                      style={{
-                        fontSize: 10,
-                        padding: '2px 6px',
-                        borderRadius: 4,
-                        background: 'var(--ct-card)',
-                        color: 'var(--ct-text-secondary)',
-                        cursor: 'pointer',
-                        border: '1px solid var(--ct-border)',
-                      }}
-                    >
-                      #{a.earTag}
-                    </span>
-                  ))}
-                  {farm.animals.length > 8 && (
-                    <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
-                      +{farm.animals.length - 8}두
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 30 }}>
+                  {farm.animals.slice(0, 6).map((a) => {
+                    const timing = formatOptimalTime(a.detectedAt);
+                    const isUrgent = timing.includes('지금') || timing.includes('지남');
+                    return (
+                      <div
+                        key={a.animalId}
+                        onClick={(e) => { e.stopPropagation(); onAnimalClick?.(a.animalId); }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: 11,
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          background: isUrgent ? 'rgba(239,68,68,0.1)' : 'var(--ct-card)',
+                          cursor: 'pointer',
+                          border: '1px solid var(--ct-border)',
+                        }}
+                      >
+                        <span style={{ fontWeight: 600, color: 'var(--ct-text)' }}>#{a.earTag}</span>
+                        <span style={{ fontSize: 10, color: isUrgent ? '#ef4444' : 'var(--ct-text-muted)', fontWeight: isUrgent ? 700 : 400 }}>
+                          수정 적기: {timing}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {farm.animals.length > 6 && (
+                    <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', paddingLeft: 8 }}>
+                      +{farm.animals.length - 6}두 더 있음
                     </span>
                   )}
                 </div>
