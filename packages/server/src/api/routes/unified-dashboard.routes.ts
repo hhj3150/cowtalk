@@ -88,20 +88,19 @@ function todayStart(): Date {
 }
 
 // farmId 조건 빌더 — null이면 전체 농장
-// 다중 농장 지원을 위한 글로벌 farmIds 저장소 (요청당 설정)
-let _currentFarmIds: readonly string[] = [];
+// 다중 농장 지원: AsyncLocalStorage로 요청별 격리
+import { AsyncLocalStorage } from 'node:async_hooks';
 
-function setCurrentFarmIds(ids: readonly string[]): void {
-  _currentFarmIds = ids;
-}
+const farmIdsStorage = new AsyncLocalStorage<readonly string[]>();
 
 function farmCondition(
   column: typeof smaxtecEvents.farmId | typeof animals.farmId | typeof farms.farmId,
   farmId: string | null,
 ): SqlCondition | undefined {
-  // 다중 농장 그룹이 설정되어 있으면 inArray 사용
-  if (_currentFarmIds.length > 0) {
-    return inArray(column, [..._currentFarmIds]);
+  // 요청별 farmIds (AsyncLocalStorage로 격리)
+  const reqFarmIds = farmIdsStorage.getStore();
+  if (reqFarmIds && reqFarmIds.length > 0) {
+    return inArray(column, [...reqFarmIds]);
   }
   if (!farmId) return undefined;
   return eq(column, farmId);
@@ -123,28 +122,23 @@ unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) =>
   const farmId = (req.query.farmId as string | undefined) ?? null;
   const farmIdsParam = req.query.farmIds as string | undefined;
 
+  let ids: readonly string[] = [];
+
   // farmIds 파라미터 (명시적 배열)
   if (farmIdsParam) {
-    const ids = farmIdsParam.split(',').filter(Boolean);
-    setCurrentFarmIds(ids);
-    // farmId를 null로 설정하여 개별 엔드포인트에서 farmCondition이 _currentFarmIds 사용
+    ids = farmIdsParam.split(',').filter(Boolean);
     req.query.farmId = undefined as unknown as string;
   }
   // farmId에 쉼표가 포함된 경우 (레거시 지원)
   else if (farmId && farmId.includes(',')) {
-    const ids = farmId.split(',').filter(Boolean);
-    setCurrentFarmIds(ids);
+    ids = farmId.split(',').filter(Boolean);
     req.query.farmId = undefined as unknown as string;
   }
-  // 단일 farmId 또는 없음
-  else {
-    setCurrentFarmIds([]);
-  }
 
-  // 응답 완료 후 초기화
-  _res.on('finish', () => { setCurrentFarmIds([]); });
-
-  next();
+  // AsyncLocalStorage로 요청별 격리 — 동시 요청 간 간섭 없음
+  farmIdsStorage.run(ids, () => {
+    next();
+  });
 });
 
 // ===========================
