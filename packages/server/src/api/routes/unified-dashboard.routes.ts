@@ -1986,6 +1986,7 @@ async function queryTodoList(
         count: Number(e.count),
         severity: meta.severity,
         icon: meta.icon,
+        eventType: e.eventType,
         _priority: meta.priority,
       };
     })

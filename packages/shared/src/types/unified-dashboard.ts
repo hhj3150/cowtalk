@@ -20,6 +20,7 @@ export interface TodoItem {
   readonly count: number
   readonly severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   readonly icon: string
+  readonly eventType?: string
 }
 
 export interface HealthStatusBar {

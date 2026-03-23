@@ -365,7 +365,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const [labelChatAnimalId, setLabelChatAnimalId] = useState<string | null>(null);
 
   const handleTodoClick = (item: TodoItem): void => {
-    setDrilldown({ eventType: TODO_MAP[item.category] ?? item.category, label: item.label });
+    // eventType이 있으면 직접 사용 (정확한 드릴다운), 없으면 카테고리 매핑 (fallback)
+    const eventType = item.eventType ?? TODO_MAP[item.category] ?? item.category;
+    setDrilldown({ eventType, label: item.label });
   };
 
   const handleKpiClick = (cat: string): void => {
