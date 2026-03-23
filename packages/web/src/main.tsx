@@ -1,7 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
+import { initErrorReporter } from '@web/lib/error-reporter';
 import './index.css';
+
+// 전역 에러 핸들러 등록 (window.onerror + unhandledrejection)
+initErrorReporter();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

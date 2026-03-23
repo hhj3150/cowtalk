@@ -1,0 +1,152 @@
+// 역학 AI API
+// GET  /epidemiology/radius/:farmId      — 반경별 위험 분석
+// POST /epidemiology/simulate            — SEIR 시뮬레이션
+// GET  /epidemiology/contact-network/:farmId — 접촉 네트워크 그래프
+// GET  /epidemiology/wind-risk/:farmId   — 바람 방향 전파 위험
+
+import { Router } from 'express';
+import { z } from 'zod';
+import { authenticate } from '../middleware/auth.js';
+import { requireFarmAccess } from '../middleware/rbac.js';
+import { analyzeRadius } from '../../services/epidemiology/radius-analyzer.js';
+import { simulate } from '../../services/epidemiology/spread-simulator.js';
+import { buildContactNetwork } from '../../services/epidemiology/contact-tracer.js';
+import { calculateWindRisk } from '../../services/epidemiology/wind-risk.calculator.js';
+import { getDb } from '../../config/database.js';
+import { farms } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger.js';
+
+export const epidemiologyRouter = Router();
+
+epidemiologyRouter.use(authenticate);
+
+const farmIdSchema = z.string().uuid();
+
+const legalDiseaseSchema = z.enum(['FMD', 'BRUCELLOSIS', 'TB', 'BEF', 'LSD', 'ANTHRAX']);
+
+// ===========================
+// GET /radius/:farmId
+// ===========================
+
+epidemiologyRouter.get('/radius/:farmId', requireFarmAccess, async (req, res, next) => {
+  try {
+    const farmId = farmIdSchema.parse(req.params.farmId);
+
+    const radiiParam = req.query.radii;
+    let radiiKm: number[] | undefined;
+    if (typeof radiiParam === 'string') {
+      radiiKm = radiiParam.split(',').map(Number).filter((n) => !isNaN(n) && n > 0);
+    }
+
+    const result = await analyzeRadius(farmId, radiiKm);
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// POST /simulate
+// ===========================
+
+const simulateBodySchema = z.object({
+  diseaseCode: legalDiseaseSchema,
+  totalPopulation: z.number().int().min(1).max(1_000_000),
+  totalFarms: z.number().int().min(1).max(100_000),
+  initialInfected: z.number().int().min(1).max(1000).optional(),
+  simulationDays: z.number().int().min(7).max(365).optional(),
+});
+
+epidemiologyRouter.post('/simulate', async (req, res, next) => {
+  try {
+    const body = simulateBodySchema.parse(req.body);
+    const result = simulate(body);
+
+    logger.info(
+      { diseaseCode: body.diseaseCode, pop: body.totalPopulation },
+      '[Epidemiology] SEIR simulation run',
+    );
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// GET /contact-network/:farmId
+// ===========================
+
+epidemiologyRouter.get('/contact-network/:farmId', requireFarmAccess, async (req, res, next) => {
+  try {
+    const farmId = farmIdSchema.parse(req.params.farmId);
+    const days = Math.min(Number(req.query.days ?? 30), 90);
+
+    const result = await buildContactNetwork(farmId, days);
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// GET /wind-risk/:farmId
+// ===========================
+
+const windRiskQuerySchema = z.object({
+  diseaseCode: legalDiseaseSchema,
+  windDeg: z.coerce.number().min(0).max(360),
+  windSpeedMs: z.coerce.number().min(0).max(50),
+  isDaytime: z.enum(['true', 'false']).optional().transform((v) => v !== 'false'),
+});
+
+epidemiologyRouter.get('/wind-risk/:farmId', requireFarmAccess, async (req, res, next) => {
+  try {
+    const farmId = farmIdSchema.parse(req.params.farmId);
+    const query = windRiskQuerySchema.parse(req.query);
+
+    // 중심 농장 + 주변 농장 조회
+    const db = getDb();
+    const allFarmsRows = await db.select({
+      farmId: farms.farmId,
+      name: farms.name,
+      lat: farms.lat,
+      lng: farms.lng,
+    })
+      .from(farms)
+      .where(eq(farms.status, 'active'));
+
+    const sourceFarm = allFarmsRows.find((f) => f.farmId === farmId);
+    if (!sourceFarm) {
+      res.status(404).json({ success: false, error: { code: 'FARM_NOT_FOUND' } });
+      return;
+    }
+
+    const nearbyFarms = allFarmsRows
+      .filter((f) => f.farmId !== farmId)
+      .map((f) => ({
+        farmId: f.farmId,
+        farmName: f.name,
+        lat: f.lat,
+        lng: f.lng,
+      }));
+
+    const result = calculateWindRisk({
+      sourceFarmId: farmId,
+      sourceLat: sourceFarm.lat,
+      sourceLng: sourceFarm.lng,
+      diseaseCode: query.diseaseCode,
+      windDeg: query.windDeg,
+      windSpeedMs: query.windSpeedMs,
+      nearbyFarms,
+      isDaytime: query.isDaytime,
+    });
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});

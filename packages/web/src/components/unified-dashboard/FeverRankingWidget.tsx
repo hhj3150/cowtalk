@@ -2,6 +2,7 @@
 // 전염병/유방염 등 감염성 질병 조기 감지를 위한 체온 알람 기준 소 순위
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 
 // ── 타입 ──
@@ -53,6 +54,7 @@ function getSeverityColor(alertCount: number): string {
 export function FeverRankingWidget({ farmId, onAnimalClick }: Props): React.JSX.Element {
   const [data, setData] = useState<FeverRankingResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const query = farmId ? `?farmId=${farmId}` : '';
@@ -125,7 +127,17 @@ export function FeverRankingWidget({ farmId, onAnimalClick }: Props): React.JSX.
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex items-center justify-between">
                     <span className="truncate text-sm" style={{ color: 'var(--ct-text)' }}>
-                      [{animal.farmName}] {animal.earTag}번
+                      [{animal.farmName}]{' '}
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/cow/${animal.animalId}`); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/cow/${animal.animalId}`); }}
+                        style={{ color: 'var(--ct-primary)', textDecoration: 'underline', textUnderlineOffset: '2px', cursor: 'pointer' }}
+                        title="개체 프로필 보기"
+                      >
+                        {animal.earTag}번
+                      </span>
                     </span>
                     <span className="flex-shrink-0 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
                       {formatTimeAgo(animal.latestAt)}

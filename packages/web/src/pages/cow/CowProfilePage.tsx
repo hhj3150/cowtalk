@@ -5,6 +5,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { SensorDataPanel } from '@web/components/unified-dashboard/SensorDataPanel';
+import { DryOffModal } from '@web/components/cow/DryOffModal';
+import { BreedingTimeline } from '@web/components/cow/BreedingTimeline';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface CowProfile {
@@ -69,6 +71,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const [healthPred, setHealthPred] = useState<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string } | null>(null);
   const [estrusPred, setEstrusPred] = useState<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string } | null>(null);
   const [calvingPred, setCalvingPred] = useState<{ calvingRisk: string; reasons: string[]; recommendation: string } | null>(null);
+  const [showDryOff, setShowDryOff] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -316,8 +319,42 @@ export default function CowProfilePage(): React.JSX.Element {
               )}
             </div>
           </div>
+
+          {/* 임신 관리 타임라인 */}
+          <BreedingTimeline animalId={profile.animalId} />
+
+          {/* 건유 전환 버튼 */}
+          {profile.lactationStatus !== 'dry' && (
+            <button
+              type="button"
+              onClick={() => setShowDryOff(true)}
+              style={{
+                width: '100%', padding: '12px 16px', borderRadius: 10,
+                background: 'linear-gradient(135deg, #eab308, #f59e0b)',
+                color: '#000', border: 'none', cursor: 'pointer',
+                fontSize: 13, fontWeight: 800,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              🏖️ 건유 전환
+            </button>
+          )}
         </div>
       </div>
+
+      {/* 건유 전환 모달 */}
+      {showDryOff && profile && (
+        <DryOffModal
+          animalId={profile.animalId}
+          earTag={profile.earTag}
+          onClose={() => setShowDryOff(false)}
+          onSuccess={() => {
+            setShowDryOff(false);
+            // 프로필 새로고침
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 }

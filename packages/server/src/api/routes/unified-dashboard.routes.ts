@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { enforceFarmScope } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js';
@@ -59,6 +60,7 @@ import type {
 export const unifiedDashboardRouter = Router();
 
 unifiedDashboardRouter.use(authenticate);
+unifiedDashboardRouter.use(enforceFarmScope);
 
 // ===========================
 // 유틸
@@ -1594,6 +1596,103 @@ unifiedDashboardRouter.get('/fever-ranking', async (req: Request, res: Response,
     res.json({ success: true, data: { rankings, total: rankings.length } });
   } catch (error) {
     logger.error({ error }, 'Fever ranking query failed');
+    next(error);
+  }
+});
+
+// ===========================
+// AI 예측 위험 TOP 10 — 72시간 건강 이벤트 기반 개체별 위험도 순위
+// GET /api/unified-dashboard/risk-top10?farmId=xxx
+// ===========================
+
+unifiedDashboardRouter.get('/risk-top10', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const farmId = (req.query.farmId as string | undefined) ?? null;
+    const since72h = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    const since30d = daysAgo(30);
+
+    const healthTypes = [
+      'temperature_high', 'clinical_condition', 'health_general', 'health_warning',
+      'rumination_decrease', 'activity_decrease', 'temperature_low', 'temperature_warning',
+      'drinking_decrease', 'rumination_warning',
+    ];
+    const healthTypesStr = healthTypes.map((t) => `'${t}'`).join(',');
+
+    // 72시간 내 건강 이벤트 — 개체별 집계
+    const recentRows = await db.select({
+      animalId: smaxtecEvents.animalId,
+      earTag: animals.earTag,
+      farmId: smaxtecEvents.farmId,
+      farmName: farms.name,
+      alertCount: count(smaxtecEvents.eventId),
+      criticalCount: sql<number>`SUM(CASE WHEN ${smaxtecEvents.severity} IN ('critical','high') THEN 1 ELSE 0 END)`,
+      latestAt: sql<string>`MAX(${smaxtecEvents.detectedAt})`,
+      latestType: sql<string>`(ARRAY_AGG(${smaxtecEvents.eventType} ORDER BY ${smaxtecEvents.detectedAt} DESC))[1]`,
+    })
+      .from(smaxtecEvents)
+      .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
+      .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
+      .where(whereAll(
+        farmCondition(smaxtecEvents.farmId, farmId),
+        gte(smaxtecEvents.detectedAt, since72h),
+        sql`${smaxtecEvents.eventType} IN (${sql.raw(healthTypesStr)})`,
+      ))
+      .groupBy(smaxtecEvents.animalId, animals.earTag, smaxtecEvents.farmId, farms.name)
+      .orderBy(desc(count(smaxtecEvents.eventId)))
+      .limit(30);
+
+    // 30일 기준 평균 (정상 밀도 계산용)
+    const baselineRows = await db.select({
+      animalId: smaxtecEvents.animalId,
+      totalCount: count(smaxtecEvents.eventId),
+    })
+      .from(smaxtecEvents)
+      .where(whereAll(
+        farmCondition(smaxtecEvents.farmId, farmId),
+        gte(smaxtecEvents.detectedAt, since30d),
+        sql`${smaxtecEvents.eventType} IN (${sql.raw(healthTypesStr)})`,
+      ))
+      .groupBy(smaxtecEvents.animalId);
+
+    const baselineMap = new Map(baselineRows.map((r) => [r.animalId, Number(r.totalCount)]));
+
+    const rankings = recentRows.map((row) => {
+      const alertCount = Number(row.alertCount);
+      const criticalCount = Number(row.criticalCount ?? 0);
+      const baseline30d = baselineMap.get(row.animalId) ?? 0;
+      const avgPer72h = (baseline30d / 30) * 3;
+      const density = avgPer72h > 0 ? alertCount / avgPer72h : 0;
+
+      let riskScore = 0;
+      if (alertCount > 0) riskScore += Math.min(30, alertCount * 10);
+      if (criticalCount > 0) riskScore += Math.min(40, criticalCount * 20);
+      if (density > 2) riskScore += 20;
+      riskScore = Math.min(100, riskScore);
+
+      const riskLevel = riskScore >= 70 ? 'critical' : riskScore >= 40 ? 'warning' : riskScore >= 15 ? 'caution' : 'normal';
+      const latestEventLabel = EVENT_TYPE_LABELS[row.latestType ?? ''] ?? row.latestType ?? '';
+
+      return {
+        animalId: row.animalId,
+        earTag: row.earTag,
+        farmId: row.farmId,
+        farmName: row.farmName,
+        riskScore,
+        riskLevel,
+        alertCount,
+        criticalCount,
+        latestEventType: row.latestType ?? '',
+        latestEventLabel,
+        latestAt: row.latestAt ?? '',
+      };
+    })
+    .sort((a, b) => b.riskScore - a.riskScore)
+    .slice(0, 10);
+
+    res.json({ success: true, data: { rankings, total: rankings.length } });
+  } catch (error) {
+    logger.error({ error }, 'Risk top10 query failed');
     next(error);
   }
 });

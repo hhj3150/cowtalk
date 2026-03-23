@@ -47,6 +47,14 @@ const envSchema = z.object({
   ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-20250514'),
   ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(4000),
   ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
+
+  // OpenWeatherMap API
+  OPENWEATHER_API_KEY: z.string().optional(),
+
+  // Web Push (VAPID)
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_EMAIL: z.string().default('mailto:ha@d2o.kr'),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -3,6 +3,7 @@
 // 소 개체를 클릭하면 → AnimalTimelineModal (smaXtec 차트)
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { AnimalTimelineModal } from './AnimalTimelineModal';
 
@@ -318,6 +319,7 @@ export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimal
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'list' | 'actions'>('list');
 
   useEffect(() => {
@@ -611,10 +613,20 @@ export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimal
                             style={{ background: SEVERITY_COLORS[item.severity] ?? '#9ca3af' }}
                           />
 
-                          {/* 귀표번호 */}
+                          {/* 귀표번호 — 클릭 시 개체 프로필 이동 */}
                           <span
+                            role="link"
+                            tabIndex={0}
                             className="min-w-[80px] text-sm font-medium"
-                            style={{ color: 'var(--ct-text)' }}
+                            style={{
+                              color: item.animalId ? 'var(--ct-primary)' : 'var(--ct-text)',
+                              textDecoration: item.animalId ? 'underline' : 'none',
+                              textUnderlineOffset: '2px',
+                              cursor: item.animalId ? 'pointer' : 'default',
+                            }}
+                            title={item.animalId ? '개체 프로필 보기' : undefined}
+                            onClick={(e) => { if (item.animalId) { e.stopPropagation(); navigate(`/cow/${item.animalId}`); } }}
+                            onKeyDown={(e) => { if (item.animalId && e.key === 'Enter') navigate(`/cow/${item.animalId}`); }}
                           >
                             {item.earTag}
                           </span>

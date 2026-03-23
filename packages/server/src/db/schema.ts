@@ -238,6 +238,47 @@ export const calvingEvents = pgTable('calving_events', {
 ]);
 
 // ======================================================================
+// D-2. 우군 그룹 (Herd Group Management)
+// ======================================================================
+
+export const animalGroups = pgTable('animal_groups', {
+  groupId: uuid('group_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  name: varchar('name', { length: 100 }).notNull(),
+  groupType: varchar('group_type', { length: 30 }).notNull().default('custom'),
+  description: text('description'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('animal_groups_farm_id_idx').on(table.farmId),
+]);
+
+export const animalGroupMembers = pgTable('animal_group_members', {
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  groupId: uuid('group_id').notNull().references(() => animalGroups.groupId),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('animal_group_members_group_id_idx').on(table.groupId),
+  index('animal_group_members_animal_id_idx').on(table.animalId),
+]);
+
+// D-3. 건유 기록
+export const dryOffRecords = pgTable('dry_off_records', {
+  recordId: uuid('record_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  dryOffDate: date('dry_off_date').notNull(),
+  expectedCalvingDate: date('expected_calving_date'),
+  lastMilkingDate: date('last_milking_date'),
+  dryOffMethod: varchar('dry_off_method', { length: 20 }).notNull().default('gradual'),
+  medication: varchar('medication', { length: 200 }),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('dry_off_records_animal_id_idx').on(table.animalId),
+]);
+
+// ======================================================================
 // E. 건강
 // ======================================================================
 

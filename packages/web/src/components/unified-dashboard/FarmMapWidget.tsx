@@ -1,9 +1,10 @@
 // 대시보드 농장 지도 위젯 — Leaflet + OpenStreetMap 다크 테마
 // 146개 농장을 좌표 기반으로 표시, 건강알람 비율(두수 대비)에 따라 색상 구분
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import type { LiveAlarm } from '@cowtalk/shared';
+import { apiGet } from '@web/api/client';
 import 'leaflet/dist/leaflet.css';
 
 // ── 타입 ──
@@ -75,7 +76,34 @@ function FlyToSelected({ markers, selectedFarmId }: {
 
 // ── 메인 컴포넌트 ──
 
+// ── 기상 데이터 타입 ──
+
+interface WeatherInfo {
+  readonly temperature: number;
+  readonly humidity: number;
+  readonly thi: number;
+  readonly description: string;
+  readonly heatStressLevel: string;
+  readonly coldStressLevel: string;
+}
+
 export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 420 }: Props): React.JSX.Element {
+  const [weatherMap, setWeatherMap] = useState<Map<string, WeatherInfo>>(new Map());
+
+  // 마커 hover 시 기상 데이터 lazy fetch
+  const fetchWeather = useCallback((farmId: string) => {
+    if (weatherMap.has(farmId)) return;
+    apiGet<WeatherInfo>(`/weather/farm/${farmId}`)
+      .then((result) => {
+        setWeatherMap((prev) => {
+          const next = new Map(prev);
+          next.set(farmId, result);
+          return next;
+        });
+      })
+      .catch(() => { /* 기상 API 미설정 시 무시 */ });
+  }, [weatherMap]);
+
   const stats = useMemo(() => {
     const total = markers.length;
     const normal = markers.filter((m) => m.status === 'normal').length;
@@ -174,6 +202,7 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
                 }}
                 eventHandlers={{
                   click: () => onFarmClick?.(m.farmId),
+                  mouseover: () => fetchWeather(m.farmId),
                 }}
               >
                 <Tooltip
@@ -187,6 +216,20 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
                   <div style={{ color: '#64748b', fontSize: 11 }}>
                     {m.headCount}두 · 건강알람 {ratePercent}% · {statusLabel}
                   </div>
+                  {weatherMap.has(m.farmId) && (() => {
+                    const w = weatherMap.get(m.farmId)!;
+                    const thiColor = w.thi >= 78 ? '#ef4444' : w.thi >= 72 ? '#f97316' : w.thi >= 68 ? '#eab308' : '#22c55e';
+                    return (
+                      <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 4, paddingTop: 4, fontSize: 11 }}>
+                        <span style={{ color: '#3b82f6' }}>🌡️ {w.temperature}°C</span>
+                        {' · '}
+                        <span>💧 {w.humidity}%</span>
+                        {' · '}
+                        <span style={{ color: thiColor, fontWeight: 600 }}>THI {w.thi}</span>
+                        {w.description && <span style={{ color: '#94a3b8' }}> · {w.description}</span>}
+                      </div>
+                    );
+                  })()}
                 </Tooltip>
               </CircleMarker>
             );

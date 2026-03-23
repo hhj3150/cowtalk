@@ -7,13 +7,18 @@ import { Header } from './Header';
 import { MobileNav } from './MobileNav';
 import { ChatDrawer } from '@web/components/chat/ChatDrawer';
 import { DrilldownOverlay } from '@web/components/drilldown/DrilldownOverlay';
+import { OfflineBanner } from '@web/components/common/OfflineBanner';
+import { SkipNavLink } from '@web/components/common/SkipNavLink';
 
 export function AppShell(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
   return (
-    <div className="flex h-screen" style={{ background: 'var(--ct-bg)' }}>
+    <div className="flex h-screen flex-col" style={{ background: 'var(--ct-bg)' }}>
+      <SkipNavLink />
+      <OfflineBanner />
+      <div className="flex flex-1 overflow-hidden">
       {/* 데스크톱 사이드바 (56px icon-only) */}
       <div className="hidden lg:flex lg:flex-shrink-0" style={{ width: 'var(--ct-sidebar-w)' }}>
         <Sidebar />
@@ -29,7 +34,7 @@ export function AppShell(): React.JSX.Element {
           onChatClick={() => setChatOpen(true)}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main id="main-content" role="main" className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
       </div>
@@ -39,6 +44,7 @@ export function AppShell(): React.JSX.Element {
 
       {/* 드릴다운 오버레이 */}
       <DrilldownOverlay />
+      </div>
     </div>
   );
 }

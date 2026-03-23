@@ -1,15 +1,21 @@
-// 서버 엔트리포인트 — Graceful Shutdown 포함
+// 서버 엔트리포인트 — HTTP + Socket.IO + Graceful Shutdown
 
+import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { logger } from './lib/logger.js';
 import { closeDb } from './config/database.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
+import { createSocketServer } from './realtime/socket-server.js';
 
 const app = createApp();
+const httpServer = createServer(app);
 
-const server = app.listen(config.PORT, () => {
-  logger.info({ port: config.PORT, env: config.NODE_ENV }, `CowTalk v5.0 server listening`);
+// Socket.IO 서버 초기화
+createSocketServer(httpServer);
+
+const server = httpServer.listen(config.PORT, () => {
+  logger.info({ port: config.PORT, env: config.NODE_ENV }, `CowTalk v5.0 server listening (HTTP + WebSocket)`);
 
   // 파이프라인 자동 시작 (smaXtec 크레덴셜이 있을 때만)
   if (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD) {

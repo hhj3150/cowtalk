@@ -9,7 +9,7 @@ import { animalQuerySchema, createAnimalSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
 import { getAnimalDetail } from '../../serving/dashboard.service.js';
 import { getDb } from '../../config/database.js';
-import { animals, farms, smaxtecEvents } from '../../db/schema.js';
+import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords } from '../../db/schema.js';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 
 export const animalRouter = Router();
@@ -160,4 +160,229 @@ animalRouter.post('/', requirePermission('animal', 'create'), validate({ body: c
 
 animalRouter.patch('/:animalId', requirePermission('animal', 'update'), (_req, res) => {
   res.json({ success: true, data: null });
+});
+
+// GET /animals/:animalId/breeding-timeline — 임신 관리 통합 타임라인
+animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const animalId = req.params.animalId as string;
+
+    // 번식 이벤트 (수정)
+    const inseminations = await db
+      .select({
+        eventId: breedingEvents.eventId,
+        eventDate: breedingEvents.eventDate,
+        type: breedingEvents.type,
+        semenInfo: breedingEvents.semenInfo,
+        notes: breedingEvents.notes,
+      })
+      .from(breedingEvents)
+      .where(eq(breedingEvents.animalId, animalId))
+      .orderBy(desc(breedingEvents.eventDate))
+      .limit(10);
+
+    // 임신 검사
+    const pregChecks = await db
+      .select({
+        checkId: pregnancyChecks.checkId,
+        checkDate: pregnancyChecks.checkDate,
+        result: pregnancyChecks.result,
+        method: pregnancyChecks.method,
+        daysPostInsemination: pregnancyChecks.daysPostInsemination,
+        notes: pregnancyChecks.notes,
+      })
+      .from(pregnancyChecks)
+      .where(eq(pregnancyChecks.animalId, animalId))
+      .orderBy(desc(pregnancyChecks.checkDate))
+      .limit(10);
+
+    // 분만 이력
+    const calvings = await db
+      .select({
+        eventId: calvingEvents.eventId,
+        calvingDate: calvingEvents.calvingDate,
+        calfSex: calvingEvents.calfSex,
+        calfStatus: calvingEvents.calfStatus,
+        complications: calvingEvents.complications,
+        notes: calvingEvents.notes,
+      })
+      .from(calvingEvents)
+      .where(eq(calvingEvents.animalId, animalId))
+      .orderBy(desc(calvingEvents.calvingDate))
+      .limit(10);
+
+    // 건유 기록
+    const dryOffs = await db
+      .select()
+      .from(dryOffRecords)
+      .where(eq(dryOffRecords.animalId, animalId))
+      .orderBy(desc(dryOffRecords.dryOffDate))
+      .limit(10);
+
+    // smaXtec 발정 이벤트
+    const estrusEvents = await db
+      .select({
+        eventId: smaxtecEvents.eventId,
+        detectedAt: smaxtecEvents.detectedAt,
+        eventType: smaxtecEvents.eventType,
+        confidence: smaxtecEvents.confidence,
+      })
+      .from(smaxtecEvents)
+      .where(
+        and(
+          eq(smaxtecEvents.animalId, animalId),
+          sql`${smaxtecEvents.eventType} IN ('estrus', 'estrus_dnb', 'heat')`,
+        ),
+      )
+      .orderBy(desc(smaxtecEvents.detectedAt))
+      .limit(10);
+
+    // 통합 타임라인 생성 (시간순 정렬)
+    interface TimelineEvent {
+      readonly id: string;
+      readonly type: string;
+      readonly date: string;
+      readonly label: string;
+      readonly details: Record<string, unknown>;
+    }
+
+    const timeline: TimelineEvent[] = [];
+
+    for (const e of estrusEvents) {
+      timeline.push({
+        id: e.eventId,
+        type: 'estrus',
+        date: e.detectedAt?.toISOString() ?? '',
+        label: '발정 감지',
+        details: { confidence: e.confidence, eventType: e.eventType },
+      });
+    }
+
+    for (const e of inseminations) {
+      timeline.push({
+        id: e.eventId,
+        type: 'insemination',
+        date: e.eventDate?.toISOString() ?? '',
+        label: '수정',
+        details: { semenInfo: e.semenInfo, notes: e.notes },
+      });
+    }
+
+    for (const e of pregChecks) {
+      timeline.push({
+        id: e.checkId,
+        type: 'pregnancy_check',
+        date: e.checkDate?.toISOString() ?? '',
+        label: `임신 검사 (${e.result === 'positive' ? '양성' : e.result === 'negative' ? '음성' : '불확실'})`,
+        details: { result: e.result, method: e.method, daysPostInsemination: e.daysPostInsemination },
+      });
+    }
+
+    for (const e of dryOffs) {
+      timeline.push({
+        id: e.recordId,
+        type: 'dry_off',
+        date: e.dryOffDate ?? '',
+        label: '건유 전환',
+        details: { expectedCalvingDate: e.expectedCalvingDate, medication: e.medication },
+      });
+    }
+
+    for (const e of calvings) {
+      timeline.push({
+        id: e.eventId,
+        type: 'calving',
+        date: e.calvingDate?.toISOString() ?? '',
+        label: '분만',
+        details: { calfSex: e.calfSex, calfStatus: e.calfStatus, complications: e.complications },
+      });
+    }
+
+    // 시간 역순 정렬
+    timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // 현재 단계 계산
+    const latestInsemination = inseminations[0];
+    const latestPregCheck = pregChecks[0];
+    const latestDryOff = dryOffs[0];
+
+    let currentStage = 'unknown';
+    let nextAction: { stage: string; dueDate: string; daysRemaining: number; message: string } | null = null;
+
+    if (latestInsemination) {
+      const insemDate = new Date(latestInsemination.eventDate ?? '');
+      const daysSinceInsem = Math.floor((Date.now() - insemDate.getTime()) / (24 * 60 * 60 * 1000));
+
+      if (!latestPregCheck || new Date(latestPregCheck.checkDate ?? '') < insemDate) {
+        // 수정 후 임신 검사 미실시
+        if (daysSinceInsem >= 30 && daysSinceInsem <= 45) {
+          currentStage = 'awaiting_pregnancy_check';
+          nextAction = {
+            stage: '임신 감정',
+            dueDate: new Date(insemDate.getTime() + 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+            daysRemaining: 35 - daysSinceInsem,
+            message: `수정 후 ${String(daysSinceInsem)}일 경과 — 임신 감정 시기입니다`,
+          };
+        } else if (daysSinceInsem < 30) {
+          currentStage = 'post_insemination';
+          nextAction = {
+            stage: '임신 감정',
+            dueDate: new Date(insemDate.getTime() + 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+            daysRemaining: 35 - daysSinceInsem,
+            message: `수정 후 ${String(daysSinceInsem)}일 — 임신 감정까지 ${String(35 - daysSinceInsem)}일 남음`,
+          };
+        }
+      } else if (latestPregCheck.result === 'positive') {
+        // 임신 확인됨
+        if (!latestDryOff || new Date(latestDryOff.dryOffDate ?? '') < insemDate) {
+          // 건유 전환 미실시
+          const expectedCalving = new Date(insemDate.getTime() + 280 * 24 * 60 * 60 * 1000);
+          const daysToCalving = Math.floor((expectedCalving.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+
+          if (daysToCalving <= 60 && daysToCalving > 0) {
+            currentStage = 'awaiting_dry_off';
+            nextAction = {
+              stage: '건유 전환',
+              dueDate: new Date(expectedCalving.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+              daysRemaining: daysToCalving - 60 > 0 ? daysToCalving - 60 : 0,
+              message: `분만 예정일까지 ${String(daysToCalving)}일 — 건유 전환 시기입니다`,
+            };
+          } else {
+            currentStage = 'pregnant';
+            nextAction = {
+              stage: '재확인 검사',
+              dueDate: new Date(insemDate.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+              daysRemaining: Math.max(0, 60 - daysSinceInsem),
+              message: `임신 확인됨 — 분만 예정: ${expectedCalving.toISOString().slice(0, 10)}`,
+            };
+          }
+        } else {
+          currentStage = 'dry';
+          const expectedCalvingDate = latestDryOff.expectedCalvingDate;
+          if (expectedCalvingDate) {
+            const daysToCalving = Math.floor((new Date(expectedCalvingDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+            nextAction = {
+              stage: '분만',
+              dueDate: expectedCalvingDate,
+              daysRemaining: Math.max(0, daysToCalving),
+              message: `건유 중 — 분만 예정: ${expectedCalvingDate} (${String(Math.max(0, daysToCalving))}일 후)`,
+            };
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        animalId,
+        timeline: timeline.slice(0, 20),
+        currentStage,
+        nextAction,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });

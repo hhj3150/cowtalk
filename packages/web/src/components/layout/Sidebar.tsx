@@ -60,6 +60,72 @@ function IconServer(): React.JSX.Element {
   );
 }
 
+// 방역관 전용 아이콘들
+function IconShield(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+    </svg>
+  );
+}
+
+function IconRadar(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+    </svg>
+  );
+}
+
+function IconBeaker(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15m-6.3-11.896A24.01 24.01 0 0112 3.75a24.01 24.01 0 01-.55.046M12 3.75c-.251.023-.501.05-.75.082M3 14.5l.62.827A.75.75 0 004.24 16h15.52a.75.75 0 00.62-1.173L19.8 15m-15.6 0L4.5 14.5" />
+    </svg>
+  );
+}
+
+function IconChartBar(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+    </svg>
+  );
+}
+
+
+function IconDatabase(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+    </svg>
+  );
+}
+
+function IconGlobe(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+    </svg>
+  );
+}
+
+function IconNetwork(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+    </svg>
+  );
+}
+
+function IconClipboard(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+    </svg>
+  );
+}
+
 // 공통 메뉴 — 모든 역할 동일 (simple is best)
 const COMMON_MENU: readonly MenuItem[] = [
   { label: '대시보드', path: '/', icon: <IconDashboard /> },
@@ -74,12 +140,26 @@ const ADMIN_EXTRA: readonly MenuItem[] = [
   { label: 'AI 성능', path: '/ai-performance', icon: <IconAi /> },
 ];
 
+// 방역관 전용 메뉴 (10개)
+const QUARANTINE_MENU: readonly MenuItem[] = [
+  { label: '방역 대시보드', path: '/epidemiology/dashboard', icon: <IconShield /> },
+  { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
+  { label: '반경 분석', path: '/epidemiology/radius', icon: <IconRadar /> },
+  { label: '확산 시뮬레이션', path: '/epidemiology/simulation', icon: <IconBeaker /> },
+  { label: '이동 네트워크', path: '/epidemiology/contact-network', icon: <IconNetwork /> },
+  { label: '역학 조사', path: '/epidemiology/investigation/new', icon: <IconClipboard /> },
+  { label: '조기감지 성과', path: '/epidemiology/metrics', icon: <IconChartBar /> },
+  { label: '전국 방역 현황', path: '/epidemiology/national', icon: <IconGlobe /> },
+  { label: '방역 사례 DB', path: '/epidemiology/cases', icon: <IconDatabase /> },
+  { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
+];
+
 const MENU_BY_ROLE: Record<Role, readonly MenuItem[]> = {
   farmer: COMMON_MENU,
   veterinarian: COMMON_MENU,
   inseminator: COMMON_MENU,
   government_admin: [...COMMON_MENU, ...ADMIN_EXTRA],
-  quarantine_officer: COMMON_MENU,
+  quarantine_officer: QUARANTINE_MENU,
   feed_company: COMMON_MENU,
 };
 

@@ -4,6 +4,7 @@
 // DX: hover 시 빠른 액션 (AI 분석 / 확인 완료)
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { EventLabelModal } from './EventLabelModal';
 import { useDxCompletion } from '../../hooks/useDxCompletion';
 
@@ -117,18 +118,18 @@ function AlarmRow({
   alarm,
   isAcknowledged,
   onFarmClick,
-  onAnimalClick,
   onLabelClick,
   onAiAnalysis,
   onAcknowledge,
+  onEarTagClick,
 }: {
   readonly alarm: LiveAlarm;
   readonly isAcknowledged: boolean;
   readonly onFarmClick?: () => void;
-  readonly onAnimalClick?: () => void;
   readonly onLabelClick?: () => void;
   readonly onAiAnalysis?: () => void;
   readonly onAcknowledge?: () => void;
+  readonly onEarTagClick?: () => void;
 }): React.JSX.Element {
   const config = getAlarmConfig(alarm.eventType);
   const severityColor = SEVERITY_COLORS[alarm.severity] ?? 'var(--ct-text-secondary)';
@@ -173,15 +174,17 @@ function AlarmRow({
           </button>
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onAnimalClick?.(); }}
+            onClick={(e) => { e.stopPropagation(); onEarTagClick?.(); }}
             className="rounded px-1 font-medium transition-colors hover:bg-white/10"
             style={{
-              color: 'var(--ct-text)',
-              cursor: onAnimalClick ? 'pointer' : 'default',
-              textDecoration: onAnimalClick ? 'underline' : 'none',
+              color: 'var(--ct-primary)',
+              cursor: onEarTagClick ? 'pointer' : 'default',
+              textDecoration: 'underline',
               textDecorationColor: 'var(--ct-primary)',
               textUnderlineOffset: '2px',
+              fontWeight: 700,
             }}
+            title="개체 프로필 보기"
           >
             {alarm.earTag}
           </button>
@@ -282,9 +285,10 @@ function AlarmRow({
 
 // ── 메인 컴포넌트 ──
 
-export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick }: Props): React.JSX.Element {
+export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick }: Props): React.JSX.Element {
   const [labelTarget, setLabelTarget] = useState<LiveAlarm | null>(null);
   const { acknowledgedAlarms, acknowledgeAlarm } = useDxCompletion();
+  const navigate = useNavigate();
 
   // 심각도별 카운트
   const counts = alarms.reduce((acc, a) => {
@@ -294,7 +298,7 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick
 
   return (
     <>
-      <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
+      <div className="ct-card p-4" style={{ borderRadius: '12px' }} role="region" aria-label="실시간 알람 피드" aria-live="polite" aria-atomic="false">
         {/* 헤더 + 심각도 요약 뱃지 */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -366,13 +370,6 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick
                   alarm={alarm}
                   isAcknowledged={acknowledgedAlarms.has(alarm.eventId)}
                   onFarmClick={onFarmClick ? () => onFarmClick(alarm.farmId) : undefined}
-                  onAnimalClick={
-                    alarm.animalId && onAnimalClick
-                      ? () => onAnimalClick(alarm.animalId!)
-                      : onAlarmClick
-                        ? () => onAlarmClick(alarm)
-                        : undefined
-                  }
                   onLabelClick={alarm.animalId ? () => setLabelTarget(alarm) : undefined}
                   onAiAnalysis={
                     alarm.animalId && onAnimalClick
@@ -380,6 +377,7 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick
                       : undefined
                   }
                   onAcknowledge={() => acknowledgeAlarm(alarm.eventId)}
+                  onEarTagClick={alarm.animalId ? () => navigate(`/cow/${alarm.animalId}`) : undefined}
                 />
               </div>
             ))}

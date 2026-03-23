@@ -27,3 +27,6 @@ export { SovereignAiWidget } from './SovereignAiWidget';
 // smaXtec 기본 — 건강 알림 + 번식 관리
 export { HealthAlertsWidget } from './HealthAlertsWidget';
 export { FertilityManagementWidget } from './FertilityManagementWidget';
+
+// AI 예측 위험 TOP 10
+export { RiskTop10Widget } from './RiskTop10Widget';

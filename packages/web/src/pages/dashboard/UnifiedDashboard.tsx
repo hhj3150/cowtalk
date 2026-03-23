@@ -36,6 +36,7 @@ import {
   AlarmLabelChatModal,
   HealthAlertsWidget,
   FertilityManagementWidget,
+  RiskTop10Widget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -52,6 +53,7 @@ import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSe
 import { useFarmGroupStore } from '@web/stores/farm-group.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { useDxCompletion } from '@web/hooks/useDxCompletion';
+import { useSocketAlarmSync } from '@web/hooks/useSocket';
 import { ROLE_LABELS } from '@web/config/dashboard-widgets';
 import type { Role } from '@cowtalk/shared';
 
@@ -489,6 +491,9 @@ const LOADING_PLACEHOLDER = (
 // ── Main Dashboard ──
 
 export default function UnifiedDashboard(): React.JSX.Element {
+  // WebSocket → React Query 알람 캐시 동기화
+  useSocketAlarmSync();
+
   const { data, isLoading, error, refetch } = useUnifiedDashboard();
   const { data: alarmsData } = useLiveAlarms();
   const { data: rankingData } = useFarmRanking();
@@ -734,6 +739,12 @@ export default function UnifiedDashboard(): React.JSX.Element {
             />
           </div>
           )}
+
+          {/* ── AI 예측 위험 TOP 10 ── */}
+          <RiskTop10Widget
+            farmId={selectedFarmId}
+            onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
+          />
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>

@@ -55,6 +55,7 @@ export function useLiveAlarms() {
       return { alarms: deduped };
     },
     staleTime: ALARM_STALE_TIME,
+    // WebSocket 연결 시에도 fallback polling 유지 (60초)
     refetchInterval: ALARM_STALE_TIME,
   });
 }

@@ -18,6 +18,18 @@ const RegionalMapPage = lazy(() => import('@web/pages/regional/RegionalMapPage')
 const CowProfilePage = lazy(() => import('@web/pages/cow/CowProfilePage'));
 const MonthlyReportPage = lazy(() => import('@web/pages/report/MonthlyReportPage'));
 const NotificationSettingsPage = lazy(() => import('@web/pages/settings/NotificationSettingsPage'));
+const RadiusAnalysisPage = lazy(() => import('@web/pages/epidemiology/RadiusAnalysisPage'));
+const SpreadSimulationPage = lazy(() => import('@web/pages/epidemiology/SpreadSimulationPage'));
+const ContactNetworkPage = lazy(() => import('@web/pages/epidemiology/ContactNetworkPage'));
+
+const HerdGroupPage = lazy(() => import('@web/pages/farm/HerdGroupPage'));
+
+// 방역관 전용 페이지
+const EpidemiologyDashboard = lazy(() => import('@web/pages/epidemiology/EpidemiologyDashboard'));
+const InvestigationWorkflow = lazy(() => import('@web/pages/epidemiology/InvestigationWorkflow'));
+const EarlyDetectionMetrics = lazy(() => import('@web/pages/epidemiology/EarlyDetectionMetrics'));
+const NationalSituation = lazy(() => import('@web/pages/epidemiology/NationalSituation'));
+const CaseDatabase = lazy(() => import('@web/pages/epidemiology/CaseDatabase'));
 
 // 관리자 전용
 const UserManagementPage = lazy(() => import('@web/pages/admin/UserManagementPage'));
@@ -46,6 +58,15 @@ function RequireRole({ roles, children }: { roles: readonly Role[]; children: Re
   return <>{children}</>;
 }
 
+// 방역관 역할이면 방역관 전용 대시보드로 리다이렉트
+function RoleAwareHome(): React.JSX.Element {
+  const role = useAuthStore((s) => s.user?.role);
+  if (role === 'quarantine_officer') {
+    return <Navigate to="/epidemiology/dashboard" replace />;
+  }
+  return <UnifiedDashboard />;
+}
+
 export function App(): React.JSX.Element {
   return (
     <ErrorBoundary>
@@ -60,11 +81,23 @@ export function App(): React.JSX.Element {
             {/* 인증 필요 */}
             <Route element={<RequireAuth><AppShell /></RequireAuth>}>
               {/* 모든 역할 → 통합 대시보드 (smaXtec 위젯 + AI 채팅) */}
-              <Route index element={<UnifiedDashboard />} />
+              <Route index element={<RoleAwareHome />} />
               <Route path="/regional-map" element={<RegionalMapPage />} />
               <Route path="/cow/:id" element={<CowProfilePage />} />
+              <Route path="/farm/:farmId/groups" element={<HerdGroupPage />} />
               <Route path="/report/farm/:farmId/monthly" element={<MonthlyReportPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
+              <Route path="/epidemiology/radius" element={<RadiusAnalysisPage />} />
+              <Route path="/epidemiology/simulation" element={<SpreadSimulationPage />} />
+              <Route path="/epidemiology/contact-network" element={<ContactNetworkPage />} />
+
+              {/* 방역관 전용 */}
+              <Route path="/epidemiology/dashboard" element={<EpidemiologyDashboard />} />
+              <Route path="/epidemiology/investigation/:id" element={<InvestigationWorkflow />} />
+              <Route path="/epidemiology/investigation/new" element={<InvestigationWorkflow />} />
+              <Route path="/epidemiology/metrics" element={<EarlyDetectionMetrics />} />
+              <Route path="/epidemiology/national" element={<NationalSituation />} />
+              <Route path="/epidemiology/cases" element={<CaseDatabase />} />
 
               {/* 관리자 전용 */}
               <Route

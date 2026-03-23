@@ -32,6 +32,15 @@ import { epidemicRouter } from './routes/epidemic.routes.js';
 import { epidemicIntelligenceRouter } from './routes/epidemic-intelligence.routes.js';
 import { vitalMonitorRouter } from './routes/vital-monitor.routes.js';
 import { labelChatRouter } from './routes/label-chat.routes.js';
+import { reportRouter } from './routes/report.routes.js';
+import { weatherRouter } from './routes/weather.routes.js';
+import { errorLogRouter } from './routes/error-log.routes.js';
+import { herdGroupRouter } from './routes/herd-group.routes.js';
+import { dryOffRouter } from './routes/dry-off.routes.js';
+import { earlyDetectionRouter } from './routes/early-detection.routes.js';
+import { epidemiologyRouter } from './routes/epidemiology.routes.js';
+import { quarantineDashboardRouter } from './routes/quarantine-dashboard.routes.js';
+import { investigationRouter } from './routes/investigation.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -69,6 +78,15 @@ export function createApiRouter(): Router {
   api.use('/epidemic-intelligence', epidemicIntelligenceRouter);
   api.use('/vital-monitor', vitalMonitorRouter);
   api.use('/label-chat', labelChatRouter);
+  api.use('/reports', reportRouter);
+  api.use('/weather', weatherRouter);
+  api.use('/errors', errorLogRouter);
+  api.use('/herd-groups', herdGroupRouter);
+  api.use('/dry-off', dryOffRouter);
+  api.use('/early-detection', earlyDetectionRouter);
+  api.use('/epidemiology', epidemiologyRouter);
+  api.use('/quarantine', quarantineDashboardRouter);
+  api.use('/investigation', investigationRouter);
 
   return api;
 }
