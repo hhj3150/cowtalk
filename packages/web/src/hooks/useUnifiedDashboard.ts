@@ -11,16 +11,24 @@ const STALE_TIME = 5 * 60 * 1000;
 const ALARM_STALE_TIME = 60 * 1000;
 const CHART_STALE_TIME = 3 * 60 * 1000;
 
-export function useUnifiedDashboard() {
+// 다중 농장 그룹 지원: farmIds가 있으면 쉼표 조인하여 farmId로 전달
+function useEffectiveFarmId(): { farmId: string | undefined; queryKey: unknown[] } {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
+  if (selectedFarmIds.length > 0) {
+    const joined = selectedFarmIds.join(',');
+    return { farmId: joined, queryKey: ['group', joined] };
+  }
+  return { farmId: selectedFarmId ?? undefined, queryKey: [selectedFarmId] };
+}
+
+export function useUnifiedDashboard() {
+  const { farmId, queryKey } = useEffectiveFarmId();
+
   return useQuery({
-    queryKey: ['unified-dashboard', selectedFarmId, selectedFarmIds],
-    queryFn: () => api.getUnifiedDashboard({
-      farmId: selectedFarmId ?? undefined,
-      farmIds: selectedFarmIds.length > 0 ? selectedFarmIds : undefined,
-    }),
+    queryKey: ['unified-dashboard', ...queryKey],
+    queryFn: () => api.getUnifiedDashboard({ farmId }),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
     refetchIntervalInBackground: false,
@@ -28,12 +36,12 @@ export function useUnifiedDashboard() {
 }
 
 export function useLiveAlarms() {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
 
   return useQuery({
-    queryKey: ['live-alarms', selectedFarmId],
+    queryKey: ['live-alarms', ...queryKey],
     queryFn: async () => {
-      const result = await api.getLiveAlarms(selectedFarmId ?? undefined);
+      const result = await api.getLiveAlarms(farmId);
       // 프론트엔드 안전장치: 같은 농장+귀표번호+이벤트타입 중복 제거
       const seen = new Set<string>();
       const deduped = result.alarms.filter((a) => {
@@ -59,20 +67,20 @@ export function useFarmRanking() {
 }
 
 export function useHealthAlertsSummary() {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
   return useQuery({
-    queryKey: ['health-alerts-summary', selectedFarmId],
-    queryFn: () => api.fetchHealthAlertsSummary(selectedFarmId ?? undefined),
+    queryKey: ['health-alerts-summary', ...queryKey],
+    queryFn: () => api.fetchHealthAlertsSummary(farmId),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
 }
 
 export function useFertilityManagement() {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
   return useQuery({
-    queryKey: ['fertility-management', selectedFarmId],
-    queryFn: () => api.fetchFertilityManagement(selectedFarmId ?? undefined),
+    queryKey: ['fertility-management', ...queryKey],
+    queryFn: () => api.fetchFertilityManagement(farmId),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
@@ -89,34 +97,34 @@ export function useDashboardFarms() {
 // ── Phase 2: 강화 차트 훅 ──
 
 export function useAiBriefing() {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
   const role = useAuthStore((s) => s.user?.role ?? 'government_admin');
 
   return useQuery({
-    queryKey: ['ai-briefing', selectedFarmId, role],
-    queryFn: () => api.fetchAiBriefing(selectedFarmId ?? undefined, role),
+    queryKey: ['ai-briefing', ...queryKey, role],
+    queryFn: () => api.fetchAiBriefing(farmId, role),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
 }
 
 export function useAlertTrend(days = 14) {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
 
   return useQuery({
-    queryKey: ['alert-trend', selectedFarmId, days],
-    queryFn: () => api.fetchAlertTrend(selectedFarmId ?? undefined, days),
+    queryKey: ['alert-trend', ...queryKey, days],
+    queryFn: () => api.fetchAlertTrend(farmId, days),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
 }
 
 export function useHerdComposition() {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
 
   return useQuery({
-    queryKey: ['herd-composition', selectedFarmId],
-    queryFn: () => api.fetchHerdComposition(selectedFarmId ?? undefined),
+    queryKey: ['herd-composition', ...queryKey],
+    queryFn: () => api.fetchHerdComposition(farmId),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
@@ -132,33 +140,33 @@ export function useFarmComparison(farmIds?: string[]) {
 }
 
 export function useTemperatureDistribution() {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
 
   return useQuery({
-    queryKey: ['temperature-distribution', selectedFarmId],
-    queryFn: () => api.fetchTemperatureDistribution(selectedFarmId ?? undefined),
+    queryKey: ['temperature-distribution', ...queryKey],
+    queryFn: () => api.fetchTemperatureDistribution(farmId),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
 }
 
 export function useEventTimeline(hours = 24) {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
 
   return useQuery({
-    queryKey: ['event-timeline', selectedFarmId, hours],
-    queryFn: () => api.fetchEventTimeline(selectedFarmId ?? undefined, hours),
+    queryKey: ['event-timeline', ...queryKey, hours],
+    queryFn: () => api.fetchEventTimeline(farmId, hours),
     staleTime: ALARM_STALE_TIME,
     refetchInterval: ALARM_STALE_TIME,
   });
 }
 
 export function useVitalMonitor(days = 30) {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { farmId, queryKey } = useEffectiveFarmId();
 
   return useQuery({
-    queryKey: ['vital-monitor', selectedFarmId, days],
-    queryFn: () => api.fetchVitalMonitor(selectedFarmId ?? undefined, days),
+    queryKey: ['vital-monitor', ...queryKey, days],
+    queryFn: () => api.fetchVitalMonitor(farmId, days),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
