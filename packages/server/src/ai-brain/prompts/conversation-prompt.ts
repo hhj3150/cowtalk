@@ -17,7 +17,7 @@ export function buildConversationPrompt(
   role: Role,
   context: ChatContext,
   conversationHistory: readonly ConversationTurn[],
-  options?: { readonly streaming?: boolean },
+  options?: { readonly streaming?: boolean; readonly labelContext?: string },
 ): string {
   const sections: string[] = [];
 
@@ -49,6 +49,11 @@ export function buildConversationPrompt(
     );
     sections.push(`## 이전 대화
 ${historyLines.join('\n')}`);
+  }
+
+  // 소버린 AI 집단지성 — 과거 레이블 데이터
+  if (options?.labelContext) {
+    sections.push(options.labelContext);
   }
 
   // 현재 질문

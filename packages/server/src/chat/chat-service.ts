@@ -11,6 +11,7 @@ import {
 import { resolveContext } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
+import { getLabelContextForEventType, formatLabelContext } from '../ai-brain/label-context.js';
 
 // ===========================
 // 대화 메시지 (JSON 응답)
@@ -35,9 +36,21 @@ export async function handleChatMessage(
     question, farmId, animalId, role, dashboardContext,
   );
 
-  // 2. 프롬프트 빌드
+  // 2. 레이블 컨텍스트 조회 (집단지성)
+  let labelContext: string | undefined;
+  if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
+    const primaryEvent = context.profile.activeEvents[0];
+    if (primaryEvent) {
+      const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
+      if (summary) {
+        labelContext = formatLabelContext(summary, primaryEvent.type);
+      }
+    }
+  }
+
+  // 3. 프롬프트 빌드
   const prompt = buildConversationPrompt(
-    question, role, context, conversationHistory,
+    question, role, context, conversationHistory, { labelContext },
   );
 
   // 3. 역할별 톤 설정
@@ -81,8 +94,20 @@ export async function handleChatStream(
     question, farmId, animalId, role, dashboardContext,
   );
 
+  // 레이블 컨텍스트 조회
+  let labelContext: string | undefined;
+  if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
+    const primaryEvent = context.profile.activeEvents[0];
+    if (primaryEvent) {
+      const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
+      if (summary) {
+        labelContext = formatLabelContext(summary, primaryEvent.type);
+      }
+    }
+  }
+
   const prompt = buildConversationPrompt(
-    question, role, context, conversationHistory, { streaming: true },
+    question, role, context, conversationHistory, { streaming: true, labelContext },
   );
 
   const roleTone = getRoleTone(role);
