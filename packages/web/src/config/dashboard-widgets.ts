@@ -52,16 +52,16 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
+    'live_alarm_feed',
+    'todo_list',
     'vet_route',
     'fever_ranking',
-    'live_alarm_feed',
     'vital_monitor_chart',
     'temperature_scatter',
     'event_timeline_chart',
     'alert_trend_chart',
-    'inline_ai_chat',
+    'farm_ranking',
     'farm_map',
-    'sovereign_ai',
   ],
 
   // 수정사: 수정 경로, 번식 파이프라인
@@ -69,11 +69,12 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
+    'live_alarm_feed',
+    'todo_list',
     'insemination_route',
     'breeding_pipeline',
     'alert_trend_chart',
-    'inline_ai_chat',
-    'sovereign_ai',
+    'farm_ranking',
   ],
 
   // 행정: 전체 (모든 위젯)
@@ -114,9 +115,9 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'herd_overview',
     'ai_briefing',
     'live_alarm_feed',
+    'todo_list',
     'alert_trend_chart',
-    'inline_ai_chat',
-    'sovereign_ai',
+    'farm_ranking',
   ],
 
   // 사료회사: 축군 구성, 반추, 농장 비교
@@ -124,11 +125,12 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
+    'live_alarm_feed',
+    'todo_list',
     'herd_composition_chart',
     'vital_monitor_chart',
     'farm_comparison_radar',
-    'inline_ai_chat',
-    'sovereign_ai',
+    'farm_ranking',
   ],
 };
 

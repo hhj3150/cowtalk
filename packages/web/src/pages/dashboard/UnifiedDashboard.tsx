@@ -494,7 +494,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── KPI 카드 ── */}
           <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} />
 
-          {/* ── 번식성적 커맨드센터: 번식 파이프라인 제거 (실 데이터 축적 후 활성화) ── */}
+          {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널 — KPI 바로 아래) ── */}
+          {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+            {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
+            {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
+          </div>
+          )}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>
@@ -580,20 +586,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
           </>)}
 
-          {/* ── 운영 패널 (AI 채팅은 지니로 통합) ── */}
-          {(isVisible('live_alarm_feed') || isVisible('todo_list')) && (<>
-          <SectionLabel>운영 현황</SectionLabel>
+          {/* ── 농장 순위 + 역학 지도 ── */}
+          {(isVisible('farm_ranking') || isVisible('epidemic_map')) && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
-              {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => selectFarm(fid)} />}
-              {isVisible('epidemic_map') && <EpidemicMapWidget onClusterClick={(id) => setEpidemicClusterId(id)} />}
-            </div>
+            {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => selectFarm(fid)} />}
+            {isVisible('epidemic_map') && <EpidemicMapWidget onClusterClick={(id) => setEpidemicClusterId(id)} />}
           </div>
-          </>)}
+          )}
 
           {/* 소버린 AI 지식 강화 — 백엔드에서 자동 학습, UI에서 제거 */}
           </div>
