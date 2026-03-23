@@ -41,18 +41,18 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    // 발정 알람을 농장별로 그룹핑
-    apiGet<{ alarms: readonly { farmId: string; farmName: string; animalId: string; earTag: string; eventType: string; detectedAt: string }[] }>(
-      '/unified-dashboard/live-alarms'
-    ).then((res) => {
-      const estrusAlarms = res.alarms.filter((a) => a.eventType === 'estrus');
-      const inseminationAlarms = res.alarms.filter((a) => a.eventType === 'insemination');
-      const pregCheckAlarms = res.alarms.filter((a) => a.eventType === 'pregnancy_check');
-      const noInsemAlarms = res.alarms.filter((a) => a.eventType === 'no_insemination');
-
+    // 드릴다운 API로 발정 대상우 전체 조회 (live-alarms는 50건 제한)
+    Promise.all([
+      apiGet<{ items: readonly { eventId: string; farmId: string; farmName: string; animalId: string; earTag: string; eventType: string; detectedAt: string; severity: string }[]; total: number }>(
+        '/unified-dashboard/drilldown?eventType=estrus'
+      ),
+      apiGet<{ total: number }>('/unified-dashboard/drilldown?eventType=insemination'),
+      apiGet<{ total: number }>('/unified-dashboard/drilldown?eventType=pregnancy_check'),
+      apiGet<{ total: number }>('/unified-dashboard/drilldown?eventType=no_insemination'),
+    ]).then(([estrusRes, insemRes, pregRes, noInsemRes]) => {
       // 농장별 그룹핑
       const farmMap = new Map<string, FarmEstrus>();
-      for (const a of estrusAlarms) {
+      for (const a of estrusRes.items) {
         const existing = farmMap.get(a.farmId);
         if (existing) {
           farmMap.set(a.farmId, {
@@ -73,10 +73,10 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
       const farmBreakdown = Array.from(farmMap.values()).sort((a, b) => b.estrusCount - a.estrusCount);
 
       setData({
-        todayEstrus: estrusAlarms.length,
-        todayInseminated: inseminationAlarms.length,
-        todayPregnancyCheck: pregCheckAlarms.length,
-        todayNoInsemination: noInsemAlarms.length,
+        todayEstrus: estrusRes.total,
+        todayInseminated: insemRes.total,
+        todayPregnancyCheck: pregRes.total,
+        todayNoInsemination: noInsemRes.total,
         farmBreakdown,
       });
     }).catch(() => {});
