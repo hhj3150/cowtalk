@@ -66,6 +66,9 @@ export default function CowProfilePage(): React.JSX.Element {
   const [breeding, setBreeding] = useState<readonly BreedingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiScore, setAiScore] = useState<number | null>(null);
+  const [healthPred, setHealthPred] = useState<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string } | null>(null);
+  const [estrusPred, setEstrusPred] = useState<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string } | null>(null);
+  const [calvingPred, setCalvingPred] = useState<{ calvingRisk: string; reasons: string[]; recommendation: string } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -95,17 +98,19 @@ export default function CowProfilePage(): React.JSX.Element {
         });
       }
 
-      // AI 건강 점수 (이벤트 기반 간이 계산)
-      const recentEvents = evts?.events ?? [];
-      const critCount = recentEvents.filter((e) => e.severity === 'critical' || e.severity === 'high').length;
-      const score = Math.max(0, 100 - critCount * 15);
-      setAiScore(score);
+      // AI 건강 점수는 예측 API에서 가져옴
+      setAiScore(null); // healthPred.riskScore로 대체
 
       setLoading(false);
     });
 
     // 번식 이력
     apiGet<readonly BreedingEvent[]>(`/animals/${id}/breeding-history`).then(setBreeding).catch(() => {});
+
+    // AI 예측 3종
+    apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`).then(setHealthPred).catch(() => {});
+    apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`).then(setEstrusPred).catch(() => {});
+    apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`).then(setCalvingPred).catch(() => {});
   }, [id]);
 
   if (loading) {
@@ -133,7 +138,8 @@ export default function CowProfilePage(): React.JSX.Element {
 
   const tempStatus = sensor?.temperature ? (sensor.temperature >= 40 ? '🔴 발열' : sensor.temperature >= 39.5 ? '🟡 주의' : '🟢 정상') : '—';
   const rumStatus = sensor?.rumination ? (sensor.rumination < 200 ? '🔴 감소' : sensor.rumination < 300 ? '🟡 주의' : '🟢 정상') : '—';
-  const scoreColor = aiScore !== null ? (aiScore >= 80 ? '#22c55e' : aiScore >= 50 ? '#eab308' : '#ef4444') : '#64748b';
+  const healthScore = healthPred ? (100 - healthPred.riskScore) : aiScore;
+  const scoreColor = healthScore !== null ? (healthScore >= 80 ? '#22c55e' : healthScore >= 50 ? '#eab308' : '#ef4444') : '#64748b';
 
   return (
     <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px' : '20px 24px' }}>
@@ -173,8 +179,8 @@ export default function CowProfilePage(): React.JSX.Element {
         </div>
         <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>AI 건강 점수</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: scoreColor }}>{aiScore ?? '—'}</div>
-          <div style={{ fontSize: 10 }}>/ 100점</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: scoreColor }}>{healthScore ?? '—'}</div>
+          <div style={{ fontSize: 10 }}>{healthPred ? healthPred.riskLevel : '/ 100점'}</div>
         </div>
       </div>
 
@@ -208,8 +214,56 @@ export default function CowProfilePage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* 오른쪽: 번식 이력 + 진단 레이블 */}
+        {/* 오른쪽: AI 예측 + 번식 이력 + 개체 정보 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* AI 예측 3종 */}
+          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>🤖 AI 예측</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* 질병 예측 */}
+              {healthPred && (
+                <div style={{ padding: '8px 10px', borderRadius: 8, background: healthPred.riskLevel === 'critical' ? 'rgba(239,68,68,0.1)' : healthPred.riskLevel === 'warning' ? 'rgba(249,115,22,0.1)' : 'rgba(34,197,94,0.1)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                    🏥 72시간 건강 예측: <span style={{ color: healthPred.riskLevel === 'critical' ? '#ef4444' : healthPred.riskLevel === 'warning' ? '#f97316' : '#22c55e' }}>{healthPred.riskLevel}</span>
+                  </div>
+                  {healthPred.reasons.map((r, i) => (
+                    <div key={i} style={{ fontSize: 10, color: 'var(--ct-text-secondary)', paddingLeft: 8 }}>• {r}</div>
+                  ))}
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, fontStyle: 'italic' }}>{healthPred.recommendation}</div>
+                </div>
+              )}
+
+              {/* 발정 예측 */}
+              {estrusPred && (
+                <div style={{ padding: '8px 10px', borderRadius: 8, background: estrusPred.isWithin3Days ? 'rgba(239,68,68,0.1)' : 'rgba(99,102,241,0.05)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                    🔴 발정 주기 예측
+                    {estrusPred.isWithin3Days && <span style={{ color: '#ef4444', marginLeft: 8 }}>3일 이내!</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-secondary)' }}>
+                    {estrusPred.hasData ? estrusPred.reasoning : estrusPred.message}
+                  </div>
+                </div>
+              )}
+
+              {/* 분만 예측 */}
+              {calvingPred && calvingPred.calvingRisk !== 'low' && (
+                <div style={{ padding: '8px 10px', borderRadius: 8, background: calvingPred.calvingRisk === 'imminent' ? 'rgba(239,68,68,0.15)' : 'rgba(249,115,22,0.1)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: calvingPred.calvingRisk === 'imminent' ? '#ef4444' : '#f97316' }}>
+                    🍼 분만 예측: {calvingPred.calvingRisk}
+                  </div>
+                  {calvingPred.reasons.map((r, i) => (
+                    <div key={i} style={{ fontSize: 10, color: 'var(--ct-text-secondary)', paddingLeft: 8 }}>• {r}</div>
+                  ))}
+                  <div style={{ fontSize: 10, fontStyle: 'italic', color: 'var(--ct-text-muted)', marginTop: 4 }}>{calvingPred.recommendation}</div>
+                </div>
+              )}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 9, color: 'var(--ct-text-muted)', fontStyle: 'italic' }}>
+              이 정보는 수의사의 임상적 판단을 보조하기 위한 참고 자료입니다.
+            </div>
+          </div>
+
           {/* 번식 이력 */}
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>🐄 번식 이력</h2>
