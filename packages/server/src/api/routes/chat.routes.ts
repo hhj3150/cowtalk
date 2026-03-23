@@ -13,6 +13,14 @@ export const chatRouter = Router();
 
 chatRouter.use(authenticate);
 
+// 보안: 입력 길이 제한 + 새니타이징
+const MAX_QUESTION_LENGTH = 2000; // 최대 2000자
+const MAX_HISTORY_TURNS = 20; // 최대 20턴
+
+function sanitizeQuestion(q: string): string {
+  return q.slice(0, MAX_QUESTION_LENGTH).trim();
+}
+
 // === 역할별 추천 질문 ===
 
 const ROLE_SUGGESTIONS: Readonly<Record<string, readonly string[]>> = {
@@ -66,11 +74,11 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
     };
 
     const result = await handleChatMessage({
-      question: body.question,
+      question: sanitizeQuestion(body.question),
       role: req.user?.role as Role,
       farmId: body.farmId ?? null,
       animalId: body.animalId ?? null,
-      conversationHistory: body.conversationHistory ?? [],
+      conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
       dashboardContext: body.dashboardContext,
     });
 
@@ -105,11 +113,11 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
 
   await handleChatStream(
     {
-      question: body.question,
+      question: sanitizeQuestion(body.question),
       role: req.user?.role as Role,
       farmId: body.farmId ?? null,
       animalId: body.animalId ?? null,
-      conversationHistory: body.conversationHistory ?? [],
+      conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
       dashboardContext: body.dashboardContext,
     },
     {

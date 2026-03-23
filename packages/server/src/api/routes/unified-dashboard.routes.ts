@@ -118,6 +118,9 @@ function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | u
 // 미들웨어: 모든 요청에서 farmId 쉼표 분리 → _currentFarmIds 설정
 // ===========================
 
+// UUID v4 형식 검증
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) => {
   const farmId = (req.query.farmId as string | undefined) ?? null;
   const farmIdsParam = req.query.farmIds as string | undefined;
@@ -126,12 +129,12 @@ unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) =>
 
   // farmIds 파라미터 (명시적 배열)
   if (farmIdsParam) {
-    ids = farmIdsParam.split(',').filter(Boolean);
+    ids = farmIdsParam.split(',').filter((id) => UUID_REGEX.test(id));
     req.query.farmId = undefined as unknown as string;
   }
   // farmId에 쉼표가 포함된 경우 (레거시 지원)
   else if (farmId && farmId.includes(',')) {
-    ids = farmId.split(',').filter(Boolean);
+    ids = farmId.split(',').filter((id) => UUID_REGEX.test(id));
     req.query.farmId = undefined as unknown as string;
   }
 

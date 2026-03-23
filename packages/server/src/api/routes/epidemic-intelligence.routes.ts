@@ -33,12 +33,14 @@ epidemicIntelligenceRouter.use(authenticate);
 import { AsyncLocalStorage } from 'node:async_hooks';
 const epidemicFarmIdsStorage = new AsyncLocalStorage<readonly string[]>();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 epidemicIntelligenceRouter.use((req: Request, _res: Response, next: NextFunction) => {
   const farmIdsParam = req.query.farmIds as string | undefined;
   const farmId = req.query.farmId as string | undefined;
   let ids: readonly string[] = [];
-  if (farmIdsParam) ids = farmIdsParam.split(',').filter(Boolean);
-  else if (farmId && farmId.includes(',')) ids = farmId.split(',').filter(Boolean);
+  if (farmIdsParam) ids = farmIdsParam.split(',').filter((id) => UUID_RE.test(id));
+  else if (farmId && farmId.includes(',')) ids = farmId.split(',').filter((id) => UUID_RE.test(id));
   epidemicFarmIdsStorage.run(ids, () => next());
 });
 
