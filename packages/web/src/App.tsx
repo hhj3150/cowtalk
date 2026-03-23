@@ -16,6 +16,7 @@ const UnifiedDashboard = lazy(() => import('@web/pages/dashboard/UnifiedDashboar
 const DemoModePage = lazy(() => import('@web/pages/demo/DemoModePage'));
 const RegionalMapPage = lazy(() => import('@web/pages/regional/RegionalMapPage'));
 const CowProfilePage = lazy(() => import('@web/pages/cow/CowProfilePage'));
+const MonthlyReportPage = lazy(() => import('@web/pages/report/MonthlyReportPage'));
 const NotificationSettingsPage = lazy(() => import('@web/pages/settings/NotificationSettingsPage'));
 
 // 관리자 전용
@@ -62,6 +63,7 @@ export function App(): React.JSX.Element {
               <Route index element={<UnifiedDashboard />} />
               <Route path="/regional-map" element={<RegionalMapPage />} />
               <Route path="/cow/:id" element={<CowProfilePage />} />
+              <Route path="/report/farm/:farmId/monthly" element={<MonthlyReportPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
 
               {/* 관리자 전용 */}
