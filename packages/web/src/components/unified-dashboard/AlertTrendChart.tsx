@@ -20,6 +20,7 @@ interface AlertTrendEntry {
 interface Props {
   readonly data: readonly AlertTrendEntry[];
   readonly height?: number;
+  readonly onBarClick?: (date: string) => void;
 }
 
 // ── 상수 ──
@@ -97,8 +98,14 @@ function formatDate(val: string): string {
 
 // ── 메인 컴포넌트 ──
 
-export function AlertTrendChart({ data, height = 280 }: Props): React.JSX.Element {
+export function AlertTrendChart({ data, height = 280, onBarClick }: Props): React.JSX.Element {
   const showBrush = data.length > 14;
+
+  const handleBarClick = (barData: Record<string, unknown> | null | undefined): void => {
+    if (!barData || !onBarClick) return;
+    const date = barData.date as string | undefined;
+    if (date) onBarClick(date);
+  };
 
   return (
     <div>
@@ -146,6 +153,8 @@ export function AlertTrendChart({ data, height = 280 }: Props): React.JSX.Elemen
               radius={0}
               animationDuration={1500}
               animationEasing="ease-in-out"
+              onClick={onBarClick ? handleBarClick : undefined}
+              cursor={onBarClick ? 'pointer' : undefined}
             />
           ))}
 

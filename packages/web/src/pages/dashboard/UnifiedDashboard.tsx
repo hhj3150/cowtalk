@@ -195,7 +195,9 @@ function FarmFilterDropdown(): React.JSX.Element {
 
 // ── AI Briefing Card ──
 
-function AiBriefingCard(): React.JSX.Element {
+function AiBriefingCard({ onKpiClick }: {
+  readonly onKpiClick?: (filter: { eventType: string; label: string }) => void;
+}): React.JSX.Element {
   const { data: briefing, isLoading } = useAiBriefing();
 
   if (isLoading || !briefing) {
@@ -240,7 +242,11 @@ function AiBriefingCard(): React.JSX.Element {
         borderRadius: 12,
         padding: '12px 8px',
       }}>
-        <StatChip label="오늘 알림" value={briefing.alertStats.total24h} />
+        <StatChip
+          label="오늘 알림"
+          value={briefing.alertStats.total24h}
+          onClick={onKpiClick ? () => onKpiClick({ eventType: 'ALL', label: '오늘 전체 알림' }) : undefined}
+        />
         <StatDivider />
         <StatChip
           label="전일 대비"
@@ -248,9 +254,19 @@ function AiBriefingCard(): React.JSX.Element {
           color={briefing.trendComparison.direction === 'up' ? 'var(--ct-danger)' : briefing.trendComparison.direction === 'down' ? 'var(--ct-primary)' : 'var(--ct-warning)'}
         />
         <StatDivider />
-        <StatChip label="심각" value={briefing.alertStats.critical} color="var(--ct-danger)" />
+        <StatChip
+          label="심각"
+          value={briefing.alertStats.critical}
+          color="var(--ct-danger)"
+          onClick={onKpiClick ? () => onKpiClick({ eventType: 'SEVERITY_CRITICAL', label: '심각 알림' }) : undefined}
+        />
         <StatDivider />
-        <StatChip label="높음" value={briefing.alertStats.high} color="#f97316" />
+        <StatChip
+          label="높음"
+          value={briefing.alertStats.high}
+          color="#f97316"
+          onClick={onKpiClick ? () => onKpiClick({ eventType: 'SEVERITY_HIGH', label: '높음 알림' }) : undefined}
+        />
       </div>
 
       {/* Recommendations */}
@@ -328,13 +344,31 @@ function ClaudeBadge(): React.JSX.Element {
   );
 }
 
-function StatChip({ label, value, color }: {
+function StatChip({ label, value, color, onClick }: {
   readonly label: string;
   readonly value: string | number;
   readonly color?: string;
+  readonly onClick?: () => void;
 }): React.JSX.Element {
+  const isClickable = Boolean(onClick);
   return (
-    <div style={{ flex: 1, textAlign: 'center' }}>
+    <button
+      type="button"
+      disabled={!isClickable}
+      onClick={onClick}
+      style={{
+        flex: 1,
+        textAlign: 'center',
+        background: 'none',
+        border: 'none',
+        padding: '4px 2px',
+        borderRadius: 8,
+        cursor: isClickable ? 'pointer' : 'default',
+        transition: 'background 0.15s',
+      }}
+      onMouseEnter={(e) => { if (isClickable) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+    >
       <div style={{
         fontSize: 20,
         fontWeight: 800,
@@ -344,8 +378,11 @@ function StatChip({ label, value, color }: {
       }}>
         {value}
       </div>
-      <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 2 }}>{label}</div>
-    </div>
+      <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 2 }}>
+        {label}
+        {isClickable && <span style={{ marginLeft: 2, fontSize: 8, opacity: 0.6 }}>{'>'}</span>}
+      </div>
+    </button>
   );
 }
 
@@ -593,7 +630,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
 
           {/* ── AI 브리핑 ── */}
-          <AiBriefingCard />
+          <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
 
           {/* ── KPI 카드 ── */}
           <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} />
@@ -645,7 +682,11 @@ export default function UnifiedDashboard(): React.JSX.Element {
             {isVisible('alert_trend_chart') && (
             <ChartCard title="알림 트렌드 (14일)" icon="📊" delay={100}>
               {alertTrendData && alertTrendData.length > 0
-                ? <AlertTrendChart data={[...alertTrendData]} height={240} />
+                ? <AlertTrendChart
+                    data={[...alertTrendData]}
+                    height={240}
+                    onBarClick={(date) => setDrilldown({ eventType: `DATE_${date}`, label: `${date} 알림 상세` })}
+                  />
                 : LOADING_PLACEHOLDER
               }
             </ChartCard>

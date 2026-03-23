@@ -296,13 +296,19 @@ unifiedDashboardRouter.get('/drilldown', async (req: Request, res: Response, nex
     const db = getDb();
     const today = daysAgo(1);
 
-    // eventType=ALL → 모든 이벤트 유형, HEALTH_ALL → 건강 관련 이벤트만
+    // eventType=ALL → 모든 이벤트 유형, HEALTH_ALL → 건강 관련, SEVERITY_* → 심각도 필터
     const healthTypes = ['health_warning', 'health_alert', 'temperature_high', 'temperature_low', 'rumination_decrease', 'activity_decrease', 'ph_low', 'drinking_decrease', 'clinical_condition', 'health_general'];
     const typeFilter = eventType === 'ALL'
       ? undefined
       : eventType === 'HEALTH_ALL'
         ? sql`${smaxtecEvents.eventType} IN (${sql.raw(healthTypes.map((t) => `'${t}'`).join(','))})`
-        : eq(smaxtecEvents.eventType, eventType);
+        : eventType === 'SEVERITY_CRITICAL'
+          ? eq(smaxtecEvents.severity, 'critical')
+          : eventType === 'SEVERITY_HIGH'
+            ? sql`${smaxtecEvents.severity} IN ('high', 'medium')`
+            : eventType.startsWith('DATE_')
+              ? undefined // 날짜 필터는 별도 처리
+              : eq(smaxtecEvents.eventType, eventType);
 
     // 오늘 발생한 해당 유형의 이벤트를 농장명 + 동물 귀표번호와 함께 조회
     const rows = await db.select({
