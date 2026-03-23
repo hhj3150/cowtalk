@@ -8,7 +8,7 @@ import { authenticate } from '../middleware/auth.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { farms, smaxtecEvents } from '../../db/schema.js';
-import { eq, count, sql, and, gte } from 'drizzle-orm';
+import { eq, count, sql, and, gte, inArray } from 'drizzle-orm';
 import type {
   EpidemicRiskLevel,
   TrendDirection,
@@ -28,6 +28,25 @@ import type {
 export const epidemicIntelligenceRouter = Router();
 
 epidemicIntelligenceRouter.use(authenticate);
+
+// 농장 그룹 farmIds 파싱 미들웨어
+import { AsyncLocalStorage } from 'node:async_hooks';
+const epidemicFarmIdsStorage = new AsyncLocalStorage<readonly string[]>();
+
+epidemicIntelligenceRouter.use((req: Request, _res: Response, next: NextFunction) => {
+  const farmIdsParam = req.query.farmIds as string | undefined;
+  const farmId = req.query.farmId as string | undefined;
+  let ids: readonly string[] = [];
+  if (farmIdsParam) ids = farmIdsParam.split(',').filter(Boolean);
+  else if (farmId && farmId.includes(',')) ids = farmId.split(',').filter(Boolean);
+  epidemicFarmIdsStorage.run(ids, () => next());
+});
+
+function getEpidemicFarmFilter(): ReturnType<typeof inArray> | undefined {
+  const ids = epidemicFarmIdsStorage.getStore();
+  if (ids && ids.length > 0) return inArray(farms.farmId, [...ids]);
+  return undefined;
+}
 
 // ===========================
 // 상수
@@ -133,7 +152,7 @@ async function queryActiveFarms(db: DbInstance): Promise<readonly FarmInfo[]> {
       headCount: farms.currentHeadCount,
     })
     .from(farms)
-    .where(eq(farms.status, 'active'));
+    .where(and(eq(farms.status, 'active'), getEpidemicFarmFilter()) ?? eq(farms.status, 'active'));
 
   return rows.map((r) => ({
     farmId: r.farmId,
@@ -160,6 +179,7 @@ async function queryHealthAlarms48h(db: DbInstance): Promise<readonly HourlyAlar
       and(
         gte(smaxtecEvents.detectedAt, since),
         sql`${smaxtecEvents.eventType} IN ('temperature_high','rumination_decrease')`,
+        getEpidemicFarmFilter() as ReturnType<typeof gte> | undefined,
       ),
     )
     .groupBy(
@@ -255,6 +275,7 @@ async function queryAlarms7d(db: DbInstance): Promise<readonly HourlyAlarm[]> {
       and(
         gte(smaxtecEvents.detectedAt, since),
         sql`${smaxtecEvents.eventType} IN ('temperature_high','rumination_decrease')`,
+        getEpidemicFarmFilter() as ReturnType<typeof gte> | undefined,
       ),
     )
     .groupBy(

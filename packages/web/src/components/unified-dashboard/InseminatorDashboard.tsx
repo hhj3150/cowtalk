@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiGet } from '@web/api/client';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { useFarmStore } from '@web/stores/farm.store';
 
 interface FarmEstrus {
   readonly farmId: string;
@@ -39,16 +40,18 @@ function formatOptimalTime(detectedAt: string): string {
 export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): React.JSX.Element {
   const [data, setData] = useState<InseminatorStats | null>(null);
   const isMobile = useIsMobile();
+  const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
+  const farmIdsParam = selectedFarmIds.length > 0 ? `&farmIds=${selectedFarmIds.join(',')}` : '';
 
   useEffect(() => {
     // 드릴다운 API로 발정 대상우 전체 조회 (live-alarms는 50건 제한)
     Promise.all([
       apiGet<{ items: readonly { eventId: string; farmId: string; farmName: string; animalId: string; earTag: string; eventType: string; detectedAt: string; severity: string }[]; total: number }>(
-        '/unified-dashboard/drilldown?eventType=estrus'
+        `/unified-dashboard/drilldown?eventType=estrus${farmIdsParam}`
       ),
-      apiGet<{ total: number }>('/unified-dashboard/drilldown?eventType=insemination'),
-      apiGet<{ total: number }>('/unified-dashboard/drilldown?eventType=pregnancy_check'),
-      apiGet<{ total: number }>('/unified-dashboard/drilldown?eventType=no_insemination'),
+      apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=insemination${farmIdsParam}`),
+      apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=pregnancy_check${farmIdsParam}`),
+      apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=no_insemination${farmIdsParam}`),
     ]).then(([estrusRes, insemRes, pregRes, noInsemRes]) => {
       // 농장별 그룹핑
       const farmMap = new Map<string, FarmEstrus>();
@@ -80,7 +83,7 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
         farmBreakdown,
       });
     }).catch(() => {});
-  }, []);
+  }, [farmIdsParam]);
 
   if (!data) {
     return (

@@ -59,9 +59,10 @@ export function useLiveAlarms() {
 }
 
 export function useFarmRanking() {
+  const { farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
-    queryKey: ['farm-ranking'],
-    queryFn: () => api.getFarmRanking(),
+    queryKey: ['farm-ranking', ...queryKey],
+    queryFn: () => api.getFarmRanking(farmIds),
     staleTime: ALARM_STALE_TIME,
     refetchInterval: ALARM_STALE_TIME,
   });
@@ -185,18 +186,20 @@ export function useFarmMapMarkers() {
 // ── 역학 감시 ──
 
 export function useEpidemicIntelligence() {
+  const { farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
-    queryKey: ['epidemic-intelligence'],
-    queryFn: () => api.fetchEpidemicIntelligence(),
+    queryKey: ['epidemic-intelligence', ...queryKey],
+    queryFn: () => api.fetchEpidemicIntelligence(farmIds),
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
   });
 }
 
 export function useFarmHealthScores() {
+  const { farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
-    queryKey: ['farm-health-scores'],
-    queryFn: () => api.fetchFarmHealthScores(),
+    queryKey: ['farm-health-scores', ...queryKey],
+    queryFn: () => api.fetchFarmHealthScores(farmIds),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
