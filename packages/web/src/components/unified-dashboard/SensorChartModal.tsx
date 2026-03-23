@@ -11,6 +11,7 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceLine,
+  ReferenceArea,
   Brush,
 } from 'recharts';
 import { apiGet } from '@web/api/client';
@@ -43,6 +44,7 @@ interface SensorChartResponse {
 interface Props {
   readonly animalId: string;
   readonly onClose: () => void;
+  readonly onAskAi?: (animalId: string, context: string) => void;
 }
 
 // ── 상수 ──
@@ -385,6 +387,33 @@ function CombinedChart({ metrics, eventMarkers, timeRange }: CombinedChartProps)
 
           <Tooltip content={<CombinedTooltip />} cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }} isAnimationActive={false} />
 
+          {/* 정상범위 배경 (smaXtec 스타일 녹색 배경) */}
+          {available.includes('temp') && (
+            <ReferenceArea
+              yAxisId="temp"
+              y1={METRIC_CONFIG.temp?.normalMin ?? 38.0}
+              y2={METRIC_CONFIG.temp?.normalMax ?? 39.3}
+              fill="#22c55e"
+              fillOpacity={0.08}
+              stroke="none"
+            />
+          )}
+
+          {/* 현재 시점 마커 (주황 세로선) */}
+          <ReferenceLine
+            x={Date.now()}
+            stroke="#f97316"
+            strokeWidth={2}
+            strokeDasharray="none"
+            label={{
+              value: '현재',
+              position: 'top',
+              fill: '#f97316',
+              fontSize: 10,
+              fontWeight: 700,
+            }}
+          />
+
           {/* 이벤트 마커 */}
           <EventMarkerLines markers={relevantMarkers} />
 
@@ -537,7 +566,7 @@ function EventTimeline({ markers }: { readonly markers: readonly EventMarker[] }
 
 // ── 메인 모달 ──
 
-export function SensorChartModal({ animalId, onClose }: Props): React.JSX.Element {
+export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.JSX.Element {
   const [data, setData] = useState<SensorChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -742,26 +771,79 @@ export function SensorChartModal({ animalId, onClose }: Props): React.JSX.Elemen
           }}
         >
           <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--ct-text-muted)' }}>
-            <span>--- 정상범위</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 16, height: 8, background: 'rgba(34,197,94,0.15)', borderRadius: 2 }} />
+              정상범위
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 12, height: 2, background: '#f97316' }} />
+              현재
+            </span>
             <span style={{ color: '#ef4444' }}>● 이상값</span>
-            <span>차트 드래그로 확대</span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              padding: '6px 16px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              background: 'var(--ct-primary)',
-              color: '#fff',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            닫기
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onAskAi && data && (
+              <button
+                type="button"
+                onClick={() => {
+                  // 센서 데이터 요약을 AI에게 전달
+                  const metricsToSummarize = ['temp', 'act', 'rum', 'dr'] as const;
+                  const summaryParts = metricsToSummarize
+                    .filter((k) => data.metrics[k] && data.metrics[k].length > 0)
+                    .map((k) => {
+                      const pts = data.metrics[k] ?? [];
+                      const vals = pts.map((p) => p.value);
+                      const cfg = METRIC_CONFIG[k];
+                      if (!cfg) return '';
+                      const latest = vals[vals.length - 1] ?? 0;
+                      const min = Math.min(...vals);
+                      const max = Math.max(...vals);
+                      const isAbnormal = latest < cfg.normalMin || latest > cfg.normalMax;
+                      return `${cfg.label}: 최근 ${latest.toFixed(1)}${cfg.unit} (범위 ${min.toFixed(1)}~${max.toFixed(1)}, 정상 ${cfg.normalMin}~${cfg.normalMax})${isAbnormal ? ' ⚠️이상' : ''}`;
+                    })
+                    .filter(Boolean);
+
+                  const eventSummary = data.eventMarkers.length > 0
+                    ? `\n최근 이벤트: ${data.eventMarkers.slice(0, 5).map((m) => `${EVENT_LABELS[m.smaxtecType] ?? EVENT_LABELS[m.eventType] ?? m.label}(${new Date(m.detectedAt).toLocaleDateString('ko-KR')})`).join(', ')}`
+                    : '';
+
+                  const context = `${data.farmName} ${data.earTag}번 소의 ${days}일간 센서 데이터:\n${summaryParts.join('\n')}${eventSummary}\n\n이 소의 상태를 분석해주세요.`;
+                  onAskAi(animalId, context);
+                }}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                🤖 AI 분석
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: '6px 16px',
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                background: 'var(--ct-primary)',
+                color: '#fff',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              닫기
+            </button>
+          </div>
         </div>
       </div>
     </div>

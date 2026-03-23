@@ -605,7 +605,22 @@ export default function UnifiedDashboard(): React.JSX.Element {
       )}
 
       {sensorChartAnimalId && (
-        <SensorChartModal animalId={sensorChartAnimalId} onClose={() => setSensorChartAnimalId(null)} />
+        <SensorChartModal
+          animalId={sensorChartAnimalId}
+          onClose={() => setSensorChartAnimalId(null)}
+          onAskAi={(aid, context) => {
+            setSensorChartAnimalId(null);
+            setLabelChatAnimalId(aid);
+            // AI 채팅에 센서 데이터 컨텍스트 전달 — labelChat이 열리면 자동 질문
+            setTimeout(() => {
+              const chatInput = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
+              if (chatInput) {
+                chatInput.value = context;
+                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            }, 500);
+          }}
+        />
       )}
 
       {epidemicClusterId && epidemicClusterId !== '__dashboard__' && (
