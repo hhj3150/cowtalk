@@ -91,7 +91,7 @@ export interface SmaxtecFetchData {
 // API 클라이언트 (v4 이식)
 // ===========================
 
-class SmaxtecApiClient {
+export class SmaxtecApiClient {
   private readonly integrationBase = 'https://api.smaxtec.com/integration/v2';
   private readonly apiBase = 'https://api.smaxtec.com/api/v2';
   private token: string | null = null;
@@ -209,6 +209,35 @@ class SmaxtecApiClient {
     }
 
     return { animal_id: animalId, metrics: normalized };
+  }
+
+  // ── Notes / Todos / Events (Public API v2) ──
+
+  /** GET /api/v2/organisations/{org_id}/todos */
+  async getTodos(orgId: string, done?: boolean): Promise<unknown> {
+    const qs = done !== undefined ? `?done=${String(done)}` : '';
+    return this.request<unknown>(this.apiBase, `/organisations/${orgId}/todos${qs}`);
+  }
+
+  /** GET /api/v2/events?organisation_id=&limit= */
+  async getPublicEvents(orgId: string, limit = 20): Promise<unknown> {
+    return this.request<unknown>(
+      this.apiBase,
+      `/events?organisation_id=${orgId}&limit=${String(limit)}`,
+    );
+  }
+
+  /** GET /api/v2/notes/{note_id} */
+  async getNote(noteId: string): Promise<unknown> {
+    return this.request<unknown>(this.apiBase, `/notes/${noteId}`);
+  }
+
+  /** GET /integration/v2/organisations/{org_id}/events (Integration API) */
+  async getIntegrationEvents(orgId: string, limit = 20): Promise<unknown> {
+    return this.request<unknown>(
+      this.integrationBase,
+      `/organisations/${orgId}/events?limit=${String(limit)}`,
+    );
   }
 
   invalidateToken(): void {
