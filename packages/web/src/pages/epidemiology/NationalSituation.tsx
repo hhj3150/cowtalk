@@ -7,6 +7,7 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
+import { apiGet } from '@web/api/client';
 
 // ===========================
 // 타입
@@ -56,17 +57,11 @@ interface NationalData {
 // ===========================
 
 async function fetchNational(): Promise<NationalData> {
-  const res = await fetch('/api/quarantine/national-situation');
-  if (!res.ok) throw new Error('전국 현황 조회 실패');
-  const json = await res.json() as { success: boolean; data: NationalData };
-  return json.data;
+  return apiGet<NationalData>('/quarantine/national-situation');
 }
 
 async function fetchProvince(province: string): Promise<DistrictStats[]> {
-  const res = await fetch(`/api/quarantine/national-situation/${encodeURIComponent(province)}`);
-  if (!res.ok) throw new Error('시도 상세 조회 실패');
-  const json = await res.json() as { success: boolean; data: DistrictStats[] };
-  return json.data;
+  return apiGet<DistrictStats[]>(`/quarantine/national-situation/${encodeURIComponent(province)}`);
 }
 
 // ===========================

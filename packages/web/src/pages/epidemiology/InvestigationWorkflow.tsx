@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { apiGet, apiPost, apiPatch } from '@web/api/client';
 
 // ===========================
 // 타입
@@ -54,28 +55,15 @@ interface InvestigationData {
 // ===========================
 
 async function startInvestigation(farmId: string): Promise<InvestigationData> {
-  const res = await fetch(`/api/investigation/start/${farmId}`, { method: 'POST' });
-  if (!res.ok) throw new Error('역학 조사 시작 실패');
-  const json = await res.json() as { success: boolean; data: InvestigationData };
-  return json.data;
+  return apiPost<InvestigationData>(`/investigation/start/${farmId}`);
 }
 
 async function fetchInvestigation(id: string): Promise<InvestigationData> {
-  const res = await fetch(`/api/investigation/${id}`);
-  if (!res.ok) throw new Error('역학 조사 조회 실패');
-  const json = await res.json() as { success: boolean; data: InvestigationData };
-  return json.data;
+  return apiGet<InvestigationData>(`/investigation/${id}`);
 }
 
 async function updateInvestigation(id: string, patch: { fieldObservations?: string; status?: InvestigationStatus }): Promise<InvestigationData> {
-  const res = await fetch(`/api/investigation/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error('역학 조사 저장 실패');
-  const json = await res.json() as { success: boolean; data: InvestigationData };
-  return json.data;
+  return apiPatch<InvestigationData>(`/investigation/${id}`, patch);
 }
 
 // ===========================

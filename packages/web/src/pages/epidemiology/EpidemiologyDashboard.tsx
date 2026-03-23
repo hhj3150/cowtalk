@@ -12,6 +12,7 @@ import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
 import { SituationBoard } from '@web/components/epidemiology/SituationBoard';
 import { ActionQueue } from '@web/components/epidemiology/ActionQueue';
 import type { ActionQueueItem } from '@web/components/epidemiology/ActionQueue';
+import { apiGet } from '@web/api/client';
 
 // ===========================
 // API 타입
@@ -58,17 +59,11 @@ interface DashboardData {
 // ===========================
 
 async function fetchDashboard(): Promise<DashboardData> {
-  const res = await fetch('/api/quarantine/dashboard');
-  if (!res.ok) throw new Error('대시보드 데이터 조회 실패');
-  const json = await res.json() as { success: boolean; data: DashboardData };
-  return json.data;
+  return apiGet<DashboardData>('/quarantine/dashboard');
 }
 
 async function fetchActionQueue(): Promise<ActionQueueItem[]> {
-  const res = await fetch('/api/quarantine/action-queue');
-  if (!res.ok) throw new Error('업무 큐 조회 실패');
-  const json = await res.json() as { success: boolean; data: ActionQueueItem[] };
-  return json.data;
+  return apiGet<ActionQueueItem[]>('/quarantine/action-queue');
 }
 
 // ===========================

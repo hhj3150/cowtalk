@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
+import { apiGet } from '@web/api/client';
 
 // ===========================
 // 타입
@@ -61,10 +62,7 @@ interface MetricsData {
 // ===========================
 
 async function fetchMetrics(): Promise<MetricsData> {
-  const res = await fetch('/api/quarantine/early-detection-metrics');
-  if (!res.ok) throw new Error('조기감지 성과 조회 실패');
-  const json = await res.json() as { success: boolean; data: MetricsData };
-  return json.data;
+  return apiGet<MetricsData>('/quarantine/early-detection-metrics');
 }
 
 // ===========================
