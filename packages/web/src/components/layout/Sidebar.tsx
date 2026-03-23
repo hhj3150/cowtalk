@@ -142,6 +142,7 @@ const ADMIN_EXTRA: readonly MenuItem[] = [
 
 // 방역관 전용 메뉴 (10개)
 const QUARANTINE_MENU: readonly MenuItem[] = [
+  { label: '통합 대시보드', path: '/dashboard', icon: <IconDashboard /> },
   { label: '방역 대시보드', path: '/epidemiology/dashboard', icon: <IconShield /> },
   { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
   { label: '반경 분석', path: '/epidemiology/radius', icon: <IconRadar /> },

@@ -82,6 +82,7 @@ export function App(): React.JSX.Element {
             <Route element={<RequireAuth><AppShell /></RequireAuth>}>
               {/* 모든 역할 → 통합 대시보드 (smaXtec 위젯 + AI 채팅) */}
               <Route index element={<RoleAwareHome />} />
+              <Route path="/dashboard" element={<UnifiedDashboard />} />
               <Route path="/regional-map" element={<RegionalMapPage />} />
               <Route path="/cow/:id" element={<CowProfilePage />} />
               <Route path="/farm/:farmId/groups" element={<HerdGroupPage />} />
