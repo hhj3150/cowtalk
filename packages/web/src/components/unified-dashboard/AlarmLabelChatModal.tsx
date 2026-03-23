@@ -8,6 +8,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useVoiceInput } from '@web/hooks/useVoiceInput';
 import { MicButton } from '@web/components/common/MicButton';
+import { apiGet } from '@web/api/client';
 import { getEventContext, streamLabelChat, submitLabel, getAnimalEvents, getLabelHistory, submitFollowUp, getAnimalInfo, submitObservation, getObservations, saveConversationRecord } from '@web/api/label-chat.api';
 import type { AnimalEvent, AnimalInfo, LabelWithFollowUps, SubmitFollowUpRequest, ClinicalObservation, SubmitObservationRequest, ExtractedRecordClient } from '@web/api/label-chat.api';
 import type { EventContext, LabelVerdict, LabelOutcome } from '@cowtalk/shared';
@@ -1074,6 +1075,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
   const [isFollowUpSubmitting, setIsFollowUpSubmitting] = useState(false);
   const [followUpSuccess, setFollowUpSuccess] = useState(false);
   const [sensorSummary, setSensorSummary] = useState<string | null>(null);
+  const [sensorAnomalies, setSensorAnomalies] = useState<readonly string[]>([]);
   const [animalInfo, setAnimalInfo] = useState<AnimalInfo | null>(null);
   const [observations, setObservations] = useState<readonly ClinicalObservation[]>([]);
   const [isObsSubmitting, setIsObsSubmitting] = useState(false);
@@ -1093,6 +1095,29 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
     }, 100);
   }, []);
   const voice = useVoiceInput(handleVoiceResult);
+
+  // 센서 이상 여부 확인 (이벤트 없어도 z-score 기반 이상 감지)
+  useEffect(() => {
+    apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
+      `/unified-dashboard/animal/${animalId}/sensor-chart?days=7`
+    ).then((res: { metrics: Record<string, readonly { ts: number; value: number }[]> }) => {
+      const anomalies: string[] = [];
+      const THRESHOLDS: Record<string, { label: string; min: number; max: number; unit: string }> = {
+        temp: { label: '체온', min: 38.0, max: 39.3, unit: '°C' },
+        act: { label: '활동', min: 50, max: 500, unit: 'I/24h' },
+        rum: { label: '반추', min: 300, max: 600, unit: '분' },
+      };
+      for (const [key, cfg] of Object.entries(THRESHOLDS)) {
+        const pts = res.metrics[key];
+        if (!pts || pts.length === 0) continue;
+        const latest = pts[pts.length - 1]!.value;
+        if (latest < cfg.min || latest > cfg.max) {
+          anomalies.push(`${cfg.label} ${latest.toFixed(1)}${cfg.unit} (정상 ${cfg.min}~${cfg.max})`);
+        }
+      }
+      setSensorAnomalies(anomalies);
+    }).catch(() => {});
+  }, [animalId]);
 
   // 동물 기본 정보 + 이벤트 목록 + 관찰 기록 로드
   useEffect(() => {
@@ -1131,14 +1156,18 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
         setLabelHistory(history);
       }).catch(() => {});
     } else if (animalInfo && events.length === 0) {
-      // 이벤트가 없는 정상 소 → AI 대화만 가능
+      // 이벤트가 없는 소 → 센서 이상 여부에 따라 메시지 변경
+      const hasAnomalies = sensorAnomalies.length > 0;
+      const anomalyText = hasAnomalies
+        ? `센서 이상 감지: ${sensorAnomalies.join(', ')}`
+        : '이벤트 없음 (정상)';
       setMessages([{
         id: 'system-0',
         role: 'system',
-        content: `${animalInfo.farmName} | ${animalInfo.earTag} | 이벤트 없음 (정상) — AI와 대화하며 정상 확인 또는 관찰 소견을 기록하세요.`,
+        content: `${animalInfo.farmName} | ${animalInfo.earTag} | ${anomalyText} — AI와 대화하며 ${hasAnomalies ? '이상 원인을 분석' : '정상 상태 확인'}하세요.`,
       }]);
     }
-  }, [selectedEventId, animalInfo, events.length]);
+  }, [selectedEventId, animalInfo, events.length, sensorAnomalies]);
 
   // 자동 스크롤
   useEffect(() => {
@@ -1498,16 +1527,37 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 2 }}>
-                      최근 7일 이벤트 없음
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
-                      {animalInfo.farmName} | 정상 확인 레이블 가능
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
-                      센서 데이터를 확인하고 AI와 대화하며
-                      정상 상태 확인 또는 관찰 소견을 기록하세요.
-                    </div>
+                    {sensorAnomalies.length > 0 ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#f97316', marginBottom: 2 }}>
+                          ⚠️ 센서 이상 감지
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                          {animalInfo.farmName} | smaXtec 이벤트는 없으나 센서값 이상
+                        </div>
+                        <div style={{ fontSize: 10, color: '#f97316', marginTop: 4, lineHeight: 1.5 }}>
+                          {sensorAnomalies.map((a, i) => (
+                            <div key={i}>• {a}</div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                          AI에게 원인 분석을 요청하세요.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 2 }}>
+                          최근 7일 이벤트 없음
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                          {animalInfo.farmName} | 정상 확인 레이블 가능
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                          센서 데이터를 확인하고 AI와 대화하며
+                          정상 상태 확인 또는 관찰 소견을 기록하세요.
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -1536,14 +1586,27 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 fontSize: 11,
                 color: 'var(--ct-text-muted)',
                 borderRadius: 8,
-                background: 'rgba(0,0,0,0.05)',
+                background: sensorAnomalies.length > 0 ? 'rgba(249,115,22,0.1)' : 'rgba(0,0,0,0.05)',
               }}>
-                <div style={{ fontSize: 20, marginBottom: 6 }}>✅</div>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>이벤트가 없는 정상 개체</div>
-                <div style={{ fontSize: 10, lineHeight: 1.5 }}>
-                  정상 개체도 관찰 기록을 남길 수 있습니다.
-                  AI와 대화하며 현재 상태를 확인하세요.
-                </div>
+                {sensorAnomalies.length > 0 ? (
+                  <>
+                    <div style={{ fontSize: 20, marginBottom: 6 }}>⚠️</div>
+                    <div style={{ fontWeight: 600, marginBottom: 4, color: '#f97316' }}>센서값 이상 감지</div>
+                    <div style={{ fontSize: 10, lineHeight: 1.5 }}>
+                      smaXtec 이벤트는 미발생이나 센서 데이터 분석 결과 이상이 감지되었습니다.
+                      AI에게 상세 분석을 요청하세요.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 20, marginBottom: 6 }}>✅</div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>이벤트가 없는 정상 개체</div>
+                    <div style={{ fontSize: 10, lineHeight: 1.5 }}>
+                      정상 개체도 관찰 기록을 남길 수 있습니다.
+                      AI와 대화하며 현재 상태를 확인하세요.
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
