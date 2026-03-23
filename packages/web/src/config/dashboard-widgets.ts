@@ -30,38 +30,26 @@ export type DashboardWidgetId =
 
 // 역할별 위젯 목록 (순서 = 표시 우선순위)
 const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> = {
-  // 농장주: 내 소 중심, 할 일, 센서, 번식
+  // 농장주: 할일 + 건강 + 번식 (내 농장 중심)
   farmer: [
     'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
-    'live_alarm_feed',
     'todo_list',
-    'inline_ai_chat',
     'vital_monitor_chart',
-    'temperature_scatter',
-    'event_timeline_chart',
-    'breeding_pipeline',
     'alert_trend_chart',
-    'herd_composition_chart',
-    'sovereign_ai',
   ],
 
-  // 수의사: 진료 경로, 발열, 센서 분석
+  // 수의사: 할일 + 발열/질병 + 센서
   veterinarian: [
     'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
-    'live_alarm_feed',
     'todo_list',
-    'vet_route',
-    'fever_ranking',
+    'live_alarm_feed',
     'vital_monitor_chart',
-    'temperature_scatter',
-    'event_timeline_chart',
-    'alert_trend_chart',
+    'fever_ranking',
     'farm_ranking',
-    'farm_map',
   ],
 
   // 수정사: 오늘 수정할 소가 전부. 깔끔하게.
@@ -120,12 +108,9 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
-    'live_alarm_feed',
     'todo_list',
-    'herd_composition_chart',
     'vital_monitor_chart',
-    'farm_comparison_radar',
-    'farm_ranking',
+    'herd_composition_chart',
   ],
 };
 

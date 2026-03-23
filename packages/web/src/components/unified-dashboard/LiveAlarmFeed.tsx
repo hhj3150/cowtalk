@@ -33,32 +33,41 @@ interface Props {
 // ── 상수 ──
 
 const ALARM_TYPE_CONFIG: Record<string, { readonly icon: string; readonly label: string; readonly color: string }> = {
-  // smaXtec 센서 알람
+  // 건강 — 긴급
+  temperature_high: { icon: '🌡️', label: '발열', color: 'var(--ct-danger)' },
   temperature_warning: { icon: '🌡️', label: '체온 이상', color: 'var(--ct-danger)' },
-  temperature_high: { icon: '🌡️', label: '고체온', color: 'var(--ct-danger)' },
-  temperature_low: { icon: '🌡️', label: '저체온', color: '#3b82f6' },
-  rumination_warning: { icon: '🔄', label: '반추 이상', color: '#eab308' },
-  rumination_decrease: { icon: '🔄', label: '반추 감소', color: '#eab308' },
-  activity_warning: { icon: '📊', label: '활동 이상', color: '#f97316' },
-  activity_increase: { icon: '📊', label: '활동 증가', color: '#22c55e' },
-  drinking_warning: { icon: '💧', label: '음수 이상', color: '#3b82f6' },
-  feeding_warning: { icon: '🌾', label: '사양 이상', color: '#8b5cf6' },
+  temperature_low: { icon: '❄️', label: '저체온', color: '#3b82f6' },
+  clinical_condition: { icon: '🏥', label: '질병 의심', color: 'var(--ct-danger)' },
   health_warning: { icon: '⚠️', label: '건강 경고', color: '#f97316' },
-  // 번식 관련
-  estrus: { icon: '💕', label: '발정 의심', color: '#ec4899' },
-  estrus_detected: { icon: '💕', label: '발정 감지', color: '#ec4899' },
-  insemination: { icon: '💉', label: '수정 완료', color: '#8b5cf6' },
-  pregnancy_check: { icon: '🩺', label: '임신 검진', color: '#22c55e' },
+  health_general: { icon: '💊', label: '건강 주의', color: '#f97316' },
+  // 건강 — 관찰
+  rumination_warning: { icon: '🌾', label: '반추 이상', color: '#eab308' },
+  rumination_decrease: { icon: '🌾', label: '반추 감소', color: '#eab308' },
+  activity_warning: { icon: '🦶', label: '활동 이상', color: '#f97316' },
+  activity_decrease: { icon: '🦶', label: '활동 감소', color: '#f97316' },
+  activity_increase: { icon: '🏃', label: '활동 증가', color: '#22c55e' },
+  drinking_warning: { icon: '💧', label: '음수 이상', color: '#3b82f6' },
+  drinking_decrease: { icon: '💧', label: '음수 감소', color: '#3b82f6' },
+  feeding_warning: { icon: '🌾', label: '사양 이상', color: '#8b5cf6' },
+  // 번식
+  estrus: { icon: '🔴', label: '발정', color: '#ec4899' },
+  estrus_detected: { icon: '🔴', label: '발정 감지', color: '#ec4899' },
+  estrus_dnb: { icon: '🔴', label: '재발정', color: '#ec4899' },
+  insemination: { icon: '💉', label: '수정', color: '#8b5cf6' },
+  pregnancy_check: { icon: '🔍', label: '임신 감정', color: '#22c55e' },
   pregnancy_confirmed: { icon: '✅', label: '임신 확인', color: '#22c55e' },
-  // 분만 관련
-  calving: { icon: '🐄', label: '분만 감지', color: '#22c55e' },
-  calving_expected: { icon: '🐄', label: '분만 예정', color: '#3b82f6' },
-  calving_confirmation: { icon: '👶', label: '분만 확인', color: '#22c55e' },
+  fertility_warning: { icon: '⚠️', label: '번식 주의', color: '#eab308' },
+  no_insemination: { icon: '❌', label: '미수정', color: '#eab308' },
+  // 분만
+  calving: { icon: '🍼', label: '분만', color: '#22c55e' },
+  calving_detection: { icon: '🍼', label: '분만 임박', color: '#ef4444' },
+  calving_confirmation: { icon: '🍼', label: '분만 완료', color: '#22c55e' },
+  calving_expected: { icon: '🍼', label: '분만 예정', color: '#3b82f6' },
+  calving_waiting: { icon: '🍼', label: '분만 대기', color: '#3b82f6' },
   // 관리
-  dry_off: { icon: '🥛', label: '건유 전환', color: '#94a3b8' },
-  vaccination: { icon: '💊', label: '백신 접종', color: '#3b82f6' },
-  treatment: { icon: '🩺', label: '치료 기록', color: '#f97316' },
-  management: { icon: '📋', label: '관리 기록', color: '#94a3b8' },
+  dry_off: { icon: '🥛', label: '건유', color: '#94a3b8' },
+  abortion: { icon: '🔴', label: '유산', color: '#ef4444' },
+  management: { icon: '📋', label: '관리', color: '#94a3b8' },
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
