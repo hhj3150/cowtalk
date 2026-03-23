@@ -49,8 +49,97 @@ import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { useDxCompletion } from '@web/hooks/useDxCompletion';
-// ROLE_LABELS는 향후 역할별 라벨 표시에 사용 예정
-import type {} from '@web/config/dashboard-widgets';
+import { ROLE_LABELS } from '@web/config/dashboard-widgets';
+import type { Role } from '@cowtalk/shared';
+
+// ── 역할 전환 (마스터용) ──
+
+const ROLE_ICONS: Record<string, string> = {
+  farmer: '🧑‍🌾',
+  veterinarian: '🩺',
+  inseminator: '💉',
+  government_admin: '🏛️',
+  quarantine_officer: '🛡️',
+  feed_company: '🌾',
+};
+
+function RoleSwitcher(): React.JSX.Element | null {
+  const user = useAuthStore((s) => s.user);
+  const updateUser = useAuthStore((s) => s.updateUser);
+  const [open, setOpen] = useState(false);
+
+  // 마스터(government_admin)만 역할 전환 가능
+  if (!user || user.role !== 'government_admin') return null;
+
+  const roles = Object.entries(ROLE_LABELS) as [Role, string][];
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          padding: '4px 10px',
+          borderRadius: 6,
+          fontSize: 11,
+          fontWeight: 600,
+          background: 'var(--ct-primary)',
+          color: '#fff',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        {ROLE_ICONS[user.role] ?? '👤'} 역할 전환 ▾
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: '110%',
+          right: 0,
+          background: 'var(--ct-card)',
+          border: '1px solid var(--ct-border)',
+          borderRadius: 8,
+          padding: 4,
+          zIndex: 50,
+          minWidth: 160,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          {roles.map(([role, label]) => (
+            <button
+              key={role}
+              type="button"
+              onClick={() => {
+                updateUser({ ...user, role });
+                setOpen(false);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: user.role === role ? 700 : 400,
+                background: user.role === role ? 'var(--ct-primary)' : 'transparent',
+                color: user.role === role ? '#fff' : 'var(--ct-text)',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span>{ROLE_ICONS[role] ?? '👤'}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Farm filter dropdown ──
 
@@ -449,7 +538,10 @@ export default function UnifiedDashboard(): React.JSX.Element {
               }}>
                 CowTalk
               </h1>
-              <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>{user?.name ?? ''} ({roleLabel})</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>{user?.name ?? ''} ({roleLabel})</span>
+                <RoleSwitcher />
+              </div>
             </div>
             <FarmFilterDropdown />
           </>
@@ -472,13 +564,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
               <span style={{ color: 'var(--ct-text-secondary)', fontWeight: 500 }}>{user?.name ?? ''} ({roleLabel})</span>
-              <span style={{
-                width: 4,
-                height: 4,
-                borderRadius: '50%',
-                background: 'var(--ct-text-muted)',
-                display: 'inline-block',
-              }} />
+              <RoleSwitcher />
               <span style={{ color: 'var(--ct-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{lastUpdated}</span>
             </div>
           </>
