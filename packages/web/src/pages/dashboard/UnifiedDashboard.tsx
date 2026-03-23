@@ -63,13 +63,23 @@ const ROLE_ICONS: Record<string, string> = {
   feed_company: '🌾',
 };
 
+// 마스터 원래 역할 기억 (세션 중 유지)
+let masterOriginalRole: Role | null = null;
+
 function RoleSwitcher(): React.JSX.Element | null {
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
   const [open, setOpen] = useState(false);
 
-  // 마스터(government_admin)만 역할 전환 가능
-  if (!user || user.role !== 'government_admin') return null;
+  if (!user) return null;
+
+  // 최초 government_admin으로 로그인한 사용자를 마스터로 기억
+  if (user.role === 'government_admin' && !masterOriginalRole) {
+    masterOriginalRole = 'government_admin';
+  }
+
+  // 마스터가 아니면 (그리고 마스터에서 전환한 것도 아니면) 숨김
+  if (!masterOriginalRole) return null;
 
   const roles = Object.entries(ROLE_LABELS) as [Role, string][];
 
