@@ -15,7 +15,8 @@ import {
   useFarmMapMarkers,
   useEpidemicIntelligence,
   useFarmHealthScores,
-  // useSovereignAiStats, // 백엔드 자동 학습, UI 제거
+  useHealthAlertsSummary,
+  useFertilityManagement,
 } from '@web/hooks/useUnifiedDashboard';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
@@ -33,7 +34,8 @@ import {
   EpidemicCommandCenter,
   FarmHealthScoreWidget,
   AlarmLabelChatModal,
-  // SovereignAiWidget — 백엔드 자동 학습, UI 제거
+  HealthAlertsWidget,
+  FertilityManagementWidget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -343,8 +345,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: mapData } = useFarmMapMarkers();
   const { data: epidemicData } = useEpidemicIntelligence();
   const { data: healthScoresData } = useFarmHealthScores();
-  // 번식 파이프라인 제거 (실 데이터 축적 후 활성화)
-  // const { data: sovereignStats } = useSovereignAiStats(); // 백엔드 자동 학습, UI 제거
+  const { data: healthAlertsData } = useHealthAlertsSummary();
+  const { data: fertilityMgmtData } = useFertilityManagement();
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
@@ -503,6 +505,20 @@ export default function UnifiedDashboard(): React.JSX.Element {
             {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
           </div>
           )}
+
+          {/* ── 건강 알림 + 번식 관리 (smaXtec 기본) ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+            {healthAlertsData && (
+              <HealthAlertsWidget
+                items={healthAlertsData}
+                onCategoryClick={(cat) => setDrilldown({ eventType: cat, label: `건강 알림: ${cat}` })}
+              />
+            )}
+            <FertilityManagementWidget
+              data={fertilityMgmtData ?? null}
+              onAlertClick={(type) => setDrilldown({ eventType: type, label: `번식: ${type}` })}
+            />
+          </div>
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>

@@ -54,6 +54,26 @@ export function useFarmRanking() {
   });
 }
 
+export function useHealthAlertsSummary() {
+  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  return useQuery({
+    queryKey: ['health-alerts-summary', selectedFarmId],
+    queryFn: () => api.fetchHealthAlertsSummary(selectedFarmId ?? undefined),
+    staleTime: STALE_TIME,
+    refetchInterval: STALE_TIME,
+  });
+}
+
+export function useFertilityManagement() {
+  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  return useQuery({
+    queryKey: ['fertility-management', selectedFarmId],
+    queryFn: () => api.fetchFertilityManagement(selectedFarmId ?? undefined),
+    staleTime: STALE_TIME,
+    refetchInterval: STALE_TIME,
+  });
+}
+
 export function useDashboardFarms() {
   return useQuery({
     queryKey: ['dashboard-farms'],

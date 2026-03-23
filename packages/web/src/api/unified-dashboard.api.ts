@@ -217,6 +217,32 @@ export function fetchInseminationRoute(date?: string, farmId?: string): Promise<
   return apiGet<InseminationRoutePlan>(`/unified-dashboard/insemination-route${query}`);
 }
 
+// ── 건강 알림 현황 ──
+
+export interface HealthAlertItem {
+  readonly category: string;
+  readonly label: string;
+  readonly icon: string;
+  readonly count: number;
+}
+
+export function fetchHealthAlertsSummary(farmId?: string): Promise<readonly HealthAlertItem[]> {
+  const query = farmId ? `?farmId=${farmId}` : '';
+  return apiGet<readonly HealthAlertItem[]>(`/unified-dashboard/health-alerts-summary${query}`);
+}
+
+// ── 번식 관리 현황 ──
+
+export interface FertilityManagementData {
+  readonly herdStatus: readonly { status: string; label: string; icon: string; count: number }[];
+  readonly fertilityAlerts: readonly { type: string; label: string; count: number }[];
+}
+
+export function fetchFertilityManagement(farmId?: string): Promise<FertilityManagementData> {
+  const query = farmId ? `?farmId=${farmId}` : '';
+  return apiGet<FertilityManagementData>(`/unified-dashboard/fertility-management${query}`);
+}
+
 // ── 동물 센서 차트 데이터 ──
 
 export interface SensorChartPoint {

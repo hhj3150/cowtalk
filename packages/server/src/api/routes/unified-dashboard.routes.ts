@@ -122,6 +122,163 @@ unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFu
 });
 
 // ===========================
+// Health Alerts Summary — smaXtec 기본 건강 알림 현황
+// GET /api/unified-dashboard/health-alerts-summary?farmId=xxx
+// ===========================
+
+unifiedDashboardRouter.get('/health-alerts-summary', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const farmId = (req.query.farmId as string | undefined) ?? null;
+    const last24h = daysAgo(1);
+
+    const rows = await db.select({
+      eventType: smaxtecEvents.eventType,
+      count: count(),
+    })
+      .from(smaxtecEvents)
+      .where(whereAll(
+        farmCondition(smaxtecEvents.farmId, farmId),
+        gte(smaxtecEvents.detectedAt, last24h),
+        sql`${smaxtecEvents.eventType} IN ('health_104','health_103','health_308','health_309','temperature_high','temperature_low','rumination_decrease','activity_decrease','drinking_decrease','health_101','clinical_condition','health_general')`,
+      ))
+      .groupBy(smaxtecEvents.eventType);
+
+    // 카테고리별 집계
+    const cats: Record<string, number> = {};
+    for (const r of rows) {
+      const et = r.eventType;
+      const c = Number(r.count);
+      if (['health_104','health_103','health_308','health_309','temperature_high'].includes(et)) {
+        cats['temperature_high'] = (cats['temperature_high'] ?? 0) + c;
+      } else if (et === 'temperature_low') {
+        cats['temperature_low'] = (cats['temperature_low'] ?? 0) + c;
+      } else if (et === 'rumination_decrease') {
+        cats['rumination_decrease'] = (cats['rumination_decrease'] ?? 0) + c;
+      } else if (et === 'activity_decrease') {
+        cats['activity_decrease'] = (cats['activity_decrease'] ?? 0) + c;
+      } else if (['drinking_decrease','health_101'].includes(et)) {
+        cats['drinking_decrease'] = (cats['drinking_decrease'] ?? 0) + c;
+      } else if (et === 'clinical_condition') {
+        cats['clinical_condition'] = (cats['clinical_condition'] ?? 0) + c;
+      } else if (et === 'health_general') {
+        cats['health_general'] = (cats['health_general'] ?? 0) + c;
+      }
+    }
+
+    const LABELS: Record<string, { label: string; icon: string; order: number }> = {
+      temperature_high: { label: '체온 상승', icon: '🌡️', order: 0 },
+      temperature_low: { label: '체온 저하', icon: '❄️', order: 1 },
+      rumination_decrease: { label: '반추 감소', icon: '🌾', order: 2 },
+      activity_decrease: { label: '활동량 감소', icon: '🦶', order: 3 },
+      drinking_decrease: { label: '음수 이상', icon: '💧', order: 4 },
+      clinical_condition: { label: '질병 의심', icon: '🏥', order: 5 },
+      health_general: { label: '건강 주의', icon: '💊', order: 6 },
+    };
+
+    const items = Object.entries(LABELS)
+      .map(([key, meta]) => ({
+        category: key,
+        label: meta.label,
+        icon: meta.icon,
+        count: cats[key] ?? 0,
+      }))
+      .sort((a, b) => (LABELS[a.category]?.order ?? 99) - (LABELS[b.category]?.order ?? 99));
+
+    res.json({ success: true, data: items });
+  } catch (error) {
+    logger.error({ error }, 'Health alerts summary failed');
+    next(error);
+  }
+});
+
+// ===========================
+// Fertility Management — smaXtec 기본 번식 관리 현황
+// GET /api/unified-dashboard/fertility-management?farmId=xxx
+// ===========================
+
+unifiedDashboardRouter.get('/fertility-management', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const farmId = (req.query.farmId as string | undefined) ?? null;
+
+    // 1. 우군 구성 (lactation_status)
+    const herdRows = await db.select({
+      status: animals.lactationStatus,
+      count: count(),
+    })
+      .from(animals)
+      .where(whereAll(
+        eq(animals.status, 'active'),
+        farmId ? eq(animals.farmId, farmId) : undefined,
+      ))
+      .groupBy(animals.lactationStatus);
+
+    const STATUS_MAP: Record<string, { label: string; icon: string; group: string }> = {
+      'Lactating_Cow': { label: '착유우', icon: '🥛', group: 'lactating' },
+      'milking': { label: '착유중', icon: '🥛', group: 'lactating' },
+      'Young_Cow': { label: '미경산우', icon: '🐮', group: 'young' },
+      'heifer': { label: '육성우', icon: '🐮', group: 'young' },
+      'Dry_Cow': { label: '건유우', icon: '🔕', group: 'dry' },
+      'dry': { label: '건유우', icon: '🔕', group: 'dry' },
+      'fresh': { label: '분만우(30일이하)', icon: '🍼', group: 'fresh' },
+    };
+
+    const grouped: Record<string, { label: string; icon: string; count: number }> = {};
+    for (const r of herdRows) {
+      const st = r.status ?? 'unknown';
+      const meta = STATUS_MAP[st];
+      if (meta) {
+        const g = meta.group;
+        if (!grouped[g]) grouped[g] = { label: meta.label, icon: meta.icon, count: 0 };
+        grouped[g]!.count += Number(r.count);
+      }
+    }
+
+    const herdStatus = Object.entries(grouped).map(([status, data]) => ({
+      status,
+      ...data,
+    }));
+
+    // 2. 번식 관련 이벤트 (최근 24시간)
+    const last24h = daysAgo(1);
+    const fertRows = await db.select({
+      eventType: smaxtecEvents.eventType,
+      count: count(),
+    })
+      .from(smaxtecEvents)
+      .where(whereAll(
+        farmCondition(smaxtecEvents.farmId, farmId),
+        gte(smaxtecEvents.detectedAt, last24h),
+        sql`${smaxtecEvents.eventType} IN ('estrus','insemination','pregnancy_check','fertility_warning','no_insemination','dry_off','calving_detection','calving_confirmation')`,
+      ))
+      .groupBy(smaxtecEvents.eventType);
+
+    const FERT_LABELS: Record<string, string> = {
+      estrus: '발정 감지',
+      insemination: '수정',
+      pregnancy_check: '임신 검사',
+      fertility_warning: '번식 주의',
+      no_insemination: '미수정',
+      dry_off: '건유 전환',
+      calving_detection: '분만 임박',
+      calving_confirmation: '분만 완료',
+    };
+
+    const fertilityAlerts = fertRows.map((r) => ({
+      type: r.eventType,
+      label: FERT_LABELS[r.eventType] ?? r.eventType,
+      count: Number(r.count),
+    })).sort((a, b) => b.count - a.count);
+
+    res.json({ success: true, data: { herdStatus, fertilityAlerts } });
+  } catch (error) {
+    logger.error({ error }, 'Fertility management failed');
+    next(error);
+  }
+});
+
+// ===========================
 // 드릴다운 엔드포인트 — To-do 항목 클릭 시 상세 목록
 // GET /api/unified-dashboard/drilldown?eventType=health_warning&farmId=xxx
 // ===========================
