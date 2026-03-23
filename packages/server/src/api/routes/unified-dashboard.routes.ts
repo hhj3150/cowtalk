@@ -93,12 +93,14 @@ function farmCondition(
   farmId: string | null,
 ): SqlCondition | undefined {
   if (!farmId) return undefined;
-  // 다중 농장 그룹 지원: 쉼표 구분된 farmIds
+  // 다중 농장 그룹 지원: 쉼표 구분된 farmIds → UUID 캐스팅
   if (farmId.includes(',')) {
     const ids = farmId.split(',').filter(Boolean);
     if (ids.length === 0) return undefined;
     if (ids.length === 1) return eq(column, ids[0]!);
-    return inArray(column, ids);
+    // PostgreSQL UUID 컬럼에 text[] 비교 시 캐스팅 필요
+    const idList = ids.map((id) => `'${id}'::uuid`).join(',');
+    return sql`${column} IN (${sql.raw(idList)})`;
   }
   return eq(column, farmId);
 }
