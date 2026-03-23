@@ -96,7 +96,9 @@ function farmCondition(
   // 다중 농장 그룹 지원: 쉼표 구분된 farmIds
   if (farmId.includes(',')) {
     const ids = farmId.split(',').filter(Boolean);
-    return sql`${column} IN (${sql.raw(ids.map((id) => `'${id}'`).join(','))})`;
+    if (ids.length === 0) return undefined;
+    if (ids.length === 1) return eq(column, ids[0]!);
+    return inArray(column, ids);
   }
   return eq(column, farmId);
 }
