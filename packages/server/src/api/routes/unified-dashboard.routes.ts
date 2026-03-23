@@ -2193,12 +2193,13 @@ async function queryHerdOverview(
     .from(animals)
     .where(whereAll(farmCondition(animals.farmId, farmId), eq(animals.status, 'active')));
 
-  // 센서 장착: smaXtec 이벤트가 있는 동물 수 (sensor_devices 테이블이 비어있으므로)
+  // 센서 장착: 활성 동물 중 smaXtec 이벤트가 있는 동물 수
   const [sensorCount] = await db.select({
     count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
   })
     .from(smaxtecEvents)
-    .where(whereAll(farmCondition(smaxtecEvents.farmId, farmId)));
+    .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
+    .where(whereAll(farmCondition(smaxtecEvents.farmId, farmId), eq(animals.status, 'active')));
 
   // 미확인 알림 (최근 24시간) — 새벽에도 항상 데이터 표시
   const last24h = daysAgo(1);
@@ -2343,7 +2344,7 @@ async function queryTodoList(
   if (unacked > 0) {
     return [
       ...todos,
-      { category: 'system', label: `미확인 알림 처리 (${String(unacked)}건)`, count: unacked, severity: 'info' as const, icon: 'bell' },
+      { category: 'system', label: `미확인 알림 처리 (${String(unacked)}건)`, count: unacked, severity: 'info' as const, icon: '🔔' },
     ];
   }
 

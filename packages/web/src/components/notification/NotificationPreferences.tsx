@@ -23,7 +23,7 @@ export function NotificationPreferences(): React.JSX.Element {
   const [prefs, setPrefs] = useState<readonly NotificationPreference[]>([]);
 
   useEffect(() => {
-    if (data) setPrefs(data);
+    if (Array.isArray(data)) setPrefs(data);
   }, [data]);
 
   const saveMutation = useMutation({

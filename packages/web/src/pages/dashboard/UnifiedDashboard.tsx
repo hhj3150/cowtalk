@@ -49,6 +49,7 @@ import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
 import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSelector';
+import { useFarmGroupStore } from '@web/stores/farm-group.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { useDxCompletion } from '@web/hooks/useDxCompletion';
 import { ROLE_LABELS } from '@web/config/dashboard-widgets';
@@ -165,6 +166,7 @@ function FarmFilterDropdown(): React.JSX.Element {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const clearSelection = useFarmStore((s) => s.clearSelection);
+  const clearGroupSelection = useFarmGroupStore((s) => s.clearSelection);
   const farmList = farmsData?.farms ?? [];
   const totalCount = farmsData?.total ?? 0;
 
@@ -172,6 +174,7 @@ function FarmFilterDropdown(): React.JSX.Element {
     <select
       value={selectedFarmId ?? ''}
       onChange={(e) => {
+        clearGroupSelection(); // 농장 그룹 선택도 초기화
         if (e.target.value === '') { clearSelection(); } else { selectFarm(e.target.value); }
       }}
       style={{
