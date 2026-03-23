@@ -528,13 +528,33 @@ function buildBriefingSummary(
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   estrus: '발정',
+  estrus_dnb: '발정 (재발)',
+  heat: '발정',
   health_warning: '건강 경고',
+  health_general: '건강 주의',
   temperature_warning: '체온 이상',
+  temperature_high: '발열',
+  temperature_low: '저체온',
   calving: '분만',
+  calving_detection: '분만 임박',
+  calving_confirmation: '분만 완료',
+  calving_waiting: '분만 대기',
   rumination_warning: '반추 이상',
+  rumination_decrease: '반추 감소',
   activity_warning: '활동 이상',
+  activity_decrease: '활동 감소',
+  activity_increase: '활동 증가',
   drinking_warning: '음수 이상',
+  drinking_decrease: '음수 감소',
   feeding_warning: '사양 이상',
+  insemination: '수정',
+  pregnancy_check: '임신 검사',
+  fertility_warning: '번식 주의',
+  no_insemination: '미수정',
+  dry_off: '건유',
+  clinical_condition: '질병 의심',
+  abortion: '유산',
+  management: '관리',
 };
 
 function buildRecommendations(
