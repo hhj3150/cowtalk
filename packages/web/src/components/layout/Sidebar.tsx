@@ -203,7 +203,7 @@ export function Sidebar(): React.JSX.Element {
       </div>
 
       {/* 메뉴 */}
-      <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2">
+      <div className="flex flex-1 flex-col gap-1 px-2">
         {items.map((item) => (
           <NavLink
             key={item.path}

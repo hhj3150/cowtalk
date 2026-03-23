@@ -1,7 +1,7 @@
 // CowTalk Service Worker — 오프라인 캐시 + 푸시 알림 + API 캐싱
 
-const CACHE_NAME = 'cowtalk-v5-cache-v2';
-const API_CACHE_NAME = 'cowtalk-v5-api-cache';
+const CACHE_NAME = 'cowtalk-v5-cache-v3';
+const API_CACHE_NAME = 'cowtalk-v5-api-cache-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
