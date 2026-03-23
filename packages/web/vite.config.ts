@@ -10,6 +10,7 @@ export default defineConfig({
       '@web': path.resolve(__dirname, './src'),
       '@shared': path.resolve(__dirname, '../shared/src'),
     },
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     port: 3000,

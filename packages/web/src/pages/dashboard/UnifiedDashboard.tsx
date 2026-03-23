@@ -1,6 +1,6 @@
 // 통합 대시보드 — AI 강화 + 동적 차트 + 실시간 운영 (다크 테마)
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   useUnifiedDashboard,
   useLiveAlarms,
@@ -46,6 +46,7 @@ import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { useDxCompletion } from '@web/hooks/useDxCompletion';
 // ROLE_LABELS는 향후 역할별 라벨 표시에 사용 예정
 import type {} from '@web/config/dashboard-widgets';
 
@@ -349,6 +350,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const { isVisible, roleLabel, isFarmer } = useRoleDashboard();
   const isMobile = useIsMobile();
+  const { completedTodos } = useDxCompletion();
 
   // 농장주: 단일 농장이면 자동 선택
   useEffect(() => {
@@ -398,6 +400,16 @@ export default function UnifiedDashboard(): React.JSX.Element {
     () => buildFarmMapMarkers(mapData?.markers ?? [], alarms),
     [mapData?.markers, alarms],
   );
+
+  // DX 완료율 계산
+  const todoItems = data?.todoList ?? [];
+  const dxCompletion = useMemo(() => {
+    const total = todoItems.length;
+    const completed = todoItems.filter(
+      (item) => completedTodos.has(`${item.category}-${item.label}`),
+    ).length;
+    return { completed, total };
+  }, [todoItems, completedTodos]);
 
   return (
     <div style={{
@@ -480,7 +492,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           <AiBriefingCard />
 
           {/* ── KPI 카드 ── */}
-          <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} />
+          <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} />
 
           {/* ── 번식성적 커맨드센터: 번식 파이프라인 제거 (실 데이터 축적 후 활성화) ── */}
 

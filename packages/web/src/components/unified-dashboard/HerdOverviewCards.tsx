@@ -1,4 +1,5 @@
 // 통합 대시보드 — 상단 4개 KPI 카드 (애니메이션 카운터 + 스파크라인 + 트렌드)
+// DX: 오늘 업무 완료율 미니 링 표시
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { HerdOverview } from '@cowtalk/shared';
@@ -7,6 +8,10 @@ interface Props {
   readonly data: HerdOverview | null;
   readonly isLoading?: boolean;
   readonly onCardClick?: (category: string) => void;
+  readonly dxCompletion?: {
+    readonly completed: number;
+    readonly total: number;
+  };
 }
 
 interface CardConfig {
@@ -170,7 +175,84 @@ function TrendBadge({ value, accent }: { readonly value: number; readonly accent
   );
 }
 
-export function HerdOverviewCards({ data, isLoading, onCardClick }: Props): React.JSX.Element {
+// ── DX 완료율 미니 링 ──
+
+function DxCompletionRing({
+  completed,
+  total,
+}: {
+  readonly completed: number;
+  readonly total: number;
+}): React.JSX.Element {
+  const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const radius = 14;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (pct / 100) * circumference;
+  const isDone = pct === 100;
+  const ringColor = isDone ? '#22c55e' : 'var(--ct-primary)';
+
+  return (
+    <div
+      className="ct-fade-up ct-fade-up-5 flex items-center gap-3 rounded-2xl px-4 py-3"
+      style={{
+        background: 'var(--ct-card)',
+        border: '1px solid var(--ct-border)',
+        gridColumn: 'span 2',
+      }}
+    >
+      {/* 미니 링 */}
+      <svg width={36} height={36} viewBox="0 0 36 36">
+        <circle
+          cx={18}
+          cy={18}
+          r={radius}
+          fill="none"
+          stroke="var(--ct-border)"
+          strokeWidth={3}
+        />
+        <circle
+          cx={18}
+          cy={18}
+          r={radius}
+          fill="none"
+          stroke={ringColor}
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          style={{
+            transition: 'stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+            transform: 'rotate(-90deg)',
+            transformOrigin: '50% 50%',
+          }}
+        />
+        <text
+          x={18}
+          y={19}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            fill: ringColor,
+          }}
+        >
+          {pct}%
+        </text>
+      </svg>
+      <div className="flex flex-col">
+        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ct-text)' }}>
+          오늘 업무 완료율
+        </span>
+        <span style={{ fontSize: '11px', color: 'var(--ct-text-secondary)' }}>
+          {completed}/{total} {isDone ? '- 모두 완료!' : '진행 중'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion }: Props): React.JSX.Element {
   if (isLoading || !data) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
@@ -279,6 +361,9 @@ export function HerdOverviewCards({ data, isLoading, onCardClick }: Props): Reac
           </button>
         );
       })}
+      {dxCompletion && dxCompletion.total > 0 && (
+        <DxCompletionRing completed={dxCompletion.completed} total={dxCompletion.total} />
+      )}
     </div>
   );
 }

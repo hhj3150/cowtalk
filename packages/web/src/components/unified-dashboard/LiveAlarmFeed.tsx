@@ -1,9 +1,11 @@
 // 통합 대시보드 — 실시간 알람 피드 (smaXtec 이벤트)
 // 농장명 클릭 → 농장 필터, 소 귀표 클릭 → smaXtec 센서 차트
 // 레이블 버튼 클릭 → EventLabelModal
+// DX: hover 시 빠른 액션 (AI 분석 / 확인 완료)
 
 import React, { useState } from 'react';
 import { EventLabelModal } from './EventLabelModal';
+import { useDxCompletion } from '../../hooks/useDxCompletion';
 
 // ── 타입 ──
 
@@ -104,23 +106,31 @@ function getAlarmConfig(eventType: string): { readonly icon: string; readonly la
 
 function AlarmRow({
   alarm,
+  isAcknowledged,
   onFarmClick,
   onAnimalClick,
   onLabelClick,
+  onAiAnalysis,
+  onAcknowledge,
 }: {
   readonly alarm: LiveAlarm;
+  readonly isAcknowledged: boolean;
   readonly onFarmClick?: () => void;
   readonly onAnimalClick?: () => void;
   readonly onLabelClick?: () => void;
+  readonly onAiAnalysis?: () => void;
+  readonly onAcknowledge?: () => void;
 }): React.JSX.Element {
   const config = getAlarmConfig(alarm.eventType);
   const severityColor = SEVERITY_COLORS[alarm.severity] ?? 'var(--ct-text-secondary)';
+  const dimmed = alarm.acknowledged || isAcknowledged;
 
   return (
     <div
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors"
+      className="group relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors"
       style={{
-        opacity: alarm.acknowledged ? 0.5 : 1,
+        opacity: dimmed ? 0.5 : 1,
+        transition: 'opacity 0.3s ease',
       }}
     >
       {/* 아이콘 배지 */}
@@ -177,6 +187,59 @@ function AlarmRow({
 
       {/* 우측: 레이블 버튼 + 시간 + severity 점 */}
       <div className="flex flex-shrink-0 items-center gap-2">
+        {/* DX 빠른 액션 — hover 시 표시 */}
+        <div
+          className="hidden items-center gap-1 group-hover:flex"
+          style={{ transition: 'opacity 0.2s ease' }}
+        >
+          {onAiAnalysis && !dimmed && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAiAnalysis(); }}
+              className="flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors hover:bg-white/10"
+              style={{
+                color: 'var(--ct-primary)',
+                background: 'rgba(59,130,246,0.1)',
+                border: '1px solid rgba(59,130,246,0.2)',
+              }}
+              title="AI 분석 요청"
+            >
+              {'\uD83E\uDD16'} AI
+            </button>
+          )}
+          {onAcknowledge && !dimmed && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAcknowledge(); }}
+              className="flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors hover:bg-white/10"
+              style={{
+                color: '#22c55e',
+                background: 'rgba(34,197,94,0.1)',
+                border: '1px solid rgba(34,197,94,0.2)',
+              }}
+              title="확인 완료 처리"
+            >
+              {'\u2713'} 확인
+            </button>
+          )}
+        </div>
+
+        {/* 확인 완료 뱃지 */}
+        {dimmed && (
+          <span
+            style={{
+              fontSize: '10px',
+              fontWeight: 600,
+              color: '#22c55e',
+              padding: '1px 6px',
+              borderRadius: 4,
+              background: 'rgba(34,197,94,0.1)',
+            }}
+          >
+            확인됨
+          </span>
+        )}
+
         {onLabelClick && (
           <button
             type="button"
@@ -212,6 +275,7 @@ function AlarmRow({
 
 export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick }: Props): React.JSX.Element {
   const [labelTarget, setLabelTarget] = useState<LiveAlarm | null>(null);
+  const { acknowledgedAlarms, acknowledgeAlarm } = useDxCompletion();
 
   // 심각도별 카운트
   const counts = alarms.reduce((acc, a) => {
@@ -278,7 +342,7 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick
             className="flex flex-col items-center justify-center rounded-lg px-4 py-8"
             style={{ color: 'var(--ct-text-secondary)' }}
           >
-            <span style={{ fontSize: '32px', marginBottom: 8 }}>✅</span>
+            <span style={{ fontSize: '32px', marginBottom: 8 }}>{'\u2705'}</span>
             <span className="text-sm font-medium">모든 개체 정상</span>
             <span style={{ fontSize: '11px', color: 'var(--ct-text-muted)', marginTop: 4 }}>24시간 내 활성 알람 없음</span>
           </div>
@@ -291,6 +355,7 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick
               <div key={alarm.eventId} className="ct-fade-up" style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}>
                 <AlarmRow
                   alarm={alarm}
+                  isAcknowledged={acknowledgedAlarms.has(alarm.eventId)}
                   onFarmClick={onFarmClick ? () => onFarmClick(alarm.farmId) : undefined}
                   onAnimalClick={
                     alarm.animalId && onAnimalClick
@@ -300,6 +365,12 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick
                         : undefined
                   }
                   onLabelClick={alarm.animalId ? () => setLabelTarget(alarm) : undefined}
+                  onAiAnalysis={
+                    alarm.animalId && onAnimalClick
+                      ? () => onAnimalClick(alarm.animalId!)
+                      : undefined
+                  }
+                  onAcknowledge={() => acknowledgeAlarm(alarm.eventId)}
                 />
               </div>
             ))}
