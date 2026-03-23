@@ -48,8 +48,121 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   estrus: '발정',
   heat: '발정',
   calving: '분만',
+  calving_detection: '분만 감지',
   activity_increase: '활동량 증가',
 };
+
+// ── 이벤트 타입별 맞춤 추천 질문 ──
+
+const EVENT_QUESTIONS: Record<string, readonly string[]> = {
+  heat: [
+    '수정 적기는 언제야? 최적 타이밍을 알려줘',
+    '발정 강도는 어떤 수준이야?',
+    '반복 발정 여부를 확인해줘 — 번식 장애 가능성은?',
+    '이전 수정 이력과 비교해서 이번 발정 패턴은 어때?',
+  ],
+  estrus: [
+    '수정 적기는 언제야? 최적 타이밍을 알려줘',
+    '발정 강도는 어떤 수준이야?',
+    '반복 발정 여부를 확인해줘 — 번식 장애 가능성은?',
+    '이전 수정 이력과 비교해서 이번 발정 패턴은 어때?',
+  ],
+  temperature_high: [
+    '체온 상승의 원인으로 뭐가 의심돼?',
+    '유방염이나 감염 가능성은?',
+    '응급 상황인지 판단해줘 — 수의사 호출이 필요해?',
+    '최근 사료 변경이나 환경 변화와 연관성은?',
+  ],
+  rumination_decrease: [
+    '반추 감소 원인을 분석해줘 — 사료 문제일 가능성은?',
+    '소화기 질환이나 제4위변위 가능성은?',
+    '케토시스 위험도를 평가해줘',
+    '사료 섭취량과 음수량 변화도 같이 확인해줘',
+  ],
+  calving: [
+    '난산 위험도를 평가해줘',
+    '초유 급여 시기와 양은 어떻게 해야 해?',
+    '산후 관리 체크리스트를 알려줘',
+    '분만 후 자궁 회복 모니터링 포인트는?',
+  ],
+  calving_detection: [
+    '난산 위험도를 평가해줘',
+    '초유 급여 시기와 양은 어떻게 해야 해?',
+    '산후 관리 체크리스트를 알려줘',
+    '분만 후 자궁 회복 모니터링 포인트는?',
+  ],
+  health_warning: [
+    '현재 증상을 종합 분석해줘',
+    '격리가 필요한 상황인지 판단해줘',
+    '수의사 호출 시기를 추천해줘',
+    '동일 축사 내 다른 소들도 확인해야 해?',
+  ],
+  activity_decrease: [
+    '활동량 감소 원인을 분석해줘',
+    '통증이나 지절 문제 가능성은?',
+    '분만 임박 징후일 수 있어?',
+    '최근 센서 데이터 추이와 비교해서 어떤 패턴이야?',
+  ],
+  activity_increase: [
+    '활동량 증가가 발정 징후인지 분석해줘',
+    '스트레스나 환경 요인일 가능성은?',
+    '다른 센서 지표와 교차 분석해줘',
+    '최근 이력을 보고 원인을 추정해줘',
+  ],
+  drinking_decrease: [
+    '음수량 감소 원인을 분석해줘',
+    '탈수 위험도를 평가해줘',
+    '수질이나 급수 시설 문제 가능성은?',
+    '사료 섭취량과 반추 활동도 같이 확인해줘',
+  ],
+  clinical_condition: [
+    '현재 임상 증상을 종합 분석해줘',
+    '긴급 조치가 필요한 상황인지 판단해줘',
+    '유사 증상의 다른 질환 가능성은?',
+    '치료 이력과 비교해서 경과는 어때?',
+  ],
+};
+
+const NORMAL_ANIMAL_QUESTIONS: readonly string[] = [
+  '현재 건강 상태를 종합 평가해줘',
+  '센서 데이터 추이를 분석해줘 — 이상 징후는 없어?',
+  '이 소의 비유 성적은 어떤 수준이야?',
+  '예방적으로 주의해야 할 점이 있어?',
+];
+
+function generateSuggestedQuestions(
+  context: EventContext | null,
+  animalInfo: AnimalInfo | null,
+  earTag: string,
+): readonly string[] {
+  // 이벤트 컨텍스트가 있는 경우 — 이벤트 타입 기반 맞춤 질문
+  if (context) {
+    const eventType = context.eventType;
+    const typeQuestions = EVENT_QUESTIONS[eventType];
+
+    if (typeQuestions) {
+      return typeQuestions;
+    }
+
+    // 매핑되지 않은 이벤트 타입 — 범용 이벤트 질문
+    const typeLabel = EVENT_TYPE_LABELS[eventType] ?? eventType;
+    return [
+      `이 ${typeLabel} 알람의 원인으로 뭐가 의심돼?`,
+      `${earTag}번 소의 최근 이력을 보고 현재 상태를 분석해줘`,
+      '이 이벤트가 오탐일 가능성은?',
+      '어떤 조치를 취해야 하는지 추천해줘',
+    ];
+  }
+
+  // 이벤트 없이 개체 정보만 있는 경우 — 정상 소 유용 질문
+  if (animalInfo) {
+    return NORMAL_ANIMAL_QUESTIONS.map((q) =>
+      q.startsWith('센서') ? `${earTag}번 소의 ${q}` : `${earTag}번 소의 ${q}`,
+    );
+  }
+
+  return [];
+}
 
 interface ChatMessage {
   readonly id: string;
@@ -1396,23 +1509,9 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
     }
   };
 
-  // 추천 질문
+  // 추천 질문 — 이벤트 타입/센서 상황별 동적 생성
   const earTag = context?.earTag ?? animalInfo?.earTag ?? '?';
-  const suggestedQuestions = context
-    ? [
-        `이 ${EVENT_TYPE_LABELS[context.eventType] ?? context.eventType} 알람의 원인으로 뭐가 의심돼?`,
-        `${earTag}번 소의 최근 이력을 보고 현재 상태를 분석해줘`,
-        '이 이벤트가 오탐일 가능성은?',
-        '어떤 조치를 취해야 하는지 추천해줘',
-      ]
-    : animalInfo
-      ? [
-          `${earTag}번 소의 센서 데이터를 분석해줘`,
-          `${earTag}번 소의 현재 건강 상태를 종합 평가해줘`,
-          '이 소의 비유 성적은 어떤 수준이야?',
-          '주의해야 할 점이 있어?',
-        ]
-      : [];
+  const suggestedQuestions = generateSuggestedQuestions(context, animalInfo, earTag);
 
   return (
     <div
