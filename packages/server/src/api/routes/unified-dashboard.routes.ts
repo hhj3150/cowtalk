@@ -224,7 +224,7 @@ unifiedDashboardRouter.get('/fertility-management', async (req: Request, res: Re
       .from(animals)
       .where(whereAll(
         eq(animals.status, 'active'),
-        farmId ? eq(animals.farmId, farmId) : undefined,
+        farmCondition(animals.farmId, farmId),
       ))
       .groupBy(animals.lactationStatus);
 
@@ -507,7 +507,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
     db.select({ count: count() })
       .from(farms)
       .where(whereAll(
-        farmId ? eq(farms.farmId, farmId) : undefined,
+        farmCondition(farms.farmId, farmId),
         eq(farms.status, 'active'),
       )),
 
