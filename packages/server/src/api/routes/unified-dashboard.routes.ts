@@ -581,10 +581,10 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
       .orderBy(desc(count(smaxtecEvents.eventId)))
       .limit(5),
 
-    // 이벤트 유형 분포
+    // 이벤트 유형 분포 (개체 수 기준 — 중복 이벤트 제거)
     db.select({
       eventType: smaxtecEvents.eventType,
-      count: count(),
+      count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
     })
       .from(smaxtecEvents)
       .where(whereAll(
@@ -592,7 +592,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
         gte(smaxtecEvents.detectedAt, last24h),
       ))
       .groupBy(smaxtecEvents.eventType)
-      .orderBy(desc(count())),
+      .orderBy(sql`COUNT(DISTINCT ${smaxtecEvents.animalId}) DESC`),
 
     // 최근 6시간 긴급 이벤트
     db.select({
@@ -2271,9 +2271,10 @@ async function queryTodoList(
 ): Promise<readonly TodoItem[]> {
   // 미확인 + 최근 24시간 이벤트 (아침 출근 시 어젯밤 이벤트도 포함)
   const last24h = daysAgo(1);
+  // COUNT(DISTINCT animal_id) — 같은 소의 중복 이벤트 제거하여 실제 개체 수 표시
   const eventCounts = await db.select({
     eventType: smaxtecEvents.eventType,
-    count: count(),
+    count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
   })
     .from(smaxtecEvents)
     .where(whereAll(

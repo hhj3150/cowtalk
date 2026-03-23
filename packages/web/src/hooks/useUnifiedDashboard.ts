@@ -175,9 +175,22 @@ export function useVitalMonitor(days = 30) {
 }
 
 export function useFarmMapMarkers() {
+  const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
+
   return useQuery({
-    queryKey: ['farm-map-markers'],
-    queryFn: () => getRegionalMapData({ mode: 'status' }),
+    queryKey: ['farm-map-markers', selectedFarmIds],
+    queryFn: async () => {
+      const data = await getRegionalMapData({ mode: 'status' });
+      // 농장 그룹 선택 시 해당 농장만 필터링
+      if (selectedFarmIds.length > 0 && data.markers) {
+        const idSet = new Set(selectedFarmIds);
+        return {
+          ...data,
+          markers: data.markers.filter((m: { farmId?: string }) => m.farmId && idSet.has(m.farmId)),
+        };
+      }
+      return data;
+    },
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
