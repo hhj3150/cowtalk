@@ -63,8 +63,11 @@ const ROLE_ICONS: Record<string, string> = {
   feed_company: '🌾',
 };
 
-// 마스터 원래 역할 기억 (세션 중 유지)
-let masterOriginalRole: Role | null = null;
+const MASTER_KEY = 'cowtalk-master-role';
+
+function isMasterUser(): boolean {
+  return localStorage.getItem(MASTER_KEY) === 'true';
+}
 
 function RoleSwitcher(): React.JSX.Element | null {
   const user = useAuthStore((s) => s.user);
@@ -73,13 +76,13 @@ function RoleSwitcher(): React.JSX.Element | null {
 
   if (!user) return null;
 
-  // 최초 government_admin으로 로그인한 사용자를 마스터로 기억
-  if (user.role === 'government_admin' && !masterOriginalRole) {
-    masterOriginalRole = 'government_admin';
+  // government_admin으로 로그인한 적 있으면 마스터로 기억
+  if (user.email === 'ha@d2o.kr' || localStorage.getItem(MASTER_KEY) === 'true') {
+    localStorage.setItem(MASTER_KEY, 'true');
   }
 
-  // 마스터가 아니면 (그리고 마스터에서 전환한 것도 아니면) 숨김
-  if (!masterOriginalRole) return null;
+  // 마스터가 아니면 숨김
+  if (!isMasterUser()) return null;
 
   const roles = Object.entries(ROLE_LABELS) as [Role, string][];
 
