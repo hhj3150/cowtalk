@@ -93,14 +93,13 @@ function farmCondition(
   farmId: string | null,
 ): SqlCondition | undefined {
   if (!farmId) return undefined;
-  // 다중 농장 그룹 지원: 쉼표 구분된 farmIds
+  // 다중 농장 그룹: 쉼표 구분된 farmIds → inArray 사용
   if (farmId.includes(',')) {
     const ids = farmId.split(',').filter(Boolean);
     if (ids.length === 0) return undefined;
     if (ids.length === 1) return eq(column, ids[0]!);
-    // farm_id 컬럼으로 IN 절 생성 — sql.raw 사용 (Drizzle 바인딩 우회)
-    const idList = ids.map((id) => `'${id}'`).join(',');
-    return sql.raw(`farm_id IN (${idList})`);
+    // Drizzle inArray는 PostgreSQL의 ANY(ARRAY[...]) 사용 — UUID 자동 캐스팅
+    return sql`${column}::text = ANY(ARRAY[${sql.raw(ids.map((id) => `'${id}'`).join(','))}])`;
   }
   return eq(column, farmId);
 }
