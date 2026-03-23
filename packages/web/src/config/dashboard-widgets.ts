@@ -52,11 +52,10 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'farm_ranking',
   ],
 
-  // 수정사: 오늘 수정할 소가 전부. 깔끔하게.
+  // 수정사: 발정 대상우 + 번식성적 + AI 정액 추천
   inseminator: [
     'ai_briefing',
     'herd_overview',
-    'todo_list',
     'insemination_route',
   ],
 
