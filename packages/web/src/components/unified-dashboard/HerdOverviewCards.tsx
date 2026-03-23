@@ -12,6 +12,7 @@ interface Props {
     readonly completed: number;
     readonly total: number;
   };
+  readonly role?: string;
 }
 
 interface CardConfig {
@@ -24,12 +25,39 @@ interface CardConfig {
   readonly sparkColor: string;
 }
 
-const CARDS: readonly CardConfig[] = [
+const DEFAULT_CARDS: readonly CardConfig[] = [
   { key: 'totalAnimals', label: '총 두수', icon: '🐄', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
   { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
   { key: 'activeAlerts', label: '24h 알림', icon: '⚠️', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
   { key: 'healthIssues', label: '건강 이상', icon: '🏥', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
-] as const;
+];
+
+const ROLE_CARDS: Readonly<Record<string, readonly CardConfig[]>> = {
+  veterinarian: [
+    { key: 'totalAnimals', label: '관리 두수', icon: '🩺', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
+    { key: 'healthIssues', label: '진료 대상', icon: '🏥', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
+    { key: 'activeAlerts', label: '발열·질병', icon: '🌡️', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
+    { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+  ],
+  inseminator: [
+    { key: 'totalAnimals', label: '관리 두수', icon: '💉', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
+    { key: 'activeAlerts', label: '발정 대상', icon: '🔴', category: 'alerts', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
+    { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+    { key: 'healthIssues', label: '번식 주의', icon: '⚠️', category: 'health', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
+  ],
+  quarantine_officer: [
+    { key: 'totalAnimals', label: '감시 두수', icon: '🛡️', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
+    { key: 'healthIssues', label: '발열 두수', icon: '🌡️', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
+    { key: 'activeAlerts', label: '역학 경보', icon: '🚨', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
+    { key: 'sensorAttached', label: '감시 농장', icon: '📋', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+  ],
+  feed_company: [
+    { key: 'totalAnimals', label: '거래 두수', icon: '🌾', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
+    { key: 'healthIssues', label: '반추 이상', icon: '🔄', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
+    { key: 'activeAlerts', label: '사료 주의', icon: '⚠️', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
+    { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+  ],
+};
 
 // ── 애니메이션 카운터 ──
 function AnimatedCounter({ target }: { readonly target: number }): React.JSX.Element {
@@ -252,7 +280,8 @@ function DxCompletionRing({
   );
 }
 
-export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion }: Props): React.JSX.Element {
+export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, role }: Props): React.JSX.Element {
+  const CARDS = (role && ROLE_CARDS[role]) ? ROLE_CARDS[role] : DEFAULT_CARDS;
   if (isLoading || !data) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">

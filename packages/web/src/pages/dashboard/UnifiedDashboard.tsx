@@ -656,7 +656,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
 
           {/* ── KPI 카드 ── */}
-          <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} />
+          <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} role={user?.role} />
 
           {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널 — KPI 바로 아래) ── */}
           {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
