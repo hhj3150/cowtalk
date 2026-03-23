@@ -48,6 +48,7 @@ import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
+import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSelector';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { useDxCompletion } from '@web/hooks/useDxCompletion';
 import { ROLE_LABELS } from '@web/config/dashboard-widgets';
@@ -594,12 +595,16 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 <RoleSwitcher />
               </div>
             </div>
-            <FarmFilterDropdown />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <FarmFilterDropdown />
+              <FarmGroupSelector />
+            </div>
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <FarmFilterDropdown />
+              <FarmGroupSelector />
             </div>
             <div style={{ textAlign: 'center' }}>
               <h1 style={{

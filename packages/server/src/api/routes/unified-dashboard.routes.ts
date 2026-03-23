@@ -91,7 +91,12 @@ function todayStart(): Date {
 function farmCondition(
   column: typeof smaxtecEvents.farmId | typeof animals.farmId,
   farmId: string | null,
+  farmIds?: readonly string[],
 ): SqlCondition | undefined {
+  // 다중 농장 그룹 지원
+  if (farmIds && farmIds.length > 0) {
+    return sql`${column} IN (${sql.raw(farmIds.map((id) => `'${id}'`).join(','))})`;
+  }
   return farmId ? eq(column, farmId) : undefined;
 }
 

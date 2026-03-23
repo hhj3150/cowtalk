@@ -15,7 +15,7 @@ interface FarmState {
 }
 
 interface FarmActions {
-  readonly selectFarm: (farmId: string) => void;
+  readonly selectFarm: (farmId: string | null) => void;
   readonly setFarms: (farms: readonly FarmSummary[]) => void;
   readonly clearSelection: () => void;
 }
