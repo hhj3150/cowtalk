@@ -89,15 +89,16 @@ function todayStart(): Date {
 
 // farmId 조건 빌더 — null이면 전체 농장
 function farmCondition(
-  column: typeof smaxtecEvents.farmId | typeof animals.farmId,
+  column: typeof smaxtecEvents.farmId | typeof animals.farmId | typeof farms.farmId,
   farmId: string | null,
-  farmIds?: readonly string[],
 ): SqlCondition | undefined {
-  // 다중 농장 그룹 지원
-  if (farmIds && farmIds.length > 0) {
-    return sql`${column} IN (${sql.raw(farmIds.map((id) => `'${id}'`).join(','))})`;
+  if (!farmId) return undefined;
+  // 다중 농장 그룹 지원: 쉼표 구분된 farmIds
+  if (farmId.includes(',')) {
+    const ids = farmId.split(',').filter(Boolean);
+    return sql`${column} IN (${sql.raw(ids.map((id) => `'${id}'`).join(','))})`;
   }
-  return farmId ? eq(column, farmId) : undefined;
+  return eq(column, farmId);
 }
 
 // WHERE 절에서 undefined 제거
@@ -115,10 +116,14 @@ function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | u
 unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = (req.query.farmId as string | undefined) ?? null;
+    const farmIdsParam = req.query.farmIds as string | undefined;
+    const farmIds = farmIdsParam ? farmIdsParam.split(',').filter(Boolean) : undefined;
     const period = req.query.period as string | undefined;
     const periodDays = parsePeriodDays(period);
 
-    const data = await buildUnifiedDashboard(farmId, periodDays);
+    // 다중 농장 그룹: farmIds가 있으면 첫 번째를 farmId로 사용하되 farmIds도 전달
+    const effectiveFarmId = farmIds && farmIds.length > 0 ? null : farmId;
+    const data = await buildUnifiedDashboard(effectiveFarmId, periodDays, farmIds);
     res.json({ success: true, data });
   } catch (error) {
     logger.error({ error }, 'Unified dashboard build failed');
@@ -1995,15 +2000,19 @@ async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
 async function buildUnifiedDashboard(
   farmId: string | null,
   periodDays: number,
+  farmIds?: readonly string[],
 ): Promise<UnifiedDashboardData> {
   const db = getDb();
   const periodStart = daysAgo(periodDays);
   const today = todayStart();
   const thirtyDaysAgo = daysAgo(30);
 
+  // 다중 농장 그룹: farmIds → 쉼표 구분 문자열로 farmCondition에 전달
+  const effectiveFarmId = farmIds && farmIds.length > 0 ? farmIds.join(',') : farmId;
+
   const [farmCount] = await db.select({ count: count() })
     .from(farms)
-    .where(eq(farms.status, 'active'));
+    .where(whereAll(eq(farms.status, 'active'), farmCondition(farms.farmId, effectiveFarmId)));
   const totalFarms = (farmCount?.count ?? 0) as number;
 
   // 12개 위젯 병렬 쿼리
@@ -2021,18 +2030,18 @@ async function buildUnifiedDashboard(
     phAmplitude,
     rumenHealth,
   ] = await Promise.all([
-    queryHerdOverview(db, farmId, today),
-    queryHerdDevelopment(db, farmId),
-    queryTodoList(db, farmId, today),
-    queryHealthStatus(db, farmId, periodStart),
-    queryAssistantAlerts(db, farmId, today),
-    queryDailyRumination(db, farmId, thirtyDaysAgo),
-    queryWeeklyRumination(db, farmId, thirtyDaysAgo),
-    queryHealthAlerts(db, farmId, today),
-    queryFertilityStatus(db, farmId, periodStart),
-    queryFertilityManagement(db, farmId, today),
-    queryPhAmplitude(db, farmId),
-    queryRumenHealth(db, farmId, thirtyDaysAgo),
+    queryHerdOverview(db, effectiveFarmId, today),
+    queryHerdDevelopment(db, effectiveFarmId),
+    queryTodoList(db, effectiveFarmId, today),
+    queryHealthStatus(db, effectiveFarmId, periodStart),
+    queryAssistantAlerts(db, effectiveFarmId, today),
+    queryDailyRumination(db, effectiveFarmId, thirtyDaysAgo),
+    queryWeeklyRumination(db, effectiveFarmId, thirtyDaysAgo),
+    queryHealthAlerts(db, effectiveFarmId, today),
+    queryFertilityStatus(db, effectiveFarmId, periodStart),
+    queryFertilityManagement(db, effectiveFarmId, today),
+    queryPhAmplitude(db, effectiveFarmId),
+    queryRumenHealth(db, effectiveFarmId, thirtyDaysAgo),
   ]);
 
   return {

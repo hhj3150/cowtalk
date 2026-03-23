@@ -28,6 +28,7 @@ export function FarmGroupSelector(): React.JSX.Element {
   } = useFarmGroupStore();
 
   const selectFarm = useFarmStore((s) => s.selectFarm);
+  const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
 
   // 검색 필터
   const filteredFarms = useMemo(() => {
@@ -58,13 +59,11 @@ export function FarmGroupSelector(): React.JSX.Element {
   };
 
   const handleApply = (): void => {
-    // 선택된 농장이 1개면 단일 농장 선택, 아니면 그룹
-    if (customSelection.length === 1) {
-      selectFarm(customSelection[0]!);
-    } else if (customSelection.length === 0) {
+    if (customSelection.length === 0) {
       selectFarm(null); // 전체
+    } else {
+      selectFarmGroup(customSelection); // 다중 선택 → farmStore에 반영
     }
-    // 다중 선택은 farmGroupStore에서 관리
     setOpen(false);
   };
 

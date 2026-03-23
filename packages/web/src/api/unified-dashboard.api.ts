@@ -35,9 +35,12 @@ export interface DashboardFarm {
 }
 
 export function getUnifiedDashboard(
-  params?: UnifiedDashboardParams,
+  params?: UnifiedDashboardParams & { farmIds?: readonly string[] },
 ): Promise<UnifiedDashboardData> {
-  const query = params?.farmId ? `?farmId=${params.farmId}` : '';
+  const searchParams = new URLSearchParams();
+  if (params?.farmId) searchParams.set('farmId', params.farmId);
+  if (params?.farmIds && params.farmIds.length > 0) searchParams.set('farmIds', params.farmIds.join(','));
+  const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
   return apiGet<UnifiedDashboardData>(`/unified-dashboard${query}`);
 }
 

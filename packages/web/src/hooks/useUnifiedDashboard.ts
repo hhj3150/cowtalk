@@ -13,10 +13,14 @@ const CHART_STALE_TIME = 3 * 60 * 1000;
 
 export function useUnifiedDashboard() {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
   return useQuery({
-    queryKey: ['unified-dashboard', selectedFarmId],
-    queryFn: () => api.getUnifiedDashboard({ farmId: selectedFarmId ?? undefined }),
+    queryKey: ['unified-dashboard', selectedFarmId, selectedFarmIds],
+    queryFn: () => api.getUnifiedDashboard({
+      farmId: selectedFarmId ?? undefined,
+      farmIds: selectedFarmIds.length > 0 ? selectedFarmIds : undefined,
+    }),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
     refetchIntervalInBackground: false,
