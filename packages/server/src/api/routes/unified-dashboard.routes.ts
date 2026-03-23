@@ -155,7 +155,8 @@ unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFu
     const periodDays = parsePeriodDays(period);
 
     // farmId와 _currentFarmIds는 미들웨어에서 설정됨
-    const data = await buildUnifiedDashboard(farmId, periodDays);
+    const role = (req.query.role as string | undefined) ?? req.user?.role ?? 'government_admin';
+    const data = await buildUnifiedDashboard(farmId, periodDays, undefined, role);
     res.json({ success: true, data });
   } catch (error) {
     logger.error({ error }, 'Unified dashboard build failed');
@@ -2119,6 +2120,7 @@ async function buildUnifiedDashboard(
   farmId: string | null,
   periodDays: number,
   _farmIds?: readonly string[],
+  role?: string,
 ): Promise<UnifiedDashboardData> {
   const db = getDb();
   const periodStart = daysAgo(periodDays);
@@ -2149,7 +2151,7 @@ async function buildUnifiedDashboard(
   ] = await Promise.all([
     queryHerdOverview(db, farmId, today),
     queryHerdDevelopment(db, farmId),
-    queryTodoList(db, farmId, today),
+    queryTodoList(db, farmId, today, role),
     queryHealthStatus(db, farmId, periodStart),
     queryAssistantAlerts(db, farmId, today),
     queryDailyRumination(db, farmId, thirtyDaysAgo),
@@ -2276,6 +2278,7 @@ async function queryTodoList(
   db: DbInstance,
   farmId: string | null,
   _today: Date,
+  role?: string,
 ): Promise<readonly TodoItem[]> {
   // 미확인 + 최근 24시간 이벤트 (아침 출근 시 어젯밤 이벤트도 포함)
   const last24h = daysAgo(1);
@@ -2323,8 +2326,20 @@ async function queryTodoList(
     activity_increase: { label: '활동 증가 — 발정 의심', category: 'fertility', icon: '🟢', severity: 'info', priority: 14 },
   };
 
+  // 역할별 할일 필터 — 각 역할에 의미 있는 이벤트만 표시
+  const ROLE_EVENT_FILTER: Record<string, readonly string[]> = {
+    veterinarian: ['temperature_high', 'clinical_condition', 'health_general', 'rumination_decrease', 'activity_decrease', 'temperature_low', 'calving_detection', 'calving_confirmation'],
+    inseminator: ['estrus', 'insemination', 'fertility_warning', 'pregnancy_check', 'no_insemination', 'activity_increase', 'dry_off'],
+    quarantine_officer: ['temperature_high', 'clinical_condition', 'health_general', 'temperature_low'],
+    feed_company: ['rumination_decrease', 'activity_decrease', 'temperature_low'],
+    // farmer, government_admin: 전체 표시
+  };
+
+  const roleFilter = role ? ROLE_EVENT_FILTER[role] : undefined;
+
   const todos: TodoItem[] = eventCounts
     .filter((e) => typeToTodo[e.eventType] !== undefined)
+    .filter((e) => !roleFilter || roleFilter.includes(e.eventType))
     .map((e) => {
       const meta = typeToTodo[e.eventType] as { label: string; category: string; icon: string; severity: TodoItem['severity']; priority: number };
       return {

@@ -45,9 +45,10 @@ function farmQuery(farmId?: string, farmIds?: string, extra?: Record<string, str
 }
 
 export function getUnifiedDashboard(
-  params?: { farmId?: string; farmIds?: string },
+  params?: { farmId?: string; farmIds?: string; role?: string },
 ): Promise<UnifiedDashboardData> {
-  return apiGet<UnifiedDashboardData>(`/unified-dashboard${farmQuery(params?.farmId, params?.farmIds)}`);
+  const extra = params?.role ? { role: params.role } : undefined;
+  return apiGet<UnifiedDashboardData>(`/unified-dashboard${farmQuery(params?.farmId, params?.farmIds, extra)}`);
 }
 
 export function getLiveAlarms(farmId?: string, farmIds?: string): Promise<{ alarms: readonly LiveAlarm[] }> {

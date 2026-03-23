@@ -26,10 +26,11 @@ function useEffectiveFarmId(): { farmId: string | undefined; farmIds: string | u
 
 export function useUnifiedDashboard() {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
+  const role = useAuthStore((s) => s.user?.role ?? 'government_admin');
 
   return useQuery({
-    queryKey: ['unified-dashboard', ...queryKey],
-    queryFn: () => api.getUnifiedDashboard({ farmId, farmIds }),
+    queryKey: ['unified-dashboard', ...queryKey, role],
+    queryFn: () => api.getUnifiedDashboard({ farmId, farmIds, role }),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
     refetchIntervalInBackground: false,

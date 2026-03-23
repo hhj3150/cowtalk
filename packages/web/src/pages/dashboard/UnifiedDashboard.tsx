@@ -546,7 +546,16 @@ export default function UnifiedDashboard(): React.JSX.Element {
     ? new Date(data.lastUpdated).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '--';
 
-  const alarms = alarmsData?.alarms ?? [];
+  // 역할별 알람 필터
+  const ROLE_ALARM_FILTER: Record<string, readonly string[]> = {
+    veterinarian: ['temperature_high', 'clinical_condition', 'health_general', 'rumination_decrease', 'activity_decrease', 'temperature_low', 'calving_detection', 'calving_confirmation'],
+    inseminator: ['estrus', 'insemination', 'fertility_warning', 'pregnancy_check', 'no_insemination', 'activity_increase'],
+    quarantine_officer: ['temperature_high', 'clinical_condition', 'health_general', 'temperature_low'],
+    feed_company: ['rumination_decrease', 'activity_decrease', 'temperature_low', 'health_general'],
+  };
+  const roleAlarmFilter = user?.role ? ROLE_ALARM_FILTER[user.role] : undefined;
+  const allAlarms = alarmsData?.alarms ?? [];
+  const alarms = roleAlarmFilter ? allAlarms.filter((a) => roleAlarmFilter.includes(a.eventType)) : allAlarms;
   const rankings = rankingData?.rankings ?? [];
 
   // 농장 지도 마커 데이터 변환
