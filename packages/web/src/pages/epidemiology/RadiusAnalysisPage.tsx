@@ -6,6 +6,7 @@ import { apiGet } from '@web/api/client';
 import { useAuthStore } from '@web/stores/auth.store';
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { TILE_URL, TILE_ATTRIBUTION } from '@web/constants/map';
 
 // ===========================
 // 타입
@@ -155,8 +156,8 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
         <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--ct-border)', height: 500 }}>
           <MapContainer center={center} zoom={11} style={{ width: '100%', height: '100%' }}>
             <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; OpenStreetMap contributors'
+              url={TILE_URL}
+              attribution={TILE_ATTRIBUTION}
             />
 
             {/* 중심 농장 */}

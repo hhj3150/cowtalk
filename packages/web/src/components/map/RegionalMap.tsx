@@ -18,8 +18,10 @@ interface Props {
 const DEFAULT_CENTER: [number, number] = [36.5, 127.5];
 const DEFAULT_ZOOM = 7;
 
+import { TILE_URL as CARTO_LIGHT, TILE_ATTRIBUTION } from '@web/constants/map';
+
 const TILE_URLS = {
-  light: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  light: CARTO_LIGHT,
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 };
 
@@ -48,7 +50,7 @@ export function RegionalMap({
     const map = L.map(containerRef.current).setView(center, zoom);
     const tileUrl = darkMode ? TILE_URLS.dark : TILE_URLS.light;
     L.tileLayer(tileUrl, {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution: TILE_ATTRIBUTION,
     }).addTo(map);
 
     mapRef.current = map;

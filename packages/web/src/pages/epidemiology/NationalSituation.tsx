@@ -8,6 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, 
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
 import { apiGet } from '@web/api/client';
+import { TILE_URL, TILE_ATTRIBUTION } from '@web/constants/map';
 
 // ===========================
 // 타입
@@ -160,8 +161,8 @@ export default function NationalSituation(): React.JSX.Element {
             style={{ height: '400px', width: '100%' }}
           >
             <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="&copy; OpenStreetMap contributors"
+              url={TILE_URL}
+              attribution={TILE_ATTRIBUTION}
             />
             {(data?.provinces ?? []).map((p) => (
               <CircleMarker
