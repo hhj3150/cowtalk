@@ -88,19 +88,27 @@ function todayStart(): Date {
 }
 
 // farmId 조건 빌더 — null이면 전체 농장
+// 컬럼명을 SQL 문자열로 변환
+function getColumnName(column: typeof smaxtecEvents.farmId | typeof animals.farmId | typeof farms.farmId): string {
+  // Drizzle 컬럼에서 테이블명.컬럼명 추출
+  const c = column as unknown as { table: { _: { name: string } }; name: string };
+  return `"${c.table._.name}"."${c.name}"`;
+}
+
 function farmCondition(
   column: typeof smaxtecEvents.farmId | typeof animals.farmId | typeof farms.farmId,
   farmId: string | null,
 ): SqlCondition | undefined {
   if (!farmId) return undefined;
-  // 다중 농장 그룹 지원: 쉼표 구분된 farmIds → UUID 캐스팅
+  // 다중 농장 그룹 지원: 쉼표 구분된 farmIds
   if (farmId.includes(',')) {
     const ids = farmId.split(',').filter(Boolean);
     if (ids.length === 0) return undefined;
     if (ids.length === 1) return eq(column, ids[0]!);
-    // PostgreSQL UUID 컬럼에 text[] 비교 시 캐스팅 필요
-    const idList = ids.map((id) => `'${id}'::uuid`).join(',');
-    return sql`${column} IN (${sql.raw(idList)})`;
+    // 완전 raw SQL로 IN 절 생성 (Drizzle 파라미터 바인딩 우회)
+    const colName = getColumnName(column);
+    const idList = ids.map((id) => `'${id}'`).join(',');
+    return sql.raw(`${colName} IN (${idList})`);
   }
   return eq(column, farmId);
 }
