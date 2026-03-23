@@ -88,19 +88,22 @@ function todayStart(): Date {
 }
 
 // farmId 조건 빌더 — null이면 전체 농장
+// 다중 농장 지원을 위한 글로벌 farmIds 저장소 (요청당 설정)
+let _currentFarmIds: readonly string[] = [];
+
+function setCurrentFarmIds(ids: readonly string[]): void {
+  _currentFarmIds = ids;
+}
+
 function farmCondition(
   column: typeof smaxtecEvents.farmId | typeof animals.farmId | typeof farms.farmId,
   farmId: string | null,
 ): SqlCondition | undefined {
-  if (!farmId) return undefined;
-  // 다중 농장 그룹: 쉼표 구분된 farmIds → inArray 사용
-  if (farmId.includes(',')) {
-    const ids = farmId.split(',').filter(Boolean);
-    if (ids.length === 0) return undefined;
-    if (ids.length === 1) return eq(column, ids[0]!);
-    // Drizzle inArray는 PostgreSQL의 ANY(ARRAY[...]) 사용 — UUID 자동 캐스팅
-    return sql`${column}::text = ANY(ARRAY[${sql.raw(ids.map((id) => `'${id}'`).join(','))}])`;
+  // 다중 농장 그룹이 설정되어 있으면 inArray 사용
+  if (_currentFarmIds.length > 0) {
+    return inArray(column, [..._currentFarmIds]);
   }
+  if (!farmId) return undefined;
   return eq(column, farmId);
 }
 
@@ -124,9 +127,14 @@ unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFu
     const period = req.query.period as string | undefined;
     const periodDays = parsePeriodDays(period);
 
-    // 다중 농장 그룹: farmIds가 있으면 첫 번째를 farmId로 사용하되 farmIds도 전달
-    const effectiveFarmId = farmIds && farmIds.length > 0 ? null : farmId;
-    const data = await buildUnifiedDashboard(effectiveFarmId, periodDays, farmIds);
+    // 다중 농장 그룹: farmIds가 있으면 글로벌 설정
+    if (farmIds && farmIds.length > 0) {
+      setCurrentFarmIds(farmIds);
+    } else {
+      setCurrentFarmIds([]);
+    }
+    const data = await buildUnifiedDashboard(farmId, periodDays, farmIds);
+    setCurrentFarmIds([]); // 요청 완료 후 초기화
     res.json({ success: true, data });
   } catch (error) {
     logger.error({ error }, 'Unified dashboard build failed');
@@ -2085,17 +2093,15 @@ async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
 async function buildUnifiedDashboard(
   farmId: string | null,
   periodDays: number,
-  farmIds?: readonly string[],
+  _farmIds?: readonly string[],
 ): Promise<UnifiedDashboardData> {
   const db = getDb();
   const periodStart = daysAgo(periodDays);
   const today = todayStart();
   const thirtyDaysAgo = daysAgo(30);
 
-  // 다중 농장 그룹: farmIds → 쉼표 구분 문자열로 farmCondition에 전달
-  const effectiveFarmId = farmIds && farmIds.length > 0 ? farmIds.join(',') : farmId;
-
-  const farmWhere = whereAll(eq(farms.status, 'active'), farmCondition(farms.farmId, effectiveFarmId));
+  // farmCondition은 _currentFarmIds 또는 farmId를 사용
+  const farmWhere = whereAll(eq(farms.status, 'active'), farmCondition(farms.farmId, farmId));
   const [farmCount] = farmWhere
     ? await db.select({ count: count() }).from(farms).where(farmWhere)
     : await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
@@ -2116,18 +2122,18 @@ async function buildUnifiedDashboard(
     phAmplitude,
     rumenHealth,
   ] = await Promise.all([
-    queryHerdOverview(db, effectiveFarmId, today),
-    queryHerdDevelopment(db, effectiveFarmId),
-    queryTodoList(db, effectiveFarmId, today),
-    queryHealthStatus(db, effectiveFarmId, periodStart),
-    queryAssistantAlerts(db, effectiveFarmId, today),
-    queryDailyRumination(db, effectiveFarmId, thirtyDaysAgo),
-    queryWeeklyRumination(db, effectiveFarmId, thirtyDaysAgo),
-    queryHealthAlerts(db, effectiveFarmId, today),
-    queryFertilityStatus(db, effectiveFarmId, periodStart),
-    queryFertilityManagement(db, effectiveFarmId, today),
-    queryPhAmplitude(db, effectiveFarmId),
-    queryRumenHealth(db, effectiveFarmId, thirtyDaysAgo),
+    queryHerdOverview(db, farmId, today),
+    queryHerdDevelopment(db, farmId),
+    queryTodoList(db, farmId, today),
+    queryHealthStatus(db, farmId, periodStart),
+    queryAssistantAlerts(db, farmId, today),
+    queryDailyRumination(db, farmId, thirtyDaysAgo),
+    queryWeeklyRumination(db, farmId, thirtyDaysAgo),
+    queryHealthAlerts(db, farmId, today),
+    queryFertilityStatus(db, farmId, periodStart),
+    queryFertilityManagement(db, farmId, today),
+    queryPhAmplitude(db, farmId),
+    queryRumenHealth(db, farmId, thirtyDaysAgo),
   ]);
 
   return {
