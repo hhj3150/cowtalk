@@ -491,16 +491,24 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
-  const { isVisible, roleLabel, isFarmer } = useRoleDashboard();
+  const { isVisible, roleLabel } = useRoleDashboard();
   const isMobile = useIsMobile();
   const { completedTodos } = useDxCompletion();
 
-  // 농장주: 단일 농장이면 자동 선택
+  const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
+  const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
+
+  // 로그인 시 user.farmIds가 있으면 자동 필터링 (계정에 배정된 농장만 표시)
   useEffect(() => {
-    if (isFarmer && user?.farmIds?.length === 1 && !selectedFarmId) {
+    if (!user?.farmIds || user.farmIds.length === 0) return;
+    if (selectedFarmIds.length > 0 || selectedFarmId) return; // 이미 선택됨
+
+    if (user.farmIds.length === 1) {
       selectFarm(user.farmIds[0]!);
+    } else {
+      selectFarmGroup(user.farmIds);
     }
-  }, [isFarmer, user?.farmIds, selectedFarmId, selectFarm]);
+  }, [user?.farmIds, selectedFarmIds.length, selectedFarmId, selectFarm, selectFarmGroup]);
 
   const [drilldown, setDrilldown] = useState<{ eventType: string; label: string } | null>(null);
   const [sensorChartAnimalId, setSensorChartAnimalId] = useState<string | null>(null);
