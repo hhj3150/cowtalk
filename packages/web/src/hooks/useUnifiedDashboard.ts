@@ -11,24 +11,25 @@ const STALE_TIME = 5 * 60 * 1000;
 const ALARM_STALE_TIME = 60 * 1000;
 const CHART_STALE_TIME = 3 * 60 * 1000;
 
-// 다중 농장 그룹 지원: farmIds가 있으면 쉼표 조인하여 farmId로 전달
-function useEffectiveFarmId(): { farmId: string | undefined; queryKey: unknown[] } {
+// 다중 농장 그룹 지원: farmIds가 있으면 farmIds 파라미터로 전달
+function useEffectiveFarmId(): { farmId: string | undefined; farmIds: string | undefined; queryKey: unknown[] } {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
   if (selectedFarmIds.length > 0) {
     const joined = selectedFarmIds.join(',');
-    return { farmId: joined, queryKey: ['group', joined] };
+    return { farmId: undefined, farmIds: joined, queryKey: ['group', joined] };
   }
-  return { farmId: selectedFarmId ?? undefined, queryKey: [selectedFarmId] };
+  return { farmId: selectedFarmId ?? undefined, farmIds: undefined, queryKey: [selectedFarmId] };
 }
 
+
 export function useUnifiedDashboard() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['unified-dashboard', ...queryKey],
-    queryFn: () => api.getUnifiedDashboard({ farmId }),
+    queryFn: () => api.getUnifiedDashboard({ farmId, farmIds }),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
     refetchIntervalInBackground: false,
@@ -36,12 +37,12 @@ export function useUnifiedDashboard() {
 }
 
 export function useLiveAlarms() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['live-alarms', ...queryKey],
     queryFn: async () => {
-      const result = await api.getLiveAlarms(farmId);
+      const result = await api.getLiveAlarms(farmId, farmIds);
       // 프론트엔드 안전장치: 같은 농장+귀표번호+이벤트타입 중복 제거
       const seen = new Set<string>();
       const deduped = result.alarms.filter((a) => {
@@ -67,20 +68,20 @@ export function useFarmRanking() {
 }
 
 export function useHealthAlertsSummary() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['health-alerts-summary', ...queryKey],
-    queryFn: () => api.fetchHealthAlertsSummary(farmId),
+    queryFn: () => api.fetchHealthAlertsSummary(farmId, farmIds),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
 }
 
 export function useFertilityManagement() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['fertility-management', ...queryKey],
-    queryFn: () => api.fetchFertilityManagement(farmId),
+    queryFn: () => api.fetchFertilityManagement(farmId, farmIds),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
@@ -97,34 +98,34 @@ export function useDashboardFarms() {
 // ── Phase 2: 강화 차트 훅 ──
 
 export function useAiBriefing() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   const role = useAuthStore((s) => s.user?.role ?? 'government_admin');
 
   return useQuery({
     queryKey: ['ai-briefing', ...queryKey, role],
-    queryFn: () => api.fetchAiBriefing(farmId, role),
+    queryFn: () => api.fetchAiBriefing(farmId, role, farmIds),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
   });
 }
 
 export function useAlertTrend(days = 14) {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['alert-trend', ...queryKey, days],
-    queryFn: () => api.fetchAlertTrend(farmId, days),
+    queryFn: () => api.fetchAlertTrend(farmId, days, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
 }
 
 export function useHerdComposition() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['herd-composition', ...queryKey],
-    queryFn: () => api.fetchHerdComposition(farmId),
+    queryFn: () => api.fetchHerdComposition(farmId, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
@@ -140,33 +141,33 @@ export function useFarmComparison(farmIds?: string[]) {
 }
 
 export function useTemperatureDistribution() {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['temperature-distribution', ...queryKey],
-    queryFn: () => api.fetchTemperatureDistribution(farmId),
+    queryFn: () => api.fetchTemperatureDistribution(farmId, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });
 }
 
 export function useEventTimeline(hours = 24) {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['event-timeline', ...queryKey, hours],
-    queryFn: () => api.fetchEventTimeline(farmId, hours),
+    queryFn: () => api.fetchEventTimeline(farmId, hours, farmIds),
     staleTime: ALARM_STALE_TIME,
     refetchInterval: ALARM_STALE_TIME,
   });
 }
 
 export function useVitalMonitor(days = 30) {
-  const { farmId, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
     queryKey: ['vital-monitor', ...queryKey, days],
-    queryFn: () => api.fetchVitalMonitor(farmId, days),
+    queryFn: () => api.fetchVitalMonitor(farmId, days, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
   });

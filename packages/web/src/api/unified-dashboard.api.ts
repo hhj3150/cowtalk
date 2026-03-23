@@ -34,19 +34,24 @@ export interface DashboardFarm {
   readonly currentHeadCount: number;
 }
 
-export function getUnifiedDashboard(
-  params?: UnifiedDashboardParams & { farmIds?: readonly string[] },
-): Promise<UnifiedDashboardData> {
-  const searchParams = new URLSearchParams();
-  if (params?.farmId) searchParams.set('farmId', params.farmId);
-  if (params?.farmIds && params.farmIds.length > 0) searchParams.set('farmIds', params.farmIds.join(','));
-  const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
-  return apiGet<UnifiedDashboardData>(`/unified-dashboard${query}`);
+// farmId/farmIds → 쿼리 문자열 빌더
+function farmQuery(farmId?: string, farmIds?: string, extra?: Record<string, string>): string {
+  const p = new URLSearchParams();
+  if (farmIds) p.set('farmIds', farmIds);
+  else if (farmId) p.set('farmId', farmId);
+  if (extra) for (const [k, v] of Object.entries(extra)) p.set(k, v);
+  const s = p.toString();
+  return s ? `?${s}` : '';
 }
 
-export function getLiveAlarms(farmId?: string): Promise<{ alarms: readonly LiveAlarm[] }> {
-  const query = farmId ? `?farmId=${farmId}` : '';
-  return apiGet<{ alarms: readonly LiveAlarm[] }>(`/unified-dashboard/live-alarms${query}`);
+export function getUnifiedDashboard(
+  params?: { farmId?: string; farmIds?: string },
+): Promise<UnifiedDashboardData> {
+  return apiGet<UnifiedDashboardData>(`/unified-dashboard${farmQuery(params?.farmId, params?.farmIds)}`);
+}
+
+export function getLiveAlarms(farmId?: string, farmIds?: string): Promise<{ alarms: readonly LiveAlarm[] }> {
+  return apiGet<{ alarms: readonly LiveAlarm[] }>(`/unified-dashboard/live-alarms${farmQuery(farmId, farmIds)}`);
 }
 
 export function getFarmRanking(): Promise<{ rankings: readonly DashboardFarmRanking[] }> {
@@ -57,30 +62,23 @@ export function getDashboardFarms(): Promise<{ farms: readonly DashboardFarm[]; 
   return apiGet<{ farms: readonly DashboardFarm[]; total: number }>('/unified-dashboard/farms');
 }
 
-export function fetchAiBriefing(farmId?: string, role?: string): Promise<AiBriefing> {
-  const params = new URLSearchParams();
-  if (farmId) params.set('farmId', farmId);
-  if (role) params.set('role', role);
-  const query = params.toString() ? `?${params.toString()}` : '';
-  return apiGet<AiBriefing>(`/unified-dashboard/ai-briefing${query}`);
+export function fetchAiBriefing(farmId?: string, role?: string, farmIds?: string): Promise<AiBriefing> {
+  return apiGet<AiBriefing>(`/unified-dashboard/ai-briefing${farmQuery(farmId, farmIds, role ? { role } : undefined)}`);
 }
 
 export function fetchAlertTrend(
   farmId?: string,
   days?: number,
+  farmIds?: string,
 ): Promise<readonly AlertTrendPoint[]> {
-  const params = new URLSearchParams();
-  if (farmId) params.set('farmId', farmId);
-  if (days) params.set('days', String(days));
-  const query = params.toString() ? `?${params.toString()}` : '';
-  return apiGet<readonly AlertTrendPoint[]>(`/unified-dashboard/alert-trend${query}`);
+  return apiGet<readonly AlertTrendPoint[]>(`/unified-dashboard/alert-trend${farmQuery(farmId, farmIds, days ? { days: String(days) } : undefined)}`);
 }
 
 export function fetchHerdComposition(
   farmId?: string,
+  farmIds?: string,
 ): Promise<readonly HerdCompositionItem[]> {
-  const query = farmId ? `?farmId=${farmId}` : '';
-  return apiGet<readonly HerdCompositionItem[]>(`/unified-dashboard/herd-composition${query}`);
+  return apiGet<readonly HerdCompositionItem[]>(`/unified-dashboard/herd-composition${farmQuery(farmId, farmIds)}`);
 }
 
 export function fetchFarmComparison(
@@ -92,20 +90,17 @@ export function fetchFarmComparison(
 
 export function fetchTemperatureDistribution(
   farmId?: string,
+  farmIds?: string,
 ): Promise<TempTimelineData> {
-  const query = farmId ? `?farmId=${farmId}` : '';
-  return apiGet<TempTimelineData>(`/unified-dashboard/temperature-distribution${query}`);
+  return apiGet<TempTimelineData>(`/unified-dashboard/temperature-distribution${farmQuery(farmId, farmIds)}`);
 }
 
 export function fetchEventTimeline(
   farmId?: string,
   hours?: number,
+  farmIds?: string,
 ): Promise<readonly EventTimelineItem[]> {
-  const params = new URLSearchParams();
-  if (farmId) params.set('farmId', farmId);
-  if (hours) params.set('hours', String(hours));
-  const query = params.toString() ? `?${params.toString()}` : '';
-  return apiGet<readonly EventTimelineItem[]>(`/unified-dashboard/event-timeline${query}`);
+  return apiGet<readonly EventTimelineItem[]>(`/unified-dashboard/event-timeline${farmQuery(farmId, farmIds, hours ? { hours: String(hours) } : undefined)}`);
 }
 
 export function createEventLabel(data: CreateEventLabelRequest): Promise<EventLabel> {
@@ -124,12 +119,9 @@ export function getEventLabelStats(farmId?: string): Promise<EventLabelStats> {
 export function fetchVitalMonitor(
   farmId?: string,
   days?: number,
+  farmIds?: string,
 ): Promise<VitalMonitorData> {
-  const params = new URLSearchParams();
-  if (farmId) params.set('farmId', farmId);
-  if (days) params.set('days', String(days));
-  const query = params.toString() ? `?${params.toString()}` : '';
-  return apiGet<VitalMonitorData>(`/vital-monitor${query}`);
+  return apiGet<VitalMonitorData>(`/vital-monitor${farmQuery(farmId, farmIds, days ? { days: String(days) } : undefined)}`);
 }
 
 // ── 역학 감시 ──
@@ -229,9 +221,8 @@ export interface HealthAlertItem {
   readonly count: number;
 }
 
-export function fetchHealthAlertsSummary(farmId?: string): Promise<readonly HealthAlertItem[]> {
-  const query = farmId ? `?farmId=${farmId}` : '';
-  return apiGet<readonly HealthAlertItem[]>(`/unified-dashboard/health-alerts-summary${query}`);
+export function fetchHealthAlertsSummary(farmId?: string, farmIds?: string): Promise<readonly HealthAlertItem[]> {
+  return apiGet<readonly HealthAlertItem[]>(`/unified-dashboard/health-alerts-summary${farmQuery(farmId, farmIds)}`);
 }
 
 // ── 번식 관리 현황 ──
@@ -241,9 +232,8 @@ export interface FertilityManagementData {
   readonly fertilityAlerts: readonly { type: string; label: string; count: number }[];
 }
 
-export function fetchFertilityManagement(farmId?: string): Promise<FertilityManagementData> {
-  const query = farmId ? `?farmId=${farmId}` : '';
-  return apiGet<FertilityManagementData>(`/unified-dashboard/fertility-management${query}`);
+export function fetchFertilityManagement(farmId?: string, farmIds?: string): Promise<FertilityManagementData> {
+  return apiGet<FertilityManagementData>(`/unified-dashboard/fertility-management${farmQuery(farmId, farmIds)}`);
 }
 
 // ── 동물 센서 차트 데이터 ──

@@ -116,25 +116,49 @@ function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | u
 }
 
 // ===========================
+// 미들웨어: 모든 요청에서 farmId 쉼표 분리 → _currentFarmIds 설정
+// ===========================
+
+unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) => {
+  const farmId = (req.query.farmId as string | undefined) ?? null;
+  const farmIdsParam = req.query.farmIds as string | undefined;
+
+  // farmIds 파라미터 (명시적 배열)
+  if (farmIdsParam) {
+    const ids = farmIdsParam.split(',').filter(Boolean);
+    setCurrentFarmIds(ids);
+    // farmId를 null로 설정하여 개별 엔드포인트에서 farmCondition이 _currentFarmIds 사용
+    req.query.farmId = undefined as unknown as string;
+  }
+  // farmId에 쉼표가 포함된 경우 (레거시 지원)
+  else if (farmId && farmId.includes(',')) {
+    const ids = farmId.split(',').filter(Boolean);
+    setCurrentFarmIds(ids);
+    req.query.farmId = undefined as unknown as string;
+  }
+  // 단일 farmId 또는 없음
+  else {
+    setCurrentFarmIds([]);
+  }
+
+  // 응답 완료 후 초기화
+  _res.on('finish', () => { setCurrentFarmIds([]); });
+
+  next();
+});
+
+// ===========================
 // 메인 엔드포인트
 // ===========================
 
 unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = (req.query.farmId as string | undefined) ?? null;
-    const farmIdsParam = req.query.farmIds as string | undefined;
-    const farmIds = farmIdsParam ? farmIdsParam.split(',').filter(Boolean) : undefined;
     const period = req.query.period as string | undefined;
     const periodDays = parsePeriodDays(period);
 
-    // 다중 농장 그룹: farmIds가 있으면 글로벌 설정
-    if (farmIds && farmIds.length > 0) {
-      setCurrentFarmIds(farmIds);
-    } else {
-      setCurrentFarmIds([]);
-    }
-    const data = await buildUnifiedDashboard(farmId, periodDays, farmIds);
-    setCurrentFarmIds([]); // 요청 완료 후 초기화
+    // farmId와 _currentFarmIds는 미들웨어에서 설정됨
+    const data = await buildUnifiedDashboard(farmId, periodDays);
     res.json({ success: true, data });
   } catch (error) {
     logger.error({ error }, 'Unified dashboard build failed');
