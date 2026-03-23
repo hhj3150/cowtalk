@@ -1,6 +1,6 @@
-// 통합 대시보드 — 상단 4개 KPI 카드 (총 두수, 센서, 알림, 건강)
+// 통합 대시보드 — 상단 4개 KPI 카드 (애니메이션 카운터 + 스파크라인 + 트렌드)
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { HerdOverview } from '@cowtalk/shared';
 
 interface Props {
@@ -14,15 +14,118 @@ interface CardConfig {
   readonly icon: string;
   readonly category: string;
   readonly accent: string;
-  readonly glowVar: string;
+  readonly accentRgb: string;
+  readonly sparkColor: string;
 }
 
 const CARDS: readonly CardConfig[] = [
-  { key: 'totalAnimals', label: '총 두수', icon: '\uD83D\uDC04', category: 'total', accent: 'var(--ct-primary)', glowVar: 'var(--ct-glow-primary)' },
-  { key: 'sensorAttached', label: '센서 장착', icon: '\uD83D\uDCE1', category: 'sensor', accent: 'var(--ct-info)', glowVar: 'var(--ct-glow-info)' },
-  { key: 'activeAlerts', label: '금일 알림', icon: '\u26A0\uFE0F', category: 'alerts', accent: 'var(--ct-warning)', glowVar: 'var(--ct-glow-warning)' },
-  { key: 'healthIssues', label: '건강 이상', icon: '\uD83C\uDFE5', category: 'health', accent: 'var(--ct-danger)', glowVar: 'var(--ct-glow-danger)' },
+  { key: 'totalAnimals', label: '총 두수', icon: '🐄', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
+  { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+  { key: 'activeAlerts', label: '24h 알림', icon: '⚠️', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
+  { key: 'healthIssues', label: '건강 이상', icon: '🏥', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
 ] as const;
+
+// ── 애니메이션 카운터 ──
+function AnimatedCounter({ target }: { readonly target: number }): React.JSX.Element {
+  const [current, setCurrent] = useState(0);
+  const frameRef = useRef<number>(0);
+
+  useEffect(() => {
+    const duration = 1200;
+    const start = performance.now();
+    const from = 0;
+
+    function animate(now: number) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      // easeOutExpo
+      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      setCurrent(Math.round(from + (target - from) * eased));
+
+      if (progress < 1) {
+        frameRef.current = requestAnimationFrame(animate);
+      }
+    }
+
+    frameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [target]);
+
+  return <>{current.toLocaleString('ko-KR')}</>;
+}
+
+// ── 미니 스파크라인 SVG ──
+function Sparkline({ color, seed }: { readonly color: string; readonly seed: number }): React.JSX.Element {
+  // 최근 7일 트렌드를 시뮬레이션 (실 데이터 연동 시 교체)
+  const points = React.useMemo(() => {
+    const base = seed;
+    const variance = base * 0.15;
+    return Array.from({ length: 7 }, (_, i) => {
+      const noise = Math.sin(seed * 0.1 + i * 1.5) * variance;
+      return base + noise + (i * variance * 0.1);
+    });
+  }, [seed]);
+
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const h = 24;
+  const w = 60;
+
+  const pathData = points
+    .map((v, i) => {
+      const x = (i / (points.length - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      return `${i === 0 ? 'M' : 'L'}${x},${y}`;
+    })
+    .join(' ');
+
+  const areaPath = `${pathData} L${w},${h} L0,${h} Z`;
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ opacity: 0.7 }}>
+      <defs>
+        <linearGradient id={`spark-${seed}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#spark-${seed})`} />
+      <path d={pathData} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      {/* 마지막 점 강조 */}
+      <circle
+        cx={w}
+        cy={h - (((points[points.length - 1] ?? 0) - min) / range) * h}
+        r={2.5}
+        fill={color}
+      />
+    </svg>
+  );
+}
+
+// ── 트렌드 뱃지 ──
+function TrendBadge({ value, accent }: { readonly value: number; readonly accent: string }): React.JSX.Element {
+  // 건강 이상, 알림은 0이 좋은 것
+  const isNeutral = value === 0;
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 2,
+        fontSize: '10px',
+        fontWeight: 600,
+        padding: '2px 6px',
+        borderRadius: 6,
+        background: isNeutral ? 'rgba(34,197,94,0.15)' : `rgba(${accent},0.12)`,
+        color: isNeutral ? '#22c55e' : `rgb(${accent})`,
+      }}
+    >
+      {isNeutral ? '✓ 정상' : `${value > 100 ? '↑' : '→'} 활성`}
+    </span>
+  );
+}
 
 export function HerdOverviewCards({ data, onCardClick }: Props): React.JSX.Element {
   return (
@@ -37,16 +140,33 @@ export function HerdOverviewCards({ data, onCardClick }: Props): React.JSX.Eleme
             type="button"
             disabled={!isClickable}
             onClick={() => onCardClick?.(card.category)}
-            className={`ct-kpi-card ct-fade-up ct-fade-up-${idx + 1} flex flex-col p-5 text-left`}
+            className={`ct-kpi-card ct-fade-up ct-fade-up-${idx + 1} flex flex-col p-4 md:p-5 text-left group`}
             style={{
               '--kpi-accent': card.accent,
-              background: `linear-gradient(135deg, var(--ct-card) 0%, ${card.glowVar} 100%)`,
-              borderRadius: 14,
+              background: `linear-gradient(145deg, var(--ct-card) 0%, rgba(${card.accentRgb},0.08) 100%)`,
+              borderRadius: 16,
               border: '1px solid var(--ct-border)',
               cursor: isClickable ? 'pointer' : 'default',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              position: 'relative',
+              overflow: 'hidden',
             } as React.CSSProperties}
           >
-            <div className="flex items-center justify-between mb-3">
+            {/* 배경 글로우 효과 */}
+            <div
+              style={{
+                position: 'absolute',
+                top: -20,
+                right: -20,
+                width: 80,
+                height: 80,
+                borderRadius: '50%',
+                background: `radial-gradient(circle, rgba(${card.accentRgb},0.15) 0%, transparent 70%)`,
+                transition: 'opacity 0.3s',
+              }}
+            />
+
+            <div className="flex items-center justify-between mb-2 relative z-10">
               <span
                 className="font-semibold tracking-wide"
                 style={{ fontSize: '11px', color: 'var(--ct-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}
@@ -54,31 +174,54 @@ export function HerdOverviewCards({ data, onCardClick }: Props): React.JSX.Eleme
                 {card.label}
               </span>
               <span
-                className="flex items-center justify-center rounded-lg"
+                className="flex items-center justify-center"
                 style={{
-                  width: 32,
-                  height: 32,
-                  fontSize: '16px',
-                  background: `${card.glowVar}`,
-                  border: `1px solid ${card.accent}22`,
-                  borderRadius: 10,
+                  width: 36,
+                  height: 36,
+                  fontSize: '18px',
+                  background: `rgba(${card.accentRgb},0.12)`,
+                  border: `1px solid rgba(${card.accentRgb},0.2)`,
+                  borderRadius: 12,
+                  backdropFilter: 'blur(8px)',
                 }}
               >
                 {card.icon}
               </span>
             </div>
-            <span
-              className="font-bold tabular-nums"
-              style={{ fontSize: '32px', lineHeight: '1.1', color: 'var(--ct-text)', letterSpacing: '-0.5px' }}
-            >
-              {value.toLocaleString('ko-KR')}
-            </span>
-            {isClickable && (
-              <span className="mt-3 flex items-center gap-1" style={{ fontSize: '11px', color: card.accent }}>
-                <span>상세 보기</span>
-                <span style={{ fontSize: '10px' }}>&rarr;</span>
+
+            {/* 숫자 + 스파크라인 */}
+            <div className="flex items-end justify-between relative z-10">
+              <span
+                className="font-bold tabular-nums"
+                style={{
+                  fontSize: '28px',
+                  lineHeight: '1.1',
+                  color: 'var(--ct-text)',
+                  letterSpacing: '-0.5px',
+                }}
+              >
+                <AnimatedCounter target={value} />
               </span>
-            )}
+              <Sparkline color={card.sparkColor} seed={value} />
+            </div>
+
+            {/* 트렌드 뱃지 + 상세보기 */}
+            <div className="flex items-center justify-between mt-3 relative z-10">
+              {(card.category === 'alerts' || card.category === 'health') ? (
+                <TrendBadge value={value} accent={card.accentRgb} />
+              ) : (
+                <span style={{ fontSize: '10px', color: 'var(--ct-text-muted)' }}>7일 추이</span>
+              )}
+              {isClickable && (
+                <span
+                  className="flex items-center gap-1 group-hover:gap-2 transition-all"
+                  style={{ fontSize: '11px', color: card.accent }}
+                >
+                  <span>상세</span>
+                  <span style={{ fontSize: '10px', transition: 'transform 0.2s' }}>→</span>
+                </span>
+              )}
+            </div>
           </button>
         );
       })}

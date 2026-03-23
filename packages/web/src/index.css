@@ -203,6 +203,12 @@ body {
   animation: ct-critical-pulse 2s ease-in-out infinite;
 }
 
+/* ── Live alarm pulse ── */
+@keyframes ctPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 /* ── Mobile Responsive ── */
 @media (max-width: 768px) {
   /* 사이드바 숨기기 */

@@ -196,42 +196,95 @@ function AlarmRow({
 export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick, onAlarmClick }: Props): React.JSX.Element {
   const [labelTarget, setLabelTarget] = useState<LiveAlarm | null>(null);
 
+  // 심각도별 카운트
+  const counts = alarms.reduce((acc, a) => {
+    const s = a.severity as string;
+    return { ...acc, [s]: (acc[s] ?? 0) + 1 };
+  }, {} as Record<string, number>);
+
   return (
     <>
       <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
-        <h3
-          className="mb-3 font-semibold"
-          style={{ fontSize: '13px', color: 'var(--ct-text)' }}
-        >
-          {'\uD83D\uDEA8'} 오늘 알람 피드
-        </h3>
+        {/* 헤더 + 심각도 요약 뱃지 */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <h3
+              className="font-semibold"
+              style={{ fontSize: '13px', color: 'var(--ct-text)' }}
+            >
+              {'\uD83D\uDEA8'} 실시간 알람 피드
+            </h3>
+            {alarms.length > 0 && (
+              <span
+                className="ct-pulse-badge"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 20,
+                  background: 'rgba(239,68,68,0.15)',
+                  color: '#ef4444',
+                  animation: 'ctPulse 2s ease-in-out infinite',
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
+                LIVE {alarms.length}
+              </span>
+            )}
+          </div>
+          {alarms.length > 0 && (
+            <div className="flex items-center gap-1">
+              {counts['high'] ? (
+                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 600 }}>
+                  긴급 {counts['high']}
+                </span>
+              ) : null}
+              {counts['medium'] ? (
+                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: 4, background: 'rgba(249,115,22,0.15)', color: '#f97316', fontWeight: 600 }}>
+                  주의 {counts['medium']}
+                </span>
+              ) : null}
+              {counts['low'] ? (
+                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: 4, background: 'rgba(234,179,8,0.15)', color: '#eab308', fontWeight: 600 }}>
+                  관찰 {counts['low']}
+                </span>
+              ) : null}
+            </div>
+          )}
+        </div>
 
         {alarms.length === 0 ? (
           <div
-            className="flex items-center justify-center rounded-lg px-4 py-8"
+            className="flex flex-col items-center justify-center rounded-lg px-4 py-8"
             style={{ color: 'var(--ct-text-secondary)' }}
           >
-            <span className="text-sm">현재 활성 알람이 없습니다</span>
+            <span style={{ fontSize: '32px', marginBottom: 8 }}>✅</span>
+            <span className="text-sm font-medium">모든 개체 정상</span>
+            <span style={{ fontSize: '11px', color: 'var(--ct-text-muted)', marginTop: 4 }}>24시간 내 활성 알람 없음</span>
           </div>
         ) : (
           <div
             className="flex flex-col gap-1 overflow-y-auto"
             style={{ maxHeight: '400px' }}
           >
-            {alarms.map((alarm) => (
-              <AlarmRow
-                key={alarm.eventId}
-                alarm={alarm}
-                onFarmClick={onFarmClick ? () => onFarmClick(alarm.farmId) : undefined}
-                onAnimalClick={
-                  alarm.animalId && onAnimalClick
-                    ? () => onAnimalClick(alarm.animalId!)
-                    : onAlarmClick
-                      ? () => onAlarmClick(alarm)
-                      : undefined
-                }
-                onLabelClick={alarm.animalId ? () => setLabelTarget(alarm) : undefined}
-              />
+            {alarms.map((alarm, idx) => (
+              <div key={alarm.eventId} className="ct-fade-up" style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}>
+                <AlarmRow
+                  alarm={alarm}
+                  onFarmClick={onFarmClick ? () => onFarmClick(alarm.farmId) : undefined}
+                  onAnimalClick={
+                    alarm.animalId && onAnimalClick
+                      ? () => onAnimalClick(alarm.animalId!)
+                      : onAlarmClick
+                        ? () => onAlarmClick(alarm)
+                        : undefined
+                  }
+                  onLabelClick={alarm.animalId ? () => setLabelTarget(alarm) : undefined}
+                />
+              </div>
             ))}
           </div>
         )}
