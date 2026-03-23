@@ -103,12 +103,12 @@ function farmCondition(
   return eq(column, farmId);
 }
 
-// WHERE 절에서 undefined 제거
+// WHERE 절에서 undefined 제거 — 빈 결과도 안전하게 처리
 function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | undefined {
   const valid = conditions.filter((c): c is SqlCondition => c !== undefined);
   if (valid.length === 0) return undefined;
   if (valid.length === 1) return valid[0];
-  return and(...valid);
+  return and(...valid) ?? valid[0];
 }
 
 // ===========================
@@ -2094,9 +2094,10 @@ async function buildUnifiedDashboard(
   // 다중 농장 그룹: farmIds → 쉼표 구분 문자열로 farmCondition에 전달
   const effectiveFarmId = farmIds && farmIds.length > 0 ? farmIds.join(',') : farmId;
 
-  const [farmCount] = await db.select({ count: count() })
-    .from(farms)
-    .where(whereAll(eq(farms.status, 'active'), farmCondition(farms.farmId, effectiveFarmId)));
+  const farmWhere = whereAll(eq(farms.status, 'active'), farmCondition(farms.farmId, effectiveFarmId));
+  const [farmCount] = farmWhere
+    ? await db.select({ count: count() }).from(farms).where(farmWhere)
+    : await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
   const totalFarms = (farmCount?.count ?? 0) as number;
 
   // 12개 위젯 병렬 쿼리
