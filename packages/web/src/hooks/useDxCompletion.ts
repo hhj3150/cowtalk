@@ -1,6 +1,6 @@
 // DX 워크플로우 — 할일/알람 완료 상태 관리 (localStorage 기반, 날짜별 리셋)
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 
 // ── 타입 ──
 
@@ -76,11 +76,15 @@ export function useDxCompletion(): UseDxCompletionReturn {
 
   const [state, setState] = useState<DxCompletionState>(() => loadState(today));
 
-  // 날짜가 바뀌었으면 리셋
-  const currentState = state.date === today ? state : loadState(today);
-  if (state.date !== today) {
-    setState(currentState);
-  }
+  // 날짜가 바뀌었으면 리셋 (useEffect로 안전하게)
+  useEffect(() => {
+    const d = getTodayKey();
+    if (state.date !== d) {
+      setState(loadState(d));
+    }
+  }, [state.date]);
+
+  const currentState = state.date === today ? state : { date: today, completedTodos: {}, acknowledgedAlarms: {} };
 
   const toggleTodo = useCallback((todoKey: string) => {
     setState((prev) => {
