@@ -47,6 +47,7 @@ import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dash
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { useDxCompletion } from '@web/hooks/useDxCompletion';
 import { ROLE_LABELS } from '@web/config/dashboard-widgets';
@@ -603,6 +604,14 @@ export default function UnifiedDashboard(): React.JSX.Element {
             {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
             {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
           </div>
+          )}
+
+          {/* ── 수정사 전용 대시보드 ── */}
+          {isVisible('insemination_route') && (
+            <InseminatorDashboard
+              onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
+              onFarmClick={(fid) => selectFarm(fid)}
+            />
           )}
 
           {/* ── 건강 알림 + 번식 관리 (smaXtec 기본) ── */}

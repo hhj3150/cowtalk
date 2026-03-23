@@ -64,12 +64,14 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'farm_map',
   ],
 
-  // 수정사: 오늘 수정할 소 + 번식 관련만
+  // 수정사: 오늘 수정할 소 + 번식 관련 + 향후 고도화
   inseminator: [
     'ai_briefing',
     'herd_overview',
     'todo_list',
     'live_alarm_feed',
+    'insemination_route',
+    'breeding_pipeline',
   ],
 
   // 행정: 전체 (모든 위젯)
