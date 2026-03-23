@@ -15,7 +15,6 @@ import {
   useFarmMapMarkers,
   useEpidemicIntelligence,
   useFarmHealthScores,
-  useBreedingPipeline,
   useSovereignAiStats,
 } from '@web/hooks/useUnifiedDashboard';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -33,7 +32,6 @@ import {
   EventTimelineChart,
   EpidemicCommandCenter,
   FarmHealthScoreWidget,
-  BreedingPipelineWidget,
   AlarmLabelChatModal,
   SovereignAiWidget,
 } from '@web/components/unified-dashboard';
@@ -344,7 +342,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: mapData } = useFarmMapMarkers();
   const { data: epidemicData } = useEpidemicIntelligence();
   const { data: healthScoresData } = useFarmHealthScores();
-  const { data: breedingData } = useBreedingPipeline();
+  // 번식 파이프라인 제거 (실 데이터 축적 후 활성화)
   const { data: sovereignStats } = useSovereignAiStats();
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
@@ -484,11 +482,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── KPI 카드 ── */}
           <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} />
 
-          {/* ── 번식성적 ── */}
-          {isVisible('breeding_pipeline') && (<>
-          <SectionLabel>번식성적 커맨드센터</SectionLabel>
-          {breedingData && <BreedingPipelineWidget data={breedingData} />}
-          </>)}
+          {/* ── 번식성적 커맨드센터: 번식 파이프라인 제거 (실 데이터 축적 후 활성화) ── */}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>
