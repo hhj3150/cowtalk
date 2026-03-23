@@ -64,17 +64,12 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'farm_map',
   ],
 
-  // 수정사: 수정 경로, 번식 파이프라인
+  // 수정사: 오늘 수정할 소 + 번식 관련만
   inseminator: [
-    'epidemic_alert_banner',
     'ai_briefing',
     'herd_overview',
-    'live_alarm_feed',
     'todo_list',
-    'insemination_route',
-    'breeding_pipeline',
-    'alert_trend_chart',
-    'farm_ranking',
+    'live_alarm_feed',
   ],
 
   // 행정: 전체 (모든 위젯)
