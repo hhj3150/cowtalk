@@ -62,15 +62,23 @@ export default function RegionalMapPage(): React.JSX.Element {
         ))}
       </div>
 
-      {/* KPI */}
-      {summary && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <KpiCard label="총 농장" value={summary.totalFarms} unit="개" drilldownType="all" />
-          <KpiCard label="총 두수" value={summary.totalAnimals} unit="두" />
-          <KpiCard label="활성 알림" value={summary.activeAlerts} unit="건" severity={summary.activeAlerts > 5 ? 'high' : 'low'} drilldownType="health_risk" />
-          <KpiCard label="건강 점수" value={summary.healthScore ?? '-'} unit="점" />
-        </div>
-      )}
+      {/* KPI — summary가 배열이면 집계, 객체면 직접 사용 */}
+      {(() => {
+        const s = summary as unknown;
+        const totalFarms = Array.isArray(s)
+          ? (s as readonly { farmCount?: number }[]).reduce((sum, r) => sum + (r.farmCount ?? 0), 0)
+          : (s as { totalFarms?: number })?.totalFarms ?? 0;
+        const totalAnimals = mapData?.markers?.length ?? 0;
+        const activeAlerts = mapData?.markers?.filter((m: { status?: string }) => m.status === 'critical' || m.status === 'warning').length ?? 0;
+        return (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiCard label="총 농장" value={totalFarms} unit="개" drilldownType="all" />
+            <KpiCard label="총 두수" value={totalAnimals > 0 ? totalAnimals : '-'} unit={totalAnimals > 0 ? '개 마커' : ''} />
+            <KpiCard label="활성 알림" value={activeAlerts} unit="건" severity={activeAlerts > 5 ? 'high' : 'low'} drilldownType="health_risk" />
+            <KpiCard label="지역" value={Array.isArray(s) ? (s as readonly unknown[]).length : '-'} unit="개" />
+          </div>
+        );
+      })()}
 
       {/* 지도 */}
       <div className="relative">

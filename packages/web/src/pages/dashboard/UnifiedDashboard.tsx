@@ -443,7 +443,7 @@ function ChartCard({ title, icon, children, minHeight = 320, delay = 0 }: {
 // ── Section Label ──
 
 function SectionLabel({ children }: { readonly children: React.ReactNode }): React.JSX.Element {
-  return <div className="ct-section-label">{children}</div>;
+  return <h2 className="ct-section-label">{children}</h2>;
 }
 
 // ── Styles ──
