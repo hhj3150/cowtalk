@@ -68,7 +68,7 @@ const ROLE_ICONS: Record<string, string> = {
 const MASTER_KEY = 'cowtalk-master-role';
 
 function isMasterUser(): boolean {
-  return localStorage.getItem(MASTER_KEY) === 'true';
+  try { return localStorage.getItem(MASTER_KEY) === 'true'; } catch { return false; }
 }
 
 function RoleSwitcher(): React.JSX.Element | null {
@@ -79,9 +79,11 @@ function RoleSwitcher(): React.JSX.Element | null {
   if (!user) return null;
 
   // government_admin으로 로그인한 적 있으면 마스터로 기억
-  if (user.email === 'ha@d2o.kr' || localStorage.getItem(MASTER_KEY) === 'true') {
-    localStorage.setItem(MASTER_KEY, 'true');
-  }
+  try {
+    if (user.email === 'ha@d2o.kr' || localStorage.getItem(MASTER_KEY) === 'true') {
+      localStorage.setItem(MASTER_KEY, 'true');
+    }
+  } catch { /* ignore localStorage errors */ }
 
   // 마스터가 아니면 숨김
   if (!isMasterUser()) return null;

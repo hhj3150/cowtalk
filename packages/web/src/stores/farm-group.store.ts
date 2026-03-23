@@ -94,6 +94,17 @@ export const useFarmGroupStore = create<FarmGroupState & FarmGroupActions>()(
         activeGroupId: state.activeGroupId,
         customSelection: state.customSelection,
       }),
+      storage: {
+        getItem: (name) => {
+          try { return JSON.parse(localStorage.getItem(name) ?? 'null'); } catch { return null; }
+        },
+        setItem: (name, value) => {
+          try { localStorage.setItem(name, JSON.stringify(value)); } catch { /* ignore */ }
+        },
+        removeItem: (name) => {
+          try { localStorage.removeItem(name); } catch { /* ignore */ }
+        },
+      },
     },
   ),
 );
