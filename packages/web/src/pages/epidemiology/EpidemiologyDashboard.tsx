@@ -1,8 +1,9 @@
 // 방역관 전용 대시보드
 // 6개 KPI + 위험 등급 배너 + 실시간 역학 현황판 + 24h 발열 추이 + 업무 큐
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, AreaChart, Area,
@@ -10,8 +11,10 @@ import {
 import { RiskLevelBanner, RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
 import { SituationBoard } from '@web/components/epidemiology/SituationBoard';
+import type { RiskFarm } from '@web/components/epidemiology/SituationBoard';
 import { ActionQueue } from '@web/components/epidemiology/ActionQueue';
 import type { ActionQueueItem } from '@web/components/epidemiology/ActionQueue';
+import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { apiGet } from '@web/api/client';
 
 // ===========================
@@ -112,6 +115,8 @@ function KpiCard({ label, value, icon, sub, highlight }: KpiCardProps): React.JS
 // ===========================
 
 export default function EpidemiologyDashboard(): React.JSX.Element {
+  const [selectedFarm, setSelectedFarm] = useState<RiskFarm | null>(null);
+
   const { data: dashboard, isLoading: dashLoading } = useQuery({
     queryKey: ['quarantine', 'dashboard'],
     queryFn: fetchDashboard,
@@ -176,7 +181,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
           label="발열 두수"
           value={kpi?.feverAnimals ?? '—'}
           icon="🌡️"
-          sub="6h 기준"
+          sub="24h 기준"
           highlight={(kpi?.feverAnimals ?? 0) > 0}
         />
         <KpiCard
@@ -210,7 +215,81 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         top5RiskFarms={dashboard?.top5RiskFarms ?? []}
         activeAlerts={dashboard?.activeAlerts ?? []}
         isLoading={dashLoading}
+        onFarmClick={(farm) => setSelectedFarm(farm)}
       />
+
+      {/* 농장 드릴다운 패널 */}
+      {selectedFarm && (
+        <div
+          className="rounded-xl border p-4 space-y-4"
+          style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold" style={{ color: 'var(--ct-text)' }}>
+              {selectedFarm.farmName}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setSelectedFarm(null)}
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-80"
+              style={{ color: 'var(--ct-text-secondary)', background: 'var(--ct-border)' }}
+            >
+              닫기 ✕
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-3 text-sm">
+            <span style={{ color: 'var(--ct-text)' }}>
+              발열 <strong>{selectedFarm.feverCount}두</strong>
+            </span>
+            <span style={{ color: 'var(--ct-text)' }}>
+              위험점수 <strong>{selectedFarm.riskScore}</strong>
+            </span>
+            <span style={{ color: selectedFarm.clusterAlert ? '#ef4444' : 'var(--ct-text-secondary)' }}>
+              집단발열 {selectedFarm.clusterAlert ? '✔ 있음' : '없음'}
+            </span>
+            <span style={{ color: selectedFarm.legalSuspect ? '#ef4444' : 'var(--ct-text-secondary)' }}>
+              법정전염병 의심 {selectedFarm.legalSuspect ? '✔ 있음' : '없음'}
+            </span>
+          </div>
+
+          <div className="flex gap-2">
+            <Link
+              to={`/epidemiology/investigation/new?farmId=${selectedFarm.farmId}`}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium text-white"
+              style={{ background: 'var(--ct-primary, #3b82f6)' }}
+            >
+              역학조사 시작
+            </Link>
+            <Link
+              to={`/epidemiology/radius?farmId=${selectedFarm.farmId}`}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium"
+              style={{ background: 'var(--ct-border)', color: 'var(--ct-text)' }}
+            >
+              반경 분석
+            </Link>
+          </div>
+
+          <div
+            className="rounded-lg p-3"
+            style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)' }}
+          >
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ct-text)' }}>
+              소버린 AI 브리핑
+            </p>
+            <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+              AI 분석 중...{' '}
+              <Link
+                to={`/epidemiology/investigation/new?farmId=${selectedFarm.farmId}`}
+                className="underline"
+                style={{ color: 'var(--ct-primary, #3b82f6)' }}
+              >
+                역학조사 시작
+              </Link>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 차트 2개 (24h 발열 추이 + 7일 DSI) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -297,6 +376,8 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         </div>
         <ActionQueue items={actionQueue ?? []} isLoading={queueLoading} />
       </div>
+
+      <GeniVoiceAssistant />
     </div>
   );
 }

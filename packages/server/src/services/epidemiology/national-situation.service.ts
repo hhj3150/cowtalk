@@ -3,11 +3,10 @@
 // 드릴다운: 시도 → 시군구 → 농장
 
 import { getDb } from '../../config/database.js';
-import { farms, animals, sensorMeasurements, regions, alerts } from '../../db/schema.js';
-import { eq, and, gte, count, sql } from 'drizzle-orm';
+import { farms, smaxtecEvents, regions, alerts } from '../../db/schema.js';
+import { eq, and, gte, count, sql, inArray } from 'drizzle-orm';
 import type { RiskLevel } from './quarantine-dashboard.service.js';
 import { logger } from '../../lib/logger.js';
-import { ALERT_THRESHOLDS } from '@cowtalk/shared';
 
 // ===========================
 // 타입
@@ -74,11 +73,12 @@ function calcRiskLevel(feverRate: number, clusterFarms: number, legalSuspects: n
 // 메인: getNationalSituation
 // ===========================
 
+const FEVER_EVENT_TYPES = ['temperature_high', 'health_103', 'health_104', 'health_308', 'health_309'] as const;
+
 export async function getNationalSituation(): Promise<NationalSituationData> {
   try {
     const db = getDb();
-    const since6h = new Date(Date.now() - 6 * 60 * 60 * 1000);
-    const threshold = ALERT_THRESHOLDS.temperature.high;
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // 시도별 농장 집계
     const farmRows = await db
@@ -92,21 +92,19 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
       .where(eq(farms.status, 'active'))
       .groupBy(regions.province);
 
-    // 시도별 발열 개체 집계
+    // 시도별 발열 개체 집계 — smaxtecEvents 기반 (메인 대시보드와 동일 기준)
     const feverRows = await db
       .select({
         province: regions.province,
-        feverCount: count(animals.animalId),
+        feverCount: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
       })
-      .from(sensorMeasurements)
-      .innerJoin(animals, eq(sensorMeasurements.animalId, animals.animalId))
-      .innerJoin(farms, eq(animals.farmId, farms.farmId))
+      .from(smaxtecEvents)
+      .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
       .innerJoin(regions, eq(farms.regionId, regions.regionId))
       .where(
         and(
-          eq(sensorMeasurements.metricType, 'temperature'),
-          gte(sensorMeasurements.timestamp, since6h),
-          gte(sensorMeasurements.value, threshold),
+          inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+          gte(smaxtecEvents.detectedAt, since24h),
         ),
       )
       .groupBy(regions.province);
@@ -219,8 +217,7 @@ export interface DistrictStats {
 
 export async function getProvinceDetail(province: string): Promise<readonly DistrictStats[]> {
   const db = getDb();
-  const since6h = new Date(Date.now() - 6 * 60 * 60 * 1000);
-  const threshold = ALERT_THRESHOLDS.temperature.high;
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const farmRows = await db
     .select({
@@ -241,17 +238,15 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
   const feverRows = await db
     .select({
       district: regions.district,
-      feverCount: count(animals.animalId),
+      feverCount: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
     })
-    .from(sensorMeasurements)
-    .innerJoin(animals, eq(sensorMeasurements.animalId, animals.animalId))
-    .innerJoin(farms, eq(animals.farmId, farms.farmId))
+    .from(smaxtecEvents)
+    .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
     .innerJoin(regions, eq(farms.regionId, regions.regionId))
     .where(
       and(
-        eq(sensorMeasurements.metricType, 'temperature'),
-        gte(sensorMeasurements.timestamp, since6h),
-        gte(sensorMeasurements.value, threshold),
+        inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+        gte(smaxtecEvents.detectedAt, since24h),
         eq(regions.province, province),
       ),
     )

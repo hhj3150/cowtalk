@@ -2,7 +2,6 @@
 // 미니 지도 (히트맵) + 활성 경보 목록 + TOP5 위험 농장
 
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { RiskLevelBadge } from './RiskLevelBadge';
 import type { RiskLevel } from './RiskLevelBadge';
 
@@ -32,6 +31,7 @@ interface Props {
   top5RiskFarms: readonly RiskFarm[];
   activeAlerts: readonly ActiveAlert[];
   isLoading?: boolean;
+  onFarmClick?: (farm: RiskFarm) => void;
 }
 
 function priorityToRisk(priority: string): RiskLevel {
@@ -57,7 +57,7 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}일 전`;
 }
 
-export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading }: Props): React.JSX.Element {
+export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmClick }: Props): React.JSX.Element {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -87,10 +87,11 @@ export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading }: Props
         ) : (
           <div className="space-y-2">
             {top5RiskFarms.map((farm, idx) => (
-              <Link
+              <button
                 key={farm.farmId}
-                to={`/epidemiology/radius?farmId=${farm.farmId}`}
-                className="flex items-center gap-3 rounded-lg p-2.5 transition-colors hover:bg-opacity-80"
+                type="button"
+                onClick={() => onFarmClick?.(farm)}
+                className="w-full flex items-center gap-3 rounded-lg p-2.5 transition-colors hover:bg-opacity-80 cursor-pointer text-left"
                 style={{ background: 'var(--ct-bg)' }}
               >
                 <span
@@ -110,7 +111,7 @@ export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading }: Props
                   </p>
                 </div>
                 <RiskLevelBadge level={riskScoreToLevel(farm.riskScore)} size="sm" />
-              </Link>
+              </button>
             ))}
           </div>
         )}

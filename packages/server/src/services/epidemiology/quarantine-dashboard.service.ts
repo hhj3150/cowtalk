@@ -3,10 +3,12 @@
 // 기존 earlyDetection 서비스 재활용
 
 import { getDb } from '../../config/database.js';
-import { farms, animals, sensorMeasurements, alerts } from '../../db/schema.js';
-import { eq, gte, and, desc, count, sql } from 'drizzle-orm';
+import { farms, animals, sensorMeasurements, alerts, smaxtecEvents } from '../../db/schema.js';
+import { eq, gte, and, desc, count, sql, inArray } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { ALERT_THRESHOLDS } from '@cowtalk/shared';
+
+const FEVER_EVENT_TYPES = ['temperature_high', 'health_103', 'health_104', 'health_308', 'health_309'] as const;
 
 // ===========================
 // 타입
@@ -95,24 +97,21 @@ interface FarmFeverInfo {
 
 async function fetchFeverByFarm(since: Date): Promise<Map<string, FarmFeverInfo>> {
   const db = getDb();
-  const threshold = ALERT_THRESHOLDS.temperature.high;
 
-  // 최근 6시간 발열(체온 ≥ threshold) 개체 목록
+  // 최근 24시간 발열 이벤트 — smaxtecEvents 기반
   const rows = await db
     .select({
-      animalId: sensorMeasurements.animalId,
-      farmId: animals.farmId,
+      animalId: smaxtecEvents.animalId,
+      farmId: smaxtecEvents.farmId,
     })
-    .from(sensorMeasurements)
-    .innerJoin(animals, eq(sensorMeasurements.animalId, animals.animalId))
+    .from(smaxtecEvents)
     .where(
       and(
-        eq(sensorMeasurements.metricType, 'temperature'),
-        gte(sensorMeasurements.timestamp, since),
-        gte(sensorMeasurements.value, threshold),
+        inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+        gte(smaxtecEvents.detectedAt, since),
       ),
     )
-    .groupBy(sensorMeasurements.animalId, animals.farmId);
+    .groupBy(smaxtecEvents.animalId, smaxtecEvents.farmId);
 
   const result = new Map<string, FarmFeverInfo>();
   for (const row of rows) {
@@ -141,23 +140,21 @@ async function fetchFeverByFarm(since: Date): Promise<Map<string, FarmFeverInfo>
 async function fetchHourlyFever24h(): Promise<readonly HourlyFeverPoint[]> {
   const db = getDb();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const threshold = ALERT_THRESHOLDS.temperature.high;
 
   const rows = await db
     .select({
-      hour: sql<string>`date_trunc('hour', ${sensorMeasurements.timestamp})::text`,
-      cnt: count(sensorMeasurements.animalId).as('cnt'),
+      hour: sql<string>`date_trunc('hour', ${smaxtecEvents.detectedAt})::text`,
+      cnt: count(smaxtecEvents.animalId).as('cnt'),
     })
-    .from(sensorMeasurements)
+    .from(smaxtecEvents)
     .where(
       and(
-        eq(sensorMeasurements.metricType, 'temperature'),
-        gte(sensorMeasurements.timestamp, since24h),
-        gte(sensorMeasurements.value, threshold),
+        inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+        gte(smaxtecEvents.detectedAt, since24h),
       ),
     )
-    .groupBy(sql`date_trunc('hour', ${sensorMeasurements.timestamp})`)
-    .orderBy(sql`date_trunc('hour', ${sensorMeasurements.timestamp})`);
+    .groupBy(sql`date_trunc('hour', ${smaxtecEvents.detectedAt})`)
+    .orderBy(sql`date_trunc('hour', ${smaxtecEvents.detectedAt})`);
 
   return rows.map((r) => ({ hour: r.hour, count: Number(r.cnt) }));
 }
@@ -201,8 +198,10 @@ async function fetchDsi7Days(): Promise<readonly DsiDayPoint[]> {
 
 async function fetchActiveAlerts(): Promise<readonly ActiveAlert[]> {
   const db = getDb();
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  const rows = await db
+  // alerts 테이블 우선, 없으면 smaxtecEvents high/critical 기반
+  const alertRows = await db
     .select({
       alertId: alerts.alertId,
       farmId: alerts.farmId,
@@ -214,18 +213,51 @@ async function fetchActiveAlerts(): Promise<readonly ActiveAlert[]> {
     })
     .from(alerts)
     .innerJoin(farms, eq(alerts.farmId, farms.farmId))
-    .where(eq(alerts.status, 'new'))
+    .where(sql`${alerts.status} IN ('new', 'acknowledged')`)
     .orderBy(desc(alerts.createdAt))
     .limit(20);
 
+  if (alertRows.length > 0) {
+    return alertRows.map((r) => ({
+      alertId: r.alertId,
+      farmId: r.farmId,
+      farmName: r.farmName,
+      alertType: r.alertType,
+      priority: r.priority,
+      title: r.title,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  // alerts 테이블이 비어 있으면 smaxtecEvents 기반으로 대체
+  const rows = await db
+    .select({
+      eventId: smaxtecEvents.eventId,
+      farmId: smaxtecEvents.farmId,
+      farmName: farms.name,
+      eventType: smaxtecEvents.eventType,
+      severity: smaxtecEvents.severity,
+      detectedAt: smaxtecEvents.detectedAt,
+    })
+    .from(smaxtecEvents)
+    .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
+    .where(
+      and(
+        gte(smaxtecEvents.detectedAt, since24h),
+        sql`${smaxtecEvents.severity} IN ('high', 'critical')`,
+      ),
+    )
+    .orderBy(desc(smaxtecEvents.detectedAt))
+    .limit(20);
+
   return rows.map((r) => ({
-    alertId: r.alertId,
+    alertId: r.eventId,
     farmId: r.farmId,
     farmName: r.farmName,
-    alertType: r.alertType,
-    priority: r.priority,
-    title: r.title,
-    createdAt: r.createdAt.toISOString(),
+    alertType: r.eventType,
+    priority: r.severity === 'critical' ? 'critical' : 'high',
+    title: `${r.eventType} 이벤트 — ${r.farmName}`,
+    createdAt: r.detectedAt.toISOString(),
   }));
 }
 
@@ -271,12 +303,12 @@ async function fetchSensorStats(): Promise<{ sensored: number; total: number; to
 export async function getQuarantineDashboard(): Promise<QuarantineDashboardData> {
   try {
     const db = getDb();
-    const since6h = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const [sensorStats, feverByFarm, hourlyFever24h, dsi7Days, activeAlerts, allFarms] =
       await Promise.all([
         fetchSensorStats(),
-        fetchFeverByFarm(since6h),
+        fetchFeverByFarm(since24h),
         fetchHourlyFever24h(),
         fetchDsi7Days(),
         fetchActiveAlerts(),
