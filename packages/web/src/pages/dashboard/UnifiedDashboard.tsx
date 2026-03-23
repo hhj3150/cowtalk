@@ -164,18 +164,30 @@ function RoleSwitcher(): React.JSX.Element | null {
 function FarmFilterDropdown(): React.JSX.Element {
   const { data: farmsData } = useDashboardFarms();
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const clearSelection = useFarmStore((s) => s.clearSelection);
   const clearGroupSelection = useFarmGroupStore((s) => s.clearSelection);
-  const farmList = farmsData?.farms ?? [];
+  const user = useAuthStore((s) => s.user);
+  const allFarms = farmsData?.farms ?? [];
   const totalCount = farmsData?.total ?? 0;
+
+  // 사용자에게 배정된 farmIds가 있으면 해당 농장만 드롭다운에 표시
+  const userFarmIds = user?.farmIds ?? [];
+  const farmList = userFarmIds.length > 0
+    ? allFarms.filter((f) => userFarmIds.includes(f.farmId))
+    : allFarms;
+  const displayCount = userFarmIds.length > 0 ? farmList.length : totalCount;
+
+  // 그룹 선택 중이면 드롭다운 레이블 변경
+  const groupLabel = selectedFarmIds.length > 0 ? `그룹 (${selectedFarmIds.length}개)` : null;
 
   return (
     <select
-      value={selectedFarmId ?? ''}
+      value={groupLabel ? '__group__' : (selectedFarmId ?? '')}
       onChange={(e) => {
-        clearGroupSelection(); // 농장 그룹 선택도 초기화
-        if (e.target.value === '') { clearSelection(); } else { selectFarm(e.target.value); }
+        clearGroupSelection();
+        if (e.target.value === '' || e.target.value === '__group__') { clearSelection(); } else { selectFarm(e.target.value); }
       }}
       style={{
         background: 'var(--ct-card)',
@@ -191,7 +203,8 @@ function FarmFilterDropdown(): React.JSX.Element {
         transition: 'border-color 0.2s',
       }}
     >
-      <option value="">{`전체 (${totalCount}개 농장)`}</option>
+      <option value="">{`전체 (${String(displayCount)}개 농장)`}</option>
+      {groupLabel && <option value="__group__">{`📋 ${groupLabel}`}</option>}
       {farmList.map((f) => (
         <option key={f.farmId} value={f.farmId}>{f.name} ({f.currentHeadCount}두)</option>
       ))}
@@ -664,6 +677,38 @@ export default function UnifiedDashboard(): React.JSX.Element {
             {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
             {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
           </div>
+          )}
+
+          {/* ── 수의사 전용 섹션 ── */}
+          {user?.role === 'veterinarian' && (
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: '16px 18px' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 12px' }}>🩺 오늘 진료 대상</h2>
+              <div style={{ fontSize: 12, color: 'var(--ct-text-secondary)', lineHeight: 1.8 }}>
+                <p>• 발열 개체 → 할일 목록의 "발열 — 격리·진료" 클릭</p>
+                <p>• 질병 의심 → "질병 의심 — 수의 진료" 클릭 → AI 감별진단</p>
+                <p>• 개체 클릭 → <strong>/cow/ID</strong> 디지털 트윈 페이지에서 센서 데이터 + 진단 기록 확인</p>
+                <p>• AI에게 "이 소 왜 체온이 올랐지?" 질문 → 감별진단 + 확인검사 권장</p>
+              </div>
+              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(99,102,241,0.1)', fontSize: 11, color: '#8b5cf6' }}>
+                💡 진료 후 "진단 레이블"을 입력하면 AI가 학습합니다. 레이블이 쌓일수록 감별진단 정확도가 향상됩니다.
+              </div>
+            </div>
+          )}
+
+          {/* ── 사료회사 전용 섹션 ── */}
+          {user?.role === 'feed_company' && (
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: '16px 18px' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 12px' }}>🌾 사료 효율 모니터링</h2>
+              <div style={{ fontSize: 12, color: 'var(--ct-text-secondary)', lineHeight: 1.8 }}>
+                <p>• 반추 감소 두수 → 사료 변경 후 적응 부진 or 소화기 질환</p>
+                <p>• 활동 감소 → 에너지 부족, BCS 확인 필요</p>
+                <p>• 센서 분석 차트에서 반추 트렌드 모니터링</p>
+                <p>• AI에게 "이 농장 반추 데이터 분석해줘" 질문 가능</p>
+              </div>
+              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(234,179,8,0.1)', fontSize: 11, color: '#eab308' }}>
+                📊 TMR 배합 변경 시 반추 데이터를 7일간 모니터링하세요. pH &lt; 5.8 지속 시 SARA 의심.
+              </div>
+            </div>
           )}
 
           {/* ── 수정사 전용 대시보드 ── */}
