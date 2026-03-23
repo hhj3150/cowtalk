@@ -651,7 +651,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
             />
           )}
 
-          {/* ── 건강 알림 + 번식 관리 (smaXtec 기본) ── */}
+          {/* ── 건강 알림 + 번식 관리 (수정사/사료회사 제외) ── */}
+          {!isVisible('insemination_route') && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             {healthAlertsData && (
               <HealthAlertsWidget
@@ -664,6 +665,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
               onAlertClick={(type) => setDrilldown({ eventType: type, label: `번식: ${type}` })}
             />
           </div>
+          )}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>

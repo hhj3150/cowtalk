@@ -644,9 +644,9 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
     direction,
   };
 
-  // 한국어 요약 생성
+  // 역할별 한국어 요약 생성
   const summary = buildBriefingSummary(
-    totalFarms, total24h, changePercent, direction, topAlertFarms,
+    totalFarms, total24h, changePercent, direction, topAlertFarms, eventTypeDistribution, role,
   );
 
   // 역할별 한국어 권장사항 생성
@@ -674,18 +674,69 @@ function buildBriefingSummary(
   changePercent: number,
   direction: 'up' | 'down' | 'stable',
   topFarms: readonly AiBriefingTopFarm[],
+  eventDist: readonly AiBriefingEventDistribution[],
+  role = 'government_admin',
 ): string {
   const trendText = direction === 'up'
-    ? `전일 대비 ${Math.abs(changePercent)}% 증가했으며`
+    ? `전일 대비 ${Math.abs(changePercent)}% 증가`
     : direction === 'down'
-      ? `전일 대비 ${Math.abs(changePercent)}% 감소했으며`
-      : '전일과 유사한 수준이며';
+      ? `전일 대비 ${Math.abs(changePercent)}% 감소`
+      : '전일과 유사';
 
+  // 역할별 핵심 요약
+  if (role === 'farmer') {
+    const estrus = eventDist.find((e) => e.eventType === 'estrus');
+    const health = eventDist.filter((e) => ['temperature_high', 'clinical_condition', 'health_general'].includes(e.eventType));
+    const healthTotal = health.reduce((s, e) => s + e.count, 0);
+    const calving = eventDist.find((e) => e.eventType === 'calving_detection');
+    const parts: string[] = [];
+    if (estrus && estrus.count > 0) parts.push(`발정 ${String(estrus.count)}두 수정 대상`);
+    if (calving && calving.count > 0) parts.push(`분만 임박 ${String(calving.count)}두`);
+    if (healthTotal > 0) parts.push(`건강 주의 ${String(healthTotal)}두`);
+    return parts.length > 0 ? `오늘 내 농장: ${parts.join(', ')}. ${trendText}.` : `오늘 내 농장 알림 ${String(total24h)}건. ${trendText}.`;
+  }
+
+  if (role === 'veterinarian') {
+    const fever = eventDist.find((e) => e.eventType === 'temperature_high');
+    const clinical = eventDist.find((e) => e.eventType === 'clinical_condition');
+    const rum = eventDist.find((e) => e.eventType === 'rumination_decrease');
+    const parts: string[] = [];
+    if (fever && fever.count > 0) parts.push(`발열 ${String(fever.count)}두 격리·진료`);
+    if (clinical && clinical.count > 0) parts.push(`질병 의심 ${String(clinical.count)}두`);
+    if (rum && rum.count > 0) parts.push(`반추 감소 ${String(rum.count)}두 관찰`);
+    const topFarmText = topFarms.length > 0 ? ` 집중 농장: ${topFarms[0]!.farmName}` : '';
+    return parts.length > 0 ? `오늘 진료 대상: ${parts.join(', ')}.${topFarmText}` : `오늘 건강 알림 ${String(total24h)}건. ${trendText}.`;
+  }
+
+  if (role === 'inseminator') {
+    const estrus = eventDist.find((e) => e.eventType === 'estrus');
+    const insem = eventDist.find((e) => e.eventType === 'insemination');
+    const noInsem = eventDist.find((e) => e.eventType === 'no_insemination');
+    const estrusCount = estrus?.count ?? 0;
+    const insemCount = insem?.count ?? 0;
+    const farmCount2 = topFarms.filter((f) => f.topEventType === 'estrus').length;
+    return `오늘 발정 ${String(estrusCount)}두 (${String(farmCount2 || topFarms.length)}개 농장), 수정 완료 ${String(insemCount)}두${noInsem && noInsem.count > 0 ? `, 미수정 ${String(noInsem.count)}두 확인 필요` : ''}. ${trendText}.`;
+  }
+
+  if (role === 'quarantine_officer') {
+    const fever = eventDist.find((e) => e.eventType === 'temperature_high');
+    const feverCount = fever?.count ?? 0;
+    const multiFarmFever = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
+    const riskText = multiFarmFever >= 3 ? '⚠️ 다수 농장 발열 — 역학 조사 검토' : '지역 방역 안정';
+    return `오늘 ${String(farmCount)}개 농장 ${String(total24h)}건 알림. 발열 ${String(feverCount)}두 (${String(multiFarmFever)}개 농장). ${riskText}. ${trendText}.`;
+  }
+
+  if (role === 'feed_company') {
+    const rum = eventDist.find((e) => e.eventType === 'rumination_decrease');
+    const activity = eventDist.find((e) => e.eventType === 'activity_decrease');
+    return `오늘 반추 감소 ${String(rum?.count ?? 0)}두, 활동 감소 ${String(activity?.count ?? 0)}두. TMR 점검 권장. ${trendText}.`;
+  }
+
+  // 행정관리 (기본)
   const topFarmNames = topFarms.slice(0, 2).map((f) => f.farmName);
   const focusText = topFarmNames.length > 0
     ? `${topFarmNames.join('과 ')}에 집중 관리가 필요합니다.`
     : '전체적으로 안정적인 상태입니다.';
-
   return `오늘 ${String(farmCount)}개 농장에서 ${String(total24h)}건의 알림이 발생했습니다. ${trendText}, ${focusText}`;
 }
 
