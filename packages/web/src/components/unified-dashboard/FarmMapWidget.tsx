@@ -39,6 +39,12 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
   critical: '#ef4444',
 };
 
+const GLOW_CLASSES: Readonly<Record<string, string>> = {
+  critical: 'ct-marker-glow-critical',
+  warning: 'ct-marker-glow-warning',
+  caution: 'ct-marker-glow-caution',
+};
+
 // ── 마커 크기 함수 ──
 
 function markerRadius(headCount: number): number {
@@ -150,6 +156,10 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
             const ratePercent = (m.healthAlarmRate * 100).toFixed(1);
             const statusLabel = m.status === 'critical' ? '위험' : m.status === 'warning' ? '경고' : m.status === 'caution' ? '주의' : '정상';
 
+            const glowClass = isSelected
+              ? 'ct-marker-glow-selected'
+              : GLOW_CLASSES[m.status] ?? '';
+
             return (
               <CircleMarker
                 key={m.farmId}
@@ -160,6 +170,7 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
                   fillColor: color,
                   fillOpacity: 0.85,
                   weight: isSelected ? 3 : 1.5,
+                  className: glowClass,
                 }}
                 eventHandlers={{
                   click: () => onFarmClick?.(m.farmId),

@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { HerdOverview } from '@cowtalk/shared';
 
 interface Props {
-  readonly data: HerdOverview;
+  readonly data: HerdOverview | null;
+  readonly isLoading?: boolean;
   readonly onCardClick?: (category: string) => void;
 }
 
@@ -103,6 +104,48 @@ function Sparkline({ color, seed }: { readonly color: string; readonly seed: num
   );
 }
 
+// ── 스켈레톤 카드 ──
+function SkeletonCard({ accentRgb }: { readonly accentRgb: string }): React.JSX.Element {
+  return (
+    <div
+      className="ct-kpi-card flex flex-col p-4 md:p-5"
+      style={{
+        background: `linear-gradient(145deg, var(--ct-card) 0%, rgba(${accentRgb},0.05) 100%)`,
+        borderRadius: 16,
+        border: '1px solid var(--ct-border)',
+        overflow: 'hidden',
+      }}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div
+          className="ct-skeleton-pulse"
+          style={{ width: 60, height: 12, borderRadius: 4, background: 'var(--ct-border)' }}
+        />
+        <div
+          className="ct-skeleton-pulse"
+          style={{ width: 36, height: 36, borderRadius: 12, background: 'var(--ct-border)' }}
+        />
+      </div>
+      <div className="flex items-end justify-between">
+        <div
+          className="ct-skeleton-pulse"
+          style={{ width: 64, height: 28, borderRadius: 6, background: 'var(--ct-border)' }}
+        />
+        <div
+          className="ct-skeleton-pulse"
+          style={{ width: 60, height: 24, borderRadius: 4, background: 'var(--ct-border)' }}
+        />
+      </div>
+      <div className="mt-3">
+        <div
+          className="ct-skeleton-pulse"
+          style={{ width: 48, height: 10, borderRadius: 4, background: 'var(--ct-border)' }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── 트렌드 뱃지 ──
 function TrendBadge({ value, accent }: { readonly value: number; readonly accent: string }): React.JSX.Element {
   // 건강 이상, 알림은 0이 좋은 것
@@ -127,7 +170,17 @@ function TrendBadge({ value, accent }: { readonly value: number; readonly accent
   );
 }
 
-export function HerdOverviewCards({ data, onCardClick }: Props): React.JSX.Element {
+export function HerdOverviewCards({ data, isLoading, onCardClick }: Props): React.JSX.Element {
+  if (isLoading || !data) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        {CARDS.map((card) => (
+          <SkeletonCard key={card.key} accentRgb={card.accentRgb} />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
       {CARDS.map((card, idx) => {
@@ -140,14 +193,15 @@ export function HerdOverviewCards({ data, onCardClick }: Props): React.JSX.Eleme
             type="button"
             disabled={!isClickable}
             onClick={() => onCardClick?.(card.category)}
-            className={`ct-kpi-card ct-fade-up ct-fade-up-${idx + 1} flex flex-col p-4 md:p-5 text-left group`}
+            className={`ct-kpi-card ct-kpi-card-hover ct-fade-up ct-fade-up-${idx + 1} flex flex-col p-4 md:p-5 text-left group`}
             style={{
               '--kpi-accent': card.accent,
+              '--kpi-accent-rgb': card.accentRgb,
               background: `linear-gradient(145deg, var(--ct-card) 0%, rgba(${card.accentRgb},0.08) 100%)`,
               borderRadius: 16,
               border: '1px solid var(--ct-border)',
               cursor: isClickable ? 'pointer' : 'default',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease',
               position: 'relative',
               overflow: 'hidden',
             } as React.CSSProperties}

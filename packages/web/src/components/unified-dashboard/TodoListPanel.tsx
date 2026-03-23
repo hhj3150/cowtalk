@@ -52,6 +52,8 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
             ? SEVERITY_COLORS[item.severity] ?? 'var(--ct-text-secondary)'
             : 'var(--ct-border)';
 
+          const shouldPulse = item.count > 10;
+
           return (
             <li key={`${item.category}-${item.label}`}>
               <button
@@ -61,8 +63,22 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
                   onItemClick ? 'cursor-pointer hover:bg-black/5' : 'cursor-default'
                 }`}
+                style={{ position: 'relative' }}
               >
-                <span style={{ fontSize: '14px' }}>{resolveIcon(item.icon)}</span>
+                {/* severity accent bar */}
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: '20%',
+                    bottom: '20%',
+                    width: 3,
+                    borderRadius: 2,
+                    backgroundColor: hasCount ? badgeColor : 'var(--ct-border)',
+                    transition: 'background-color 0.2s ease',
+                  }}
+                />
+                <span style={{ fontSize: '14px', marginLeft: 2 }}>{resolveIcon(item.icon)}</span>
                 <span
                   className="flex-1 text-sm"
                   style={{
@@ -71,8 +87,9 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
                 >
                   {item.label}
                 </span>
+                {/* severity badge with glow */}
                 <span
-                  className="rounded-full px-2 py-0.5 text-xs font-medium"
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium${hasCount ? ' ct-severity-glow' : ''}`}
                   style={{
                     backgroundColor: hasCount ? badgeColor : 'var(--ct-border)',
                     color: hasCount ? '#ffffff' : 'var(--ct-text-secondary)',
@@ -82,6 +99,21 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
                 >
                   {item.count}
                 </span>
+                {/* count badge with pulse when > 10 */}
+                {shouldPulse && (
+                  <span
+                    className="ct-count-pulse rounded-full px-1.5 py-0.5 text-xs font-bold"
+                    style={{
+                      backgroundColor: 'var(--ct-danger)',
+                      color: '#ffffff',
+                      minWidth: '20px',
+                      textAlign: 'center',
+                      fontSize: '10px',
+                    }}
+                  >
+                    !
+                  </span>
+                )}
               </button>
             </li>
           );

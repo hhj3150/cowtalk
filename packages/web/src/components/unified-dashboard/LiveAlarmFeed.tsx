@@ -60,9 +60,22 @@ const ALARM_TYPE_CONFIG: Record<string, { readonly icon: string; readonly label:
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'var(--ct-danger)',
   high: 'var(--ct-danger)',
   medium: '#f97316',
   low: '#eab308',
+};
+
+const ICON_BADGE_GLOW: Readonly<Record<string, string>> = {
+  critical: '0 0 8px rgba(239, 68, 68, 0.25)',
+  high: '0 0 8px rgba(239, 68, 68, 0.25)',
+  medium: '0 0 6px rgba(249, 115, 22, 0.19)',
+};
+
+const SEVERITY_DOT_CLASS: Readonly<Record<string, string>> = {
+  critical: 'ct-severity-dot-critical',
+  high: 'ct-severity-dot-high',
+  medium: 'ct-severity-dot-medium',
 };
 
 // ── 유틸 ──
@@ -113,7 +126,11 @@ function AlarmRow({
       {/* 아이콘 배지 */}
       <span
         className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-sm"
-        style={{ backgroundColor: `${config.color}15`, color: config.color }}
+        style={{
+          backgroundColor: `${config.color}15`,
+          color: config.color,
+          boxShadow: ICON_BADGE_GLOW[alarm.severity] ?? 'none',
+        }}
       >
         {config.icon}
       </span>
@@ -178,7 +195,7 @@ function AlarmRow({
           {formatTimeAgo(alarm.detectedAt)}
         </span>
         <span
-          className="inline-block rounded-full"
+          className={`inline-block rounded-full ${SEVERITY_DOT_CLASS[alarm.severity] ?? ''}`}
           style={{
             width: '8px',
             height: '8px',
