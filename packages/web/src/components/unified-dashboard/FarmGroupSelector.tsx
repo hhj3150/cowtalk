@@ -4,12 +4,20 @@ import { useFarmGroupStore } from '@web/stores/farm-group.store';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useDashboardFarms } from '@web/hooks/useUnifiedDashboard';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { apiPost } from '@web/api/client';
 
 export function FarmGroupSelector(): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [groupName, setGroupName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
+  const [showAccountCreate, setShowAccountCreate] = useState(false);
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [accountRole, setAccountRole] = useState('veterinarian');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountMsg, setAccountMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const isMobile = useIsMobile();
 
   const { data: farmsData } = useDashboardFarms();
@@ -56,6 +64,28 @@ export function FarmGroupSelector(): React.JSX.Element {
       setGroupName('');
       setShowSaveInput(false);
     }
+  };
+
+  const handleCreateAccount = (): void => {
+    if (!accountEmail.trim() || !accountName.trim() || !accountPassword.trim() || customSelection.length === 0) return;
+    setIsCreating(true);
+    setAccountMsg(null);
+    apiPost<{ userId: string }>('/auth/register', {
+      email: accountEmail.trim(),
+      name: accountName.trim(),
+      password: accountPassword.trim(),
+      role: accountRole,
+      farmIds: customSelection,
+    }).then(() => {
+      setAccountMsg({ ok: true, text: `✅ ${accountName} 계정 생성 완료! (${accountEmail})` });
+      setAccountEmail('');
+      setAccountName('');
+      setAccountPassword('');
+      setIsCreating(false);
+    }).catch((err) => {
+      setAccountMsg({ ok: false, text: `❌ 실패: ${err instanceof Error ? err.message : String(err)}` });
+      setIsCreating(false);
+    });
   };
 
   const handleApply = (): void => {
@@ -304,13 +334,22 @@ export function FarmGroupSelector(): React.JSX.Element {
               ) : (
                 <>
                   {selectedCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveInput(true)}
-                      style={{ padding: '5px 10px', borderRadius: 4, fontSize: 11, background: 'var(--ct-bg)', color: 'var(--ct-text-secondary)', border: '1px solid var(--ct-border)', cursor: 'pointer' }}
-                    >
-                      💾 그룹 저장
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowSaveInput(true)}
+                        style={{ padding: '5px 10px', borderRadius: 4, fontSize: 11, background: 'var(--ct-bg)', color: 'var(--ct-text-secondary)', border: '1px solid var(--ct-border)', cursor: 'pointer' }}
+                      >
+                        💾 그룹 저장
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAccountCreate(!showAccountCreate)}
+                        style={{ padding: '5px 10px', borderRadius: 4, fontSize: 11, background: showAccountCreate ? '#ef4444' : '#22c55e', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        {showAccountCreate ? '✕ 닫기' : '👤 계정 생성'}
+                      </button>
+                    </>
                   )}
                   <div style={{ flex: 1 }} />
                   <button
@@ -332,6 +371,72 @@ export function FarmGroupSelector(): React.JSX.Element {
                 </>
               )}
             </div>
+
+            {/* 계정 생성 폼 */}
+            {showAccountCreate && selectedCount > 0 && (
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--ct-border)', background: 'rgba(34,197,94,0.05)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', marginBottom: 8 }}>
+                  👤 선택한 {selectedCount}개 농장에 대한 계정 생성
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <input
+                    type="text"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    placeholder="이름 (예: 고려동물병원)"
+                    style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--ct-border)', background: 'var(--ct-bg)', color: 'var(--ct-text)', fontSize: 11, outline: 'none' }}
+                  />
+                  <input
+                    type="email"
+                    value={accountEmail}
+                    onChange={(e) => setAccountEmail(e.target.value)}
+                    placeholder="이메일 (예: korea-vet@cowtalk.kr)"
+                    style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--ct-border)', background: 'var(--ct-bg)', color: 'var(--ct-text)', fontSize: 11, outline: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    value={accountPassword}
+                    onChange={(e) => setAccountPassword(e.target.value)}
+                    placeholder="비밀번호"
+                    style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--ct-border)', background: 'var(--ct-bg)', color: 'var(--ct-text)', fontSize: 11, outline: 'none' }}
+                  />
+                  <select
+                    value={accountRole}
+                    onChange={(e) => setAccountRole(e.target.value)}
+                    style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--ct-border)', background: 'var(--ct-bg)', color: 'var(--ct-text)', fontSize: 11, outline: 'none' }}
+                  >
+                    <option value="veterinarian">🩺 수의사</option>
+                    <option value="inseminator">💉 수정사</option>
+                    <option value="farmer">🧑‍🌾 농장주</option>
+                    <option value="quarantine_officer">🛡️ 방역관</option>
+                    <option value="feed_company">🌾 사료회사</option>
+                    <option value="government_admin">🏛️ 행정관리</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleCreateAccount}
+                    disabled={isCreating || !accountEmail || !accountName || !accountPassword}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      background: isCreating ? '#64748b' : '#22c55e',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: isCreating ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {isCreating ? '생성 중...' : `👤 계정 생성 (${selectedCount}개 농장 배정)`}
+                  </button>
+                  {accountMsg && (
+                    <div style={{ fontSize: 11, color: accountMsg.ok ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
+                      {accountMsg.text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
