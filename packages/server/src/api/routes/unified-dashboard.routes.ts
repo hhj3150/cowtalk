@@ -664,6 +664,9 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
     alertStats, topAlertFarms, eventTypeDistribution, recentCritical, role,
   );
 
+  // 역할별 KPI 4개 생성
+  const roleKpis = buildRoleKpis(role, alertStats, eventTypeDistribution, topAlertFarms, trendComparison);
+
   return {
     generatedAt: new Date().toISOString(),
     summary,
@@ -675,6 +678,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
     recentCritical,
     trendComparison,
     recommendations,
+    roleKpis,
   };
 }
 
@@ -748,6 +752,84 @@ function buildBriefingSummary(
     ? `${topFarmNames.join('과 ')}에 집중 관리가 필요합니다.`
     : '전체적으로 안정적인 상태입니다.';
   return `오늘 ${String(farmCount)}개 농장에서 ${String(total24h)}건의 알림이 발생했습니다. ${trendText}, ${focusText}`;
+}
+
+interface RoleKpi {
+  readonly label: string;
+  readonly value: number | string;
+  readonly color: string;
+  readonly drilldownType?: string;
+}
+
+function buildRoleKpis(
+  role: string,
+  alertStats: { total24h: number; critical: number; high: number; medium: number },
+  eventDist: readonly AiBriefingEventDistribution[],
+  topFarms: readonly AiBriefingTopFarm[],
+  trend: { changePercent: number; direction: string },
+): readonly RoleKpi[] {
+  const findCount = (type: string): number => eventDist.find((e) => e.eventType === type)?.count ?? 0;
+  const trendStr = trend.direction === 'up' ? `+${trend.changePercent}%` : trend.direction === 'down' ? `-${trend.changePercent}%` : '±0%';
+
+  if (role === 'farmer') {
+    const healthTotal = findCount('temperature_high') + findCount('clinical_condition') + findCount('health_general');
+    return [
+      { label: '수정 대상', value: findCount('estrus'), color: '#ef4444', drilldownType: 'estrus' },
+      { label: '분만 임박', value: findCount('calving_detection'), color: '#f97316', drilldownType: 'calving_detection' },
+      { label: '건강 주의', value: healthTotal, color: '#eab308', drilldownType: 'HEALTH_ALL' },
+      { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
+    ];
+  }
+
+  if (role === 'veterinarian') {
+    const feverFarms = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
+    return [
+      { label: '발열·질병', value: findCount('temperature_high') + findCount('clinical_condition'), color: '#ef4444', drilldownType: 'HEALTH_ALL' },
+      { label: '진료 농장', value: feverFarms || topFarms.length, color: '#f97316' },
+      { label: '반추 감소', value: findCount('rumination_decrease'), color: '#eab308', drilldownType: 'rumination_decrease' },
+      { label: '긴급', value: alertStats.critical, color: '#ef4444', drilldownType: 'SEVERITY_CRITICAL' },
+    ];
+  }
+
+  if (role === 'inseminator') {
+    const estrus = findCount('estrus');
+    const farmCount = new Set(topFarms.map((f) => f.farmId)).size;
+    return [
+      { label: '발정 대상', value: estrus, color: '#ef4444', drilldownType: 'estrus' },
+      { label: '수정 완료', value: findCount('insemination'), color: '#3b82f6', drilldownType: 'insemination' },
+      { label: '미수정', value: findCount('no_insemination'), color: '#eab308', drilldownType: 'no_insemination' },
+      { label: '방문 농장', value: farmCount, color: '#22c55e' },
+    ];
+  }
+
+  if (role === 'quarantine_officer') {
+    const feverFarms = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
+    const riskLevel = feverFarms >= 5 ? '위험' : feverFarms >= 3 ? '주의' : '안정';
+    const riskColor = feverFarms >= 5 ? '#ef4444' : feverFarms >= 3 ? '#f97316' : '#22c55e';
+    return [
+      { label: '발열 두수', value: findCount('temperature_high'), color: '#ef4444', drilldownType: 'temperature_high' },
+      { label: '발열 농장', value: feverFarms, color: '#f97316' },
+      { label: '위험 등급', value: riskLevel, color: riskColor },
+      { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
+    ];
+  }
+
+  if (role === 'feed_company') {
+    return [
+      { label: '반추 감소', value: findCount('rumination_decrease'), color: '#f97316', drilldownType: 'rumination_decrease' },
+      { label: '활동 감소', value: findCount('activity_decrease'), color: '#eab308', drilldownType: 'activity_decrease' },
+      { label: '관리 농장', value: topFarms.length, color: '#3b82f6' },
+      { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
+    ];
+  }
+
+  // 행정관리 (기본)
+  return [
+    { label: '오늘 알림', value: alertStats.total24h, color: '#eab308', drilldownType: 'ALL' },
+    { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
+    { label: '심각', value: alertStats.critical, color: '#ef4444', drilldownType: 'SEVERITY_CRITICAL' },
+    { label: '높음', value: alertStats.high, color: '#f97316', drilldownType: 'SEVERITY_HIGH' },
+  ];
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {

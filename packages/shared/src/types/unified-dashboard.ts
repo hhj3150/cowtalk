@@ -139,6 +139,13 @@ export interface AiBriefingTrendComparison {
   readonly direction: 'up' | 'down' | 'stable'
 }
 
+export interface AiBriefingRoleKpi {
+  readonly label: string
+  readonly value: number | string
+  readonly color: string
+  readonly drilldownType?: string
+}
+
 export interface AiBriefing {
   readonly generatedAt: string
   readonly summary: string
@@ -150,6 +157,7 @@ export interface AiBriefing {
   readonly recentCritical: readonly AiBriefingCriticalEvent[]
   readonly trendComparison: AiBriefingTrendComparison
   readonly recommendations: readonly string[]
+  readonly roleKpis?: readonly AiBriefingRoleKpi[]
 }
 
 export interface UnifiedDashboardData {

@@ -243,31 +243,27 @@ function AiBriefingCard({ onKpiClick }: {
         borderRadius: 12,
         padding: '12px 8px',
       }}>
-        <StatChip
-          label="오늘 알림"
-          value={briefing.alertStats.total24h}
-          onClick={onKpiClick ? () => onKpiClick({ eventType: 'ALL', label: '오늘 전체 알림' }) : undefined}
-        />
-        <StatDivider />
-        <StatChip
-          label="전일 대비"
-          value={`${briefing.trendComparison.changePercent > 0 ? '+' : ''}${briefing.trendComparison.changePercent}%`}
-          color={briefing.trendComparison.direction === 'up' ? 'var(--ct-danger)' : briefing.trendComparison.direction === 'down' ? 'var(--ct-primary)' : 'var(--ct-warning)'}
-        />
-        <StatDivider />
-        <StatChip
-          label="심각"
-          value={briefing.alertStats.critical}
-          color="var(--ct-danger)"
-          onClick={onKpiClick ? () => onKpiClick({ eventType: 'SEVERITY_CRITICAL', label: '심각 알림' }) : undefined}
-        />
-        <StatDivider />
-        <StatChip
-          label="높음"
-          value={briefing.alertStats.high}
-          color="#f97316"
-          onClick={onKpiClick ? () => onKpiClick({ eventType: 'SEVERITY_HIGH', label: '높음 알림' }) : undefined}
-        />
+        {briefing.roleKpis?.map((kpi, idx) => (
+          <React.Fragment key={kpi.label}>
+            {idx > 0 && <StatDivider />}
+            <StatChip
+              label={kpi.label}
+              value={kpi.value}
+              color={kpi.color}
+              onClick={kpi.drilldownType && onKpiClick ? () => onKpiClick({ eventType: kpi.drilldownType!, label: kpi.label }) : undefined}
+            />
+          </React.Fragment>
+        )) ?? (
+          <>
+            <StatChip label="오늘 알림" value={briefing.alertStats.total24h} onClick={onKpiClick ? () => onKpiClick({ eventType: 'ALL', label: '오늘 전체 알림' }) : undefined} />
+            <StatDivider />
+            <StatChip label="전일 대비" value={`${briefing.trendComparison.changePercent > 0 ? '+' : ''}${briefing.trendComparison.changePercent}%`} color={briefing.trendComparison.direction === 'up' ? 'var(--ct-danger)' : 'var(--ct-primary)'} />
+            <StatDivider />
+            <StatChip label="심각" value={briefing.alertStats.critical} color="var(--ct-danger)" onClick={onKpiClick ? () => onKpiClick({ eventType: 'SEVERITY_CRITICAL', label: '심각' }) : undefined} />
+            <StatDivider />
+            <StatChip label="높음" value={briefing.alertStats.high} color="#f97316" onClick={onKpiClick ? () => onKpiClick({ eventType: 'SEVERITY_HIGH', label: '높음' }) : undefined} />
+          </>
+        )}
       </div>
 
       {/* Recommendations */}
