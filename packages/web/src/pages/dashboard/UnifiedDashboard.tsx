@@ -15,7 +15,7 @@ import {
   useFarmMapMarkers,
   useEpidemicIntelligence,
   useFarmHealthScores,
-  useSovereignAiStats,
+  // useSovereignAiStats, // 백엔드 자동 학습, UI 제거
 } from '@web/hooks/useUnifiedDashboard';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
@@ -33,7 +33,7 @@ import {
   EpidemicCommandCenter,
   FarmHealthScoreWidget,
   AlarmLabelChatModal,
-  SovereignAiWidget,
+  // SovereignAiWidget — 백엔드 자동 학습, UI 제거
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -343,7 +343,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: epidemicData } = useEpidemicIntelligence();
   const { data: healthScoresData } = useFarmHealthScores();
   // 번식 파이프라인 제거 (실 데이터 축적 후 활성화)
-  const { data: sovereignStats } = useSovereignAiStats();
+  // const { data: sovereignStats } = useSovereignAiStats(); // 백엔드 자동 학습, UI 제거
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
@@ -583,13 +583,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </div>
           </>)}
 
-          {/* ── 소버린 AI 지식 강화 루프 ── */}
-          {isVisible('sovereign_ai') && (<>
-          <SectionLabel>소버린 AI 지식 강화</SectionLabel>
-          {sovereignStats && (
-            <SovereignAiWidget stats={sovereignStats} />
-          )}
-          </>)}
+          {/* 소버린 AI 지식 강화 — 백엔드에서 자동 학습, UI에서 제거 */}
           </div>
       )}
 
