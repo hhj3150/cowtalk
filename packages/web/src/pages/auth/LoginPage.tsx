@@ -291,6 +291,8 @@ export default function LoginPage(): React.JSX.Element {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                aria-required="true"
+                autoComplete="email"
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -319,6 +321,8 @@ export default function LoginPage(): React.JSX.Element {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                aria-required="true"
+                autoComplete="current-password"
                 minLength={8}
                 style={{
                   width: '100%',

@@ -54,6 +54,7 @@ export function KpiCard({
       type="button"
       onClick={handleClick}
       disabled={!isClickable}
+      aria-label={`${label}: ${value}${unit ? ` ${unit}` : ''}${isClickable ? ' — 클릭하여 상세 보기' : ''}`}
       className={`ct-card flex flex-col p-4 text-left transition-all ${
         isClickable
           ? 'cursor-pointer hover:shadow-md'

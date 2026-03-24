@@ -78,7 +78,9 @@ export function DataTable<T extends Record<string, unknown>>({
       {/* 검색 */}
       {searchField && (
         <div className="mb-3">
+          <label htmlFor="datatable-search" className="sr-only">{searchPlaceholder}</label>
           <input
+            id="datatable-search"
             type="text"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
@@ -99,6 +101,10 @@ export function DataTable<T extends Record<string, unknown>>({
                   className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${col.sortable ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}
                   style={col.width ? { width: col.width } : undefined}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                  onKeyDown={col.sortable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(col.key); } } : undefined}
+                  tabIndex={col.sortable ? 0 : undefined}
+                  role={col.sortable ? 'button' : undefined}
+                  aria-sort={col.sortable && sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
                   <span className="flex items-center gap-1">
                     {col.label}

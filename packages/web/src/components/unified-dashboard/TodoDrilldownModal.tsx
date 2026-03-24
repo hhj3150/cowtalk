@@ -52,6 +52,7 @@ interface Props {
   readonly farmId?: string | null;
   readonly onClose: () => void;
   readonly onAnimalClick?: (animalId: string) => void;
+  readonly onSovereignClick?: (animalId: string) => void;
 }
 
 // ── 상수 ──
@@ -314,7 +315,7 @@ function ActionPlanPanel({ plan }: { readonly plan: VetActionPlan }): React.JSX.
 
 // ── 메인 모달 ──
 
-export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimalClick }: Props): React.JSX.Element {
+export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimalClick, onSovereignClick }: Props): React.JSX.Element {
   const [data, setData] = useState<DrilldownResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -754,6 +755,7 @@ export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimal
         <AnimalTimelineModal
           animalId={selectedAnimalId}
           onClose={() => setSelectedAnimalId(null)}
+          onSovereignClick={onSovereignClick}
         />
       )}
     </>

@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiGet } from '@web/api/client';
 import { SensorChartModal } from './SensorChartModal';
+import { TraceSection } from '@web/components/trace/TraceSection';
 
 // ── 타입 ──
 
@@ -387,6 +388,9 @@ export function AnimalTimelineModal({ animalId, onClose, onSovereignClick }: Pro
             <div className="flex flex-col gap-4">
               {/* 프로필 카드 */}
               <AnimalProfile animal={data.animal} />
+
+              {/* 🏛️ 이력제 — 클릭 시 공공데이터 */}
+              <TraceSection animalId={animalId} compact />
 
               {/* 카테고리 통계 */}
               {data.timeline.length > 0 && <CategoryStats timeline={data.timeline} />}

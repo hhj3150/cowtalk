@@ -201,14 +201,21 @@ export const smaxtecEvents = pgTable('smaxtec_events', {
 export const breedingEvents = pgTable('breeding_events', {
   eventId: uuid('event_id').primaryKey().defaultRandom(),
   animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').references(() => farms.farmId),
   eventDate: timestamp('event_date', { withTimezone: true }).notNull(),
-  type: varchar('type', { length: 20 }).notNull(),
-  semenInfo: text('semen_info'),
+  type: varchar('type', { length: 20 }).notNull(), // insemination, heat, pregnancy_check, no_insemination, abort, dry_off
+  semenInfo: text('semen_info'),                    // 자유 텍스트 (레거시)
+  semenId: uuid('semen_id').references(() => semenCatalog.semenId), // 정액 카탈로그 FK (신규)
   technicianId: uuid('technician_id'),
+  technicianName: varchar('technician_name', { length: 100 }),
+  recommendedSemenId: uuid('recommended_semen_id'), // AI가 추천한 정액 (피드백 루프용)
+  optimalTime: timestamp('optimal_time', { withTimezone: true }), // AI 추천 수정 적기
+  noInseminationReason: varchar('no_insemination_reason', { length: 200 }), // 미수정 사유
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('breeding_events_animal_id_idx').on(table.animalId),
+  index('breeding_events_farm_id_idx').on(table.farmId),
 ]);
 
 export const pregnancyChecks = pgTable('pregnancy_checks', {

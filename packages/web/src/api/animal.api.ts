@@ -52,3 +52,40 @@ export function createAnimal(data: Record<string, unknown>): Promise<AnimalSumma
 export function updateAnimal(animalId: string, data: Record<string, unknown>): Promise<AnimalSummary> {
   return apiPatch<AnimalSummary>(`/animals/${animalId}`, data);
 }
+
+// ===========================
+// 이력제 추적 조회
+// ===========================
+
+export interface TraceMovement {
+  readonly date: string;
+  readonly fromFarm: string;
+  readonly toFarm: string;
+  readonly reason: string;
+}
+
+export interface TraceSlaughter {
+  readonly date: string;
+  readonly facility: string;
+  readonly grade: string | null;
+  readonly weight: number | null;
+}
+
+export interface AnimalTraceData {
+  readonly available: boolean;
+  readonly reason?: string;
+  readonly traceId: string | null;
+  readonly earTag?: string;
+  readonly birthDate?: string;
+  readonly sex?: string;
+  readonly breed?: string;
+  readonly farmId?: string;
+  readonly farmName?: string;
+  readonly farmAddress?: string;
+  readonly movements?: readonly TraceMovement[];
+  readonly slaughterInfo?: TraceSlaughter | null;
+}
+
+export function getAnimalTrace(animalId: string): Promise<AnimalTraceData> {
+  return apiGet<AnimalTraceData>(`/animals/${animalId}/trace`);
+}

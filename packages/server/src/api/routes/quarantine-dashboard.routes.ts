@@ -4,14 +4,15 @@
 // PATCH /quarantine/action/:id        — 업무 상태 변경
 // GET  /quarantine/early-detection-metrics — 조기감지 성과
 // GET  /quarantine/national-situation — 전국 방역 현황
-// GET  /quarantine/national-situation/:province — 시도 드릴다운
+// GET  /quarantine/national-situation/:province — 시도 드릴다운 (시군구)
+// GET  /quarantine/province-farms/:province     — 시도 농장 목록 드릴다운
 
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { getQuarantineDashboard, getActionQueue } from '../../services/epidemiology/quarantine-dashboard.service.js';
 import { getEarlyDetectionMetrics } from '../../services/epidemiology/early-detection-metrics.service.js';
-import { getNationalSituation, getProvinceDetail } from '../../services/epidemiology/national-situation.service.js';
+import { getNationalSituation, getProvinceDetail, getProvinceFarms } from '../../services/epidemiology/national-situation.service.js';
 import { logger } from '../../lib/logger.js';
 
 export const quarantineDashboardRouter = Router();
@@ -105,6 +106,24 @@ quarantineDashboardRouter.get('/national-situation/:province', async (req, res, 
       return;
     }
     const data = await getProvinceDetail(province);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// GET /quarantine/province-farms/:province
+// ===========================
+
+quarantineDashboardRouter.get('/province-farms/:province', async (req, res, next) => {
+  try {
+    const province = decodeURIComponent(req.params.province ?? '');
+    if (!province) {
+      res.status(400).json({ success: false, error: 'province required' });
+      return;
+    }
+    const data = await getProvinceFarms(province);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

@@ -5,8 +5,9 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
-import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks } from '../../db/schema.js';
-import { eq, and, desc, count } from 'drizzle-orm';
+import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, farmSemenInventory } from '../../db/schema.js';
+import { eq, and, desc, count, sql } from 'drizzle-orm';
+import { getBreedingAdvice, recordInsemination } from '../../services/breeding/breeding-advisor.service.js';
 
 export const breedingRouter = Router();
 
@@ -32,27 +33,116 @@ breedingRouter.get('/semen', async (req: Request, res: Response, next: NextFunct
   }
 });
 
-// GET /breeding/recommend/:animalId — 교배 추천 (향후 AI 연동)
+// GET /breeding/recommend/:animalId — 발정→수정 추천 (실 로직)
 breedingRouter.get('/recommend/:animalId', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const db = getDb();
     const animalId = req.params.animalId as string;
+    const advice = await getBreedingAdvice(animalId);
 
-    // 현재는 정액 카탈로그에서 추천 (향후 유전체 분석 연동)
-    const catalog = await db
-      .select()
-      .from(semenCatalog)
-      .limit(5);
+    if (!advice) {
+      res.status(404).json({ success: false, error: '개체를 찾을 수 없습니다' });
+      return;
+    }
 
-    const recommendations = catalog.map((s, i) => ({
-      rank: i + 1,
-      semenId: s.semenId,
-      bullName: s.bullName,
-      score: 90 - i * 5,
-      reasons: ['정액 카탈로그 기반 추천'],
-    }));
+    res.json({ success: true, data: advice });
+  } catch (error) {
+    next(error);
+  }
+});
 
-    res.json({ success: true, data: { animalId, recommendations } });
+// POST /breeding/inseminate — 수정 기록 저장
+breedingRouter.post('/inseminate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { animalId, farmId, semenId, semenInfo, technicianName, recommendedSemenId, optimalTime, notes } = req.body as {
+      animalId: string;
+      farmId: string;
+      semenId?: string;
+      semenInfo?: string;
+      technicianName?: string;
+      recommendedSemenId?: string;
+      optimalTime?: string;
+      notes?: string;
+    };
+
+    if (!animalId || !farmId) {
+      res.status(400).json({ success: false, error: 'animalId, farmId 필수' });
+      return;
+    }
+
+    const result = await recordInsemination({
+      animalId, farmId, semenId, semenInfo, technicianName, recommendedSemenId, optimalTime, notes,
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/farm/:farmId/inventory — 목장 보유 정액 목록
+breedingRouter.get('/farm/:farmId/inventory', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const farmId = req.params.farmId as string;
+
+    const inventory = await db.select({
+      inventoryId: farmSemenInventory.inventoryId,
+      semenId: semenCatalog.semenId,
+      bullName: semenCatalog.bullName,
+      bullRegistration: semenCatalog.bullRegistration,
+      breed: semenCatalog.breed,
+      supplier: semenCatalog.supplier,
+      genomicTraits: semenCatalog.genomicTraits,
+      pricePerStraw: semenCatalog.pricePerStraw,
+      quantity: farmSemenInventory.quantity,
+      purchasedAt: farmSemenInventory.purchasedAt,
+      expiresAt: farmSemenInventory.expiresAt,
+      notes: farmSemenInventory.notes,
+    })
+      .from(farmSemenInventory)
+      .innerJoin(semenCatalog, eq(farmSemenInventory.semenId, semenCatalog.semenId))
+      .where(eq(farmSemenInventory.farmId, farmId))
+      .orderBy(desc(farmSemenInventory.quantity));
+
+    res.json({ success: true, data: inventory });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /breeding/farm/:farmId/inventory — 목장 보유 정액 추가
+breedingRouter.post('/farm/:farmId/inventory', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const farmId = req.params.farmId as string;
+    const { semenId, quantity, notes } = req.body as { semenId: string; quantity: number; notes?: string };
+
+    if (!semenId || quantity == null) {
+      res.status(400).json({ success: false, error: 'semenId, quantity 필수' });
+      return;
+    }
+
+    // 이미 있으면 수량 추가
+    const [existing] = await db.select()
+      .from(farmSemenInventory)
+      .where(and(eq(farmSemenInventory.farmId, farmId), eq(farmSemenInventory.semenId, semenId)));
+
+    if (existing) {
+      await db.execute(sql`
+        UPDATE farm_semen_inventory
+        SET quantity = quantity + ${quantity}, notes = COALESCE(${notes ?? null}, notes)
+        WHERE farm_id = ${farmId} AND semen_id = ${semenId}
+      `);
+      res.json({ success: true, data: { inventoryId: existing.inventoryId, action: 'updated' } });
+    } else {
+      const [result] = await db.insert(farmSemenInventory).values({
+        farmId,
+        semenId,
+        quantity,
+        notes: notes ?? null,
+      }).returning({ inventoryId: farmSemenInventory.inventoryId });
+      res.json({ success: true, data: { inventoryId: result?.inventoryId, action: 'created' } });
+    }
   } catch (error) {
     next(error);
   }

@@ -344,10 +344,12 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
         const legalSuspect = activeAlerts.some(
           (a) => a.farmId === f.farmId && a.priority === 'critical',
         );
+        const hasAlert = activeAlerts.some((a) => a.farmId === f.farmId);
         const riskScore = Math.min(
           feverCount * 10 +
           (clusterAlert ? 30 : 0) +
-          (legalSuspect ? 40 : 0),
+          (legalSuspect ? 40 : 0) +
+          (hasAlert ? 15 : 0),
           100,
         );
         return {

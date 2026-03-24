@@ -10,7 +10,18 @@ import type { Role } from '@cowtalk/shared';
 import { getAnimalDetail } from '../../serving/dashboard.service.js';
 import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords } from '../../db/schema.js';
+import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
+
+// 이력추적 커넥터 싱글톤 (매 요청마다 생성하지 않음)
+let traceConnector: TraceabilityConnector | null = null;
+async function getTraceConnector(): Promise<TraceabilityConnector> {
+  if (!traceConnector) {
+    traceConnector = new TraceabilityConnector();
+    await traceConnector.connect();
+  }
+  return traceConnector;
+}
 
 export const animalRouter = Router();
 
@@ -160,6 +171,49 @@ animalRouter.post('/', requirePermission('animal', 'create'), validate({ body: c
 
 animalRouter.patch('/:animalId', requirePermission('animal', 'update'), (_req, res) => {
   res.json({ success: true, data: null });
+});
+
+// GET /animals/:animalId/trace — 축산물이력추적 (이동이력·도축정보)
+animalRouter.get('/:animalId/trace', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const { animalId } = req.params as { animalId: string };
+
+    // DB에서 traceId 조회
+    const rows = await db
+      .select({ traceId: animals.traceId, earTag: animals.earTag, farmName: farms.name })
+      .from(animals)
+      .leftJoin(farms, eq(animals.farmId, farms.farmId))
+      .where(eq(animals.animalId, animalId))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) {
+      res.status(404).json({ success: false, message: '개체를 찾을 수 없습니다' });
+      return;
+    }
+
+    if (!row.traceId) {
+      res.json({ success: true, data: { traceId: null, available: false, reason: '이력제 번호 미등록' } });
+      return;
+    }
+
+    const connector = await getTraceConnector();
+    const record = await connector.fetchByTraceId(row.traceId);
+
+    if (!record) {
+      // API 키 없거나 조회 실패 시 traceId만 반환
+      res.json({
+        success: true,
+        data: { traceId: row.traceId, earTag: row.earTag, available: false, reason: 'API 조회 실패' },
+      });
+      return;
+    }
+
+    res.json({ success: true, data: { ...record, available: true } });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // GET /animals/:animalId/breeding-timeline — 임신 관리 통합 타임라인

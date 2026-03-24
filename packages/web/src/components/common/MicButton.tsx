@@ -12,8 +12,10 @@ interface MicButtonProps {
 export function MicButton({ isListening, onClick, disabled, size = 36 }: MicButtonProps): React.JSX.Element {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={isListening ? '듣기 중지' : '음성으로 질문하기'}
       style={{
         width: size,
         height: size,
@@ -29,9 +31,9 @@ export function MicButton({ isListening, onClick, disabled, size = 36 }: MicButt
         animation: isListening ? 'mic-pulse 1s ease-in-out infinite' : undefined,
         opacity: disabled ? 0.5 : 1,
       }}
-      title={isListening ? '듣기 중지' : '음성으로 질문하기'}
     >
       <svg
+        aria-hidden="true"
         width={size * 0.45}
         height={size * 0.45}
         viewBox="0 0 24 24"

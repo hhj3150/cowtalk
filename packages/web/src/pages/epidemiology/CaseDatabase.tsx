@@ -212,7 +212,7 @@ export default function CaseDatabase(): React.JSX.Element {
           placeholder="농장명, 경보 내용, 질병명 검색..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-48 rounded-lg border px-3 py-2 text-sm"
+          className="flex-1 min-w-0 rounded-lg border px-3 py-2 text-sm"
           style={{
             background: 'var(--ct-card)',
             borderColor: 'var(--ct-border)',
@@ -251,7 +251,8 @@ export default function CaseDatabase(): React.JSX.Element {
             ))}
           </div>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto -mx-1">
+          <table className="w-full min-w-[600px]">
             <thead style={{ background: 'var(--ct-bg)' }}>
               <tr>
                 {['날짜', '농장', '경보 내용', 'DSI', '결과', '피드백'].map((h) => (
@@ -316,6 +317,7 @@ export default function CaseDatabase(): React.JSX.Element {
               ))}
             </tbody>
           </table>
+          </div>
         )}
 
         {!isLoading && filtered.length === 0 && (

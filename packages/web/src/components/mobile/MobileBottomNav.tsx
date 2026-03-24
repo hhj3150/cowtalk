@@ -22,12 +22,13 @@ export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Pro
   }
 
   const iconClass = (active: boolean) =>
-    `flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition-colors ${
+    `flex flex-col items-center gap-0.5 py-2 px-4 rounded-xl transition-colors min-w-[48px] min-h-[44px] ${
       active ? 'text-emerald-400' : 'text-gray-400'
     }`;
 
   return (
     <nav
+      aria-label="모바일 하단 네비게이션"
       className="fixed bottom-0 left-0 right-0 z-40 lg:hidden flex items-center justify-around border-t"
       style={{
         background: 'var(--ct-card)',
@@ -37,19 +38,19 @@ export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Pro
       }}
     >
       {/* 홈 */}
-      <button type="button" className={iconClass(isActive('/') && !isActive('/cow') && !isActive('/farm'))} onClick={() => navigate('/')}>
+      <button type="button" aria-label="홈" aria-current={isActive('/') && !isActive('/cow') && !isActive('/farm') ? 'page' : undefined} className={iconClass(isActive('/') && !isActive('/cow') && !isActive('/farm'))} onClick={() => navigate('/')}>
         <IconHome />
-        <span className="text-[10px] font-medium">홈</span>
+        <span className="text-[11px] font-medium">홈</span>
       </button>
 
       {/* 내소 */}
       <button
         type="button"
         className={iconClass(isActive('/farm'))}
-        onClick={() => primaryFarmId ? navigate(`/farm/${primaryFarmId}/groups`) : navigate('/')}
+        onClick={() => primaryFarmId ? navigate(`/farm/${primaryFarmId}/groups`) : navigate('/farm')}
       >
         <IconCow />
-        <span className="text-[10px] font-medium">내 소</span>
+        <span className="text-[11px] font-medium">내 소</span>
       </button>
 
       {/* 빠른 기록 (중앙 FAB) */}
@@ -65,7 +66,7 @@ export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Pro
         >
           +
         </span>
-        <span className="text-[10px] font-medium mt-0.5 text-emerald-400">기록</span>
+        <span className="text-[11px] font-medium mt-0.5 text-emerald-400">기록</span>
         {pendingCount > 0 && (
           <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">
             {pendingCount}
@@ -74,15 +75,15 @@ export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Pro
       </button>
 
       {/* 알림 */}
-      <button type="button" className={iconClass(isActive('/notifications'))} onClick={() => navigate('/notifications')}>
+      <button type="button" aria-label="알림" aria-current={isActive('/notifications') ? 'page' : undefined} className={iconClass(isActive('/notifications'))} onClick={() => navigate('/notifications')}>
         <IconBell />
-        <span className="text-[10px] font-medium">알림</span>
+        <span className="text-[11px] font-medium">알림</span>
       </button>
 
       {/* 더보기 */}
-      <button type="button" className={iconClass(false)} onClick={onMoreMenu}>
+      <button type="button" aria-label="더보기 메뉴" className={iconClass(false)} onClick={onMoreMenu}>
         <IconMore />
-        <span className="text-[10px] font-medium">더보기</span>
+        <span className="text-[11px] font-medium">더보기</span>
       </button>
     </nav>
   );
@@ -92,7 +93,7 @@ export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Pro
 
 function IconHome() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />
       <path d="M9 21V12h6v9" />
     </svg>
@@ -101,7 +102,7 @@ function IconHome() {
 
 function IconCow() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <ellipse cx="12" cy="13" rx="7" ry="5" />
       <path d="M5 10c-1-2-2-4-1-6M19 10c1-2 2-4 1-6" />
       <path d="M9 18v2M15 18v2" />
@@ -113,7 +114,7 @@ function IconCow() {
 
 function IconBell() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
     </svg>
   );
@@ -121,7 +122,7 @@ function IconBell() {
 
 function IconMore() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="5" r="1" fill="currentColor" />
       <circle cx="12" cy="12" r="1" fill="currentColor" />
       <circle cx="12" cy="19" r="1" fill="currentColor" />

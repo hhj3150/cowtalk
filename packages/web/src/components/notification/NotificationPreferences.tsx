@@ -64,6 +64,7 @@ export function NotificationPreferences(): React.JSX.Element {
                     type="checkbox"
                     checked={pref.enabled}
                     onChange={(e) => updatePref(pref.channel, 'enabled', e.target.checked)}
+                    aria-label={`${info.name} 활성화`}
                     className="peer sr-only"
                   />
                   <div className="h-5 w-9 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-blue-600 peer-checked:after:translate-x-full" />

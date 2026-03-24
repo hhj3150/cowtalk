@@ -6,6 +6,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiGet, apiPost, apiPatch } from '@web/api/client';
+import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
+import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 
 // ===========================
 // 타입
@@ -77,6 +79,55 @@ const STATUS_CONFIG: Record<InvestigationStatus, { label: string; color: string 
 };
 
 // ===========================
+// 농장 선택 화면 (farmId 없이 접근 시)
+// ===========================
+
+interface FarmItem { farmId: string; name: string; currentHeadCount: number; }
+
+function FarmPicker({ onSelect }: { onSelect: (farmId: string) => void }): React.JSX.Element {
+  const [query, setQuery] = React.useState('');
+  const { data: farms, isLoading } = useQuery<FarmItem[]>({
+    queryKey: ['farms-picker'],
+    queryFn: () => apiGet<FarmItem[]>('/farms'),
+  });
+  const filtered = (farms ?? []).filter(
+    (f) => !query || f.name.toLowerCase().includes(query.toLowerCase()),
+  );
+  return (
+    <div className="max-w-lg mx-auto mt-8 space-y-4">
+      <div className="text-center space-y-1">
+        <span className="text-3xl">🔬</span>
+        <h1 className="text-lg font-bold" style={{ color: 'var(--ct-text)' }}>역학 조사 시작</h1>
+        <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>조사할 농장을 선택하세요</p>
+      </div>
+      <input
+        type="text"
+        placeholder="농장 검색..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full rounded-xl border px-4 py-2.5 text-sm"
+        style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+      />
+      {isLoading && <p className="text-center text-sm" style={{ color: 'var(--ct-text-secondary)' }}>로딩 중...</p>}
+      <div className="space-y-1.5 max-h-96 overflow-y-auto">
+        {filtered.map((f) => (
+          <button
+            key={f.farmId}
+            type="button"
+            onClick={() => onSelect(f.farmId)}
+            className="w-full flex items-center justify-between rounded-lg px-4 py-2.5 text-sm transition-colors text-left"
+            style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)', border: '1px solid var(--ct-border)' }}
+          >
+            <span style={{ color: 'var(--ct-text)' }}>{f.name}</span>
+            <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>{f.currentHeadCount}두</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ===========================
 // 수집 항목 카드
 // ===========================
 
@@ -121,6 +172,9 @@ export default function InvestigationWorkflow(): React.JSX.Element {
   const [fieldObservations, setFieldObservations] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [selectedAnimal, setSelectedAnimal] = useState<string | null>(null);
+  const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
+  const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
+  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
 
   // 기존 조사 조회
   const { data, isLoading, refetch } = useQuery({
@@ -174,15 +228,7 @@ export default function InvestigationWorkflow(): React.JSX.Element {
   }
 
   if (!investigationId) {
-    return (
-      <div className="max-w-lg mx-auto mt-12 text-center space-y-4">
-        <span className="text-4xl">⚠️</span>
-        <h1 className="text-lg font-bold" style={{ color: 'var(--ct-text)' }}>농장 ID가 필요합니다</h1>
-        <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>
-          반경 분석 페이지에서 농장을 선택하여 역학 조사를 시작하세요.
-        </p>
-      </div>
-    );
+    return <FarmPicker onSelect={(fid) => navigate(`/epidemiology/investigation/new?farmId=${fid}`)} />;
   }
 
   if (isLoading) {
@@ -255,25 +301,39 @@ export default function InvestigationWorkflow(): React.JSX.Element {
             <div>
               <div className="space-y-1.5 max-h-32 overflow-y-auto">
                 {data.feverAnimals.map((a) => (
-                  <button
+                  <div
                     key={a.animalId}
-                    onClick={() => setSelectedAnimal(a.animalId === selectedAnimal ? null : a.animalId)}
-                    className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
+                    className={`flex items-center justify-between rounded-lg px-3 py-2 ${
                       a.animalId === selectedAnimal ? 'ring-2 ring-red-400' : ''
                     }`}
                     style={{ background: 'var(--ct-bg)' }}
                   >
-                    <div>
-                      <span className="text-xs font-medium" style={{ color: 'var(--ct-text)' }}>{a.earTag}</span>
-                      {a.name && <span className="text-xs ml-1" style={{ color: 'var(--ct-text-secondary)' }}>({a.name})</span>}
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-red-600">{a.currentTemp?.toFixed(1)}°C</span>
-                      <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ background: 'var(--ct-border)', color: 'var(--ct-text-secondary)' }}>
-                        DSI {a.dsiScore}
-                      </span>
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAnimal(a.animalId === selectedAnimal ? null : a.animalId)}
+                      className="flex-1 flex items-center justify-between text-left"
+                    >
+                      <div>
+                        <span className="text-xs font-medium" style={{ color: 'var(--ct-text)' }}>{a.earTag}</span>
+                        {a.name && <span className="text-xs ml-1" style={{ color: 'var(--ct-text-secondary)' }}>({a.name})</span>}
+                      </div>
+                      <div className="text-right mr-2">
+                        <span className="text-xs font-bold text-red-600">{a.currentTemp?.toFixed(1)}°C</span>
+                        <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ background: 'var(--ct-border)', color: 'var(--ct-text-secondary)' }}>
+                          DSI {a.dsiScore}
+                        </span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDrillAnimalId(a.animalId); setDrillFarmId(data.farmId); }}
+                      className="text-xs px-2 py-1 rounded font-medium text-white flex-shrink-0"
+                      style={{ background: 'var(--ct-primary, #3b82f6)' }}
+                      title="AI 분석"
+                    >
+                      🤖
+                    </button>
+                  </div>
                 ))}
                 {data.feverAnimals.length === 0 && (
                   <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>발열 개체 없음</p>
@@ -457,6 +517,24 @@ export default function InvestigationWorkflow(): React.JSX.Element {
           🖨️ 인쇄/PDF
         </button>
       </div>
+
+      {/* 개체 상세 드릴다운 패널 */}
+      {drillAnimalId != null && drillFarmId != null && (
+        <AnimalDrilldownPanel
+          animalId={drillAnimalId}
+          farmId={drillFarmId}
+          farmName={data.farm.name}
+          onClose={() => { setDrillAnimalId(null); setDrillFarmId(null); }}
+          onAiRequest={(triggerText) => {
+            setDrillAnimalId(null);
+            setDrillFarmId(null);
+            setGeniTrigger(triggerText);
+          }}
+        />
+      )}
+
+      {/* 소버린 AI */}
+      <GeniVoiceAssistant openTrigger={geniTrigger} />
     </div>
   );
 }

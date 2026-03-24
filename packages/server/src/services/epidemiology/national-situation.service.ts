@@ -215,6 +215,88 @@ export interface DistrictStats {
   readonly riskLevel: RiskLevel;
 }
 
+// ===========================
+// 시도 농장 목록 드릴다운
+// ===========================
+
+export interface ProvinceFarmItem {
+  readonly farmId: string;
+  readonly farmName: string;
+  readonly district: string;
+  readonly currentHeadCount: number;
+  readonly feverCount: number;
+  readonly riskLevel: RiskLevel;
+  readonly lat: number | null;
+  readonly lng: number | null;
+}
+
+export async function getProvinceFarms(province: string): Promise<readonly ProvinceFarmItem[]> {
+  try {
+    const db = getDb();
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // 시도 내 농장 목록
+    const farmRows = await db
+      .select({
+        farmId: farms.farmId,
+        farmName: farms.name,
+        district: regions.district,
+        currentHeadCount: farms.currentHeadCount,
+        lat: farms.lat,
+        lng: farms.lng,
+      })
+      .from(farms)
+      .innerJoin(regions, eq(farms.regionId, regions.regionId))
+      .where(
+        and(
+          eq(farms.status, 'active'),
+          eq(regions.province, province),
+        ),
+      )
+      .orderBy(farms.name);
+
+    if (farmRows.length === 0) return [];
+
+    const farmIds = farmRows.map((r) => r.farmId);
+
+    // 농장별 발열 개체 수
+    const feverRows = await db
+      .select({
+        farmId: smaxtecEvents.farmId,
+        feverCount: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
+      })
+      .from(smaxtecEvents)
+      .where(
+        and(
+          inArray(smaxtecEvents.farmId, farmIds),
+          inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+          gte(smaxtecEvents.detectedAt, since24h),
+        ),
+      )
+      .groupBy(smaxtecEvents.farmId);
+
+    const feverMap = new Map(feverRows.map((r) => [r.farmId, Number(r.feverCount)]));
+
+    return farmRows.map((r) => {
+      const feverCount = feverMap.get(r.farmId) ?? 0;
+      const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
+      return {
+        farmId: r.farmId,
+        farmName: r.farmName,
+        district: r.district,
+        currentHeadCount: r.currentHeadCount,
+        feverCount,
+        riskLevel: calcRiskLevel(feverRate, feverCount >= 3 ? 1 : 0, 0),
+        lat: r.lat ?? null,
+        lng: r.lng ?? null,
+      };
+    });
+  } catch (err) {
+    logger.error({ err, province }, '[NationalSituation] getProvinceFarms 실패');
+    throw err;
+  }
+}
+
 export async function getProvinceDetail(province: string): Promise<readonly DistrictStats[]> {
   const db = getDb();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);

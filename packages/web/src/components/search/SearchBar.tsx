@@ -94,6 +94,10 @@ export function SearchBar(): React.JSX.Element {
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
           onFocus={() => setIsOpen(true)}
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-label="이력번호 / 귀표번호 / 농장명 검색"
+          aria-autocomplete="list"
           placeholder="이력번호 / 귀표번호 / 농장명 검색..."
           className="w-full rounded-lg border py-2 pl-10 pr-4 text-sm outline-none transition-colors"
           style={{
@@ -112,7 +116,7 @@ export function SearchBar(): React.JSX.Element {
       </div>
 
       {showDropdown && (
-        <div className="absolute top-full z-50 mt-1 w-full rounded-xl py-1 shadow-lg ct-card">
+        <div role="listbox" aria-label="검색 결과" className="absolute top-full z-50 mt-1 w-full rounded-xl py-1 shadow-lg ct-card">
           {query.trim().length < 2 && recentItems.length > 0 && (
             <p className="px-3 py-1 text-[10px] font-medium" style={{ color: 'var(--ct-text-secondary)' }}>최근 검색</p>
           )}

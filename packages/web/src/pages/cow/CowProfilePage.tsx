@@ -7,6 +7,10 @@ import { apiGet } from '@web/api/client';
 import { SensorDataPanel } from '@web/components/unified-dashboard/SensorDataPanel';
 import { DryOffModal } from '@web/components/cow/DryOffModal';
 import { BreedingTimeline } from '@web/components/cow/BreedingTimeline';
+import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { TraceSection } from '@web/components/trace/TraceSection';
+import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
+import { FarmSemenInventory } from '@web/components/breeding/FarmSemenInventory';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface CowProfile {
@@ -16,11 +20,14 @@ interface CowProfile {
   readonly farmId: string;
   readonly farmName: string;
   readonly breed: string;
-  readonly gender: string;
+  readonly breedType: string;
+  readonly sex: string;
+  readonly gender?: string; // legacy alias
   readonly birthDate: string | null;
   readonly lactationStatus: string | null;
   readonly parity: number;
   readonly status: string;
+  readonly traceId?: string | null;
 }
 
 interface SensorLatest {
@@ -72,22 +79,35 @@ export default function CowProfilePage(): React.JSX.Element {
   const [estrusPred, setEstrusPred] = useState<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string } | null>(null);
   const [calvingPred, setCalvingPred] = useState<{ calvingRisk: string; reasons: string[]; recommendation: string } | null>(null);
   const [showDryOff, setShowDryOff] = useState(false);
+  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
 
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    // 타임아웃 래퍼 — 5초 초과 시 null 반환
+    function withTimeout<T>(promise: Promise<T>, ms = 5000): Promise<T | null> {
+      return Promise.race([
+        promise,
+        new Promise<null>((resolve) => { setTimeout(() => resolve(null), ms); }),
+      ]);
+    }
+
+    // 핵심 데이터 (프로필 + 이벤트 + 센서) — 병렬, 최대 8초
     Promise.all([
-      apiGet<CowProfile>(`/animals/${id}`).catch(() => null),
-      apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`).catch(() => ({ events: [] })),
-      apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
+      withTimeout(apiGet<CowProfile>(`/animals/${id}`), 8000).catch(() => null),
+      withTimeout(apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`), 5000).catch(() => ({ events: [] as readonly EventItem[] })),
+      withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
         `/unified-dashboard/animal/${id}/sensor-chart?days=7`
-      ).catch(() => null),
+      ), 5000).catch(() => null),
     ]).then(([p, evts, sensorData]) => {
-      if (p) setProfile(p);
+      if (signal.aborted) return;
+      if (p) setProfile(p as unknown as CowProfile);
       setEvents(evts?.events ?? []);
 
-      // 센서 최신값 추출
       if (sensorData?.metrics) {
         const getLatest = (key: string): number | null => {
           const pts = sensorData.metrics[key];
@@ -101,19 +121,28 @@ export default function CowProfilePage(): React.JSX.Element {
         });
       }
 
-      // AI 건강 점수는 예측 API에서 가져옴
-      setAiScore(null); // healthPred.riskScore로 대체
-
+      setAiScore(null);
       setLoading(false);
     });
 
-    // 번식 이력
-    apiGet<readonly BreedingEvent[]>(`/animals/${id}/breeding-history`).then(setBreeding).catch(() => {});
+    // 보조 데이터 — 비동기 지연 로딩 (로딩 상태 차단 안 함)
+    withTimeout(apiGet<readonly BreedingEvent[]>(`/animals/${id}/breeding-history`), 5000)
+      .then((data) => { if (!signal.aborted && data) setBreeding(data); })
+      .catch(() => {});
 
-    // AI 예측 3종
-    apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`).then(setHealthPred).catch(() => {});
-    apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`).then(setEstrusPred).catch(() => {});
-    apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`).then(setCalvingPred).catch(() => {});
+    withTimeout(apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`), 5000)
+      .then((data) => { if (!signal.aborted && data) setHealthPred(data); })
+      .catch(() => {});
+
+    withTimeout(apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`), 5000)
+      .then((data) => { if (!signal.aborted && data) setEstrusPred(data); })
+      .catch(() => {});
+
+    withTimeout(apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`), 5000)
+      .then((data) => { if (!signal.aborted && data) setCalvingPred(data); })
+      .catch(() => {});
+
+    return () => { controller.abort(); };
   }, [id]);
 
   if (loading) {
@@ -151,12 +180,58 @@ export default function CowProfilePage(): React.JSX.Element {
         <button type="button" onClick={() => navigate(-1)} style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 8, padding: '6px 12px', color: 'var(--ct-text)', cursor: 'pointer', fontSize: 13 }}>
           ← 돌아가기
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            // 개체의 모든 데이터를 컨텍스트로 수집
+            const sensorCtx = sensor
+              ? `[현재 센서] 체온 ${sensor.temperature?.toFixed(1) ?? '—'}°C, 반추 ${sensor.rumination?.toFixed(0) ?? '—'}분, 활동량 ${sensor.activity?.toFixed(0) ?? '—'}, 음수 ${sensor.drinking?.toFixed(0) ?? '—'}L`
+              : '[센서 데이터 없음]';
+
+            const healthCtx = healthPred
+              ? `[AI 건강평가] 위험점수 ${healthPred.riskScore}/100 (${healthPred.riskLevel}), 사유: ${healthPred.reasons.join(', ')}, 권고: ${healthPred.recommendation}`
+              : '';
+
+            const estrusCtx = estrusPred?.hasData
+              ? `[발정예측] 평균주기 ${estrusPred.avgCycleDays ?? '—'}일, 다음발정까지 ${estrusPred.daysUntilNext ?? '—'}일 (${estrusPred.nextEstrusDate ?? '—'}), 3일이내: ${estrusPred.isWithin3Days ? '예' : '아니오'}`
+              : '';
+
+            const calvingCtx = calvingPred
+              ? `[분만예측] 위험도 ${calvingPred.calvingRisk}, 사유: ${calvingPred.reasons.join(', ')}`
+              : '';
+
+            const alarmCtx = events.length > 0
+              ? `[최근 알람 ${events.length}건] ${events.slice(0, 5).map((e) => `${e.eventType}(${e.severity})`).join(', ')}`
+              : '[최근 알람 없음]';
+
+            const breedCtx = breeding.length > 0
+              ? `[번식이력] ${breeding.slice(0, 3).map((b) => `${b.eventType}(${b.eventDate})`).join(', ')}`
+              : '';
+
+            const animalCtx = `[개체정보] #${profile.earTag} ${profile.name || ''}, ${profile.farmName}, ${profile.breed}, ${profile.sex === 'female' ? '암소' : '수소'}, ${profile.parity}산차, ${profile.lactationStatus ?? '—'}, 상태: ${profile.status}`;
+
+            const fullContext = [
+              animalCtx,
+              sensorCtx,
+              alarmCtx,
+              healthCtx,
+              estrusCtx,
+              calvingCtx,
+              breedCtx,
+            ].filter(Boolean).join('\n');
+
+            setGeniTrigger(`[소버린 AI — 개체 정밀 분석]\n[개체ID] ${profile.animalId}\n${fullContext}\n\n(${Date.now()})`);
+          }}
+          style={{ background: '#16a34a', border: 'none', borderRadius: 8, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+        >
+          🧠 소버린 AI
+        </button>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
             🐄 #{profile.earTag} {profile.name ? `(${profile.name})` : ''}
           </h1>
           <div style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}>
-            {profile.farmName} · {profile.breed} · {profile.gender === 'female' ? '♀' : '♂'} · {profile.lactationStatus ?? '—'} · {profile.parity}산차
+            {profile.farmName} · {profile.breed} · {profile.sex === 'female' ? '♀' : '♂'} · {profile.lactationStatus ?? '—'} · {profile.parity}산차
           </div>
         </div>
       </div>
@@ -184,6 +259,22 @@ export default function CowProfilePage(): React.JSX.Element {
           <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>AI 건강 점수</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: scoreColor }}>{healthScore ?? '—'}</div>
           <div style={{ fontSize: 10 }}>{healthPred ? healthPred.riskLevel : '/ 100점'}</div>
+        </div>
+      </div>
+
+      {/* 🏛️ 축산물이력추적 — 이력번호 클릭 시 전체 공공데이터 */}
+      <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
+        <TraceSection animalId={profile.animalId} />
+      </div>
+
+      {/* 💉 번식 관리 — 수정 추천 + 보유 정액 */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
+          <InseminationPanel animalId={profile.animalId} />
+        </div>
+        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
+          <FarmSemenInventory farmId={profile.farmId} />
         </div>
       </div>
 
@@ -341,6 +432,9 @@ export default function CowProfilePage(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      {/* 소버린 AI */}
+      <GeniVoiceAssistant openTrigger={geniTrigger} />
 
       {/* 건유 전환 모달 */}
       {showDryOff && profile && (

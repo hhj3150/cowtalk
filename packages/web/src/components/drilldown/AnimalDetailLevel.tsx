@@ -2,10 +2,12 @@
 
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { SensorChart } from '@web/components/data/SensorChart';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { Badge } from '@web/components/common/Badge';
+import { TraceSection } from '@web/components/trace/TraceSection';
 
 interface AnimalDetail {
   readonly animalId: string;
@@ -30,6 +32,7 @@ const SEVERITY_DOTS: Record<string, string> = {
 };
 
 export function AnimalDetailLevel({ animalId }: Props): React.JSX.Element {
+  const navigate = useNavigate();
   const { data: animal, isLoading } = useQuery({
     queryKey: ['drilldown', 'animal', animalId],
     queryFn: () => apiGet<AnimalDetail>(`/animals/${animalId}`),
@@ -62,8 +65,21 @@ export function AnimalDetailLevel({ animalId }: Props): React.JSX.Element {
             {animal?.currentDeviceId && (
               <Badge label="센서 연결" variant="success" />
             )}
+            <button
+              type="button"
+              onClick={() => navigate(`/cow/${animalId}`)}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
+              style={{ background: '#16a34a' }}
+            >
+              🧠 소버린 AI
+            </button>
           </div>
         </div>
+      </div>
+
+      {/* 🏛️ 이력제 — 클릭 시 공공데이터 펼침 */}
+      <div>
+        <TraceSection animalId={animalId} compact />
       </div>
 
       {/* 센서 차트 */}

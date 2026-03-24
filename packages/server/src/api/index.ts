@@ -42,6 +42,7 @@ import { epidemiologyRouter } from './routes/epidemiology.routes.js';
 import { quarantineDashboardRouter } from './routes/quarantine-dashboard.routes.js';
 import { investigationRouter } from './routes/investigation.routes.js';
 import { smaxtecNotesRouter } from './routes/smaxtec-notes.routes.js';
+import { adminRouter } from './routes/admin.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -89,6 +90,7 @@ export function createApiRouter(): Router {
   api.use('/quarantine', quarantineDashboardRouter);
   api.use('/investigation', investigationRouter);
   api.use('/smaxtec-notes', smaxtecNotesRouter);
+  api.use('/admin', adminRouter);
 
   return api;
 }

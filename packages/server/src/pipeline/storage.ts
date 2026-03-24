@@ -83,6 +83,15 @@ export async function storeSmaxtecEvents(
       { count: rows.length },
       `[Storage] Stored ${String(rows.length)} smaXtec events (trusted)`,
     );
+
+    // 발정 이벤트 감지 → 수정 추천 알림 자동 생성
+    const heatEvents = rows.filter((r) => r.eventType === 'estrus' || r.eventType === 'heat');
+    if (heatEvents.length > 0) {
+      triggerBreedingAdvice(heatEvents).catch((err) => {
+        logger.error({ err }, '[Storage] Breeding advice trigger failed (non-blocking)');
+      });
+    }
+
     return rows.length;
   } catch (error) {
     logger.error({ err: error }, '[Storage] Failed to store smaXtec events');
@@ -93,6 +102,37 @@ export async function storeSmaxtecEvents(
 // ===========================
 // 수집 통계
 // ===========================
+
+// ===========================
+// 발정 → 수정 추천 자동 트리거
+// ===========================
+
+async function triggerBreedingAdvice(
+  heatEvents: readonly { animalId: string; farmId: string; eventType: string; detectedAt: Date | null }[],
+): Promise<void> {
+  const { getBreedingAdvice } = await import('../services/breeding/breeding-advisor.service.js');
+
+  for (const heat of heatEvents) {
+    try {
+      const advice = await getBreedingAdvice(heat.animalId, heat.detectedAt ?? undefined);
+      if (!advice) continue;
+
+      logger.info({
+        animalId: heat.animalId,
+        earTag: advice.earTag,
+        farmName: advice.farmName,
+        optimalTime: advice.optimalInseminationTime,
+        topSemen: advice.recommendations[0]?.bullName ?? 'N/A',
+        warnings: advice.warnings.length,
+      }, `[BreedingAdvice] 🐄 발정감지 → 수정추천: ${advice.earTag} (${advice.farmName}) — ${advice.optimalTimeLabel}`);
+
+      // TODO: WebSocket push + 모바일 알림 발송
+      // io.to(advice.farmId).emit('breeding-advice', advice);
+    } catch (err) {
+      logger.error({ err, animalId: heat.animalId }, '[BreedingAdvice] Failed to generate advice');
+    }
+  }
+}
 
 export interface StorageStats {
   readonly sensorMeasurements: number;

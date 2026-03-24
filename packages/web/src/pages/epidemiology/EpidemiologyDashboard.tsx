@@ -1,7 +1,7 @@
 // 방역관 전용 대시보드
 // 6개 KPI + 위험 등급 배너 + 실시간 역학 현황판 + 24h 발열 추이 + 업무 큐
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -15,7 +15,10 @@ import type { RiskFarm } from '@web/components/epidemiology/SituationBoard';
 import { ActionQueue } from '@web/components/epidemiology/ActionQueue';
 import type { ActionQueueItem } from '@web/components/epidemiology/ActionQueue';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
 import { apiGet } from '@web/api/client';
+import { listAnimals } from '@web/api/animal.api';
+import type { AnimalSummary } from '@web/api/animal.api';
 
 // ===========================
 // API 타입
@@ -116,6 +119,9 @@ function KpiCard({ label, value, icon, sub, highlight }: KpiCardProps): React.JS
 
 export default function EpidemiologyDashboard(): React.JSX.Element {
   const [selectedFarm, setSelectedFarm] = useState<RiskFarm | null>(null);
+  const [farmTab, setFarmTab] = useState<'info' | 'animals'>('info');
+  const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
+  const [geniTriggerOverride, setGeniTriggerOverride] = useState<string | undefined>(undefined);
 
   const { data: dashboard, isLoading: dashLoading } = useQuery({
     queryKey: ['quarantine', 'dashboard'],
@@ -137,6 +143,16 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
     riskLevel === 'orange' ? `집단 발열 ${kpi?.clusterFarms ?? 0}건 확인됨` :
     riskLevel === 'yellow' ? `발열률 ${((kpi?.feverRate ?? 0) * 100).toFixed(1)}%` :
     '이상 징후 없음';
+
+  // 농장 선택 시 소버린 AI 자동 브리핑 트리거 (farmId 기반 고유 키)
+  const geniTrigger = useMemo(() => {
+    if (!selectedFarm) return undefined;
+    const flags = [
+      selectedFarm.clusterAlert && '집단발열 발생',
+      selectedFarm.legalSuspect && '법정전염병 의심',
+    ].filter(Boolean).join(', ');
+    return `[방역관 역학 브리핑 — ${selectedFarm.farmId}] ${selectedFarm.farmName} 농장 역학 상황을 분석해주세요. 현재 발열 ${selectedFarm.feverCount}두, 위험점수 ${selectedFarm.riskScore}점${flags ? ` (${flags})` : ''}. 방역관이 즉시 취해야 할 조치 3가지를 간결하게 알려주세요.`;
+  }, [selectedFarm]);
 
   const hourlyData = (dashboard?.hourlyFever24h ?? []).map((d) => ({
     ...d,
@@ -215,7 +231,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         top5RiskFarms={dashboard?.top5RiskFarms ?? []}
         activeAlerts={dashboard?.activeAlerts ?? []}
         isLoading={dashLoading}
-        onFarmClick={(farm) => setSelectedFarm(farm)}
+        onFarmClick={(farm) => { setSelectedFarm(farm); setFarmTab('info'); }}
       />
 
       {/* 농장 드릴다운 패널 */}
@@ -224,6 +240,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
           className="rounded-xl border p-4 space-y-4"
           style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
         >
+          {/* 헤더 */}
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold" style={{ color: 'var(--ct-text)' }}>
               {selectedFarm.farmName}
@@ -238,57 +255,99 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-3 text-sm">
-            <span style={{ color: 'var(--ct-text)' }}>
-              발열 <strong>{selectedFarm.feverCount}두</strong>
-            </span>
-            <span style={{ color: 'var(--ct-text)' }}>
-              위험점수 <strong>{selectedFarm.riskScore}</strong>
-            </span>
-            <span style={{ color: selectedFarm.clusterAlert ? '#ef4444' : 'var(--ct-text-secondary)' }}>
-              집단발열 {selectedFarm.clusterAlert ? '✔ 있음' : '없음'}
-            </span>
-            <span style={{ color: selectedFarm.legalSuspect ? '#ef4444' : 'var(--ct-text-secondary)' }}>
-              법정전염병 의심 {selectedFarm.legalSuspect ? '✔ 있음' : '없음'}
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            <Link
-              to={`/epidemiology/investigation/new?farmId=${selectedFarm.farmId}`}
-              className="text-xs px-3 py-1.5 rounded-lg font-medium text-white"
-              style={{ background: 'var(--ct-primary, #3b82f6)' }}
-            >
-              역학조사 시작
-            </Link>
-            <Link
-              to={`/epidemiology/radius?farmId=${selectedFarm.farmId}`}
-              className="text-xs px-3 py-1.5 rounded-lg font-medium"
-              style={{ background: 'var(--ct-border)', color: 'var(--ct-text)' }}
-            >
-              반경 분석
-            </Link>
-          </div>
-
-          <div
-            className="rounded-lg p-3"
-            style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)' }}
-          >
-            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ct-text)' }}>
-              소버린 AI 브리핑
-            </p>
-            <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
-              AI 분석 중...{' '}
-              <Link
-                to={`/epidemiology/investigation/new?farmId=${selectedFarm.farmId}`}
-                className="underline"
-                style={{ color: 'var(--ct-primary, #3b82f6)' }}
+          {/* 탭 전환 */}
+          <div className="flex gap-1 rounded-lg p-1" style={{ background: 'var(--ct-bg)' }}>
+            {(['info', 'animals'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setFarmTab(tab)}
+                className="flex-1 text-xs py-1.5 rounded-md font-medium transition-colors"
+                style={
+                  farmTab === tab
+                    ? { background: 'var(--ct-card)', color: 'var(--ct-text)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
+                    : { color: 'var(--ct-text-secondary)' }
+                }
               >
-                역학조사 시작
-              </Link>
-            </p>
+                {tab === 'info' ? '📊 농장 정보' : `🌡️ 발열 개체 (${selectedFarm.feverCount}두)`}
+              </button>
+            ))}
           </div>
+
+          {/* 탭 1: 농장 정보 */}
+          {farmTab === 'info' && (
+            <>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <span style={{ color: 'var(--ct-text)' }}>
+                  발열 <strong>{selectedFarm.feverCount}두</strong>
+                </span>
+                <span style={{ color: 'var(--ct-text)' }}>
+                  위험점수 <strong>{selectedFarm.riskScore}</strong>
+                </span>
+                <span style={{ color: selectedFarm.clusterAlert ? '#ef4444' : 'var(--ct-text-secondary)' }}>
+                  집단발열 {selectedFarm.clusterAlert ? '✔ 있음' : '없음'}
+                </span>
+                <span style={{ color: selectedFarm.legalSuspect ? '#ef4444' : 'var(--ct-text-secondary)' }}>
+                  법정전염병 의심 {selectedFarm.legalSuspect ? '✔ 있음' : '없음'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Link
+                  to={`/epidemiology/investigation/new?farmId=${selectedFarm.farmId}`}
+                  className="text-xs px-3 py-1.5 rounded-lg font-medium text-white"
+                  style={{ background: 'var(--ct-primary, #3b82f6)' }}
+                >
+                  역학조사 시작
+                </Link>
+                <Link
+                  to={`/epidemiology/radius?farmId=${selectedFarm.farmId}`}
+                  className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                  style={{ background: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                >
+                  반경 분석
+                </Link>
+              </div>
+              <div
+                className="rounded-lg p-3 border"
+                style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)' }}
+              >
+                <p className="text-xs font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--ct-text)' }}>
+                  <span>🤖</span> 소버린 AI 브리핑
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--ct-text-secondary)' }}>
+                  {selectedFarm.farmName} 농장에 대한 역학 분석을 지니 AI에 자동 요청했습니다.
+                  <br />
+                  <span className="text-emerald-400 font-medium">우측 하단 🟢 지니 패널</span>에서 브리핑을 확인하세요.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* 탭 2: 발열 개체 목록 */}
+          {farmTab === 'animals' && (
+            <FarmAnimalList
+              farmId={selectedFarm.farmId}
+              onSelect={(animalId) => setDrillAnimalId(animalId)}
+            />
+          )}
         </div>
+      )}
+
+      {/* 개체 상세 드릴다운 패널 */}
+      {drillAnimalId != null && selectedFarm != null && (
+        <AnimalDrilldownPanel
+          animalId={drillAnimalId}
+          farmId={selectedFarm.farmId}
+          farmName={selectedFarm.farmName}
+          onClose={() => setDrillAnimalId(null)}
+          onAiRequest={(triggerText) => {
+            setDrillAnimalId(null);
+            // geniTrigger를 새 값으로 갱신 — GeniVoiceAssistant가 열림
+            const updatedTrigger = triggerText;
+            // useMemo 우회: 직접 ref 업데이트 대신 state 사용
+            setGeniTriggerOverride(updatedTrigger);
+          }}
+        />
       )}
 
       {/* 차트 2개 (24h 발열 추이 + 7일 DSI) */}
@@ -377,7 +436,91 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         <ActionQueue items={actionQueue ?? []} isLoading={queueLoading} />
       </div>
 
-      <GeniVoiceAssistant />
+      <GeniVoiceAssistant openTrigger={geniTriggerOverride ?? geniTrigger} />
     </div>
+  );
+}
+
+// ===========================
+// 발열 개체 목록 (드릴다운 탭 2)
+// ===========================
+
+interface FarmAnimalListProps {
+  readonly farmId: string;
+  readonly onSelect: (animalId: string) => void;
+}
+
+function FarmAnimalList({ farmId, onSelect }: FarmAnimalListProps): React.JSX.Element {
+  const { data, isLoading } = useQuery({
+    queryKey: ['farm-animals', farmId],
+    queryFn: () => listAnimals({ farmId, limit: 100, status: 'active' }) as unknown as Promise<AnimalSummary[]>,
+    staleTime: 30_000,
+  });
+
+  const animals: readonly AnimalSummary[] = (data as unknown as AnimalSummary[]) ?? [];
+  const feverAnimals = animals.filter((a: AnimalSummary) => (a.latestTemperature ?? 0) >= 38.5);
+  const display: readonly AnimalSummary[] = feverAnimals.length > 0 ? feverAnimals : animals.slice(0, 20);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-1.5">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-10 rounded animate-pulse" style={{ background: 'var(--ct-border)' }} />
+        ))}
+      </div>
+    );
+  }
+
+  if (display.length === 0) {
+    return (
+      <p className="text-xs text-center py-6" style={{ color: 'var(--ct-text-secondary)' }}>
+        발열 개체가 없습니다
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 max-h-64 overflow-y-auto">
+      {feverAnimals.length === 0 && (
+        <p className="text-xs mb-2" style={{ color: 'var(--ct-text-secondary)' }}>
+          현재 발열 개체 없음 — 전체 개체 목록 표시
+        </p>
+      )}
+      {display.map((animal: AnimalSummary) => (
+        <FarmAnimalRow key={animal.animalId} animal={animal} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
+function FarmAnimalRow({ animal, onSelect }: { animal: AnimalSummary; onSelect: (id: string) => void }): React.JSX.Element {
+  const isFever = (animal.latestTemperature ?? 0) >= 38.5;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(animal.animalId)}
+      className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors"
+      style={{
+        background: isFever ? 'rgba(239,68,68,0.06)' : 'var(--ct-bg)',
+        border: isFever ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--ct-border)',
+      }}
+    >
+      <div>
+        <p className="text-xs font-medium" style={{ color: isFever ? '#ef4444' : 'var(--ct-text)' }}>
+          {animal.earTag}{isFever && ' 🌡️'}
+        </p>
+        <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+          {animal.status} · {animal.breed}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {animal.latestTemperature != null && (
+          <span className="text-xs font-semibold" style={{ color: isFever ? '#ef4444' : 'var(--ct-text-secondary)' }}>
+            {animal.latestTemperature.toFixed(1)}°
+          </span>
+        )}
+        <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>›</span>
+      </div>
+    </button>
   );
 }

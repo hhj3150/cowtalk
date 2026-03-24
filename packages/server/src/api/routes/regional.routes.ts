@@ -7,8 +7,8 @@ import { requirePermission } from '../middleware/rbac.js';
 import type { Role } from '@cowtalk/shared';
 import { analyzeRegion } from '../../ai-brain/index.js';
 import { getDb } from '../../config/database.js';
-import { regions, farms } from '../../db/schema.js';
-import { eq, count } from 'drizzle-orm';
+import { regions, farms, smaxtecEvents } from '../../db/schema.js';
+import { eq, count, and, gte, inArray } from 'drizzle-orm';
 
 export const regionalRouter = Router();
 
@@ -37,12 +37,20 @@ regionalRouter.get('/summary', requirePermission('regional', 'read'), async (_re
   }
 });
 
-// GET /regional/map — 지도 데이터
-regionalRouter.get('/map', requirePermission('regional', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+// 모드별 이벤트 타입 매핑
+const MODE_EVENT_TYPES: Record<string, readonly string[]> = {
+  estrus: ['estrus', 'heat', 'insemination', 'no_insemination'],
+  health: ['temperature_high', 'rumination_decrease', 'clinical_condition', 'health_general', 'temperature_low'],
+  sensor: ['activity_decrease', 'activity_increase'],
+};
+
+// GET /regional/map — 지도 데이터 (mode별 필터링)
+regionalRouter.get('/map', requirePermission('regional', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
+    const mode = (req.query.mode as string) ?? 'status';
 
-    const markers = await db
+    const baseFarms = await db
       .select({
         farmId: farms.farmId,
         name: farms.name,
@@ -54,7 +62,54 @@ regionalRouter.get('/map', requirePermission('regional', 'read'), async (_req: R
       .from(farms)
       .where(eq(farms.status, 'active'));
 
-    res.json({ success: true, data: { markers } });
+    // 모드별 이벤트 집계 (최근 7일)
+    const eventTypes = MODE_EVENT_TYPES[mode];
+    let farmEventCounts = new Map<string, number>();
+
+    if (eventTypes) {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const counts = await db
+        .select({
+          farmId: smaxtecEvents.farmId,
+          cnt: count(),
+        })
+        .from(smaxtecEvents)
+        .where(
+          and(
+            inArray(smaxtecEvents.eventType, eventTypes as string[]),
+            gte(smaxtecEvents.detectedAt, sevenDaysAgo),
+          ),
+        )
+        .groupBy(smaxtecEvents.farmId);
+
+      farmEventCounts = new Map(counts.map((r) => [r.farmId, r.cnt]));
+    }
+
+    // 모드별 상태 계산
+    const markers = baseFarms.map((f) => {
+      const eventCount = farmEventCounts.get(f.farmId) ?? 0;
+      let modeStatus = f.status;
+
+      if (eventTypes) {
+        if (eventCount >= 5) modeStatus = 'critical';
+        else if (eventCount >= 3) modeStatus = 'warning';
+        else if (eventCount >= 1) modeStatus = 'normal';
+        else modeStatus = 'normal';
+      }
+
+      return {
+        farmId: f.farmId,
+        name: f.name,
+        lat: f.lat,
+        lng: f.lng,
+        totalAnimals: f.currentHeadCount,
+        activeAlerts: eventCount,
+        healthScore: eventTypes ? Math.max(0, 100 - eventCount * 15) : null,
+        status: modeStatus,
+      };
+    });
+
+    res.json({ success: true, data: { markers, mode } });
   } catch (error) {
     next(error);
   }

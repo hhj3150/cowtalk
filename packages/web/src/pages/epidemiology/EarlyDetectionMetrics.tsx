@@ -193,7 +193,7 @@ export default function EarlyDetectionMetrics(): React.JSX.Element {
           <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--ct-text)' }}>
             🏆 {yearly.year}년 누적 성과
           </h3>
-          <div className="grid grid-cols-3 gap-4 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
             <div className="text-center">
               <p className="text-2xl font-bold" style={{ color: 'var(--ct-primary)' }}>
                 {yearly.totalDetections}건

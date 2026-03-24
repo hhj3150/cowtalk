@@ -1,12 +1,16 @@
 // 전국 방역 상황 종합
 // 시도별 위험 등급 지도 + 드릴다운 + 광역 경보 배너
+// 드릴다운: 시도 → 농장 → 개체 → AI
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
+import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
+import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
+import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { apiGet } from '@web/api/client';
 import { TILE_URL, TILE_ATTRIBUTION } from '@web/constants/map';
 
@@ -54,7 +58,7 @@ interface NationalData {
 }
 
 // ===========================
-// API 훅
+// API
 // ===========================
 
 async function fetchNational(): Promise<NationalData> {
@@ -82,6 +86,13 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 
 export default function NationalSituation(): React.JSX.Element {
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
+  const [showFarmPanel, setShowFarmPanel] = useState(false);
+
+  // 개체 드릴다운 상태
+  const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
+  const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
+  const [drillFarmName, setDrillFarmName] = useState<string>('');
+  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
 
   const { data, isLoading } = useQuery({
     queryKey: ['quarantine', 'national-situation'],
@@ -101,6 +112,27 @@ export default function NationalSituation(): React.JSX.Element {
     rate: (d.feverRate * 100).toFixed(2),
   }));
 
+  // 시도 클릭 → 농장 패널 열기
+  function handleProvinceClick(province: string): void {
+    setSelectedProvince(province);
+    setShowFarmPanel(true);
+  }
+
+  // 개체 선택 → 드릴다운 패널
+  function handleAnimalSelect(animalId: string, farmId: string, farmName: string): void {
+    setDrillAnimalId(animalId);
+    setDrillFarmId(farmId);
+    setDrillFarmName(farmName);
+  }
+
+  function handleCloseAnimalPanel(): void {
+    setDrillAnimalId(null);
+    setDrillFarmId(null);
+  }
+
+  // GeniVoiceAssistant 트리거 (개체 AI 분석 요청 시)
+  const effectiveTrigger = useMemo(() => geniTrigger, [geniTrigger]);
+
   return (
     <div className="space-y-6">
       {/* 헤더 */}
@@ -109,7 +141,7 @@ export default function NationalSituation(): React.JSX.Element {
           🇰🇷 전국 방역 상황 종합
         </h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
-          시도별 위험 등급 — 시도 클릭 시 시군구 드릴다운
+          시도별 위험 등급 — 시도 클릭 시 농장 드릴다운
         </p>
       </div>
 
@@ -152,7 +184,7 @@ export default function NationalSituation(): React.JSX.Element {
               🗺️ 시도별 위험 등급 지도
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
-              원 크기 = 농장 수, 색상 = 위험 등급
+              원 클릭 시 해당 시도 농장 드릴다운
             </p>
           </div>
           <MapContainer
@@ -174,14 +206,15 @@ export default function NationalSituation(): React.JSX.Element {
                 fillOpacity={0.7}
                 opacity={1}
                 weight={2}
-                eventHandlers={{ click: () => setSelectedProvince(p.province) }}
+                eventHandlers={{ click: () => handleProvinceClick(p.province) }}
               >
                 <Tooltip>
                   <div className="text-sm">
                     <strong>{p.province}</strong><br />
                     농장 {p.farmCount}개 | {p.totalAnimals.toLocaleString()}두<br />
                     발열 {p.feverAnimals}두 ({(p.feverRate * 100).toFixed(1)}%)<br />
-                    등급: <strong>{p.riskLevel.toUpperCase()}</strong>
+                    등급: <strong>{p.riskLevel.toUpperCase()}</strong><br />
+                    <em style={{ color: '#6b7280' }}>클릭하여 농장 목록 보기</em>
                   </div>
                 </Tooltip>
               </CircleMarker>
@@ -189,7 +222,7 @@ export default function NationalSituation(): React.JSX.Element {
           </MapContainer>
         </div>
 
-        {/* 시도별 통계 테이블 + 드릴다운 */}
+        {/* 시도별 통계 테이블 + 시군구 드릴다운 */}
         <div
           className="rounded-xl border p-4 flex flex-col"
           style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
@@ -217,19 +250,27 @@ export default function NationalSituation(): React.JSX.Element {
           ) : selectedProvince && districtData ? (
             <div className="space-y-1.5 flex-1 overflow-y-auto">
               {districtData.map((d) => (
-                <div
+                <button
                   key={d.district}
-                  className="flex items-center justify-between rounded-lg px-3 py-2"
+                  type="button"
+                  onClick={() => handleProvinceClick(selectedProvince)}
+                  className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-left"
                   style={{ background: 'var(--ct-bg)' }}
                 >
                   <div>
                     <p className="text-xs font-medium" style={{ color: 'var(--ct-text)' }}>{d.district}</p>
                     <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
                       {d.farmCount}농장 · {d.totalAnimals}두
+                      {d.feverAnimals > 0 && (
+                        <span className="ml-1 text-red-500">발열 {d.feverAnimals}두</span>
+                      )}
                     </p>
                   </div>
-                  <RiskLevelBadge level={d.riskLevel} size="sm" />
-                </div>
+                  <div className="flex items-center gap-2">
+                    <RiskLevelBadge level={d.riskLevel} size="sm" />
+                    <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>›</span>
+                  </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -237,7 +278,7 @@ export default function NationalSituation(): React.JSX.Element {
               {(data?.provinces ?? []).map((p) => (
                 <button
                   key={p.province}
-                  onClick={() => setSelectedProvince(p.province)}
+                  onClick={() => handleProvinceClick(p.province)}
                   className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors"
                   style={{ background: 'var(--ct-bg)' }}
                 >
@@ -247,7 +288,10 @@ export default function NationalSituation(): React.JSX.Element {
                       {p.farmCount}농장 · {p.feverAnimals}두 발열
                     </p>
                   </div>
-                  <RiskLevelBadge level={p.riskLevel} size="sm" />
+                  <div className="flex items-center gap-2">
+                    <RiskLevelBadge level={p.riskLevel} size="sm" />
+                    <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>›</span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -280,6 +324,33 @@ export default function NationalSituation(): React.JSX.Element {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {/* 시도 농장 목록 패널 (슬라이드인) */}
+      {showFarmPanel && selectedProvince && (
+        <ProvinceFarmListPanel
+          province={selectedProvince}
+          onClose={() => setShowFarmPanel(false)}
+          onAnimalSelect={handleAnimalSelect}
+        />
+      )}
+
+      {/* 개체 상세 패널 (z-50, AnimalDrilldownPanel 위에 렌더) */}
+      {drillAnimalId != null && drillFarmId != null && (
+        <AnimalDrilldownPanel
+          animalId={drillAnimalId}
+          farmId={drillFarmId}
+          farmName={drillFarmName}
+          onClose={handleCloseAnimalPanel}
+          onAiRequest={(triggerText) => {
+            setGeniTrigger(triggerText);
+            handleCloseAnimalPanel();
+            setShowFarmPanel(false);
+          }}
+        />
+      )}
+
+      {/* 소버린 AI (전역 — 개체 AI 분석 트리거 수신) */}
+      <GeniVoiceAssistant openTrigger={effectiveTrigger} />
     </div>
   );
 }

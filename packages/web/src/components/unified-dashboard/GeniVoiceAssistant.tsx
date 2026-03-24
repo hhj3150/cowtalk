@@ -141,10 +141,13 @@ function getContextualSuggestions(ctx?: DashboardContext): readonly string[] {
 
 interface GeniVoiceAssistantProps {
   readonly dashboardContext?: DashboardContext;
+  /** 이 값이 바뀌면 패널을 자동 열고 해당 내용으로 즉시 질문 전송 */
+  readonly openTrigger?: string;
 }
 
 export function GeniVoiceAssistant({
   dashboardContext,
+  openTrigger,
 }: GeniVoiceAssistantProps): React.JSX.Element {
   const [state, setState] = useState<GeniState>('idle');
   const [isOpen, setIsOpen] = useState(false);
@@ -155,10 +158,17 @@ export function GeniVoiceAssistant({
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastTriggerRef = useRef<string | undefined>(undefined);
+  const pendingAskRef = useRef<string | undefined>(undefined);
+  // 개체 분석 모드 — trigger로 진입 시 개체 데이터를 컨텍스트로 유지
+  const [animalContext, setAnimalContext] = useState<string | null>(null);
+  const [animalIdForChat, setAnimalIdForChat] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
-  const suggestions = getContextualSuggestions(dashboardContext);
+  const suggestions = animalContext
+    ? ['이 소 지금 수정해도 돼?', '체온이 왜 높아?', '다음에 뭘 해야 해?', '이 소 번식 이력 분석해줘']
+    : getContextualSuggestions(dashboardContext);
 
   // 음성 인식 지원 여부
   const hasSpeechRecognition = typeof window !== 'undefined' &&
@@ -191,12 +201,17 @@ export function GeniVoiceAssistant({
       const response = await axios.post<string>(
         '/api/chat/stream',
         {
-          question: `[음성 대화 모드] 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.\n\n질문: ${question}`,
+          question: animalContext
+            ? `[소버린 AI — 개체 대화 모드] 당신은 축산 전문 AI 수의사 "소버린"입니다. 이 개체의 DB 데이터(센서, 알람, 번식이력, 건강이력)를 기반으로 답하세요. 사용자가 무엇을 물어보든 이 개체 기준으로 답하세요. 간결하되 전문적으로, 구체적 행동 지시를 포함하세요. 데이터에 없는 내용은 추측하지 말고 "데이터 없음"으로 명시하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
+            : `[음성 대화 모드] 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.\n\n질문: ${question}`,
           role: user?.role ?? 'farm_owner',
           farmId: selectedFarmId ?? undefined,
-          dashboardContext: dashboardContext
-            ? `현재 대시보드: 총 알람 ${dashboardContext.totalAlarms}건, 긴급 ${dashboardContext.criticalCount}건, 건강이상 ${dashboardContext.healthIssues}두, ${dashboardContext.farmCount}개 농장, ${dashboardContext.animalCount}두 관리 중`
-            : undefined,
+          animalId: animalIdForChat ?? undefined,
+          dashboardContext: animalContext
+            ? `${animalContext}`
+            : dashboardContext
+              ? `현재 대시보드: 총 알람 ${dashboardContext.totalAlarms}건, 긴급 ${dashboardContext.criticalCount}건, 건강이상 ${dashboardContext.healthIssues}두, ${dashboardContext.farmCount}개 농장, ${dashboardContext.animalCount}두 관리 중`
+              : undefined,
           conversationHistory: messages.slice(-6).map((m) => ({
             role: m.role,
             content: m.content,
@@ -244,6 +259,38 @@ export function GeniVoiceAssistant({
       setState('idle');
     }
   }, [messages, user?.role, selectedFarmId, dashboardContext]);
+
+  // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
+  useEffect(() => {
+    if (!openTrigger || openTrigger === lastTriggerRef.current) return;
+    lastTriggerRef.current = openTrigger;
+
+    // 개체 분석 trigger면 컨텍스트 저장 (이후 대화에도 유지)
+    if (openTrigger.startsWith('[소버린 AI')) {
+      setAnimalContext(openTrigger);
+      // trigger에서 animalId 추출 (여러 패턴 지원)
+      const idMatch = /\[개체ID\]\s*([a-f0-9-]{36})/i.exec(openTrigger)
+        ?? /animalId[=:]\s*([a-f0-9-]{36})/i.exec(openTrigger)
+        ?? /개체\]\s*#(\S+),/.exec(openTrigger);
+      setAnimalIdForChat(idMatch?.[1] ?? null);
+      // 자동 질문 없음 — 사용자가 물어보면 답하는 대화형
+    } else {
+      setAnimalContext(null);
+      setAnimalIdForChat(null);
+      pendingAskRef.current = openTrigger;
+    }
+
+    setIsOpen(true);
+    setMessages([]);
+  }, [openTrigger]);
+
+  // messages가 [] 로 초기화된 직후 pendingAsk 실행
+  useEffect(() => {
+    const pending = pendingAskRef.current;
+    if (!pending || messages.length !== 0 || state !== 'idle') return;
+    pendingAskRef.current = undefined;
+    void askGeni(pending);
+  }, [messages, state, askGeni]);
 
   // 음성 인식 시작
   const startListening = useCallback(() => {
@@ -346,8 +393,8 @@ export function GeniVoiceAssistant({
         onClick={() => setIsOpen(true)}
         style={{
           position: 'fixed',
-          bottom: 24,
-          right: 24,
+          bottom: isMobile ? 76 : 24,
+          right: isMobile ? 16 : 24,
           width: 60,
           height: 60,
           borderRadius: '50%',
@@ -385,11 +432,11 @@ export function GeniVoiceAssistant({
   return (
     <div style={{
       position: 'fixed',
-      bottom: isMobile ? 0 : 24,
+      bottom: isMobile ? 60 : 24,
       right: isMobile ? 0 : 24,
       left: isMobile ? 0 : undefined,
       width: isMobile ? '100%' : 400,
-      maxHeight: isMobile ? '85vh' : '70vh',
+      maxHeight: isMobile ? 'calc(100vh - 120px)' : '70vh',
       borderRadius: isMobile ? '16px 16px 0 0' : 16,
       background: 'var(--ct-card, #1e293b)',
       border: '1px solid var(--ct-border, #334155)',
@@ -426,15 +473,15 @@ export function GeniVoiceAssistant({
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ct-text, #f1f5f9)' }}>
-              지니 <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
+              {animalContext ? '🧠 소버린' : '지니'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
             </div>
-            <div style={{ fontSize: 10, color: 'var(--ct-text-muted, #94a3b8)' }}>
-              CowTalk AI 어시스턴트
+            <div style={{ fontSize: 10, color: animalContext ? '#16a34a' : 'var(--ct-text-muted, #94a3b8)' }}>
+              {animalContext ? '개체 분석 대화 모드 — 무엇이든 물어보세요' : 'CowTalk AI 어시스턴트'}
             </div>
           </div>
         </div>
         <button
-          onClick={() => { stopSpeaking(); setIsOpen(false); }}
+          onClick={() => { stopSpeaking(); setIsOpen(false); setAnimalContext(null); setAnimalIdForChat(null); }}
           style={{
             background: 'none',
             border: 'none',

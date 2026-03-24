@@ -10,6 +10,7 @@ import { MobileBottomNav } from '@web/components/mobile/MobileBottomNav';
 import { QuickRecordSheet } from '@web/components/mobile/QuickRecordSheet';
 import { ChatDrawer } from '@web/components/chat/ChatDrawer';
 import { DrilldownOverlay } from '@web/components/drilldown/DrilldownOverlay';
+import { NotificationDrawer } from '@web/components/notification/NotificationDrawer';
 import { OfflineBanner } from '@web/components/common/OfflineBanner';
 import { SkipNavLink } from '@web/components/common/SkipNavLink';
 import { countPending } from '@web/lib/offline-queue';
@@ -72,6 +73,9 @@ export function AppShell(): React.JSX.Element {
 
         {/* 드릴다운 오버레이 */}
         <DrilldownOverlay />
+
+        {/* 알림 드로어 */}
+        <NotificationDrawer />
       </div>
 
       {/* 모바일 하단 네비게이션 */}

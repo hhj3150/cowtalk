@@ -2,8 +2,11 @@
 // 모든 역할이 같은 소를 클릭하면 이 화면이 열린다. 역할에 따라 보이는 섹션과 순서가 다르다.
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAnimalDetail } from '@web/hooks/useAnimal';
 import { useAuthStore } from '@web/stores/auth.store';
+import { TraceSection } from '@web/components/trace/TraceSection';
+import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { SensorChart } from '@web/components/data/SensorChart';
 import { AiInsightPanel } from '@web/components/ai/AiInsightPanel';
 import { ActionCard } from '@web/components/ai/ActionCard';
@@ -56,27 +59,31 @@ const SENSOR_ORDER_BY_ROLE: Record<Role, readonly { key: string; label: string; 
 };
 
 // 역할별 표시 섹션 (순서)
-type SectionKey = 'sensor' | 'ai' | 'actions' | 'record' | 'pedigree' | 'semen' | 'breeding' | 'health' | 'production' | 'events' | 'timeline' | 'feedback';
+type SectionKey = 'sensor' | 'ai' | 'actions' | 'record' | 'pedigree' | 'semen' | 'breeding' | 'health' | 'production' | 'events' | 'timeline' | 'feedback' | 'trace' | 'insemination';
 
 const SECTIONS_BY_ROLE: Record<Role, readonly SectionKey[]> = {
-  farmer: ['sensor', 'ai', 'actions', 'record', 'production', 'breeding', 'health', 'events', 'feedback'],
-  veterinarian: ['sensor', 'ai', 'actions', 'record', 'health', 'pedigree', 'breeding', 'production', 'events', 'timeline', 'feedback'],
-  inseminator: ['sensor', 'ai', 'actions', 'record', 'semen', 'pedigree', 'breeding', 'timeline', 'events', 'feedback'],
-  government_admin: ['sensor', 'ai', 'record', 'production', 'health', 'events'],
-  quarantine_officer: ['sensor', 'ai', 'record', 'health', 'events'],
+  farmer: ['sensor', 'ai', 'actions', 'record', 'trace', 'insemination', 'production', 'breeding', 'health', 'events', 'feedback'],
+  veterinarian: ['sensor', 'ai', 'actions', 'record', 'trace', 'insemination', 'health', 'pedigree', 'breeding', 'production', 'events', 'timeline', 'feedback'],
+  inseminator: ['sensor', 'ai', 'actions', 'record', 'trace', 'insemination', 'semen', 'pedigree', 'breeding', 'timeline', 'events', 'feedback'],
+  government_admin: ['sensor', 'ai', 'record', 'trace', 'production', 'health', 'events'],
+  quarantine_officer: ['sensor', 'ai', 'record', 'trace', 'health', 'events'],
   feed_company: ['sensor', 'ai', 'record', 'production', 'events'],
 };
 
 export function AnimalDetail({ animalId }: Props): React.JSX.Element {
+  const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? 'farmer';
   const { data, isLoading, error, refetch } = useAnimalDetail(animalId);
 
   if (isLoading) return <LoadingSkeleton lines={8} />;
   if (error) return <ErrorFallback error={error as Error} onRetry={() => { refetch(); }} />;
-  if (!data) return <div className="text-sm text-gray-400">개체를 찾을 수 없습니다.</div>;
+  // API는 { animalId, earTag, ..., recentEvents, interpretation } flat 구조로 반환
+  // AnimalDetailData.animal은 타입 정의상 있지만, 실제 응답에서는 data 자체가 animal
+  const rawData = data as unknown as Record<string, unknown>;
+  if (!rawData?.animalId && !rawData?.animal) return <div className="text-sm text-gray-400">개체를 찾을 수 없습니다.</div>;
 
-  const animal = data.animal;
-  const interpretation = data.interpretation as Record<string, unknown> | null;
+  const animal = (rawData.animal ?? rawData) as unknown as Record<string, unknown> & { earTag: string; breedType: string; breed: string; parity: number; sex: string; status: string; farmName: string; traceId: string | null; farmId: string; latestTemperature: number | null; latestActivity: number | null; latestRumination: number | null };
+  const interpretation = (rawData.interpretation ?? null) as Record<string, unknown> | null;
   const metrics = SENSOR_ORDER_BY_ROLE[role];
   const sections = SECTIONS_BY_ROLE[role];
 
@@ -97,8 +104,20 @@ export function AnimalDetail({ animalId }: Props): React.JSX.Element {
             />
           )}
         </div>
-        {animal.traceId && <p className="mt-1 text-xs text-gray-400">이력번호: {animal.traceId}</p>}
-        <p className="text-xs text-gray-400">{animal.farmName}</p>
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          {animal.traceId && (
+            <span className="text-xs text-gray-400">이력번호: {animal.traceId}</span>
+          )}
+          <span className="text-xs text-gray-400">{animal.farmName}</span>
+          <button
+            type="button"
+            onClick={() => navigate(`/cow/${animalId}`)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white ml-auto"
+            style={{ background: '#16a34a' }}
+          >
+            🧠 소버린 AI
+          </button>
+        </div>
 
         {/* 최신 센서값 */}
         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
@@ -240,6 +259,20 @@ function SectionRenderer({
       return (
         <Section title="예측 타임라인">
           <PredictionTimeline interpretation={interpretation} />
+        </Section>
+      );
+
+    case 'trace':
+      return (
+        <Section title="🏛️ 축산물이력추적">
+          <TraceSection animalId={animalId} compact={false} />
+        </Section>
+      );
+
+    case 'insemination':
+      return (
+        <Section title="💉 번식 관리 — 수정 추천">
+          <InseminationPanel animalId={animalId} />
         </Section>
       );
 
