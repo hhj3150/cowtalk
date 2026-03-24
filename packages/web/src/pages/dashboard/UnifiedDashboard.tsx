@@ -469,7 +469,10 @@ const briefingCardBase: React.CSSProperties = {
   background: 'linear-gradient(135deg, var(--ct-card) 0%, rgba(0,214,126,0.03) 100%)',
   borderRadius: 14,
   padding: 20,
-  border: '1px solid var(--ct-border)',
+  borderTop: '1px solid var(--ct-border)',
+  borderRight: '1px solid var(--ct-border)',
+  borderBottom: '1px solid var(--ct-border)',
+  borderLeft: '1px solid var(--ct-border)',
 };
 
 // ── Mapping constants ──
