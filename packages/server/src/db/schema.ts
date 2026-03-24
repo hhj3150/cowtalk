@@ -59,6 +59,8 @@ export const farms = pgTable('farms', {
   tenantId: uuid('tenant_id').references(() => tenants.tenantId),
   ownerName: varchar('owner_name', { length: 100 }),
   phone: varchar('phone', { length: 20 }),
+  // smaXtec 목장별 커스텀 설정 (Organisation Settings에서 동기화)
+  breedingSettings: jsonb('breeding_settings').notNull().default('{}').$type<FarmBreedingSettings>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -66,6 +68,34 @@ export const farms = pgTable('farms', {
   index('farms_region_id_idx').on(table.regionId),
   index('farms_status_idx').on(table.status),
 ]);
+
+/** smaXtec Organisation Settings에서 동기화되는 목장별 번식 파라미터 */
+export interface FarmBreedingSettings {
+  /** 발정재귀일수 (기본: 21일, smaXtec 기본: 20) */
+  readonly estrusRecurrenceDays?: number;
+  /** 일반 정액 수정 적기 시작 시간 (기본: 10h) */
+  readonly inseminationWindowStartHours?: number;
+  /** 일반 정액 수정 적기 종료 시간 (기본: 18h) */
+  readonly inseminationWindowEndHours?: number;
+  /** 성감별 정액 수정 적기 시작 (null = 미사용) */
+  readonly sexedSemenWindowStartHours?: number | null;
+  /** 성감별 정액 수정 적기 종료 */
+  readonly sexedSemenWindowEndHours?: number | null;
+  /** 수정 후 임신감정 시기 (기본: 28일, smaXtec 기본: 40) */
+  readonly pregnancyCheckDays?: number;
+  /** 평균 임신 기간 (기본: 280일) */
+  readonly gestationDays?: number;
+  /** 건유 목록 표시 (분만 N일 전, 기본: 90, smaXtec 기본: 80) */
+  readonly dryOffBeforeCalvingDays?: number;
+  /** 육성우 최소 번식 연령 (월, 기본: 12) */
+  readonly minBreedingAgeMonths?: number;
+  /** DIM 경과 후 발정 탐지 활성화 (기본: 20일) */
+  readonly estrusDetectionAfterDim?: number;
+  /** 장기공태우 기준 DIM (기본: 200일) */
+  readonly longOpenDaysDim?: number;
+  /** smaXtec에서 마지막 동기화 시각 */
+  readonly syncedAt?: string;
+}
 
 export const farmGroups = pgTable('farm_groups', {
   groupId: uuid('group_id').primaryKey().defaultRandom(),

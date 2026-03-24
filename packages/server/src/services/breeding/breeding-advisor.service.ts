@@ -45,23 +45,34 @@ export interface SemenRecommendation {
 // 수정 적기 계산
 // ===========================
 
+import type { FarmBreedingSettings } from '../../db/schema.js';
+import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
+
 /**
  * 발정 시작 시점으로부터 최적 수정 시간 계산
- * 일반적 기준: 발정 시작 후 12~18시간이 수정 적기
- * AM-PM 룰: 오전 발정 → 오후 수정, 오후 발정 → 다음날 오전 수정
+ * 목장별 설정값(inseminationWindowStart/End)을 반영
+ * 기본: AM-PM 룰 (오전 발정 → 오후 수정, 오후 발정 → 다음날 오전 수정)
  */
-function calculateOptimalTime(heatDetectedAt: Date): { time: Date; label: string } {
+function calculateOptimalTime(
+  heatDetectedAt: Date,
+  settings: FarmBreedingSettings,
+): { time: Date; label: string } {
+  const windowStart = settings.inseminationWindowStartHours ?? 10;
+  const windowEnd = settings.inseminationWindowEndHours ?? 18;
+  const midPoint = (windowStart + windowEnd) / 2; // 수정 적기 중간값
+
   const heatHour = heatDetectedAt.getHours();
 
-  // AM-PM Rule
+  // AM-PM Rule (목장별 수정 적기 윈도우 반영)
   if (heatHour < 12) {
-    // 오전 발정 → 당일 오후 (12~18시간 후)
-    const optimal = new Date(heatDetectedAt.getTime() + 14 * 60 * 60 * 1000); // +14시간
-    return { time: optimal, label: '오늘 오후 수정 권장 (AM-PM 룰)' };
+    // 오전 발정 → 당일 오후 (midPoint 시간 후)
+    const optimal = new Date(heatDetectedAt.getTime() + midPoint * 60 * 60 * 1000);
+    return { time: optimal, label: `오늘 오후 수정 권장 (적기 ${windowStart}~${windowEnd}h)` };
   }
   // 오후 발정 → 다음날 오전
-  const optimal = new Date(heatDetectedAt.getTime() + 16 * 60 * 60 * 1000); // +16시간
-  return { time: optimal, label: '내일 오전 수정 권장 (AM-PM 룰)' };
+  const hoursToAdd = midPoint + 2; // 오후 발정은 +2시간 추가
+  const optimal = new Date(heatDetectedAt.getTime() + hoursToAdd * 60 * 60 * 1000);
+  return { time: optimal, label: `내일 오전 수정 권장 (적기 ${windowStart}~${windowEnd}h)` };
 }
 
 // ===========================
@@ -195,8 +206,9 @@ export async function getBreedingAdvice(
     heatTime = latestHeat?.detectedAt ?? new Date();
   }
 
-  // 3. 수정 적기 계산
-  const { time: optimalTime, label: optimalLabel } = calculateOptimalTime(heatTime);
+  // 3. 목장별 설정 로드 + 수정 적기 계산
+  const farmSettings = await getFarmBreedingSettings(animal.farmId);
+  const { time: optimalTime, label: optimalLabel } = calculateOptimalTime(heatTime, farmSettings);
 
   // 4. 수정 전 경고 체크
   const warnings = await checkWarnings(animalId);

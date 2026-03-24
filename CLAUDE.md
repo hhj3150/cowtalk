@@ -154,6 +154,34 @@ NoteSchema 핵심 필드: reference_type, reference_id (=animal_id), category, n
 
 데이터 방향: smaXtec → CowTalk (단방향 수신만). CowTalk→smaXtec 역방향 동기화 불필요.
 
+## smaXtec 목장별 설정 (Organisation Settings)
+
+목장마다 번식 파라미터가 다르므로 AI가 반드시 목장 설정을 참조해야 한다.
+GET /api/v2/organisations/{org_id}/settings로 조회.
+
+| 설정 | 해돋이목장 실값 | smaXtec 기본값 | 용도 |
+|------|---------------|---------------|------|
+| 발정재귀일 | 21일 | 20일 | 발정 예측, 미수정 알림 |
+| 수정 적기 (일반 정액) | 10~18h | 10~18h | 수정 적기 계산 |
+| 수정 적기 (성감별 정액) | 미사용 | 미사용 | 정액 종류별 분기 |
+| 수정 후 임신감정 시기 | 28일 | 40일 | 임신감정 알림 |
+| 평균 임신 기간 | 280일 | 280일 | 분만 예정일 계산 |
+| 건유 목록 표시 | 분만 90일 전 | 80일 | 건유 알림 |
+| 육성우 최소 번식 연령 | 12개월 | 12개월 | 수정 가능 판단 |
+| DIM 후 발정 탐지 활성화 | 20일 | 20일 | 발정 필터 |
+| 장기공태우 기준 DIM | 200일 | 200일 | 장기공태우 알림 |
+
+구현: farms.breeding_settings JSONB 컬럼에 저장, FarmBreedingSettings 타입.
+breeding-advisor.service.ts가 getFarmBreedingSettings()로 목장별 값 로드.
+동기화: farm-settings-sync.service.ts (smaXtec API → DB).
+
+## smaXtec Integrations
+
+smaXtec은 외부 시스템 연동을 Integrations 구조로 지원 (ICBF/LIC/BOVISYNC/SEGES 등).
+한국 목장은 해외 Integration을 사용하지 않으므로 슬롯이 비어있음.
+향후 CowTalk을 Integration 파트너로 등록하면 양방향 데이터 교환 가능.
+현재는 API 인증(username/password → token)으로 단방향 수신.
+
 ## smaXtec 이벤트 기반 AI 학습
 
 레퍼런스 목장: 674.해돋이목장(포천)

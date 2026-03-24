@@ -8,6 +8,7 @@ import { getDb } from '../../config/database.js';
 import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, farmSemenInventory } from '../../db/schema.js';
 import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedingFeedback } from '../../services/breeding/breeding-advisor.service.js';
+import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-sync.service.js';
 
 export const breedingRouter = Router();
 
@@ -280,6 +281,17 @@ breedingRouter.get('/feedback/:animalId', async (req: Request, res: Response, ne
     const animalId = req.params.animalId as string;
     const feedback = await getBreedingFeedback(animalId);
     res.json({ success: true, data: feedback });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/farm/:farmId/settings — 목장별 번식 설정 조회
+breedingRouter.get('/farm/:farmId/settings', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    const settings = await getFarmBreedingSettings(farmId);
+    res.json({ success: true, data: settings });
   } catch (error) {
     next(error);
   }
