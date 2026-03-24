@@ -1556,7 +1556,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             <span style={{ fontSize: 16 }}>🧠</span>
             <div>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ct-text)' }}>
-                소버린 AI 레이블링
+                소버린 AI
               </div>
               <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
                 현장 확인 → AI 지식 강화
@@ -1757,7 +1757,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 boxShadow: '0 0 6px #22c55e88',
               }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>
-                AI 레이블링 어시스턴트
+                소버린 AI 어시스턴트
               </span>
             </div>
             <button

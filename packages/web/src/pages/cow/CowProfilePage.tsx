@@ -75,6 +75,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const [events, setEvents] = useState<readonly EventItem[]>([]);
   const [breeding, setBreeding] = useState<readonly BreedingEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<'timeout' | 'not_found' | null>(null);
   const [aiScore, setAiScore] = useState<number | null>(null);
   const [healthPred, setHealthPred] = useState<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string } | null>(null);
   const [estrusPred, setEstrusPred] = useState<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string } | null>(null);
@@ -86,6 +87,7 @@ export default function CowProfilePage(): React.JSX.Element {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setLoadError(null);
 
     const controller = new AbortController();
     const { signal } = controller;
@@ -100,14 +102,32 @@ export default function CowProfilePage(): React.JSX.Element {
 
     // 핵심 데이터 (프로필 + 이벤트 + 센서) — 병렬, 최대 8초
     Promise.all([
-      withTimeout(apiGet<CowProfile>(`/animals/${id}`), 8000).catch(() => null),
+      withTimeout(apiGet<CowProfile>(`/animals/${id}`), 8000).catch((err) => {
+        // 타임아웃/네트워크 에러 vs 404 구분
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 404) return '__NOT_FOUND__';
+        return null; // 타임아웃 또는 서버 미응답
+      }),
       withTimeout(apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`), 5000).catch(() => ({ events: [] as readonly EventItem[] })),
       withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
         `/unified-dashboard/animal/${id}/sensor-chart?days=7`
       ), 5000).catch(() => null),
     ]).then(([p, evts, sensorData]) => {
       if (signal.aborted) return;
-      if (p) setProfile(p as unknown as CowProfile);
+
+      if (p === '__NOT_FOUND__') {
+        setLoadError('not_found');
+        setLoading(false);
+        return;
+      }
+
+      if (!p) {
+        setLoadError('timeout');
+        setLoading(false);
+        return;
+      }
+
+      setProfile(p as unknown as CowProfile);
       setEvents(evts?.events ?? []);
 
       if (sensorData?.metrics) {
@@ -159,13 +179,28 @@ export default function CowProfilePage(): React.JSX.Element {
   }
 
   if (!profile) {
+    const isTimeout = loadError === 'timeout' || !loadError;
     return (
-      <div style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>❌</div>
-        <div>개체를 찾을 수 없습니다</div>
-        <button type="button" onClick={() => navigate('/')} style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, background: 'var(--ct-primary)', color: '#fff', border: 'none', cursor: 'pointer' }}>
-          대시보드로 돌아가기
-        </button>
+      <div style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: 24, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>{isTimeout ? '⏱️' : '❌'}</div>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+          {isTimeout ? '서버 응답 대기 중' : '개체를 찾을 수 없습니다'}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ct-text-muted)', marginBottom: 16, maxWidth: 360 }}>
+          {isTimeout
+            ? '백엔드 서버가 응답하지 않습니다. 서버 실행 상태를 확인하거나 잠시 후 다시 시도하세요.'
+            : '해당 ID의 개체가 데이터베이스에 존재하지 않습니다.'}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {isTimeout && (
+            <button type="button" onClick={() => window.location.reload()} style={{ padding: '8px 20px', borderRadius: 8, background: 'var(--ct-primary)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              다시 시도
+            </button>
+          )}
+          <button type="button" onClick={() => navigate('/')} style={{ padding: '8px 20px', borderRadius: 8, background: 'var(--ct-card)', color: 'var(--ct-text)', border: '1px solid var(--ct-border)', cursor: 'pointer', fontSize: 13 }}>
+            대시보드로 돌아가기
+          </button>
+        </div>
       </div>
     );
   }

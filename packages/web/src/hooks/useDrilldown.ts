@@ -1,4 +1,4 @@
-// 드릴다운 훅 — 4단계 네비게이션 편의
+// 드릴다운 훅 — 개체 클릭 시 /cow/:id로 직접 이동
 
 import { useCallback } from 'react';
 import { useDrilldownStore, type DrilldownFilter } from '@web/stores/drilldown.store';
@@ -27,9 +27,11 @@ export function useDrilldown() {
     [store],
   );
 
+  /** 개체 상세 → /cow/:id 페이지로 직접 이동 (드릴다운 모달 닫기) */
   const navigateToDetail = useCallback(
-    (animalId: string, earTag: string) => {
-      store.goToDetail(animalId, `${earTag} 상세`);
+    (animalId: string, _earTag: string) => {
+      store.close();
+      window.location.href = `/cow/${animalId}`;
     },
     [store],
   );
