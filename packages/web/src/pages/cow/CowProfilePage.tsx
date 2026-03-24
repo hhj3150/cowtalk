@@ -11,6 +11,7 @@ import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceA
 import { TraceSection } from '@web/components/trace/TraceSection';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { FarmSemenInventory } from '@web/components/breeding/FarmSemenInventory';
+import { PregnancyCheckModal } from '@web/components/breeding/PregnancyCheckModal';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface CowProfile {
@@ -79,6 +80,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const [estrusPred, setEstrusPred] = useState<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string } | null>(null);
   const [calvingPred, setCalvingPred] = useState<{ calvingRisk: string; reasons: string[]; recommendation: string } | null>(null);
   const [showDryOff, setShowDryOff] = useState(false);
+  const [showPregnancyCheck, setShowPregnancyCheck] = useState(false);
   const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -414,6 +416,21 @@ export default function CowProfilePage(): React.JSX.Element {
           {/* 임신 관리 타임라인 */}
           <BreedingTimeline animalId={profile.animalId} />
 
+          {/* 임신감정 기록 버튼 */}
+          <button
+            type="button"
+            onClick={() => setShowPregnancyCheck(true)}
+            style={{
+              width: '100%', padding: '12px 16px', borderRadius: 10,
+              background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+              color: '#fff', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 800,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            🔍 임신감정 기록
+          </button>
+
           {/* 건유 전환 버튼 */}
           {profile.lactationStatus !== 'dry' && (
             <button
@@ -435,6 +452,18 @@ export default function CowProfilePage(): React.JSX.Element {
 
       {/* 소버린 AI */}
       <GeniVoiceAssistant openTrigger={geniTrigger} />
+
+      {/* 임신감정 모달 */}
+      {showPregnancyCheck && profile && (
+        <PregnancyCheckModal
+          animalId={profile.animalId}
+          earTag={profile.earTag}
+          onClose={() => setShowPregnancyCheck(false)}
+          onSuccess={() => {
+            setShowPregnancyCheck(false);
+          }}
+        />
+      )}
 
       {/* 건유 전환 모달 */}
       {showDryOff && profile && (

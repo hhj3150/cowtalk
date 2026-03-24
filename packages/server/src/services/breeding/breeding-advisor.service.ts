@@ -335,3 +335,136 @@ export async function recordInsemination(params: {
 
   return { eventId: result?.eventId ?? '' };
 }
+
+// ===========================
+// 임신감정 기록
+// ===========================
+
+export async function recordPregnancyCheck(params: {
+  readonly animalId: string;
+  readonly checkDate: string;
+  readonly result: 'pregnant' | 'open';
+  readonly method: 'ultrasound' | 'manual' | 'blood';
+  readonly daysPostInsemination?: number;
+  readonly notes?: string;
+}): Promise<{ checkId: string }> {
+  const db = getDb();
+
+  const [row] = await db.insert(pregnancyChecks).values({
+    animalId: params.animalId,
+    checkDate: new Date(params.checkDate),
+    result: params.result,
+    method: params.method,
+    daysPostInsemination: params.daysPostInsemination ?? null,
+    notes: params.notes ?? null,
+  }).returning({ checkId: pregnancyChecks.checkId });
+
+  logger.info({
+    animalId: params.animalId,
+    result: params.result,
+    checkId: row?.checkId,
+  }, '[BreedingAdvisor] Pregnancy check recorded');
+
+  return { checkId: row?.checkId ?? '' };
+}
+
+// ===========================
+// 번식 피드백 (수정→임신감정 매칭)
+// ===========================
+
+export interface BreedingFeedbackEntry {
+  readonly inseminationDate: string;
+  readonly semenId: string | null;
+  readonly bullName: string | null;
+  readonly pregnancyResult: 'pregnant' | 'open' | 'pending';
+  readonly checkDate: string | null;
+  readonly daysToCheck: number | null;
+}
+
+export interface BreedingFeedback {
+  readonly animalId: string;
+  readonly totalInseminations: number;
+  readonly pregnantCount: number;
+  readonly openCount: number;
+  readonly pendingCount: number;
+  readonly conceptionRate: number;
+  readonly entries: readonly BreedingFeedbackEntry[];
+}
+
+export async function getBreedingFeedback(animalId: string): Promise<BreedingFeedback> {
+  const db = getDb();
+
+  // 수정 기록 (최근 10건)
+  const inseminations = await db.select({
+    eventId: breedingEvents.eventId,
+    eventDate: breedingEvents.eventDate,
+    semenId: breedingEvents.semenId,
+    semenInfo: breedingEvents.semenInfo,
+  })
+    .from(breedingEvents)
+    .where(and(
+      eq(breedingEvents.animalId, animalId),
+      eq(breedingEvents.type, 'insemination'),
+    ))
+    .orderBy(desc(breedingEvents.eventDate))
+    .limit(10);
+
+  // 임신감정 기록
+  const checks = await db.select({
+    checkDate: pregnancyChecks.checkDate,
+    result: pregnancyChecks.result,
+    daysPostInsemination: pregnancyChecks.daysPostInsemination,
+  })
+    .from(pregnancyChecks)
+    .where(eq(pregnancyChecks.animalId, animalId))
+    .orderBy(desc(pregnancyChecks.checkDate));
+
+  // 정액 정보 조회
+  const semenIds = inseminations.map((i) => i.semenId).filter(Boolean) as string[];
+  const semenMap = new Map<string, string>();
+  if (semenIds.length > 0) {
+    const semenRows = await db.select({
+      semenId: semenCatalog.semenId,
+      bullName: semenCatalog.bullName,
+    })
+      .from(semenCatalog)
+      .where(sql`${semenCatalog.semenId} IN (${sql.join(semenIds.map((id) => sql`${id}`), sql`, `)})`);
+    for (const s of semenRows) {
+      semenMap.set(s.semenId, s.bullName);
+    }
+  }
+
+  // 수정 → 임신감정 매칭 (수정일 기준 가장 가까운 감정 결과)
+  const entries: BreedingFeedbackEntry[] = inseminations.map((ins) => {
+    const insDate = ins.eventDate;
+    const matchingCheck = checks.find((c) => {
+      const checkTime = c.checkDate?.getTime() ?? 0;
+      const insTime = insDate?.getTime() ?? 0;
+      return checkTime > insTime && checkTime - insTime < 120 * 24 * 60 * 60 * 1000; // 120일 이내
+    });
+
+    return {
+      inseminationDate: insDate?.toISOString() ?? '',
+      semenId: ins.semenId,
+      bullName: ins.semenId ? (semenMap.get(ins.semenId) ?? ins.semenInfo) : ins.semenInfo,
+      pregnancyResult: matchingCheck ? (matchingCheck.result as 'pregnant' | 'open') : 'pending',
+      checkDate: matchingCheck?.checkDate?.toISOString() ?? null,
+      daysToCheck: matchingCheck?.daysPostInsemination ?? null,
+    };
+  });
+
+  const pregnantCount = entries.filter((e) => e.pregnancyResult === 'pregnant').length;
+  const openCount = entries.filter((e) => e.pregnancyResult === 'open').length;
+  const pendingCount = entries.filter((e) => e.pregnancyResult === 'pending').length;
+  const decided = pregnantCount + openCount;
+
+  return {
+    animalId,
+    totalInseminations: entries.length,
+    pregnantCount,
+    openCount,
+    pendingCount,
+    conceptionRate: decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0,
+    entries,
+  };
+}

@@ -7,7 +7,7 @@ import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, farmSemenInventory } from '../../db/schema.js';
 import { eq, and, desc, count, sql } from 'drizzle-orm';
-import { getBreedingAdvice, recordInsemination } from '../../services/breeding/breeding-advisor.service.js';
+import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedingFeedback } from '../../services/breeding/breeding-advisor.service.js';
 
 export const breedingRouter = Router();
 
@@ -226,14 +226,60 @@ breedingRouter.get('/stats/:farmId', requireFarmAccess, async (req: Request, res
       .orderBy(desc(pregnancyChecks.checkDate))
       .limit(20);
 
+    // 수태율 계산
+    const totalInseminations = breedingEventList.filter((e) => e.type === 'insemination').length;
+    const pregnantCount = pregnancies.filter((p) => p.result === 'pregnant').length;
+    const openCount = pregnancies.filter((p) => p.result === 'open' || p.result === 'not_pregnant').length;
+    const decided = pregnantCount + openCount;
+    const conceptionRate = decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0;
+
     const stats = {
       farmId,
       estrusEventCount: estrusCount?.count ?? 0,
+      totalInseminations,
+      conceptionRate,
+      pregnantCount,
+      openCount,
       breedingEvents: breedingEventList,
       pregnancyChecks: pregnancies,
     };
 
     res.json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /breeding/pregnancy-check — 임신감정 결과 저장
+breedingRouter.post('/pregnancy-check', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { animalId, checkDate, result, method, daysPostInsemination, notes } = req.body as {
+      animalId: string;
+      checkDate: string;
+      result: 'pregnant' | 'open';
+      method: 'ultrasound' | 'manual' | 'blood';
+      daysPostInsemination?: number;
+      notes?: string;
+    };
+
+    if (!animalId || !checkDate || !result || !method) {
+      res.status(400).json({ success: false, error: 'animalId, checkDate, result, method 필수' });
+      return;
+    }
+
+    const check = await recordPregnancyCheck({ animalId, checkDate, result, method, daysPostInsemination, notes });
+    res.json({ success: true, data: check });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/feedback/:animalId — 수정→임신감정 피드백 이력
+breedingRouter.get('/feedback/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const animalId = req.params.animalId as string;
+    const feedback = await getBreedingFeedback(animalId);
+    res.json({ success: true, data: feedback });
   } catch (error) {
     next(error);
   }

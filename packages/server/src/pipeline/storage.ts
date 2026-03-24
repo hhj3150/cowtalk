@@ -126,8 +126,9 @@ async function triggerBreedingAdvice(
         warnings: advice.warnings.length,
       }, `[BreedingAdvice] 🐄 발정감지 → 수정추천: ${advice.earTag} (${advice.farmName}) — ${advice.optimalTimeLabel}`);
 
-      // TODO: WebSocket push + 모바일 알림 발송
-      // io.to(advice.farmId).emit('breeding-advice', advice);
+      // 수정사에게 푸시 알림 발송
+      const { notifyInseminatorOnEstrus } = await import('../services/breeding/estrus-notifier.service.js');
+      await notifyInseminatorOnEstrus(advice);
     } catch (err) {
       logger.error({ err, animalId: heat.animalId }, '[BreedingAdvice] Failed to generate advice');
     }

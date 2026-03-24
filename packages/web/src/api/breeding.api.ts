@@ -129,3 +129,43 @@ export function addFarmInventory(farmId: string, params: {
 }): Promise<{ inventoryId: string; action: string }> {
   return apiPost<{ inventoryId: string; action: string }>(`/breeding/farm/${farmId}/inventory`, params);
 }
+
+// ===========================
+// 임신감정 + 피드백
+// ===========================
+
+export interface PregnancyCheckParams {
+  readonly animalId: string;
+  readonly checkDate: string;
+  readonly result: 'pregnant' | 'open';
+  readonly method: 'ultrasound' | 'manual' | 'blood';
+  readonly daysPostInsemination?: number;
+  readonly notes?: string;
+}
+
+export function recordPregnancyCheck(params: PregnancyCheckParams): Promise<{ checkId: string }> {
+  return apiPost<{ checkId: string }>('/breeding/pregnancy-check', params);
+}
+
+export interface BreedingFeedbackEntry {
+  readonly inseminationDate: string;
+  readonly semenId: string | null;
+  readonly bullName: string | null;
+  readonly pregnancyResult: 'pregnant' | 'open' | 'pending';
+  readonly checkDate: string | null;
+  readonly daysToCheck: number | null;
+}
+
+export interface BreedingFeedback {
+  readonly animalId: string;
+  readonly totalInseminations: number;
+  readonly pregnantCount: number;
+  readonly openCount: number;
+  readonly pendingCount: number;
+  readonly conceptionRate: number;
+  readonly entries: readonly BreedingFeedbackEntry[];
+}
+
+export function getBreedingFeedback(animalId: string): Promise<BreedingFeedback> {
+  return apiGet<BreedingFeedback>(`/breeding/feedback/${animalId}`);
+}

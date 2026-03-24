@@ -50,6 +50,7 @@ import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
 import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
+import { BreedingPerformanceCard } from '@web/components/breeding/BreedingPerformanceCard';
 import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSelector';
 import { useFarmGroupStore } from '@web/stores/farm-group.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
@@ -721,10 +722,15 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 수정사 전용 대시보드 ── */}
           {isVisible('insemination_route') && (
-            <InseminatorDashboard
-              onAnimalClick={(aid) => setInseminationAnimalId(aid)}
-              onFarmClick={(fid) => selectFarm(fid)}
-            />
+            <>
+              <InseminatorDashboard
+                onAnimalClick={(aid) => setInseminationAnimalId(aid)}
+                onFarmClick={(fid) => selectFarm(fid)}
+              />
+              {selectedFarmId && (
+                <BreedingPerformanceCard farmId={selectedFarmId} />
+              )}
+            </>
           )}
 
           {/* ── 건강 알림 + 번식 관리 (수정사/사료회사 제외) ── */}
