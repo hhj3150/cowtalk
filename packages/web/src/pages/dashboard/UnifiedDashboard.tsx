@@ -134,7 +134,9 @@ function RoleSwitcher(): React.JSX.Element | null {
               key={role}
               type="button"
               onClick={() => {
-                updateUser({ ...user, role });
+                updateUser({ ...user, role, farmIds: [] });
+                useFarmStore.getState().clearSelection();
+                useFarmGroupStore.getState().clearSelection();
                 setOpen(false);
               }}
               style={{
