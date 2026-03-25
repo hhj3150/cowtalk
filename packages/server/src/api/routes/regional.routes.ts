@@ -3,7 +3,6 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
 import type { Role } from '@cowtalk/shared';
 import { analyzeRegion } from '../../ai-brain/index.js';
 import { getDb } from '../../config/database.js';
@@ -15,7 +14,9 @@ export const regionalRouter = Router();
 regionalRouter.use(authenticate);
 
 // GET /regional/summary — 지역별 요약
-regionalRouter.get('/summary', requirePermission('regional', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+// 지역 지도는 모든 인증 사용자에게 개방 (읽기 전용, 보안 위험 없음)
+// 역할 전환 시 JWT 재발급 없이도 접근 가능하도록 RBAC 제거
+regionalRouter.get('/summary', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
 
@@ -45,7 +46,7 @@ const MODE_EVENT_TYPES: Record<string, readonly string[]> = {
 };
 
 // GET /regional/map — 지도 데이터 (mode별 필터링)
-regionalRouter.get('/map', requirePermission('regional', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const mode = (req.query.mode as string) ?? 'status';
@@ -116,7 +117,7 @@ regionalRouter.get('/map', requirePermission('regional', 'read'), async (req: Re
 });
 
 // GET /regional/:regionId — 지역 상세 (AI 해석 포함)
-regionalRouter.get('/:regionId', requirePermission('regional', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const regionId = req.params.regionId as string;
