@@ -1,6 +1,7 @@
 // 인공수정 경로 최적화 위젯
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type {
   InseminationRoutePlan,
   InseminationRouteStop,
@@ -195,23 +196,28 @@ function AnimalBriefingCard({ animal }: {
 }): React.JSX.Element {
   const intensityColor = INTENSITY_COLORS[animal.estrusIntensity] ?? '#94a3b8';
   const isUrgent = animal.hoursRemaining <= 2;
+  const navigate = useNavigate();
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: 10,
-      padding: '10px 12px',
-      borderRadius: 8,
-      background: isUrgent ? 'rgba(239,68,68,0.08)' : 'rgba(0,0,0,0.1)',
-      border: isUrgent ? '1px solid rgba(239,68,68,0.2)' : 'none',
-      fontSize: 11,
-    }}>
+    <div
+      onClick={() => navigate(`/cow/${animal.animalId}`)}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 8,
+        background: isUrgent ? 'rgba(239,68,68,0.08)' : 'rgba(0,0,0,0.1)',
+        border: isUrgent ? '1px solid rgba(239,68,68,0.2)' : 'none',
+        fontSize: 11,
+        cursor: 'pointer',
+      }}
+    >
       <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>🐄</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* 헤더: 이표 + 발정 강도 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-          <span style={{ fontWeight: 700, color: 'var(--ct-text)' }}>
+          <span style={{ fontWeight: 700, color: 'var(--ct-text)', textDecoration: 'underline', textDecorationColor: 'var(--ct-border)' }}>
             {animal.earTag}
           </span>
           <span style={{

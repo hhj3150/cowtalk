@@ -99,7 +99,6 @@ animalRouter.get('/:animalId', requirePermission('animal', 'read'), async (req: 
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
-    const role = req.user?.role as Role;
 
     // 기본 동물 정보
     const [animal] = await db
@@ -145,22 +144,12 @@ animalRouter.get('/:animalId', requirePermission('animal', 'read'), async (req: 
       .orderBy(desc(smaxtecEvents.detectedAt))
       .limit(10);
 
-    // AI 해석 시도 (5초 타임아웃, 실패 시 기본 데이터만 반환)
-    let interpretation = null;
-    try {
-      const aiPromise = getAnimalDetail(animalId, role);
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
-      interpretation = await Promise.race([aiPromise, timeoutPromise]);
-    } catch {
-      // AI 해석 실패 — 기본 데이터로 반환
-    }
-
+    // AI 해석은 별도 엔드포인트로 분리 — 프로필 로딩 속도 우선
     res.json({
       success: true,
       data: {
         ...animal,
         recentEvents,
-        interpretation,
       },
     });
   } catch (error) {
@@ -174,6 +163,22 @@ animalRouter.post('/', requirePermission('animal', 'create'), validate({ body: c
 
 animalRouter.patch('/:animalId', requirePermission('animal', 'update'), (_req, res) => {
   res.json({ success: true, data: null });
+});
+
+// GET /animals/:animalId/interpretation — AI 해석 (별도 비동기 로드)
+animalRouter.get('/:animalId/interpretation', requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
+  try {
+    const animalId = req.params.animalId as string;
+    const role = req.user?.role as Role;
+
+    const aiPromise = getAnimalDetail(animalId, role);
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
+    const interpretation = await Promise.race([aiPromise, timeoutPromise]);
+
+    res.json({ success: true, data: interpretation });
+  } catch {
+    res.json({ success: true, data: null });
+  }
 });
 
 // GET /animals/:animalId/trace — 축산물이력추적 (이동이력·도축정보)

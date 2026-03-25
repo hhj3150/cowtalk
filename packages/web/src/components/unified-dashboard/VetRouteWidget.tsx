@@ -1,6 +1,7 @@
 // 수의사 진료경로 최적화 위젯
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { VetRoutePlan, VetRouteStop, VetRouteAnimalBriefing } from '@cowtalk/shared';
 
 // ── 상수 ──
@@ -132,21 +133,26 @@ function AnimalBriefingCard({ animal }: {
   readonly animal: VetRouteAnimalBriefing;
 }): React.JSX.Element {
   const color = getUrgencyColor(animal.severity);
+  const navigate = useNavigate();
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: 10,
-      padding: '8px 10px',
-      borderRadius: 8,
-      background: 'rgba(0,0,0,0.1)',
-      fontSize: 11,
-    }}>
+    <div
+      onClick={() => navigate(`/cow/${animal.animalId}`)}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '8px 10px',
+        borderRadius: 8,
+        background: 'rgba(0,0,0,0.1)',
+        fontSize: 11,
+        cursor: 'pointer',
+      }}
+    >
       <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>&#x1F404;</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-          <span style={{ fontWeight: 700, color: 'var(--ct-text)' }}>
+          <span style={{ fontWeight: 700, color: 'var(--ct-text)', textDecoration: 'underline', textDecorationColor: 'var(--ct-border)' }}>
             {animal.earTag}
           </span>
           <span style={{

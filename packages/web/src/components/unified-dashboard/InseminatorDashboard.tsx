@@ -1,5 +1,6 @@
 // 수정사 전용 대시보드 위젯 — 오늘 수정할 소 + 경로 + 번식 통계
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -40,6 +41,7 @@ function formatOptimalTime(detectedAt: string): string {
 export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): React.JSX.Element {
   const [data, setData] = useState<InseminatorStats | null>(null);
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
   const farmIdsParam = selectedFarmIds.length > 0 ? `&farmIds=${selectedFarmIds.join(',')}` : '';
 
@@ -213,7 +215,16 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
                           border: '1px solid var(--ct-border)',
                         }}
                       >
-                        <span style={{ fontWeight: 600, color: 'var(--ct-text)' }}>#{a.earTag}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontWeight: 600, color: 'var(--ct-text)' }}>#{a.earTag}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/cow/${a.animalId}`); }}
+                            style={{ background: 'none', border: 'none', color: 'var(--ct-primary)', fontSize: 9, cursor: 'pointer', padding: '0 2px', fontWeight: 600 }}
+                          >
+                            상세
+                          </button>
+                        </span>
                         <span style={{ fontSize: 10, color: isUrgent ? '#ef4444' : 'var(--ct-text-muted)', fontWeight: isUrgent ? 700 : 400 }}>
                           수정 적기: {timing}
                         </span>

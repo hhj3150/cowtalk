@@ -12,6 +12,7 @@ import { TraceSection } from '@web/components/trace/TraceSection';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { FarmSemenInventory } from '@web/components/breeding/FarmSemenInventory';
 import { PregnancyCheckModal } from '@web/components/breeding/PregnancyCheckModal';
+import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface CowProfile {
@@ -317,16 +318,22 @@ export default function CowProfilePage(): React.JSX.Element {
       {/* 🏛️ 축산물이력추적 — 이력번호 클릭 시 전체 공공데이터 */}
       <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
-        <TraceSection animalId={profile.animalId} />
+        <SectionErrorBoundary label="이력추적">
+          <TraceSection animalId={profile.animalId} />
+        </SectionErrorBoundary>
       </div>
 
       {/* 💉 번식 관리 — 수정 추천 + 보유 정액 */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
         <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-          <InseminationPanel animalId={profile.animalId} />
+          <SectionErrorBoundary label="수정 추천">
+            <InseminationPanel animalId={profile.animalId} />
+          </SectionErrorBoundary>
         </div>
         <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-          <FarmSemenInventory farmId={profile.farmId} />
+          <SectionErrorBoundary label="보유 정액">
+            <FarmSemenInventory farmId={profile.farmId} />
+          </SectionErrorBoundary>
         </div>
       </div>
 
@@ -336,7 +343,9 @@ export default function CowProfilePage(): React.JSX.Element {
           {/* 센서 데이터 패널 */}
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>📊 센서 데이터 (7일)</h2>
-            <SensorDataPanel animalId={id!} selectedEventId={null} />
+            <SectionErrorBoundary label="센서 데이터">
+              <SensorDataPanel animalId={id!} selectedEventId={null} />
+            </SectionErrorBoundary>
           </div>
 
           {/* 알람 타임라인 */}
@@ -464,7 +473,9 @@ export default function CowProfilePage(): React.JSX.Element {
           </div>
 
           {/* 임신 관리 타임라인 */}
-          <BreedingTimeline animalId={profile.animalId} />
+          <SectionErrorBoundary label="임신 관리">
+            <BreedingTimeline animalId={profile.animalId} />
+          </SectionErrorBoundary>
 
           {/* 임신감정 기록 버튼 */}
           <button
@@ -501,7 +512,9 @@ export default function CowProfilePage(): React.JSX.Element {
       </div>
 
       {/* 소버린 AI */}
-      <GeniVoiceAssistant openTrigger={geniTrigger} />
+      <SectionErrorBoundary label="AI 어시스턴트">
+        <GeniVoiceAssistant openTrigger={geniTrigger} />
+      </SectionErrorBoundary>
 
       {/* 임신감정 모달 */}
       {showPregnancyCheck && profile && (

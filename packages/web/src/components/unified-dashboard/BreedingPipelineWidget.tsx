@@ -1,6 +1,7 @@
 // 번식성적 커맨드센터 — Kanban 파이프라인 + KPI + 긴급 조치
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type {
   BreedingPipelineData,
   BreedingKpis,
@@ -290,17 +291,22 @@ function UrgentActionItem({
 }): React.JSX.Element {
   const urgencyColor = URGENCY_COLORS[action.hoursRemaining <= 4 ? 'critical' : action.hoursRemaining <= 12 ? 'high' : action.hoursRemaining <= 48 ? 'medium' : 'low'];
   const urgencyKey = action.hoursRemaining <= 4 ? 'critical' : action.hoursRemaining <= 12 ? 'high' : action.hoursRemaining <= 48 ? 'medium' : 'low';
+  const navigate = useNavigate();
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 10,
-      padding: '8px 12px',
-      borderRadius: 8,
-      background: `${urgencyColor}08`,
-      borderLeft: `3px solid ${urgencyColor}`,
-    }}>
+    <div
+      onClick={() => navigate(`/cow/${action.animalId}`)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 12px',
+        borderRadius: 8,
+        background: `${urgencyColor}08`,
+        borderLeft: `3px solid ${urgencyColor}`,
+        cursor: 'pointer',
+      }}
+    >
       {/* Badge */}
       <span style={{
         fontSize: 9,
@@ -323,6 +329,8 @@ function UrgentActionItem({
         fontVariantNumeric: 'tabular-nums',
         flexShrink: 0,
         minWidth: 50,
+        textDecoration: 'underline',
+        textDecorationColor: 'var(--ct-border)',
       }}>
         {action.earTag}번
       </span>
