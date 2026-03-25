@@ -14,3 +14,4 @@ authRouter.post('/logout', authenticate, authController.logout);
 authRouter.get('/me', authenticate, authController.me);
 authRouter.post('/register', validate({ body: registerSchema }), authController.register);
 authRouter.post('/quick-login', authController.quickLogin);
+authRouter.post('/switch-role', authenticate, authController.switchRole);

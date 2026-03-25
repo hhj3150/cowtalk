@@ -246,3 +246,50 @@ export async function register(req: Request, res: Response): Promise<void> {
     },
   });
 }
+
+// 역할 전환 — 마스터 사용자가 역할을 전환할 때 새 JWT 발급
+export async function switchRole(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw new UnauthorizedError('Authentication required');
+  }
+
+  const { role: newRole } = req.body as { role: string };
+  const validRoles: readonly string[] = ['farmer', 'veterinarian', 'inseminator', 'government_admin', 'quarantine_officer', 'feed_company'];
+
+  if (!newRole || !validRoles.includes(newRole)) {
+    res.status(400).json({ success: false, message: 'Invalid role' });
+    return;
+  }
+
+  // 마스터 사용자 검증: government_admin 또는 ha@d2o.kr만 역할 전환 가능
+  const user = await findUserById(req.user.userId);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  const isMaster = user.role === 'government_admin' || user.email === 'ha@d2o.kr';
+  if (!isMaster) {
+    res.status(403).json({ success: false, message: '역할 전환 권한이 없습니다' });
+    return;
+  }
+
+  // 새 역할로 JWT 재발급 (farmIds는 전환 시 전체 접근)
+  const accessToken = signAccessToken({
+    userId: user.userId,
+    role: newRole as Role,
+    farmIds: [], // 빈 배열 = 전체 농장 접근 (requireFarmAccess 규칙)
+  });
+
+  res.json({
+    success: true,
+    data: {
+      accessToken,
+      user: {
+        userId: user.userId,
+        name: user.name,
+        email: user.email,
+        role: newRole,
+      },
+    },
+  });
+}

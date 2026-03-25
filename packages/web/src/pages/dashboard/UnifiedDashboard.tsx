@@ -133,8 +133,25 @@ function RoleSwitcher(): React.JSX.Element | null {
             <button
               key={role}
               type="button"
-              onClick={() => {
-                updateUser({ ...user, role, farmIds: [] });
+              onClick={async () => {
+                try {
+                  const token = useAuthStore.getState().accessToken;
+                  const resp = await fetch('/api/auth/switch-role', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ role }),
+                  });
+                  const json = await resp.json() as { success: boolean; data?: { accessToken: string; user: { userId: string; name: string; email: string; role: string } } };
+                  if (json.success && json.data) {
+                    useAuthStore.getState().updateTokens(json.data.accessToken, useAuthStore.getState().refreshToken ?? '');
+                    updateUser({ ...user, role: json.data.user.role as Role, farmIds: [] });
+                  } else {
+                    // fallback: 서버 역할 전환 실패 시 프론트엔드만 변경
+                    updateUser({ ...user, role, farmIds: [] });
+                  }
+                } catch {
+                  updateUser({ ...user, role, farmIds: [] });
+                }
                 useFarmStore.getState().clearSelection();
                 useFarmGroupStore.getState().clearSelection();
                 setOpen(false);
