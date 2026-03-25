@@ -210,10 +210,35 @@ animalRouter.get('/:animalId/trace', requirePermission('animal', 'read'), async 
     const record = await connector.fetchByTraceId(row.traceId);
 
     if (!record) {
-      // API 키 없거나 조회 실패 시 traceId만 반환
+      // API 키 없거나 조회 실패 → DB 기본 정보 + 이력번호로 fallback 표시
+      const [animalInfo] = await db
+        .select({
+          breed: animals.breed,
+          sex: animals.sex,
+          birthDate: animals.birthDate,
+          farmName: farms.name,
+          farmAddress: farms.address,
+        })
+        .from(animals)
+        .leftJoin(farms, eq(animals.farmId, farms.farmId))
+        .where(eq(animals.animalId, animalId))
+        .limit(1);
+
       res.json({
         success: true,
-        data: { traceId: row.traceId, earTag: row.earTag, available: false, reason: 'API 조회 실패' },
+        data: {
+          traceId: row.traceId,
+          earTag: row.earTag,
+          available: true,
+          source: 'db_fallback',
+          birthDate: animalInfo?.birthDate ?? null,
+          sex: animalInfo?.sex ?? null,
+          breed: animalInfo?.breed ?? null,
+          farmName: animalInfo?.farmName ?? null,
+          farmAddress: animalInfo?.farmAddress ?? null,
+          movements: [],
+          slaughterInfo: null,
+        },
       });
       return;
     }

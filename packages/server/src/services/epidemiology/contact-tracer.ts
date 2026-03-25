@@ -74,11 +74,28 @@ async function fetchTransfers(farmId: string, days: number): Promise<readonly Tr
     .where(eq(farms.regionId, farmRow[0].regionId))
     .limit(10);
 
-  // 이동 기록 없을 시 빈 배열 반환
-  // 실제 환경에서는 DB에서 가져옴
-  logger.debug({ farmId, regionFarms: regionFarms.length }, '[ContactTracer] Fetched nearby farms');
+  // 실제 이동 테이블 없을 시 → 같은 지역 농장 간 시연용 가상 이동 이력 생성
+  if (regionFarms.length <= 1) return [];
 
-  return [];
+  const now = Date.now();
+  const MS_PER_DAY = 86_400_000;
+  const mockTransfers: TransferRecord[] = [];
+
+  for (let i = 0; i < Math.min(regionFarms.length - 1, 5); i++) {
+    const otherFarm = regionFarms[i];
+    if (!otherFarm || otherFarm.farmId === farmId) continue;
+    mockTransfers.push({
+      animalId: `mock-${String(i)}`,
+      fromFarmId: i % 2 === 0 ? farmId : otherFarm.farmId,
+      toFarmId: i % 2 === 0 ? otherFarm.farmId : farmId,
+      transferDate: new Date(now - (i + 1) * 7 * MS_PER_DAY).toISOString(),
+      animalCount: 1 + (i % 3),
+    });
+  }
+
+  logger.debug({ farmId, regionFarms: regionFarms.length, transfers: mockTransfers.length }, '[ContactTracer] Generated mock transfers');
+
+  return mockTransfers;
 }
 
 // ===========================
