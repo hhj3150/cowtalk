@@ -10,7 +10,7 @@ const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
-  isArray: (name) => ['item', 'moveList', 'slaughterList'].includes(name),
+  isArray: (name: string) => ['item', 'moveList', 'slaughterList'].includes(name),
 });
 
 export interface EkapeResponse {
