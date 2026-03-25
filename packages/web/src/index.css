@@ -262,6 +262,15 @@ body {
   filter: brightness(1.5) drop-shadow(0 0 8px rgba(0, 214, 126, 0.8)) drop-shadow(0 0 16px rgba(0, 214, 126, 0.4));
 }
 
+/* ── 지도 마커 펄스 (심각 농장) ── */
+.ct-pulse {
+  animation: ct-map-pulse 2s ease-in-out infinite;
+}
+@keyframes ct-map-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.9)); }
+}
+
 /* ── Severity Pulse Animations ── */
 @keyframes ct-severity-pulse-critical {
   0%, 100% { opacity: 1; transform: scale(1); }
