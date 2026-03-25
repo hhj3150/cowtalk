@@ -1,10 +1,13 @@
 // 지역 인텔리전스 지도 — react-leaflet 기반
 // 비례 마커 + 위험도 펄스 + 다크모드 + 범례 + Tooltip
 
-import React, { useMemo, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Tooltip, Circle } from 'react-leaflet';
+import React, { useMemo, useState, useCallback } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, Circle, GeoJSON } from 'react-leaflet';
+import type { Layer, LeafletMouseEvent } from 'leaflet';
 import type { FarmMapMarker } from '@web/api/regional.api';
 import { TILE_URL as CARTO_LIGHT, TILE_ATTRIBUTION } from '@web/constants/map';
+import { KOREA_PROVINCES } from '@web/constants/korea-provinces';
+import type { ProvinceProperties } from '@web/constants/korea-provinces';
 import 'leaflet/dist/leaflet.css';
 
 // ── 타입 ──
@@ -18,6 +21,8 @@ interface Props {
   readonly height?: string;
   readonly selectedFarmId?: string | null;
   readonly filters?: MapFilters;
+  readonly showProvinces?: boolean;
+  readonly provinceRisks?: Readonly<Record<string, string>>; // code → 'green'|'yellow'|'orange'|'red'
 }
 
 export interface MapFilters {
@@ -120,6 +125,8 @@ export function RegionalMap({
   height = '500px',
   selectedFarmId,
   filters,
+  showProvinces = true,
+  provinceRisks,
 }: Props): React.JSX.Element {
   const [legendCollapsed, setLegendCollapsed] = useState(false);
   const [radiusFarmId, setRadiusFarmId] = useState<string | null>(null);
@@ -159,6 +166,48 @@ export function RegionalMap({
             },
           }}
         />
+
+        {/* 시도 경계선 오버레이 */}
+        {showProvinces && (
+          <GeoJSON
+            data={KOREA_PROVINCES}
+            style={(feature) => {
+              const code = (feature?.properties as ProvinceProperties)?.code ?? '';
+              const risk = provinceRisks?.[code] ?? 'green';
+              const riskFillColors: Record<string, string> = {
+                red: '#ef4444', orange: '#f97316', yellow: '#eab308', green: '#22c55e',
+              };
+              return {
+                color: darkMode ? 'rgba(255,255,255,0.25)' : 'rgba(100,116,139,0.4)',
+                weight: 1,
+                fillColor: riskFillColors[risk] ?? '#22c55e',
+                fillOpacity: risk === 'red' ? 0.2 : risk === 'orange' ? 0.15 : risk === 'yellow' ? 0.1 : 0.05,
+              };
+            }}
+            onEachFeature={useCallback((feature: GeoJSON.Feature, layer: Layer) => {
+              const props = feature.properties as ProvinceProperties;
+              layer.on({
+                mouseover: (e: LeafletMouseEvent) => {
+                  const target = e.target as Layer & { setStyle?: (s: Record<string, unknown>) => void };
+                  target.setStyle?.({ weight: 2, fillOpacity: 0.25 });
+                },
+                mouseout: (e: LeafletMouseEvent) => {
+                  const target = e.target as Layer & { setStyle?: (s: Record<string, unknown>) => void };
+                  const risk = provinceRisks?.[(feature.properties as ProvinceProperties)?.code] ?? 'green';
+                  target.setStyle?.({
+                    weight: 1,
+                    fillOpacity: risk === 'red' ? 0.2 : risk === 'orange' ? 0.15 : risk === 'yellow' ? 0.1 : 0.05,
+                  });
+                },
+              });
+              layer.bindTooltip(`<strong>${props.name}</strong>`, {
+                direction: 'center',
+                className: 'ct-province-tooltip',
+                permanent: false,
+              });
+            }, [provinceRisks])}
+          />
+        )}
 
         {/* 반경 원 표시 */}
         {radiusFarm && RADIUS_OPTIONS.map((r) => (

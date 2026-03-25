@@ -248,6 +248,21 @@ body {
   50% { opacity: 0.6; }
 }
 
+/* ── 시도 경계 툴팁 ── */
+.ct-province-tooltip {
+  background: rgba(15, 23, 42, 0.85) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  border-radius: 6px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+.ct-province-tooltip::before {
+  border-top-color: rgba(15, 23, 42, 0.85) !important;
+}
+
 /* ── Farm Map Marker Glow ── */
 .ct-marker-glow-critical {
   filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.7)) drop-shadow(0 0 12px rgba(239, 68, 68, 0.4));
