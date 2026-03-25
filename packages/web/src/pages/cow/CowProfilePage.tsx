@@ -100,19 +100,15 @@ export default function CowProfilePage(): React.JSX.Element {
       ]);
     }
 
-    // 핵심 데이터 (프로필 + 이벤트 + 센서) — 병렬, 최대 12초
+    // 핵심 데이터 (프로필 + 이벤트) — 프로필 우선 로드
     Promise.all([
       withTimeout(apiGet<CowProfile>(`/animals/${id}`), 12000).catch((err) => {
-        // 타임아웃/네트워크 에러 vs 404 구분
         const status = (err as { response?: { status?: number } })?.response?.status;
         if (status === 404) return '__NOT_FOUND__';
-        return null; // 타임아웃 또는 서버 미응답
+        return null;
       }),
       withTimeout(apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`), 10000).catch(() => ({ events: [] as readonly EventItem[] })),
-      withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
-        `/unified-dashboard/animal/${id}/sensor-chart?days=7`
-      ), 10000).catch(() => null),
-    ]).then(([p, evts, sensorData]) => {
+    ]).then(([p, evts]) => {
       if (signal.aborted) return;
 
       if (p === '__NOT_FOUND__') {
@@ -129,8 +125,16 @@ export default function CowProfilePage(): React.JSX.Element {
 
       setProfile(p as unknown as CowProfile);
       setEvents(evts?.events ?? []);
+      setAiScore(null);
+      setLoading(false);
+    });
 
-      if (sensorData?.metrics) {
+    // 센서 데이터 — 별도 비동기 로드 (프로필 로딩 차단 안 함, 15초 여유)
+    withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
+      `/unified-dashboard/animal/${id}/sensor-chart?days=7`
+    ), 15000)
+      .then((sensorData) => {
+        if (signal.aborted || !sensorData?.metrics) return;
         const getLatest = (key: string): number | null => {
           const pts = sensorData.metrics[key];
           return pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
@@ -141,11 +145,8 @@ export default function CowProfilePage(): React.JSX.Element {
           activity: getLatest('act'),
           drinking: getLatest('dr'),
         });
-      }
-
-      setAiScore(null);
-      setLoading(false);
-    });
+      })
+      .catch(() => {});
 
     // 보조 데이터 — 비동기 지연 로딩 (로딩 상태 차단 안 함)
     withTimeout(apiGet<unknown>(`/animals/${id}/breeding-history`), 10000)
