@@ -2184,7 +2184,11 @@ async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
   // farmIds 필터 (농장 그룹)
   const farmFilter = farmCondition(farms.farmId, null);
 
-  // 농장별 미확인 알람 수 + 최빈 알람 유형
+  // 건강 관련 이벤트만 집계 (발정/분만/수정 등 번식 이벤트 제외)
+  const excludedTypes = ['estrus', 'estrus_dnb', 'heat', 'insemination', 'pregnancy_result', 'pregnancy_check',
+    'no_insemination', 'calving_detection', 'calving_confirmation', 'dry_off', 'abort',
+    'fertility_warning', 'activity_increase'];
+
   const rows = await db.select({
     farmId: farms.farmId,
     farmName: farms.name,
@@ -2196,6 +2200,7 @@ async function queryFarmRanking(): Promise<readonly DashboardFarmRanking[]> {
       eq(farms.farmId, smaxtecEvents.farmId),
       eq(smaxtecEvents.acknowledged, false),
       gte(smaxtecEvents.detectedAt, cutoff),
+      sql`${smaxtecEvents.eventType} NOT IN (${sql.raw(excludedTypes.map((t) => `'${t}'`).join(','))})`,
     ))
     .where(farmFilter ?? undefined)
     .groupBy(farms.farmId, farms.name)
