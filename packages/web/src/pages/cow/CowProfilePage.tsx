@@ -273,7 +273,7 @@ export default function CowProfilePage(): React.JSX.Element {
               breedCtx,
             ].filter(Boolean).join('\n');
 
-            setGeniTrigger(`[소버린 AI — 개체 정밀 분석]\n[개체ID] ${profile.animalId}\n${fullContext}\n\n(${Date.now()})`);
+            setGeniTrigger(`[소버린 AI — 개체 정밀 분석]\n[개체ID] ${profile.animalId}\n[농장ID] ${profile.farmId}\n${fullContext}\n\n(${Date.now()})`);
           }}
           style={{ background: '#16a34a', border: 'none', borderRadius: 8, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
         >

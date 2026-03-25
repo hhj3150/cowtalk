@@ -18,16 +18,35 @@ export interface ResolvedContext {
 // 질문에서 맥락 유형 감지 + 관련 데이터 로드
 export async function resolveContext(
   question: string,
-  currentFarmId: string | null,
+  initialFarmId: string | null,
   currentAnimalId: string | null,
   _role: Role,
   dashboardContext?: string,
 ): Promise<ResolvedContext> {
+  let currentFarmId = initialFarmId;
+
   // 1. 명시적 개체 참조 감지
   if (currentAnimalId) {
     const profile = await buildAnimalProfile(currentAnimalId);
     if (profile) {
       return { context: { type: 'animal', profile }, detectedType: 'animal' };
+    }
+    // animalId로 프로필 빌드 실패 시 → 개체의 farmId로 농장 컨텍스트 fallback
+    logger.warn({ currentAnimalId }, 'Animal profile build failed — trying farm fallback');
+    if (!currentFarmId) {
+      const db = getDb();
+      try {
+        const animalRow = await db
+          .select({ farmId: animals.farmId })
+          .from(animals)
+          .where(eq(animals.animalId, currentAnimalId))
+          .limit(1);
+        if (animalRow[0]?.farmId) {
+          currentFarmId = animalRow[0].farmId;
+        }
+      } catch (error) {
+        logger.error({ error, currentAnimalId }, 'Failed to lookup animal farmId');
+      }
     }
   }
 

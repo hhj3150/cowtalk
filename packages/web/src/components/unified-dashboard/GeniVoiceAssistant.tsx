@@ -194,6 +194,7 @@ export function GeniVoiceAssistant({
   // 개체 분석 모드 — trigger로 진입 시 개체 데이터를 컨텍스트로 유지
   const [animalContext, setAnimalContext] = useState<string | null>(null);
   const [animalIdForChat, setAnimalIdForChat] = useState<string | null>(null);
+  const [farmIdForChat, setFarmIdForChat] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
@@ -236,7 +237,7 @@ export function GeniVoiceAssistant({
             ? `[소버린 AI — 개체 대화 모드] 당신은 축산 전문 AI 수의사 "소버린"입니다. 이 개체의 DB 데이터(센서, 알람, 번식이력, 건강이력)를 기반으로 답하세요. 사용자가 무엇을 물어보든 이 개체 기준으로 답하세요. 간결하되 전문적으로, 구체적 행동 지시를 포함하세요. 데이터에 없는 내용은 추측하지 말고 "데이터 없음"으로 명시하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
             : `[음성 대화 모드] 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.\n\n질문: ${question}`,
           role: user?.role ?? 'farm_owner',
-          farmId: selectedFarmId ?? undefined,
+          farmId: farmIdForChat ?? selectedFarmId ?? undefined,
           animalId: animalIdForChat ?? undefined,
           dashboardContext: animalContext
             ? `${animalContext}`
@@ -296,7 +297,7 @@ export function GeniVoiceAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, dashboardContext, animalContext, animalIdForChat]);
+  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -311,10 +312,14 @@ export function GeniVoiceAssistant({
         ?? /animalId[=:]\s*([a-f0-9-]{36})/i.exec(openTrigger)
         ?? /개체\]\s*#(\S+),/.exec(openTrigger);
       setAnimalIdForChat(idMatch?.[1] ?? null);
+      // trigger에서 farmId 추출
+      const farmMatch = /\[농장ID\]\s*([a-f0-9-]{36})/i.exec(openTrigger);
+      setFarmIdForChat(farmMatch?.[1] ?? null);
       // 자동 질문 없음 — 사용자가 물어보면 답하는 대화형
     } else {
       setAnimalContext(null);
       setAnimalIdForChat(null);
+      setFarmIdForChat(null);
       pendingAskRef.current = openTrigger;
     }
 
