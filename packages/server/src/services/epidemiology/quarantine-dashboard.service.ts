@@ -400,7 +400,9 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
 
     const riskLevel = calcRiskLevel(feverRate, clusterFarms, legalSuspects);
 
-    // TOP5 위험 농장 — 전체 건강 알람 기준 (메인 대시보드와 동일) + 집단 발생 가중치
+    // TOP5 위험 농장 — 메인 대시보드 farm-health-scores와 동일한 5요인 공식
+    // healthScore = 체온(30) + 반추(25) + 동반(20) + 추세(15) + 역학(10) = 100점 만점
+    // riskScore = 100 - healthScore (위험할수록 높음)
     const top5RiskFarms: RiskFarm[] = allFarms
       .map((f) => {
         const health = healthByFarm.get(f.farmId);
@@ -409,23 +411,27 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
         const ruminationCount = health?.ruminationCount ?? 0;
         const otherHealthCount = health?.otherCount ?? 0;
         const uniqueAnimals = health?.animalIds.length ?? 0;
+        const headCount = Math.max(f.headCount, 1);
 
-        // 집단 발생 비율: 이상 개체수 / 전체 두수
-        const groupRate = f.headCount > 0 ? uniqueAnimals / f.headCount : 0;
-        const clusterAlert = groupRate >= 0.10 || uniqueAnimals >= 3; // 10%+ 또는 3두+
+        // 집단 발생 비율
+        const groupRate = headCount > 0 ? uniqueAnimals / headCount : 0;
+        const clusterAlert = groupRate >= 0.10 || uniqueAnimals >= 3;
         const legalSuspect = activeAlerts.some(
           (a) => a.farmId === f.farmId && a.priority === 'critical',
         );
 
-        // 위험도 = 건강알람 × 5 + 집단발생 가중 + 법정전염병 + 알림
-        const groupBonus = clusterAlert ? Math.round(groupRate * 50) : 0;
-        const riskScore = Math.min(
-          healthAlertCount * 5 +
-          groupBonus +
-          (legalSuspect ? 40 : 0) +
-          (feverCount >= 3 ? 15 : 0),
-          100,
-        );
+        // 5요인 건강점수 (메인 대시보드 동일 공식)
+        const tempRate = feverCount / headCount;
+        const tempScore = Math.round(30 * (1 - Math.min(tempRate / 0.15, 1)));
+        const rumRate = ruminationCount / headCount;
+        const rumScore = Math.round(25 * (1 - Math.min(rumRate / 0.15, 1)));
+        const comorbidRate = groupRate;
+        const actScore = Math.round(20 * (1 - Math.min(comorbidRate / 0.10, 1)));
+        const epiScore = legalSuspect ? 0 : clusterAlert ? 3 : 10;
+        const healthScore = tempScore + rumScore + actScore + 10 + epiScore; // 추세 10 (기본 stable)
+
+        const riskScore = 100 - healthScore;
+
         return {
           farmId: f.farmId,
           farmName: f.farmName,
