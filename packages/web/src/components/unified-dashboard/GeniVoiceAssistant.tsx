@@ -452,7 +452,7 @@ export function GeniVoiceAssistant({
           zIndex: 9999,
           animation: state !== 'idle' ? 'geni-pulse 2s ease-in-out infinite' : undefined,
         }}
-        title="지니 AI 어시스턴트"
+        title="CowTalk AI 어시스턴트"
       >
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -516,15 +516,15 @@ export function GeniVoiceAssistant({
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ct-text, #f1f5f9)' }}>
-              {animalContext ? '🧠 소버린' : '지니'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
+              {animalContext ? '🧠 소버린 AI' : '🐄 CowTalk AI'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
             </div>
             <div style={{ fontSize: 10, color: animalContext ? '#16a34a' : 'var(--ct-text-muted, #94a3b8)' }}>
-              {animalContext ? '개체 분석 대화 모드 — 무엇이든 물어보세요' : 'CowTalk AI 어시스턴트'}
+              {animalContext ? '이 개체 전용 주치의 모드' : '농장·전체 대시보드 AI 어시스턴트'}
             </div>
           </div>
         </div>
         <button
-          onClick={() => { stopSpeaking(); setIsOpen(false); setAnimalContext(null); setAnimalIdForChat(null); }}
+          onClick={() => { stopSpeaking(); setIsOpen(false); setAnimalContext(null); setAnimalIdForChat(null); setFarmIdForChat(null); }}
           style={{
             background: 'none',
             border: 'none',
@@ -551,10 +551,12 @@ export function GeniVoiceAssistant({
       }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🧞</div>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>{animalContext ? '🧠' : '🐄'}</div>
             <div style={{ fontSize: 13, color: 'var(--ct-text-muted, #94a3b8)', marginBottom: 16 }}>
-              안녕하세요! 저는 <strong style={{ color }}>지니</strong>입니다.<br />
-              음성 또는 텍스트로 무엇이든 물어보세요.
+              {animalContext
+                ? <>이 개체의 <strong style={{ color: '#16a34a' }}>소버린 AI</strong> 주치의입니다.<br />센서·알람·번식이력 기반으로 답변합니다.</>
+                : <>안녕하세요! <strong style={{ color }}>CowTalk AI</strong>입니다.<br />농장·대시보드 데이터로 무엇이든 답변합니다.</>
+              }
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
               {suggestions.map((q) => (
