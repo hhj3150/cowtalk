@@ -148,8 +148,22 @@ export default function CowProfilePage(): React.JSX.Element {
     });
 
     // 보조 데이터 — 비동기 지연 로딩 (로딩 상태 차단 안 함)
-    withTimeout(apiGet<readonly BreedingEvent[]>(`/animals/${id}/breeding-history`), 5000)
-      .then((data) => { if (!signal.aborted && data) setBreeding(data); })
+    withTimeout(apiGet<unknown>(`/animals/${id}/breeding-history`), 5000)
+      .then((raw) => {
+        if (signal.aborted || !raw) return;
+        // 배열이면 그대로, 객체면 flat 변환
+        if (Array.isArray(raw)) {
+          setBreeding(raw as BreedingEvent[]);
+        } else {
+          const obj = raw as { inseminations?: readonly Record<string, unknown>[]; pregnancyChecks?: readonly Record<string, unknown>[]; calvings?: readonly Record<string, unknown>[] };
+          const flat: BreedingEvent[] = [];
+          for (const e of obj.inseminations ?? []) flat.push({ eventType: 'insemination', eventDate: String(e.eventDate ?? ''), notes: e.notes as string | null });
+          for (const e of obj.pregnancyChecks ?? []) flat.push({ eventType: 'pregnancy_check', eventDate: String(e.checkDate ?? ''), notes: e.notes as string | null });
+          for (const e of obj.calvings ?? []) flat.push({ eventType: 'calving', eventDate: String(e.calvingDate ?? ''), notes: e.notes as string | null });
+          flat.sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime());
+          setBreeding(flat);
+        }
+      })
       .catch(() => {});
 
     withTimeout(apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`), 5000)

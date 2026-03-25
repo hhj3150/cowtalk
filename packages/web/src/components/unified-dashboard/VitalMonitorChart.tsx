@@ -20,6 +20,7 @@ import type {
   VitalSummary,
   VitalAnomaly,
 } from '@cowtalk/shared';
+import { useIsMobile } from '@web/hooks/useIsMobile';
 
 // ── Props ──
 
@@ -120,9 +121,10 @@ function VitalTooltip({ active, payload, label }: {
 
 function SummaryCards({ summary }: { readonly summary: VitalSummary }): React.JSX.Element {
   const risk = RISK_CONFIG[summary.riskLevel] ?? { color: '#22c55e', label: '정상', icon: '\u2705' };
+  const isMobile = useIsMobile();
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
       <StatCard
         label="위험 등급"
         value={risk.label}
@@ -332,28 +334,29 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
       }} />
 
       {/* 헤더 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <span style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 36, height: 36, borderRadius: 10,
             background: 'linear-gradient(135deg, #f8717120, #38bdf820)',
             fontSize: 18,
+            flexShrink: 0,
           }}>
             {'\uD83C\uDF21\uFE0F'}
           </span>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>
               체온 · 반추 정밀 모니터링
             </h3>
-            <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0' }}>
+            <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {data.farmName ?? '전체 농장'} — 전염성 질병 조기경보 핵심 지표
             </p>
           </div>
         </div>
 
         {/* 기간 선택 */}
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
           {PERIOD_OPTIONS.map((opt) => (
             <button
               key={opt.value}

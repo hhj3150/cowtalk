@@ -144,10 +144,12 @@ animalRouter.get('/:animalId', requirePermission('animal', 'read'), async (req: 
       .orderBy(desc(smaxtecEvents.detectedAt))
       .limit(10);
 
-    // AI 해석 시도 (실패 시 기본 데이터만 반환)
+    // AI 해석 시도 (5초 타임아웃, 실패 시 기본 데이터만 반환)
     let interpretation = null;
     try {
-      interpretation = await getAnimalDetail(animalId, role);
+      const aiPromise = getAnimalDetail(animalId, role);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+      interpretation = await Promise.race([aiPromise, timeoutPromise]);
     } catch {
       // AI 해석 실패 — 기본 데이터로 반환
     }
@@ -353,6 +355,35 @@ animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 're
       });
     }
 
+    // smaXtec 번식 관련 이벤트 (no_insemination 포함)
+    const breedingSmxEvents = await db
+      .select({
+        eventId: smaxtecEvents.eventId,
+        detectedAt: smaxtecEvents.detectedAt,
+        eventType: smaxtecEvents.eventType,
+        confidence: smaxtecEvents.confidence,
+        details: smaxtecEvents.details,
+      })
+      .from(smaxtecEvents)
+      .where(
+        and(
+          eq(smaxtecEvents.animalId, animalId),
+          sql`${smaxtecEvents.eventType} IN ('insemination', 'pregnancy_result', 'no_insemination', 'abort', 'dry_off', 'calving_detection', 'calving_confirmation')`,
+        ),
+      )
+      .orderBy(desc(smaxtecEvents.detectedAt))
+      .limit(20);
+
+    for (const e of breedingSmxEvents) {
+      timeline.push({
+        id: e.eventId,
+        type: e.eventType,
+        date: e.detectedAt?.toISOString() ?? '',
+        label: e.eventType,
+        details: { confidence: e.confidence, ...(typeof e.details === 'object' && e.details !== null ? e.details as Record<string, unknown> : {}) },
+      });
+    }
+
     // 시간 역순 정렬
     timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -434,6 +465,64 @@ animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 're
         timeline: timeline.slice(0, 20),
         currentStage,
         nextAction,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /animals/:animalId/breeding-history — breeding-timeline 별칭 (CowProfilePage 호환)
+animalRouter.get('/:animalId/breeding-history', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const animalId = req.params.animalId as string;
+
+    const inseminations = await db
+      .select({
+        eventId: breedingEvents.eventId,
+        eventDate: breedingEvents.eventDate,
+        type: breedingEvents.type,
+        semenInfo: breedingEvents.semenInfo,
+        notes: breedingEvents.notes,
+      })
+      .from(breedingEvents)
+      .where(eq(breedingEvents.animalId, animalId))
+      .orderBy(desc(breedingEvents.eventDate))
+      .limit(20);
+
+    const pregChecks = await db
+      .select({
+        checkId: pregnancyChecks.checkId,
+        checkDate: pregnancyChecks.checkDate,
+        result: pregnancyChecks.result,
+        method: pregnancyChecks.method,
+        notes: pregnancyChecks.notes,
+      })
+      .from(pregnancyChecks)
+      .where(eq(pregnancyChecks.animalId, animalId))
+      .orderBy(desc(pregnancyChecks.checkDate))
+      .limit(20);
+
+    const calvings = await db
+      .select({
+        eventId: calvingEvents.eventId,
+        calvingDate: calvingEvents.calvingDate,
+        calfSex: calvingEvents.calfSex,
+        calfStatus: calvingEvents.calfStatus,
+        notes: calvingEvents.notes,
+      })
+      .from(calvingEvents)
+      .where(eq(calvingEvents.animalId, animalId))
+      .orderBy(desc(calvingEvents.calvingDate))
+      .limit(20);
+
+    res.json({
+      success: true,
+      data: {
+        inseminations,
+        pregnancyChecks: pregChecks,
+        calvings,
       },
     });
   } catch (error) {

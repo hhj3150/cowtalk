@@ -51,7 +51,7 @@ export default function DemoModePage(): React.JSX.Element {
   return (
     <div className="flex h-screen flex-col bg-gradient-to-br from-slate-900 to-blue-900 text-white">
       {/* 최상단 브랜딩 */}
-      <div className="flex items-center justify-between px-8 py-4">
+      <div className="flex items-center justify-between px-4 py-3 lg:px-8 lg:py-4">
         <div>
           <h1 className="text-2xl font-bold">CowTalk</h1>
           <p className="text-xs text-blue-300">축산 디지털 운영체제</p>
@@ -74,7 +74,7 @@ export default function DemoModePage(): React.JSX.Element {
       </div>
 
       {/* 진행 바 */}
-      <div className="mx-8 h-1 rounded-full bg-blue-800">
+      <div className="mx-4 h-1 rounded-full bg-blue-800 lg:mx-8">
         <div
           className="h-1 rounded-full bg-blue-400 transition-all duration-300"
           style={{ width: `${((currentIndex + 1) / SLIDES.length) * 100}%` }}
@@ -82,13 +82,13 @@ export default function DemoModePage(): React.JSX.Element {
       </div>
 
       {/* 슬라이드 컨텐츠 */}
-      <div className="flex flex-1 flex-col items-center justify-center px-8">
+      <div className="flex flex-1 flex-col items-center justify-center px-4 lg:px-8">
         <div className="animate-fade-in text-center">
-          <h2 className="text-5xl font-bold">{slide.title}</h2>
-          <p className="mt-4 text-xl text-blue-200">{slide.description}</p>
+          <h2 className="text-3xl font-bold lg:text-5xl">{slide.title}</h2>
+          <p className="mt-3 text-base text-blue-200 lg:mt-4 lg:text-xl">{slide.description}</p>
 
           {/* 데모 KPI 애니메이션 */}
-          <div className="mt-12 grid grid-cols-4 gap-6">
+          <div className="mt-8 grid grid-cols-2 gap-3 lg:mt-12 lg:grid-cols-4 lg:gap-6">
             <DemoKpi label="총 두수" value={4250} suffix="두" />
             <DemoKpi label="건강이상" value={12} suffix="두" color="text-red-400" />
             <DemoKpi label="발정 후보" value={8} suffix="두" color="text-pink-400" />
@@ -145,9 +145,9 @@ function DemoKpi({
   }, [value]);
 
   return (
-    <div className="rounded-xl bg-white/10 p-6 backdrop-blur">
-      <p className="text-sm text-blue-300">{label}</p>
-      <p className={`mt-1 text-3xl font-bold ${color}`}>
+    <div className="rounded-xl bg-white/10 p-4 backdrop-blur lg:p-6">
+      <p className="text-xs text-blue-300 lg:text-sm">{label}</p>
+      <p className={`mt-1 text-2xl font-bold lg:text-3xl ${color}`}>
         {Number.isInteger(value) ? Math.round(displayValue) : displayValue.toFixed(1)}
         <span className="text-lg">{suffix}</span>
       </p>

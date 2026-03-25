@@ -33,6 +33,23 @@ function unlockTts(): void {
   window.speechSynthesis.speak(dummy);
 }
 
+// Chrome TTS 15초 끊김 방지: 문장 단위로 분할하여 순차 재생
+function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
+  const sentences = text.split(/(?<=[.!?。]\s)/);
+  const chunks: string[] = [];
+  let current = '';
+  for (const s of sentences) {
+    if ((current + s).length > maxLen && current.length > 0) {
+      chunks.push(current.trim());
+      current = s;
+    } else {
+      current += s;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length > 0 ? chunks : [text];
+}
+
 function speak(text: string, onEnd?: () => void): void {
   if (!('speechSynthesis' in window)) {
     onEnd?.();
@@ -91,12 +108,26 @@ function speak(text: string, onEnd?: () => void): void {
     if (selectedVoice) utterance.lang = 'en-US';
   }
 
-  if (selectedVoice) utterance.voice = selectedVoice;
+  // 문장 분할 재생 (Chrome TTS 15초 끊김 방지)
+  const chunks = splitIntoChunks(cleanText);
 
-  utterance.onend = () => onEnd?.();
-  utterance.onerror = () => onEnd?.();
+  function speakChunk(index: number): void {
+    if (index >= chunks.length) {
+      onEnd?.();
+      return;
+    }
+    const chunk = chunks[index]!;
+    const utt = new SpeechSynthesisUtterance(chunk);
+    utt.lang = detectedLang;
+    utt.rate = utterance.rate;
+    utt.pitch = utterance.pitch;
+    if (selectedVoice) utt.voice = selectedVoice;
+    utt.onend = () => speakChunk(index + 1);
+    utt.onerror = () => speakChunk(index + 1);
+    window.speechSynthesis.speak(utt);
+  }
 
-  window.speechSynthesis.speak(utterance);
+  speakChunk(0);
 }
 
 function stopSpeaking(): void {
@@ -258,7 +289,7 @@ export function GeniVoiceAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, dashboardContext]);
+  }, [messages, user?.role, selectedFarmId, dashboardContext, animalContext, animalIdForChat]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
