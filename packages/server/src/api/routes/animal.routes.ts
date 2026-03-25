@@ -11,6 +11,7 @@ import { getAnimalDetail } from '../../serving/dashboard.service.js';
 import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords } from '../../db/schema.js';
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
+import { GradeConnector } from '../../pipeline/connectors/public-data/grade.connector.js';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 
 // 이력추적 커넥터 싱글톤 (매 요청마다 생성하지 않음)
@@ -525,6 +526,46 @@ animalRouter.get('/:animalId/breeding-history', requirePermission('animal', 'rea
         calvings,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /animals/:animalId/grade — 축산물등급판정 결과 조회
+let gradeConnector: GradeConnector | null = null;
+async function getGradeConnector(): Promise<GradeConnector> {
+  if (!gradeConnector) {
+    gradeConnector = new GradeConnector();
+    await gradeConnector.connect();
+  }
+  return gradeConnector;
+}
+
+animalRouter.get('/:animalId/grade', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const { animalId } = req.params as { animalId: string };
+
+    const [animal] = await db
+      .select({ traceId: animals.traceId })
+      .from(animals)
+      .where(eq(animals.animalId, animalId))
+      .limit(1);
+
+    if (!animal?.traceId) {
+      res.json({ success: true, data: { available: false, reason: '이력제 번호 미등록' } });
+      return;
+    }
+
+    const connector = await getGradeConnector();
+    const grade = await connector.fetchGradeByTraceId(animal.traceId);
+
+    if (!grade) {
+      res.json({ success: true, data: { available: false, traceId: animal.traceId, reason: '등급판정 결과 없음 (미출하 또는 API 미응답)' } });
+      return;
+    }
+
+    res.json({ success: true, data: { ...grade, available: true } });
   } catch (error) {
     next(error);
   }
