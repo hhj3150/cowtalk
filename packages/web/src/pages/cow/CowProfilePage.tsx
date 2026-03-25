@@ -100,18 +100,18 @@ export default function CowProfilePage(): React.JSX.Element {
       ]);
     }
 
-    // 핵심 데이터 (프로필 + 이벤트 + 센서) — 병렬, 최대 8초
+    // 핵심 데이터 (프로필 + 이벤트 + 센서) — 병렬, 최대 12초
     Promise.all([
-      withTimeout(apiGet<CowProfile>(`/animals/${id}`), 8000).catch((err) => {
+      withTimeout(apiGet<CowProfile>(`/animals/${id}`), 12000).catch((err) => {
         // 타임아웃/네트워크 에러 vs 404 구분
         const status = (err as { response?: { status?: number } })?.response?.status;
         if (status === 404) return '__NOT_FOUND__';
         return null; // 타임아웃 또는 서버 미응답
       }),
-      withTimeout(apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`), 5000).catch(() => ({ events: [] as readonly EventItem[] })),
+      withTimeout(apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`), 10000).catch(() => ({ events: [] as readonly EventItem[] })),
       withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
         `/unified-dashboard/animal/${id}/sensor-chart?days=7`
-      ), 5000).catch(() => null),
+      ), 10000).catch(() => null),
     ]).then(([p, evts, sensorData]) => {
       if (signal.aborted) return;
 
@@ -148,7 +148,7 @@ export default function CowProfilePage(): React.JSX.Element {
     });
 
     // 보조 데이터 — 비동기 지연 로딩 (로딩 상태 차단 안 함)
-    withTimeout(apiGet<unknown>(`/animals/${id}/breeding-history`), 5000)
+    withTimeout(apiGet<unknown>(`/animals/${id}/breeding-history`), 10000)
       .then((raw) => {
         if (signal.aborted || !raw) return;
         // 배열이면 그대로, 객체면 flat 변환
@@ -166,15 +166,15 @@ export default function CowProfilePage(): React.JSX.Element {
       })
       .catch(() => {});
 
-    withTimeout(apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`), 5000)
+    withTimeout(apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`), 10000)
       .then((data) => { if (!signal.aborted && data) setHealthPred(data); })
       .catch(() => {});
 
-    withTimeout(apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`), 5000)
+    withTimeout(apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`), 10000)
       .then((data) => { if (!signal.aborted && data) setEstrusPred(data); })
       .catch(() => {});
 
-    withTimeout(apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`), 5000)
+    withTimeout(apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`), 10000)
       .then((data) => { if (!signal.aborted && data) setCalvingPred(data); })
       .catch(() => {});
 
