@@ -4,14 +4,14 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
-import { evaluateEngine, compareEngines, getAccuracyTrend, evaluateByRole } from '../../intelligence-loop/model-evaluator.js';
+import { evaluateEngine, compareEngines, getAccuracyTrend, evaluateByRole, getPerformanceOverview } from '../../intelligence-loop/model-evaluator.js';
 import { analyzeThresholds } from '../../intelligence-loop/threshold-learner.js';
 
 export const aiPerformanceRouter = Router();
 
 aiPerformanceRouter.use(authenticate);
 
-// GET /ai/performance — 엔진 성능 평가
+// GET /ai/performance — 엔진 성능 평가 (PerformanceOverview 구조 반환)
 aiPerformanceRouter.get('/performance', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const from = req.query.from ? new Date(req.query.from as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -23,7 +23,7 @@ aiPerformanceRouter.get('/performance', async (req: Request, res: Response, next
       const data = await evaluateEngine(engineType, { from, to }, farmId);
       res.json({ success: true, data });
     } else {
-      const data = await compareEngines({ from, to });
+      const data = await getPerformanceOverview({ from, to });
       res.json({ success: true, data });
     }
   } catch (error) {

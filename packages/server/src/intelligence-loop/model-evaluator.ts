@@ -60,8 +60,8 @@ export async function evaluateEngine(
       FROM predictions p
       LEFT JOIN outcome_evaluations oe ON oe.prediction_id = p.prediction_id
       WHERE p.engine_type = ${engineType}
-        AND p.timestamp >= ${dateRange.from}
-        AND p.timestamp <= ${dateRange.to}
+        AND p.timestamp >= ${dateRange.from.toISOString()}
+        AND p.timestamp <= ${dateRange.to.toISOString()}
         ${farmFilter}
     `);
 
@@ -213,6 +213,58 @@ export async function compareEngines(
     return results;
   } catch (error) {
     logger.error({ error }, 'Failed to compare engines');
+    throw error;
+  }
+}
+
+interface PerformanceOverview {
+  readonly engines: readonly EngineEvaluation[];
+  readonly totalPredictions: number;
+  readonly totalFeedback: number;
+  readonly overallAccuracy: number;
+  readonly feedbackRate: number;
+}
+
+/**
+ * 전체 성능 개요 — 프론트엔드 PerformanceOverview 인터페이스 매칭
+ */
+export async function getPerformanceOverview(
+  dateRange: DateRange,
+): Promise<PerformanceOverview> {
+  try {
+    const db = getDb();
+    const engines = await compareEngines(dateRange);
+
+    // feedback 테이블에서 총 피드백 수 조회
+    const fbResult = await db.execute(sql`
+      SELECT count(*)::int AS total_feedback
+      FROM feedback
+      WHERE created_at >= ${dateRange.from.toISOString()}
+        AND created_at <= ${dateRange.to.toISOString()}
+    `);
+    const totalFeedback = Number((fbResult as unknown as Record<string, unknown>[])[0]?.total_feedback ?? 0);
+
+    const totalPredictions = engines.reduce((sum, e) => sum + e.totalPredictions, 0);
+    const totalEvaluated = engines.reduce((sum, e) => sum + e.totalEvaluated, 0);
+
+    // 가중 평균 precision (평가 수 기준)
+    const overallAccuracy = totalEvaluated > 0
+      ? engines.reduce((sum, e) => sum + e.precision * e.totalEvaluated, 0) / totalEvaluated
+      : 0;
+
+    const feedbackRate = totalPredictions > 0
+      ? totalFeedback / totalPredictions
+      : 0;
+
+    return {
+      engines,
+      totalPredictions,
+      totalFeedback,
+      overallAccuracy,
+      feedbackRate,
+    };
+  } catch (error) {
+    logger.error({ error }, 'Failed to get performance overview');
     throw error;
   }
 }
