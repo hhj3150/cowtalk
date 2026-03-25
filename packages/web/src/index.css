@@ -1,13 +1,18 @@
 @import 'tailwindcss';
 
-/* ── Leaflet 타일 — Tailwind preflight 리셋 보정 ── */
-/* Tailwind preflight: img { display: block; max-width: 100% } → 타일 깨짐 방지 */
+/* ── Leaflet + Tailwind v4 호환 ── */
+/* Tailwind preflight resets: img { max-width:100%; height:auto; display:block } */
+/* Leaflet 인라인 스타일이 우선하지만, 일부 브라우저에서 @layer 충돌 발생 가능 */
 .leaflet-container img {
   max-width: none !important;
   max-height: none !important;
 }
-.leaflet-container .leaflet-tile-pane img {
-  display: block;
+.leaflet-tile {
+  max-width: none !important;
+}
+/* Leaflet 컨테이너 기본 스타일 보장 */
+.leaflet-container {
+  font: 12px/1.5 "Helvetica Neue", Arial, Helvetica, sans-serif;
 }
 
 /* ── 모바일 좌우 스크롤 방지 ── */
