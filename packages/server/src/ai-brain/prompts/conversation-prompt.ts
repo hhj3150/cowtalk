@@ -174,6 +174,25 @@ function buildAnimalContext(profile: AnimalProfile): string {
     }
   }
 
+  // ── 번식 이력 ──
+  if (profile.breedingHistory.length > 0) {
+    lines.push(`\n### 번식 이력 (최근 ${String(Math.min(profile.breedingHistory.length, 5))}건)`);
+    for (const b of profile.breedingHistory.slice(0, 5)) {
+      const date = b.date ? new Date(b.date).toLocaleDateString('ko-KR') : '';
+      const semen = b.semenType ? ` 정액: ${b.semenType}` : '';
+      lines.push(`- ${date}: 수정${semen} → ${b.result}`);
+    }
+  }
+
+  // ── 건강 이력 ──
+  if (profile.healthHistory.length > 0) {
+    lines.push(`\n### 건강 이력 (최근 ${String(Math.min(profile.healthHistory.length, 5))}건)`);
+    for (const h of profile.healthHistory.slice(0, 5)) {
+      const date = h.date ? new Date(h.date).toLocaleDateString('ko-KR') : '';
+      lines.push(`- ${date}: ${h.diagnosis}${h.treatment ? ` — 치료: ${h.treatment}` : ''}`);
+    }
+  }
+
   // ── AI 주치의 지침 ──
   lines.push(`\n### 답변 지침 (주치의 모드)
 - 이 소의 현재 상태에 대해 **구체적인 조치**를 알려주세요
