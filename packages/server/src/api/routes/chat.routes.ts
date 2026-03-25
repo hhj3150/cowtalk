@@ -6,8 +6,9 @@ import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { chatMessageSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
-import { handleChatMessage, handleChatStream } from '../../chat/chat-service.js';
+import { handleChatMessage, handleChatStream, buildStreamFallback } from '../../chat/chat-service.js';
 import { isClaudeAvailable } from '../../ai-brain/claude-client.js';
+import { resolveContext } from '../../chat/context-builder.js';
 
 export const chatRouter = Router();
 
@@ -103,32 +104,45 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  // API 키 없으면 즉시 fallback 응답
+  // SSE keep-alive (프록시 타임아웃 방지)
+  const keepAlive = setInterval(() => { res.write(':\n\n'); }, 15000);
+  req.on('close', () => { clearInterval(keepAlive); });
+
+  const chatRequest = {
+    question: sanitizeQuestion(body.question),
+    role: req.user?.role as Role,
+    farmId: body.farmId ?? null,
+    animalId: body.animalId ?? null,
+    conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
+    dashboardContext: body.dashboardContext,
+  };
+
+  // API 키 없으면 데이터 기반 fallback 응답 생성
   if (!isClaudeAvailable()) {
-    res.write(`data: ${JSON.stringify({ type: 'text', content: 'AI 엔진이 현재 사용 불가합니다. 대시보드의 데이터를 직접 확인해 주세요.' })}\n\n`);
-    res.write(`data: ${JSON.stringify({ type: 'done', content: 'AI 엔진이 현재 사용 불가합니다. 대시보드의 데이터를 직접 확인해 주세요.' })}\n\n`);
+    const { context } = await resolveContext(
+      chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
+    );
+    const fallbackText = buildStreamFallback(chatRequest.question, chatRequest.role, context);
+    res.write(`data: ${JSON.stringify({ type: 'text', content: fallbackText })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done', content: fallbackText })}\n\n`);
+    clearInterval(keepAlive);
     res.end();
     return;
   }
 
   await handleChatStream(
-    {
-      question: sanitizeQuestion(body.question),
-      role: req.user?.role as Role,
-      farmId: body.farmId ?? null,
-      animalId: body.animalId ?? null,
-      conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
-      dashboardContext: body.dashboardContext,
-    },
+    chatRequest,
     {
       onText: (text) => {
         res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
       },
       onDone: (fullText) => {
+        clearInterval(keepAlive);
         res.write(`data: ${JSON.stringify({ type: 'done', content: fullText })}\n\n`);
         res.end();
       },
       onError: (error) => {
+        clearInterval(keepAlive);
         res.write(`data: ${JSON.stringify({ type: 'error', content: error.message })}\n\n`);
         res.end();
       },

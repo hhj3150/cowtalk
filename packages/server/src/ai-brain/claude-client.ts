@@ -135,12 +135,21 @@ export async function callClaudeForChat(
 
     let fullText = '';
 
+    // 30초 타임아웃 (무한 대기 방지)
+    const timeout = setTimeout(() => {
+      if (fullText.length === 0) {
+        stream.abort();
+        callbacks.onError(new Error('AI 응답 시간 초과 (30초)'));
+      }
+    }, 30000);
+
     stream.on('text', (text) => {
       fullText += text;
       callbacks.onText(text);
     });
 
     const finalMessage = await stream.finalMessage();
+    clearTimeout(timeout);
 
     logger.info({
       model: finalMessage.model,

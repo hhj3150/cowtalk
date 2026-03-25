@@ -204,16 +204,47 @@ function buildAnimalContext(profile: AnimalProfile): string {
 }
 
 function buildFarmContext(profile: FarmProfile): string {
+  const total = profile.totalAnimals;
+  const dairyPct = total > 0 ? Math.round((profile.breedComposition.dairy / total) * 100) : 0;
+  const beefPct = total > 0 ? Math.round((profile.breedComposition.beef / total) * 100) : 0;
+
   const lines: string[] = [
     `## 맥락: 농장 ${profile.name}`,
     `- 지역: ${profile.region}`,
-    `- 총 두수: ${String(profile.totalAnimals)}두 (젖소 ${String(profile.breedComposition.dairy)}, 한우 ${String(profile.breedComposition.beef)})`,
-    `- 활성 이벤트: ${String(profile.activeSmaxtecEvents.length)}건`,
+    `- 총 두수: **${String(total)}두** (젖소 ${String(profile.breedComposition.dairy)}두/${String(dairyPct)}%, 한우 ${String(profile.breedComposition.beef)}두/${String(beefPct)}%)`,
+    `- 활성 이벤트: **${String(profile.activeSmaxtecEvents.length)}건**`,
   ];
 
   if (profile.farmHealthScore !== null) {
     lines.push(`- 건강 점수: ${String(profile.farmHealthScore)}/100`);
   }
+
+  // 알람 유형별 breakdown
+  if (profile.activeSmaxtecEvents.length > 0) {
+    const byType = new Map<string, number>();
+    for (const e of profile.activeSmaxtecEvents) {
+      byType.set(e.type, (byType.get(e.type) ?? 0) + 1);
+    }
+    const breakdown = [...byType.entries()].map(([type, count]) => {
+      const label = ALARM_LABELS[type] ?? type;
+      return `${label} ${String(count)}건`;
+    });
+    lines.push(`- 알람 내역: ${breakdown.join(', ')}`);
+
+    // 긴급 알람 상세 (최대 10건)
+    const critical = profile.activeSmaxtecEvents
+      .filter((e) => e.severity === 'critical' || e.severity === 'high')
+      .slice(0, 10);
+    if (critical.length > 0) {
+      lines.push(`\n### ⚠️ 긴급 알람`);
+      for (const e of critical) {
+        const label = ALARM_LABELS[e.type] ?? e.type;
+        lines.push(`- **${label}** [${e.severity}] (${e.animalId.slice(0, 8)})`);
+      }
+    }
+  }
+
+  lines.push(`\n→ 이 농장의 현재 상황에 대해 구체적으로 답변하세요.`);
 
   return lines.join('\n');
 }

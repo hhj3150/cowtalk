@@ -274,16 +274,23 @@ export function GeniVoiceAssistant({
         }
       }
 
-      const answer = fullText || '응답을 생성할 수 없습니다.';
+      const answer = fullText || '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.';
       const assistantMsg: GeniMessage = { role: 'assistant', content: answer, timestamp: new Date() };
       setMessages((prev) => [...prev, assistantMsg]);
 
       setState('speaking');
       speak(answer, () => setState('idle'));
-    } catch {
+    } catch (err) {
+      // 네트워크 에러 vs 서버 에러 구분
+      const axiosErr = err as { response?: { status?: number }; code?: string };
+      const isNetworkError = !axiosErr.response || axiosErr.code === 'ERR_NETWORK';
+      const errorContent = isNetworkError
+        ? '인터넷 연결을 확인해 주세요. 네트워크 오류가 발생했습니다.'
+        : `서버 오류가 발생했습니다 (${String(axiosErr.response?.status ?? '')}). 잠시 후 다시 시도해 주세요.`;
+
       const errorMsg: GeniMessage = {
         role: 'assistant',
-        content: '네트워크 오류가 발생했습니다. 다시 시도해주세요.',
+        content: errorContent,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMsg]);

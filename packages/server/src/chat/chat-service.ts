@@ -171,3 +171,66 @@ function buildFallbackResponse(
     isFallback: true,
   };
 }
+
+// ===========================
+// 스트리밍 Fallback — 데이터 기반 응답
+// ===========================
+
+import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
+
+export function buildStreamFallback(
+  _question: string,
+  role: Role,
+  context: ChatContext,
+): string {
+  const lines: string[] = [];
+
+  if (context.type === 'global' && context.globalContext) {
+    const ctx = context.globalContext;
+    lines.push(`📊 **CowTalk 실시간 현황** (AI 엔진 오프라인 — 데이터 직접 제공)`);
+    lines.push(`\n• 관리 농장: **${String(ctx.totalFarms)}개** | 관리 두수: **${String(ctx.totalAnimals)}두**`);
+
+    // 알람 요약
+    const alarmTypes = ['calving', 'health_warning', 'temperature_warning', 'estrus', 'rumination_warning', 'activity_warning'] as const;
+    const LABELS: Record<string, string> = { calving: '분만', health_warning: '건강경고', temperature_warning: '체온', estrus: '발정', rumination_warning: '반추', activity_warning: '활동' };
+    const parts: string[] = [];
+    for (const type of alarmTypes) {
+      const animals = ctx.alarmsByType[type];
+      if (animals && animals.length > 0) {
+        parts.push(`${LABELS[type] ?? type} **${String(animals.length)}두**`);
+      }
+    }
+    if (parts.length > 0) {
+      lines.push(`\n**현재 알람:** ${parts.join(' | ')}`);
+    }
+
+    // 긴급 농장
+    if (ctx.farmAlertRanking.length > 0) {
+      lines.push(`\n**긴급 농장 TOP 5:**`);
+      for (const f of ctx.farmAlertRanking.slice(0, 5)) {
+        lines.push(`• ${f.farmName}: ${String(f.alertCount)}건`);
+      }
+    }
+  } else if (context.type === 'farm' && context.profile) {
+    lines.push(`📊 **${context.profile.name} 현황** (AI 엔진 오프라인)`);
+    lines.push(`• 두수: ${String(context.profile.totalAnimals)}두 | 활성 알람: ${String(context.profile.activeSmaxtecEvents.length)}건`);
+  } else if (context.type === 'animal' && context.profile) {
+    const p = context.profile;
+    lines.push(`🐄 **#${p.earTag} (${p.farmName})** (AI 엔진 오프라인)`);
+    const s = p.latestSensor;
+    if (s.temperature !== null) lines.push(`• 체온: ${String(s.temperature)}°C`);
+    if (s.rumination !== null) lines.push(`• 반추: ${String(s.rumination)}분/일`);
+    if (p.activeEvents.length > 0) {
+      lines.push(`• 활성 알람: ${p.activeEvents.map((e) => e.type).join(', ')}`);
+    }
+  }
+
+  if (lines.length === 0) {
+    const hints = FALLBACK_HINTS[role] ?? [];
+    lines.push('AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.');
+    for (const h of hints) lines.push(`• ${h}`);
+  }
+
+  lines.push(`\n💡 AI 분석이 필요하면 잠시 후 다시 시도해 주세요.`);
+  return lines.join('\n');
+}
