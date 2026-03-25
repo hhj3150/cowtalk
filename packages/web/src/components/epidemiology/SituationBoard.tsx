@@ -18,8 +18,12 @@ export interface ActiveAlert {
 export interface RiskFarm {
   readonly farmId: string;
   readonly farmName: string;
+  readonly healthAlertCount?: number;
   readonly feverCount: number;
-  readonly feverRate: number;
+  readonly ruminationCount?: number;
+  readonly otherHealthCount?: number;
+  readonly groupRate?: number;
+  readonly feverRate?: number;
   readonly clusterAlert: boolean;
   readonly legalSuspect: boolean;
   readonly riskScore: number;
@@ -105,8 +109,10 @@ export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmC
                     {farm.farmName}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
-                    발열 {farm.feverCount}두
-                    {farm.clusterAlert && ' · 집단 발열'}
+                    건강알림 {farm.healthAlertCount ?? farm.feverCount}건
+                    {farm.feverCount > 0 && ` · 발열 ${farm.feverCount}`}
+                    {(farm.ruminationCount ?? 0) > 0 && ` · 반추↓ ${farm.ruminationCount}`}
+                    {farm.clusterAlert && ' · 집단 발생'}
                     {farm.legalSuspect && ' · 법정전염병 의심'}
                   </p>
                 </div>

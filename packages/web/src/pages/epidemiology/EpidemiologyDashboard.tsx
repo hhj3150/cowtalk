@@ -39,8 +39,11 @@ interface DashboardData {
   top5RiskFarms: {
     farmId: string;
     farmName: string;
+    healthAlertCount: number;
     feverCount: number;
-    feverRate: number;
+    ruminationCount: number;
+    otherHealthCount: number;
+    groupRate: number;
     clusterAlert: boolean;
     legalSuspect: boolean;
     riskScore: number;
@@ -151,7 +154,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
       selectedFarm.clusterAlert && '집단발열 발생',
       selectedFarm.legalSuspect && '법정전염병 의심',
     ].filter(Boolean).join(', ');
-    return `[방역관 역학 브리핑 — ${selectedFarm.farmId}] ${selectedFarm.farmName} 농장 역학 상황을 분석해주세요. 현재 발열 ${selectedFarm.feverCount}두, 위험점수 ${selectedFarm.riskScore}점${flags ? ` (${flags})` : ''}. 방역관이 즉시 취해야 할 조치 3가지를 간결하게 알려주세요.`;
+    return `[방역관 역학 브리핑 — ${selectedFarm.farmId}] ${selectedFarm.farmName} 농장 역학 상황을 분석해주세요. 건강알림 ${selectedFarm.healthAlertCount ?? selectedFarm.feverCount}건 (발열 ${selectedFarm.feverCount}, 반추↓ ${selectedFarm.ruminationCount ?? 0}), 위험점수 ${selectedFarm.riskScore}점${flags ? ` (${flags})` : ''}. 방역관이 즉시 취해야 할 조치 3가지를 간결하게 알려주세요.`;
   }, [selectedFarm]);
 
   const hourlyData = (dashboard?.hourlyFever24h ?? []).map((d) => ({
@@ -269,7 +272,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
                     : { color: 'var(--ct-text-secondary)' }
                 }
               >
-                {tab === 'info' ? '📊 농장 정보' : `🌡️ 발열 개체 (${selectedFarm.feverCount}두)`}
+                {tab === 'info' ? '📊 농장 정보' : `🏥 건강알림 (${selectedFarm.healthAlertCount ?? selectedFarm.feverCount}건)`}
               </button>
             ))}
           </div>
@@ -279,7 +282,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             <>
               <div className="flex flex-wrap gap-3 text-sm">
                 <span style={{ color: 'var(--ct-text)' }}>
-                  발열 <strong>{selectedFarm.feverCount}두</strong>
+                  건강알림 <strong>{selectedFarm.healthAlertCount ?? selectedFarm.feverCount}건</strong> (발열 {selectedFarm.feverCount} · 반추↓ {selectedFarm.ruminationCount ?? 0})
                 </span>
                 <span style={{ color: 'var(--ct-text)' }}>
                   위험점수 <strong>{selectedFarm.riskScore}</strong>

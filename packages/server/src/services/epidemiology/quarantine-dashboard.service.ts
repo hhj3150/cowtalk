@@ -29,11 +29,14 @@ export interface QuarantineKpi {
 export interface RiskFarm {
   readonly farmId: string;
   readonly farmName: string;
+  readonly healthAlertCount: number;  // 전체 건강 알람 (번식 제외)
   readonly feverCount: number;
-  readonly feverRate: number;       // 0-1
+  readonly ruminationCount: number;
+  readonly otherHealthCount: number;
+  readonly groupRate: number;         // 집단 발생 비율 (이상두수/전체두수)
   readonly clusterAlert: boolean;
   readonly legalSuspect: boolean;
-  readonly riskScore: number;       // 0-100
+  readonly riskScore: number;         // 0-100
   readonly lat: number;
   readonly lng: number;
 }
@@ -131,6 +134,68 @@ async function fetchFeverByFarm(since: Date): Promise<Map<string, FarmFeverInfo>
     }
   }
   return result;
+}
+
+// ===========================
+// 농장별 건강 알람 집계 (번식 제외, 메인 대시보드와 동일 기준)
+// ===========================
+
+// 번식 이벤트 제외 목록 — queryFarmRanking()과 동일
+const EXCLUDED_BREEDING_TYPES = [
+  'estrus', 'estrus_dnb', 'heat', 'insemination', 'pregnancy_result', 'pregnancy_check',
+  'no_insemination', 'calving_detection', 'calving_confirmation', 'dry_off', 'abort',
+  'fertility_warning', 'activity_increase',
+] as const;
+
+interface FarmHealthAlertInfo {
+  readonly farmId: string;
+  readonly totalAlerts: number;
+  readonly feverCount: number;
+  readonly ruminationCount: number;
+  readonly otherCount: number;
+  readonly animalIds: readonly string[];
+}
+
+async function fetchHealthAlertsByFarm(since: Date): Promise<Map<string, FarmHealthAlertInfo>> {
+  const db = getDb();
+
+  const rows = await db
+    .select({
+      farmId: smaxtecEvents.farmId,
+      eventType: smaxtecEvents.eventType,
+      animalId: smaxtecEvents.animalId,
+    })
+    .from(smaxtecEvents)
+    .where(
+      and(
+        gte(smaxtecEvents.detectedAt, since),
+        sql`${smaxtecEvents.eventType} NOT IN (${sql.raw(EXCLUDED_BREEDING_TYPES.map((t) => `'${t}'`).join(','))})`,
+      ),
+    )
+    .groupBy(smaxtecEvents.farmId, smaxtecEvents.eventType, smaxtecEvents.animalId);
+
+  const result = new Map<string, { farmId: string; fever: number; rumination: number; other: number; animalSet: Set<string> }>();
+  for (const row of rows) {
+    const existing = result.get(row.farmId) ?? { farmId: row.farmId, fever: 0, rumination: 0, other: 0, animalSet: new Set<string>() };
+    const isFever = row.eventType.includes('temperature');
+    const isRumination = row.eventType.includes('rumination');
+    if (isFever) existing.fever++;
+    else if (isRumination) existing.rumination++;
+    else existing.other++;
+    existing.animalSet.add(row.animalId);
+    result.set(row.farmId, existing);
+  }
+
+  return new Map(
+    Array.from(result.entries()).map(([id, v]) => [id, {
+      farmId: v.farmId,
+      totalAlerts: v.fever + v.rumination + v.other,
+      feverCount: v.fever,
+      ruminationCount: v.rumination,
+      otherCount: v.other,
+      animalIds: Array.from(v.animalSet),
+    }]),
+  );
 }
 
 // ===========================
@@ -305,10 +370,11 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const [sensorStats, feverByFarm, hourlyFever24h, dsi7Days, activeAlerts, allFarms] =
+    const [sensorStats, feverByFarm, healthByFarm, hourlyFever24h, dsi7Days, activeAlerts, allFarms] =
       await Promise.all([
         fetchSensorStats(),
         fetchFeverByFarm(since24h),
+        fetchHealthAlertsByFarm(since24h),
         fetchHourlyFever24h(),
         fetchDsi7Days(),
         fetchActiveAlerts(),
@@ -334,29 +400,40 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
 
     const riskLevel = calcRiskLevel(feverRate, clusterFarms, legalSuspects);
 
-    // TOP5 위험 농장
+    // TOP5 위험 농장 — 전체 건강 알람 기준 (메인 대시보드와 동일) + 집단 발생 가중치
     const top5RiskFarms: RiskFarm[] = allFarms
       .map((f) => {
-        const fever = feverByFarm.get(f.farmId);
-        const feverCount = fever?.feverCount ?? 0;
-        const farmFeverRate = f.headCount > 0 ? feverCount / f.headCount : 0;
-        const clusterAlert = feverCount >= 3;
+        const health = healthByFarm.get(f.farmId);
+        const healthAlertCount = health?.totalAlerts ?? 0;
+        const feverCount = health?.feverCount ?? 0;
+        const ruminationCount = health?.ruminationCount ?? 0;
+        const otherHealthCount = health?.otherCount ?? 0;
+        const uniqueAnimals = health?.animalIds.length ?? 0;
+
+        // 집단 발생 비율: 이상 개체수 / 전체 두수
+        const groupRate = f.headCount > 0 ? uniqueAnimals / f.headCount : 0;
+        const clusterAlert = groupRate >= 0.10 || uniqueAnimals >= 3; // 10%+ 또는 3두+
         const legalSuspect = activeAlerts.some(
           (a) => a.farmId === f.farmId && a.priority === 'critical',
         );
-        const hasAlert = activeAlerts.some((a) => a.farmId === f.farmId);
+
+        // 위험도 = 건강알람 × 5 + 집단발생 가중 + 법정전염병 + 알림
+        const groupBonus = clusterAlert ? Math.round(groupRate * 50) : 0;
         const riskScore = Math.min(
-          feverCount * 10 +
-          (clusterAlert ? 30 : 0) +
+          healthAlertCount * 5 +
+          groupBonus +
           (legalSuspect ? 40 : 0) +
-          (hasAlert ? 15 : 0),
+          (feverCount >= 3 ? 15 : 0),
           100,
         );
         return {
           farmId: f.farmId,
           farmName: f.farmName,
+          healthAlertCount,
           feverCount,
-          feverRate: farmFeverRate,
+          ruminationCount,
+          otherHealthCount,
+          groupRate,
           clusterAlert,
           legalSuspect,
           riskScore,
