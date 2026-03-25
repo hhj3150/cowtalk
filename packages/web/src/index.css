@@ -307,7 +307,8 @@ body {
     gap: 8px !important;
     align-items: stretch !important;
   }
-  header > div:nth-child(2) {
+  /* AppShell 헤더(className 보유)의 데스크톱 전용 요소만 숨김 — 대시보드 인라인 헤더 제외 */
+  header.flex > div:nth-child(2) {
     display: none !important;
   }
 

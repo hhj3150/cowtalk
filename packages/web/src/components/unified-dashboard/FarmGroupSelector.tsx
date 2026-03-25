@@ -115,9 +115,11 @@ export function FarmGroupSelector(): React.JSX.Element {
           display: 'flex',
           alignItems: 'center',
           gap: 6,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
         }}
       >
-        📋 {selectedCount > 0 ? `${selectedCount}개 농장 선택` : '농장 그룹'}
+        📋 {selectedCount > 0 ? `${selectedCount}개 선택` : '그룹'}
         <span style={{ fontSize: 10 }}>▾</span>
       </button>
 
