@@ -111,6 +111,7 @@ export interface AnimalProfile {
   readonly breedingHistory: readonly BreedingRecord[];
   readonly pregnancyStatus: PregnancyStatus | null;
   readonly daysSinceInsemination: number | null;
+  readonly breedingFeedback: BreedingFeedbackSummary | null;
 
   // 건강 이력
   readonly healthHistory: readonly HealthRecord[];
@@ -182,6 +183,21 @@ export interface SensorSnapshot {
 }
 
 export type PregnancyStatus = 'open' | 'inseminated' | 'confirmed' | 'late_gestation';
+
+export interface BreedingFeedbackSummary {
+  readonly conceptionRate: number; // 수태율 (%)
+  readonly totalInseminations: number;
+  readonly pregnantCount: number;
+  readonly openCount: number;
+  readonly pendingCount: number;
+  readonly recentOutcomes: readonly BreedingOutcome[];
+}
+
+export interface BreedingOutcome {
+  readonly date: string;
+  readonly bullName: string | null;
+  readonly result: string; // 'pregnant' | 'open' | 'pending'
+}
 
 export interface BreedingRecord {
   readonly date: Date;

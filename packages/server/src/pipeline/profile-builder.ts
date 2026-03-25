@@ -6,7 +6,7 @@ import { eq, and, desc, gte, lte, isNull, count } from 'drizzle-orm';
 import { getDb } from '../config/database.js';
 import {
   animals, farms, regions, smaxtecEvents,
-  sensorMeasurements, breedingEvents, healthEvents,
+  sensorMeasurements, breedingEvents, pregnancyChecks, healthEvents,
   diseaseClusters, clusterFarmMemberships,
 } from '../db/schema.js';
 import { resolveBreedType } from '@cowtalk/shared';
@@ -17,6 +17,7 @@ import type {
   FarmSummaryInProfile,
   BreedType,
 } from '@cowtalk/shared';
+import { getBreedingFeedback } from '../services/breeding/breeding-advisor.service.js';
 import type { ClusterSignal } from '@cowtalk/shared';
 import { logger } from '../lib/logger.js';
 
@@ -52,7 +53,7 @@ export async function buildAnimalProfile(animalId: string): Promise<AnimalProfil
   const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const d7ago = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const [latestSensors, sensorHistory24h, sensorHistory7d, activeEvents, breedingRecords, healthRecords] = await Promise.all([
+  const [latestSensors, sensorHistory24h, sensorHistory7d, activeEvents, breedingRecords, healthRecords, pregStatus, feedbackRaw] = await Promise.all([
     // 최신 센서값 (각 메트릭별 최신 1건)
     getLatestSensorReadings(db, animalId),
     // 24시간 센서 히스토리
@@ -65,6 +66,10 @@ export async function buildAnimalProfile(animalId: string): Promise<AnimalProfil
     getBreedingHistory(db, animalId),
     // 건강 이력
     getHealthHistory(db, animalId),
+    // 임신상태 자동계산
+    computePregnancyStatus(db, animalId),
+    // 번식 피드백 (수정→임신감정 성적)
+    getBreedingFeedback(animalId).catch(() => null),
   ]);
 
   return {
@@ -89,8 +94,20 @@ export async function buildAnimalProfile(animalId: string): Promise<AnimalProfil
     sensorHistory7d,
     activeEvents,
     breedingHistory: breedingRecords,
-    pregnancyStatus: null, // 번식 이력에서 계산
-    daysSinceInsemination: null,
+    pregnancyStatus: pregStatus.status as AnimalProfile['pregnancyStatus'],
+    daysSinceInsemination: pregStatus.daysSince,
+    breedingFeedback: feedbackRaw ? {
+      conceptionRate: feedbackRaw.conceptionRate,
+      totalInseminations: feedbackRaw.totalInseminations,
+      pregnantCount: feedbackRaw.pregnantCount,
+      openCount: feedbackRaw.openCount,
+      pendingCount: feedbackRaw.pendingCount,
+      recentOutcomes: feedbackRaw.entries.slice(0, 5).map((e) => ({
+        date: e.inseminationDate,
+        bullName: e.bullName,
+        result: e.pregnancyResult,
+      })),
+    } : null,
     healthHistory: healthRecords,
     production: breedType === 'dairy' ? getEmptyDairyProduction() : null,
     growth: breedType === 'beef' ? getEmptyBeefGrowth() : null,
@@ -607,6 +624,46 @@ async function getBreedingHistory(
     technician: null,
     result: 'unknown' as const,
   }));
+}
+
+// 임신상태 자동계산 — breedingEvents + pregnancyChecks 기반
+async function computePregnancyStatus(
+  db: DB,
+  animalId: string,
+): Promise<{ readonly status: string | null; readonly daysSince: number | null }> {
+  const MS_PER_DAY = 86_400_000;
+
+  // 최신 수정 기록 조회
+  const [latestInsem] = await db
+    .select({ eventDate: breedingEvents.eventDate })
+    .from(breedingEvents)
+    .where(and(eq(breedingEvents.animalId, animalId), eq(breedingEvents.type, 'insemination')))
+    .orderBy(desc(breedingEvents.eventDate))
+    .limit(1);
+
+  if (!latestInsem) return { status: null, daysSince: null };
+
+  const daysSince = Math.floor((Date.now() - latestInsem.eventDate.getTime()) / MS_PER_DAY);
+
+  // 최신 임신감정 결과 조회
+  const [latestCheck] = await db
+    .select({ result: pregnancyChecks.result, checkDate: pregnancyChecks.checkDate })
+    .from(pregnancyChecks)
+    .where(eq(pregnancyChecks.animalId, animalId))
+    .orderBy(desc(pregnancyChecks.checkDate))
+    .limit(1);
+
+  // 감정 결과가 수정일 이후인 경우에만 유효
+  if (latestCheck && latestCheck.checkDate >= latestInsem.eventDate) {
+    const isPregnant = latestCheck.result === 'pregnant' || latestCheck.result === 'positive';
+    if (isPregnant) {
+      return { status: daysSince > 210 ? 'late_gestation' : 'confirmed', daysSince };
+    }
+    return { status: 'open', daysSince };
+  }
+
+  // 감정 미실시
+  return { status: 'inseminated', daysSince };
 }
 
 async function getHealthHistory(

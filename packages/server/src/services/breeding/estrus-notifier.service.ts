@@ -3,6 +3,9 @@
 
 import { logger } from '../../lib/logger.js';
 import { sendPushToFarm } from '../../realtime/push-service.js';
+import { getIO } from '../../realtime/socket-server.js';
+import { getDb } from '../../config/database.js';
+import { alerts } from '../../db/schema.js';
 import type { BreedingAdvice } from './breeding-advisor.service.js';
 
 /**
@@ -53,9 +56,61 @@ export async function notifyInseminatorOnEstrus(
       sentCount,
     }, `[EstrusNotifier] 발정 알림 발송: ${advice.earTag} → ${sentCount}명`);
 
+    // 인앱 알림 — alerts 테이블 삽입 + Socket.IO emit
+    await insertEstrusAlert(advice, title, body);
+
     return sentCount;
   } catch (err) {
     logger.error({ err, animalId: advice.animalId }, '[EstrusNotifier] 알림 발송 실패');
     return 0;
+  }
+}
+
+// alerts 테이블에 발정 알림 저장 + Socket.IO 실시간 전송
+async function insertEstrusAlert(
+  advice: BreedingAdvice,
+  title: string,
+  body: string,
+): Promise<void> {
+  const topSemen = advice.recommendations[0];
+  const actionParts = [`수정 적기: ${advice.optimalTimeLabel}`];
+  if (topSemen) actionParts.push(`추천정액: ${topSemen.bullName}`);
+  if (advice.warnings.length > 0) actionParts.push(`주의: ${advice.warnings.join(', ')}`);
+
+  const dedupKey = `estrus-${advice.animalId}-${new Date().toISOString().split('T')[0]}`;
+
+  try {
+    const db = getDb();
+    const [inserted] = await db.insert(alerts).values({
+      alertType: 'breeding_estrus',
+      animalId: advice.animalId,
+      farmId: advice.farmId,
+      priority: 'high',
+      status: 'new',
+      title,
+      explanation: body,
+      recommendedAction: actionParts.join(' · '),
+      dedupKey,
+    }).onConflictDoNothing().returning({ alertId: alerts.alertId });
+
+    if (inserted) {
+      const io = getIO();
+      if (io) {
+        io.to(`farm:${advice.farmId}`).emit('alert:new', {
+          alertId: inserted.alertId,
+          alertType: 'breeding_estrus',
+          title,
+          body,
+          priority: 'high',
+          animalId: advice.animalId,
+          farmId: advice.farmId,
+          url: `/cow/${advice.animalId}`,
+        });
+      }
+      logger.info({ alertId: inserted.alertId, earTag: advice.earTag }, '[EstrusNotifier] 인앱 알림 저장 완료');
+    }
+  } catch (err) {
+    // 인앱 알림 실패는 치명적이지 않으므로 warn 레벨
+    logger.warn({ err, animalId: advice.animalId }, '[EstrusNotifier] 인앱 알림 저장 실패');
   }
 }

@@ -64,6 +64,18 @@ ${breedLines.join('\n')}
 - 수정 후 경과일: ${profile.daysSinceInsemination !== null ? `${String(profile.daysSinceInsemination)}일` : '해당없음'}`);
   }
 
+  // 5.5 번식 성적 피드백 (AI 학습 루프)
+  if (profile.breedingFeedback && profile.breedingFeedback.totalInseminations > 0) {
+    const fb = profile.breedingFeedback;
+    const outcomeLines = fb.recentOutcomes.map((o) =>
+      `- ${o.date.split('T')[0]}: ${o.bullName ?? '정액정보없음'} → ${o.result}`,
+    );
+    sections.push(`## 번식 성적 피드백 (수태율: ${String(fb.conceptionRate)}%)
+- 총 수정: ${String(fb.totalInseminations)}회 | 임신: ${String(fb.pregnantCount)} | 미임신: ${String(fb.openCount)} | 대기: ${String(fb.pendingCount)}
+${outcomeLines.length > 0 ? `최근 결과:\n${outcomeLines.join('\n')}` : ''}
+⚠️ 이 데이터를 참고하여 다음 수정 시 정액 선택과 타이밍을 조언하세요.`);
+  }
+
   // 6. 건강 이력
   if (profile.healthHistory.length > 0) {
     const healthLines = profile.healthHistory.slice(0, 5).map((h) =>
