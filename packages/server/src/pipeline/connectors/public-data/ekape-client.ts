@@ -37,12 +37,11 @@ export async function ekapeGet(
     throw new Error(`[${label}] PUBLIC_DATA_API_KEY 미설정`);
   }
 
-  const searchParams = new URLSearchParams({
-    serviceKey: apiKey,
-    ...params,
-  });
-
-  const fullUrl = `${url}?${searchParams.toString()}`;
+  // serviceKey는 URLSearchParams에 넣지 않음 — 이중 인코딩 방지
+  // data.go.kr API 키가 이미 인코딩된 상태로 발급되는 경우가 있으므로
+  // 키는 raw로 붙이고, 나머지 파라미터만 URLSearchParams로 인코딩
+  const otherParams = new URLSearchParams(params);
+  const fullUrl = `${url}?serviceKey=${apiKey}&${otherParams.toString()}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
 
@@ -73,7 +72,7 @@ export async function ekapeGet(
     const resultCode = String(header.resultCode ?? '00');
     const resultMsg = String(header.resultMsg ?? 'OK');
 
-    if (resultCode !== '00' && resultCode !== '0000' && resultCode !== '000') {
+    if (resultCode !== '00' && resultCode !== '0000' && resultCode !== '000' && resultCode !== '0') {
       logger.warn({ resultCode, resultMsg, label }, `[${label}] API error response`);
       return { resultCode, resultMsg, body: null, raw: parsed };
     }

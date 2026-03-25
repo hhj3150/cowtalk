@@ -856,13 +856,11 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 농장 지도 ── */}
           {isVisible('farm_map') && (<>
           <SectionLabel>농장 지도</SectionLabel>
-          {farmMapMarkers.length > 0 && (
-            <FarmMapWidget
-              markers={farmMapMarkers}
-              selectedFarmId={selectedFarmId}
-              onFarmClick={(fid) => selectFarm(fid)}
-            />
-          )}
+          <FarmMapWidget
+            markers={farmMapMarkers}
+            selectedFarmId={selectedFarmId}
+            onFarmClick={(fid) => selectFarm(fid)}
+          />
           </>)}
 
           {/* ── 농장 순위 + 역학 지도 ── */}

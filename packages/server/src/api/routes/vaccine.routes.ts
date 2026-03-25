@@ -1,4 +1,4 @@
-// 백신 라우트 — 실제 DB 쿼리
+// 백신 라우트 — 실제 DB 쿼리 + 법정 스케줄 자동생성
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
@@ -7,6 +7,11 @@ import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { vaccineSchedules, vaccineRecords, animals, farms } from '../../db/schema.js';
 import { eq, and, count } from 'drizzle-orm';
+import { VACCINE_PROTOCOLS } from '@cowtalk/shared';
+import {
+  generateVaccineSchedules,
+  calculateVaccinationRate,
+} from '../../services/vaccine/vaccine-scheduler.service.js';
 
 export const vaccineRouter = Router();
 
@@ -73,6 +78,71 @@ vaccineRouter.post('/record', async (req: Request, res: Response, next: NextFunc
   } catch (error) {
     next(error);
   }
+});
+
+// POST /vaccines/generate-schedule/:farmId — 법정 프로토콜 기반 스케줄 자동생성
+vaccineRouter.post('/generate-schedule/:farmId', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    const { month, year, protocolIds } = req.body as {
+      month?: number;
+      year?: number;
+      protocolIds?: string[];
+    };
+
+    const results = await generateVaccineSchedules({
+      farmId,
+      month,
+      year,
+      protocolIds,
+      createdBy: req.user!.userId,
+    });
+
+    const totalCreated = results.reduce((sum, r) => sum + r.newSchedulesCreated, 0);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        results,
+        totalCreated,
+        message: totalCreated > 0
+          ? `${String(totalCreated)}건의 백신 스케줄이 생성되었습니다.`
+          : '모든 개체가 이미 스케줄/접종 완료 상태입니다.',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /vaccines/rate/:farmId — 농장별 접종률
+vaccineRouter.get('/rate/:farmId', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    const protocolId = req.query.protocolId as string | undefined;
+
+    const rate = await calculateVaccinationRate(farmId, protocolId);
+    res.json({ success: true, data: rate });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /vaccines/protocols — 법정 백신 프로토콜 목록
+vaccineRouter.get('/protocols', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: VACCINE_PROTOCOLS.map((p) => ({
+      id: p.id,
+      name: p.name,
+      nameEn: p.nameEn,
+      type: p.type,
+      priority: p.priority,
+      legalBasis: p.legalBasis,
+      penalty: p.penalty,
+      frequency: p.frequency,
+    })),
+  });
 });
 
 // GET /vaccines/coverage/:regionId — 지역별 접종률

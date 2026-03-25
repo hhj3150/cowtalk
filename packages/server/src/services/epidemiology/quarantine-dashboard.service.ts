@@ -3,10 +3,10 @@
 // 기존 earlyDetection 서비스 재활용
 
 import { getDb } from '../../config/database.js';
-import { farms, animals, sensorMeasurements, alerts, smaxtecEvents } from '../../db/schema.js';
+import { farms, animals, sensorMeasurements, alerts, smaxtecEvents, vaccineRecords } from '../../db/schema.js';
 import { eq, gte, and, desc, count, sql, inArray } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
-import { ALERT_THRESHOLDS } from '@cowtalk/shared';
+import { ALERT_THRESHOLDS, VACCINE_PROTOCOLS } from '@cowtalk/shared';
 
 const FEVER_EVENT_TYPES = ['temperature_high', 'health_103', 'health_104', 'health_308', 'health_309'] as const;
 
@@ -470,6 +470,86 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
   } catch (err) {
     logger.error({ err }, '[QuarantineDashboard] 조회 실패');
     throw err;
+  }
+}
+
+// ===========================
+// 접종 현황 — 방역관 대시보드용
+// ===========================
+
+export interface VaccinationStatusSummary {
+  readonly totalAnimals: number;
+  readonly byProtocol: readonly {
+    readonly protocolId: string;
+    readonly protocolName: string;
+    readonly type: 'vaccination' | 'inspection';
+    readonly vaccinated: number;
+    readonly total: number;
+    readonly rate: number;
+    readonly priority: number;
+  }[];
+  readonly overallRate: number;
+}
+
+export async function getVaccinationStatus(): Promise<VaccinationStatusSummary> {
+  try {
+    const db = getDb();
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(`${String(currentYear)}-01-01`);
+
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(animals)
+      .where(eq(animals.status, 'active'));
+
+    const totalAnimals = totalResult?.count ?? 0;
+
+    // 올해 접종 기록 (백신명별 접종 개체 수)
+    const records = await db
+      .select({
+        vaccineName: vaccineRecords.vaccineName,
+        animalId: vaccineRecords.animalId,
+      })
+      .from(vaccineRecords)
+      .where(gte(vaccineRecords.administeredAt, yearStart));
+
+    const byVaccine = new Map<string, Set<string>>();
+    for (const r of records) {
+      const existing = byVaccine.get(r.vaccineName) ?? new Set<string>();
+      existing.add(r.animalId);
+      byVaccine.set(r.vaccineName, existing);
+    }
+
+    const allVaccinatedIds = new Set<string>();
+    for (const ids of byVaccine.values()) {
+      for (const id of ids) {
+        allVaccinatedIds.add(id);
+      }
+    }
+
+    const byProtocol = VACCINE_PROTOCOLS.map((p) => {
+      const vaccinated = byVaccine.get(p.name)?.size ?? 0;
+      return {
+        protocolId: p.id,
+        protocolName: p.name,
+        type: p.type,
+        vaccinated,
+        total: totalAnimals,
+        rate: totalAnimals > 0 ? Math.round((vaccinated / totalAnimals) * 1000) / 10 : 0,
+        priority: p.priority,
+      };
+    });
+
+    return {
+      totalAnimals,
+      byProtocol,
+      overallRate: totalAnimals > 0
+        ? Math.round((allVaccinatedIds.size / totalAnimals) * 1000) / 10
+        : 0,
+    };
+  } catch (err) {
+    logger.error({ err }, '[QuarantineDashboard] 접종현황 조회 실패');
+    return { totalAnimals: 0, byProtocol: [], overallRate: 0 };
   }
 }
 

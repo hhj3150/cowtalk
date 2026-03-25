@@ -10,7 +10,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
-import { getQuarantineDashboard, getActionQueue } from '../../services/epidemiology/quarantine-dashboard.service.js';
+import { getQuarantineDashboard, getActionQueue, getVaccinationStatus } from '../../services/epidemiology/quarantine-dashboard.service.js';
 import { getEarlyDetectionMetrics } from '../../services/epidemiology/early-detection-metrics.service.js';
 import { getNationalSituation, getProvinceDetail, getProvinceFarms } from '../../services/epidemiology/national-situation.service.js';
 import { logger } from '../../lib/logger.js';
@@ -124,6 +124,19 @@ quarantineDashboardRouter.get('/province-farms/:province', async (req, res, next
       return;
     }
     const data = await getProvinceFarms(province);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// GET /quarantine/vaccination-status — 접종 현황 (법정 백신 프로토콜별)
+// ===========================
+
+quarantineDashboardRouter.get('/vaccination-status', async (_req, res, next) => {
+  try {
+    const data = await getVaccinationStatus();
     res.json({ success: true, data });
   } catch (err) {
     next(err);

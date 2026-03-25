@@ -26,6 +26,21 @@ export {
 } from './breed-config.js';
 export type { BreedConfig } from './breed-config.js';
 export {
+  VACCINE_PROTOCOLS,
+  VACCINATION_STATUS_LABELS,
+  INSPECTION_RESULT_LABELS,
+  getProtocolById,
+  getRequiredProtocols,
+  getVaccinationProtocols,
+  getInspectionProtocols,
+  getProtocolsForMonth,
+} from './vaccine-protocols.js';
+export type {
+  VaccineProtocol,
+  VaccineFrequency,
+  TargetAnimalCriteria,
+} from './vaccine-protocols.js';
+export {
   CLUSTER_DETECTION,
   ALERT_LEVEL_THRESHOLDS,
   SPREAD_RATE,

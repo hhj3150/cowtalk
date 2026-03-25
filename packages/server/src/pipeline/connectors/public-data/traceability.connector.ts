@@ -1,5 +1,7 @@
-// 축산물이력추적 커넥터 — 소 이력번호, 이동이력, 도축정보
+// 축산물이력추적 커넥터 — 소 이력번호, 이동이력, 도축정보, 백신접종, 방역검사
 // API: 축산물이력추적시스템 (data.go.kr)
+// optionNo: 1=기본정보, 2=이동이력, 3=도축정보, 4=포장처리,
+//           5=백신접종, 6=부위별가격, 7=방역검사, 8=농장명, 9=전체
 
 import { AbstractConnector } from '../base.connector.js';
 import type { ConnectorConfig, FetchResult } from '../base.connector.js';
@@ -14,10 +16,13 @@ export interface TraceabilityRecord {
   readonly sex: string;
   readonly breed: string;
   readonly farmId: string;          // 농장 식별번호
+  readonly farmUniqueNo: string;    // 농장 고유번호
   readonly farmName: string;
   readonly farmAddress: string;
   readonly movements: readonly MovementRecord[];
   readonly slaughterInfo: SlaughterInfo | null;
+  readonly vaccinations: readonly VaccinationRecord[];
+  readonly inspections: readonly InspectionRecord[];
 }
 
 export interface MovementRecord {
@@ -25,6 +30,7 @@ export interface MovementRecord {
   readonly fromFarm: string;
   readonly toFarm: string;
   readonly reason: string;
+  readonly farmerName: string;
 }
 
 export interface SlaughterInfo {
@@ -32,6 +38,19 @@ export interface SlaughterInfo {
   readonly facility: string;
   readonly grade: string | null;
   readonly weight: number | null;
+}
+
+export interface VaccinationRecord {
+  readonly date: string;           // 접종일 (YYYY-MM-DD)
+  readonly order: string;          // 접종 차수 (예: "15차")
+  readonly daysSince: string;      // 경과일 (예: "접종 후 20일 경과")
+}
+
+export interface InspectionRecord {
+  readonly inspectDate: string;       // 검사일 (브루셀라)
+  readonly result: string;            // 결과 (음성/양성)
+  readonly tbcInspectDate: string;    // 결핵 검사일
+  readonly tbcResult: string;         // 결핵 결과 (음성/양성)
 }
 
 export const TRACEABILITY_CONFIG: ConnectorConfig = {
@@ -83,9 +102,9 @@ export class TraceabilityConnector extends AbstractConnector<TraceabilityRecord>
   }
 
   /**
-   * 특정 이력번호로 단건 조회
-   * API 1) 축산물통합이력정보: traceNoSearch (optionNo=9 전체조회)
-   * API 3) 쇠고기이력정보: cattle (개체상세) + cattleMove (이동이력)
+   * 특정 이력번호로 종합 조회
+   * optionNo 1(기본) + 2(이동) + 5(백신) + 7(방역) 병렬 호출
+   * 하나의 API로 개체의 전체 이력을 조합한다.
    */
   async fetchByTraceId(traceId: string): Promise<TraceabilityRecord | null> {
     if (!config.PUBLIC_DATA_API_KEY) {
@@ -94,40 +113,92 @@ export class TraceabilityConnector extends AbstractConnector<TraceabilityRecord>
     }
 
     try {
-      // 1차: 축산물통합이력정보 (optionNo=9: 전체)
-      const integ = await ekapeGet(
-        this.apiBase,
-        { traceNo: traceId, optionNo: '9' },
-        'Traceability-Integrated',
-      );
+      // 4개 optionNo를 병렬 호출하여 풍부한 프로필 생성
+      const [basicRes, moveRes, vaccineRes, inspectRes] = await Promise.allSettled([
+        ekapeGet(this.apiBase, { traceNo: traceId, optionNo: '1' }, 'Trace-Basic'),
+        ekapeGet(this.apiBase, { traceNo: traceId, optionNo: '2' }, 'Trace-Move'),
+        ekapeGet(this.apiBase, { traceNo: traceId, optionNo: '5' }, 'Trace-Vaccine'),
+        ekapeGet(this.apiBase, { traceNo: traceId, optionNo: '7' }, 'Trace-Inspect'),
+      ]);
 
-      const items = extractItems(integ.body);
-      const item = items[0];
+      const basicItems = basicRes.status === 'fulfilled' ? extractItems(basicRes.value.body) : [];
+      const moveItems = moveRes.status === 'fulfilled' ? extractItems(moveRes.value.body) : [];
+      const vaccineItems = vaccineRes.status === 'fulfilled' ? extractItems(vaccineRes.value.body) : [];
+      const inspectItems = inspectRes.status === 'fulfilled' ? extractItems(inspectRes.value.body) : [];
 
-      if (!item) {
-        // 2차 fallback: 쇠고기이력정보 cattle
+      const basic = basicItems[0];
+      if (!basic) {
+        // 기본정보 없으면 fallback: 쇠고기이력정보 cattle API
         return this.fetchByCattleApi(traceId);
       }
 
-      return this.parseItem(item, traceId);
+      // 이동이력 조합
+      const movements: readonly MovementRecord[] = moveItems.map((m) => ({
+        date: this.fmtDate(String(m.regYmd ?? m.moveYmd ?? '')),
+        fromFarm: '',
+        toFarm: String(m.farmAddr ?? ''),
+        reason: String(m.regType ?? ''),
+        farmerName: String(m.farmerNm ?? ''),
+      }));
+
+      // 백신접종 이력 조합
+      const vaccinations: readonly VaccinationRecord[] = vaccineItems.map((v) => ({
+        date: this.fmtDate(String(v.injectionYmd ?? '')),
+        order: String(v.vaccineorder ?? ''),
+        daysSince: String(v.injectiondayCnt ?? ''),
+      }));
+
+      // 방역검사 결과 조합
+      const inspections: readonly InspectionRecord[] = inspectItems.map((i) => ({
+        inspectDate: this.fmtDate(String(i.inspectDt ?? '')),
+        result: String(i.inspectYn ?? ''),
+        tbcInspectDate: this.fmtDate(String(i.tbcInspctYmd ?? '')),
+        tbcResult: String(i.tbcInspctRsltNm ?? ''),
+      }));
+
+      logger.info(
+        { traceId, moves: movements.length, vaccines: vaccinations.length, inspects: inspections.length },
+        '[Traceability] Profile assembled',
+      );
+
+      return {
+        traceId: String(basic.cattleNo ?? traceId).replace(/^410/, ''),
+        earTag: '',
+        birthDate: this.fmtDate(String(basic.birthYmd ?? '')),
+        sex: this.sexLabel(String(basic.sexNm ?? basic.sexCd ?? '')),
+        breed: this.breedLabel(String(basic.lsTypeNm ?? basic.lsTypeCd ?? '')),
+        farmId: String(basic.farmNo ?? ''),
+        farmUniqueNo: String(basic.farmUniqueNo ?? ''),
+        farmName: '',
+        farmAddress: '',
+        movements,
+        slaughterInfo: null,
+        vaccinations,
+        inspections,
+      };
     } catch (error) {
       logger.error({ err: error, traceId }, '[Traceability] Fetch failed');
       return null;
     }
   }
 
-  /** 쇠고기이력정보 API (15056898) — 개체정보 + 이동정보 */
+  /** 쇠고기이력정보 API (15056898) — 개체정보 + 이동정보 + 백신 + 방역 */
   private async fetchByCattleApi(traceId: string): Promise<TraceabilityRecord | null> {
     const cattleUrl = 'http://data.ekape.or.kr/openapi-data/service/user/mtrace/breeding/cattle';
     const moveUrl = 'http://data.ekape.or.kr/openapi-data/service/user/mtrace/breeding/cattleMove';
 
-    const [cattleRes, moveRes] = await Promise.allSettled([
+    // 개체정보 + 이동 + 백신(optionNo=5) + 방역(optionNo=7) 병렬 호출
+    const [cattleRes, moveRes, vaccineRes, inspectRes] = await Promise.allSettled([
       ekapeGet(cattleUrl, { cattleNo: traceId }, 'Traceability-Cattle'),
       ekapeGet(moveUrl, { cattleNo: traceId }, 'Traceability-CattleMove'),
+      ekapeGet(this.apiBase, { traceNo: traceId, optionNo: '5' }, 'Trace-Vaccine-Fallback'),
+      ekapeGet(this.apiBase, { traceNo: traceId, optionNo: '7' }, 'Trace-Inspect-Fallback'),
     ]);
 
     const cattleItems = cattleRes.status === 'fulfilled' ? extractItems(cattleRes.value.body) : [];
     const moveItems = moveRes.status === 'fulfilled' ? extractItems(moveRes.value.body) : [];
+    const vaccineItems = vaccineRes.status === 'fulfilled' ? extractItems(vaccineRes.value.body) : [];
+    const inspectItems = inspectRes.status === 'fulfilled' ? extractItems(inspectRes.value.body) : [];
 
     const item = cattleItems[0];
     if (!item) return null;
@@ -137,7 +208,26 @@ export class TraceabilityConnector extends AbstractConnector<TraceabilityRecord>
       fromFarm: String(m.fromFarmNo ?? m.befFarmAddr ?? ''),
       toFarm: String(m.toFarmNo ?? m.farmAddr ?? ''),
       reason: this.moveReasonLabel(String(m.moveType ?? m.movePurps ?? '')),
+      farmerName: String(m.farmerNm ?? ''),
     }));
+
+    const vaccinations: readonly VaccinationRecord[] = vaccineItems.map((v) => ({
+      date: this.fmtDate(String(v.injectionYmd ?? '')),
+      order: String(v.vaccineorder ?? ''),
+      daysSince: String(v.injectiondayCnt ?? ''),
+    }));
+
+    const inspections: readonly InspectionRecord[] = inspectItems.map((i) => ({
+      inspectDate: this.fmtDate(String(i.inspectDt ?? '')),
+      result: String(i.inspectYn ?? ''),
+      tbcInspectDate: this.fmtDate(String(i.tbcInspctYmd ?? '')),
+      tbcResult: String(i.tbcInspctRsltNm ?? ''),
+    }));
+
+    logger.info(
+      { traceId, vaccines: vaccinations.length, inspects: inspections.length },
+      '[Traceability] Cattle API fallback — vaccine/inspect assembled',
+    );
 
     return {
       traceId: String(item.cattleNo ?? traceId),
@@ -146,54 +236,13 @@ export class TraceabilityConnector extends AbstractConnector<TraceabilityRecord>
       sex: this.sexLabel(String(item.sexCd ?? item.sexNm ?? '')),
       breed: this.breedLabel(String(item.lsTypeCd ?? item.lsTypeNm ?? '')),
       farmId: String(item.farmNo ?? ''),
+      farmUniqueNo: '',
       farmName: String(item.farmNm ?? ''),
       farmAddress: String(item.farmAddr ?? ''),
       movements,
       slaughterInfo: null,
-    };
-  }
-
-  /** API 응답 item → TraceabilityRecord 변환 */
-  private parseItem(item: Record<string, unknown>, traceId: string): TraceabilityRecord {
-    // 이동이력
-    const rawMove = item.moveList ?? item.moves;
-    const moveArr: Record<string, unknown>[] = Array.isArray(rawMove)
-      ? rawMove as Record<string, unknown>[]
-      : rawMove != null ? [rawMove as Record<string, unknown>] : [];
-
-    const movements: MovementRecord[] = moveArr.map((m) => ({
-      date: this.fmtDate(String(m.moveYmd ?? m.occrYmd ?? '')),
-      fromFarm: String(m.fromFarmNo ?? m.befFarmAddr ?? ''),
-      toFarm: String(m.toFarmNo ?? m.farmAddr ?? ''),
-      reason: this.moveReasonLabel(String(m.movePurps ?? m.moveType ?? '')),
-    }));
-
-    // 도축정보
-    const rawSlaughter = item.slaughterList ?? item.slaughterInfo;
-    const slaughterArr: Record<string, unknown>[] = Array.isArray(rawSlaughter)
-      ? rawSlaughter as Record<string, unknown>[]
-      : rawSlaughter != null ? [rawSlaughter as Record<string, unknown>] : [];
-
-    const slaughterInfo: SlaughterInfo | null = slaughterArr.length > 0
-      ? {
-          date: this.fmtDate(String(slaughterArr[0]!.slaughterYmd ?? slaughterArr[0]!.date ?? '')),
-          facility: String(slaughterArr[0]!.slaughterPlaceNm ?? slaughterArr[0]!.facility ?? ''),
-          grade: String(slaughterArr[0]!.gradeNm ?? slaughterArr[0]!.grade ?? '') || null,
-          weight: Number(slaughterArr[0]!.weight ?? 0) || null,
-        }
-      : null;
-
-    return {
-      traceId: String(item.traceNo ?? item.cattleNo ?? traceId),
-      earTag: String(item.earTagNo ?? item.earTag ?? ''),
-      birthDate: this.fmtDate(String(item.birthYmd ?? item.birthDate ?? '')),
-      sex: this.sexLabel(String(item.sexCd ?? item.sexNm ?? item.gender ?? '')),
-      breed: this.breedLabel(String(item.lsTypeCd ?? item.lsTypeNm ?? item.lsType ?? '')),
-      farmId: String(item.farmNo ?? item.farmId ?? ''),
-      farmName: String(item.farmNm ?? item.farmName ?? ''),
-      farmAddress: String(item.farmAddr ?? item.farmAddress ?? ''),
-      movements,
-      slaughterInfo,
+      vaccinations,
+      inspections,
     };
   }
 

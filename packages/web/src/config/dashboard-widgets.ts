@@ -30,7 +30,7 @@ export type DashboardWidgetId =
 
 // 역할별 위젯 목록 (순서 = 표시 우선순위)
 const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> = {
-  // 농장주: 할일 + 건강 + 번식 (내 농장 중심)
+  // 농장주: 할일 + 건강 + 번식 + 지도 (내 농장 중심)
   farmer: [
     'epidemic_alert_banner',
     'ai_briefing',
@@ -38,9 +38,10 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'todo_list',
     'vital_monitor_chart',
     'alert_trend_chart',
+    'farm_map',
   ],
 
-  // 수의사: 할일 + 발열/질병 + 센서
+  // 수의사: 할일 + 발열/질병 + 센서 + 지도
   veterinarian: [
     'epidemic_alert_banner',
     'ai_briefing',
@@ -50,13 +51,15 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'vital_monitor_chart',
     'fever_ranking',
     'farm_ranking',
+    'farm_map',
   ],
 
-  // 수정사: 발정 대상우 + 번식성적 + AI 정액 추천
+  // 수정사: 발정 대상우 + 번식성적 + AI 정액 추천 + 지도
   inseminator: [
     'ai_briefing',
     'herd_overview',
     'insemination_route',
+    'farm_map',
   ],
 
   // 행정: 전체 (모든 위젯)
@@ -102,7 +105,7 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'farm_ranking',
   ],
 
-  // 사료회사: 축군 구성, 반추, 농장 비교
+  // 사료회사: 축군 구성, 반추, 농장 비교 + 지도
   feed_company: [
     'epidemic_alert_banner',
     'ai_briefing',
@@ -110,6 +113,7 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'todo_list',
     'vital_monitor_chart',
     'herd_composition_chart',
+    'farm_map',
   ],
 };
 

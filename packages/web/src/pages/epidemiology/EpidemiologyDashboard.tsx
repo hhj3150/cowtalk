@@ -75,6 +75,24 @@ async function fetchActionQueue(): Promise<ActionQueueItem[]> {
   return apiGet<ActionQueueItem[]>('/quarantine/action-queue');
 }
 
+interface VaccinationStatusData {
+  readonly totalAnimals: number;
+  readonly byProtocol: readonly {
+    readonly protocolId: string;
+    readonly protocolName: string;
+    readonly type: 'vaccination' | 'inspection';
+    readonly vaccinated: number;
+    readonly total: number;
+    readonly rate: number;
+    readonly priority: number;
+  }[];
+  readonly overallRate: number;
+}
+
+async function fetchVaccinationStatus(): Promise<VaccinationStatusData> {
+  return apiGet<VaccinationStatusData>('/quarantine/vaccination-status');
+}
+
 // ===========================
 // KPI 카드
 // ===========================
@@ -136,6 +154,12 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
     queryKey: ['quarantine', 'action-queue'],
     queryFn: fetchActionQueue,
     refetchInterval: 30_000,
+  });
+
+  const { data: vaccinationStatus } = useQuery({
+    queryKey: ['quarantine', 'vaccination-status'],
+    queryFn: fetchVaccinationStatus,
+    staleTime: 5 * 60_000,
   });
 
   const kpi = dashboard?.kpi;
@@ -420,6 +444,55 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      {/* 접종 현황 */}
+      {vaccinationStatus && (
+        <div
+          className="rounded-xl border p-4"
+          style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
+        >
+          <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ct-text)' }}>
+            💉 법정 백신 접종현황
+          </h3>
+          <div className="space-y-2">
+            {vaccinationStatus.byProtocol
+              .filter((p) => p.type === 'vaccination' && p.priority <= 2)
+              .map((p) => {
+                const barColor = p.rate >= 90 ? '#22c55e' : p.rate >= 50 ? '#eab308' : '#ef4444';
+                return (
+                  <div key={p.protocolId}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span style={{ color: 'var(--ct-text)' }}>{p.protocolName}</span>
+                      <span style={{ color: barColor, fontWeight: 700 }}>{p.rate}%</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--ct-border)' }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(p.rate, 100)}%`, background: barColor }}
+                      />
+                    </div>
+                    <div className="text-[10px] mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
+                      {p.vaccinated}/{p.total}두
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          {vaccinationStatus.byProtocol.filter((p) => p.type === 'inspection').length > 0 && (
+            <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--ct-border)' }}>
+              <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--ct-text-secondary)' }}>🛡️ 방역검사 현황</h4>
+              {vaccinationStatus.byProtocol
+                .filter((p) => p.type === 'inspection')
+                .map((p) => (
+                  <div key={p.protocolId} className="flex items-center justify-between text-xs py-1">
+                    <span style={{ color: 'var(--ct-text)' }}>{p.protocolName}</span>
+                    <span style={{ color: p.rate >= 90 ? '#22c55e' : '#eab308', fontWeight: 600 }}>{p.rate}%</span>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 당일 업무 큐 */}
       <div

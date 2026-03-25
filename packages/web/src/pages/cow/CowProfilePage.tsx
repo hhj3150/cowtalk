@@ -13,6 +13,8 @@ import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { FarmSemenInventory } from '@web/components/breeding/FarmSemenInventory';
 import { PregnancyCheckModal } from '@web/components/breeding/PregnancyCheckModal';
 import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
+import { VaccinationHistory } from '@web/components/vaccine/VaccinationHistory';
+import { InspectionResults } from '@web/components/vaccine/InspectionResults';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface CowProfile {
@@ -321,6 +323,22 @@ export default function CowProfilePage(): React.JSX.Element {
         <SectionErrorBoundary label="이력추적">
           <TraceSection animalId={profile.animalId} />
         </SectionErrorBoundary>
+      </div>
+
+      {/* 💉 백신 접종이력 + 방역검사 */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>💉 백신 접종이력</h3>
+          <SectionErrorBoundary label="백신 접종이력">
+            <VaccinationHistory animalId={profile.animalId} />
+          </SectionErrorBoundary>
+        </div>
+        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>🛡️ 방역검사 결과</h3>
+          <SectionErrorBoundary label="방역검사">
+            <InspectionResults animalId={profile.animalId} />
+          </SectionErrorBoundary>
+        </div>
       </div>
 
       {/* 💉 번식 관리 — 수정 추천 + 보유 정액 */}

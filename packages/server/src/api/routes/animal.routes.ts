@@ -9,7 +9,7 @@ import { animalQuerySchema, createAnimalSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
 import { getAnimalDetail } from '../../serving/dashboard.service.js';
 import { getDb } from '../../config/database.js';
-import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords } from '../../db/schema.js';
+import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords, vaccineRecords, vaccineSchedules } from '../../db/schema.js';
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
 import { GradeConnector } from '../../pipeline/connectors/public-data/grade.connector.js';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
@@ -238,6 +238,8 @@ animalRouter.get('/:animalId/trace', requirePermission('animal', 'read'), async 
           farmAddress: animalInfo?.farmAddress ?? null,
           movements: [],
           slaughterInfo: null,
+          vaccinations: [],
+          inspections: [],
         },
       });
       return;
@@ -554,6 +556,89 @@ animalRouter.get('/:animalId/breeding-history', requirePermission('animal', 'rea
         inseminations,
         pregnancyChecks: pregChecks,
         calvings,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /animals/:animalId/vaccine-history — 백신접종이력 + 방역검사 통합 조회
+// 공공데이터(이력추적) + 로컬 DB(접종기록) 병합
+animalRouter.get('/:animalId/vaccine-history', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const { animalId } = req.params as { animalId: string };
+
+    // DB에서 traceId + farmId 조회
+    const [animalRow] = await db
+      .select({ traceId: animals.traceId, farmId: animals.farmId, earTag: animals.earTag })
+      .from(animals)
+      .where(eq(animals.animalId, animalId))
+      .limit(1);
+
+    if (!animalRow) {
+      res.status(404).json({ success: false, error: '개체를 찾을 수 없습니다' });
+      return;
+    }
+
+    // 1) 공공데이터: 이력추적 API (백신접종 + 방역검사)
+    let publicVaccinations: readonly { date: string; order: string; daysSince: string }[] = [];
+    let publicInspections: readonly { inspectDate: string; result: string; tbcInspectDate: string; tbcResult: string }[] = [];
+
+    if (animalRow.traceId) {
+      try {
+        const connector = await getTraceConnector();
+        const traceData = await connector.fetchByTraceId(animalRow.traceId);
+        if (traceData) {
+          publicVaccinations = traceData.vaccinations;
+          publicInspections = traceData.inspections;
+        }
+      } catch (err) {
+        // 공공데이터 실패해도 로컬 데이터는 반환
+        publicVaccinations = [];
+        publicInspections = [];
+      }
+    }
+
+    // 2) 로컬 DB: CowTalk 자체 접종 기록
+    const localRecords = await db
+      .select({
+        recordId: vaccineRecords.recordId,
+        vaccineName: vaccineRecords.vaccineName,
+        batchNumber: vaccineRecords.batchNumber,
+        administeredAt: vaccineRecords.administeredAt,
+        notes: vaccineRecords.notes,
+      })
+      .from(vaccineRecords)
+      .where(eq(vaccineRecords.animalId, animalId))
+      .orderBy(desc(vaccineRecords.administeredAt));
+
+    // 3) 로컬 DB: 백신 스케줄
+    const schedules = await db
+      .select({
+        scheduleId: vaccineSchedules.scheduleId,
+        vaccineName: vaccineSchedules.vaccineName,
+        scheduledDate: vaccineSchedules.scheduledDate,
+        status: vaccineSchedules.status,
+        notes: vaccineSchedules.notes,
+      })
+      .from(vaccineSchedules)
+      .where(eq(vaccineSchedules.animalId, animalId))
+      .orderBy(vaccineSchedules.scheduledDate);
+
+    res.json({
+      success: true,
+      data: {
+        animalId,
+        traceId: animalRow.traceId,
+        earTag: animalRow.earTag,
+        publicData: {
+          vaccinations: publicVaccinations,
+          inspections: publicInspections,
+        },
+        localRecords,
+        schedules,
       },
     });
   } catch (error) {
