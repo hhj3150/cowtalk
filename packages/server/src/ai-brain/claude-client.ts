@@ -296,17 +296,26 @@ export async function callClaudeForVision(
 
     const durationMs = Date.now() - startTime;
     const rawText = extractTextContent(response);
+
+    logger.info({ rawText: rawText.slice(0, 500) }, 'Claude Vision raw response');
+
     const parsed = parseJsonFromText(rawText);
 
-    const numbers = Array.isArray(parsed?.numbers)
+    let numbers = Array.isArray(parsed?.numbers)
       ? (parsed.numbers as string[]).map((n) => String(n).replace(/[\s-]/g, ''))
       : [];
+
+    // JSON 파싱 실패 시 → 원문에서 숫자 패턴 직접 추출 (폴백)
+    if (numbers.length === 0) {
+      numbers = extractNumbersFromText(rawText);
+      logger.info({ fallbackNumbers: numbers }, 'Vision JSON parse failed, using text fallback');
+    }
 
     const confidence = (['high', 'medium', 'low'] as const).includes(
       parsed?.confidence as 'high' | 'medium' | 'low',
     )
       ? (parsed!.confidence as 'high' | 'medium' | 'low')
-      : 'low';
+      : numbers.length > 0 ? 'medium' : 'low';
 
     logger.info({
       model: response.model,
@@ -367,4 +376,44 @@ function parseJsonFromText(text: string): Record<string, unknown> | null {
   }
 
   return null;
+}
+
+/** Vision 응답 텍스트에서 숫자 패턴 직접 추출 (JSON 파싱 실패 시 폴백) */
+function extractNumbersFromText(text: string): string[] {
+  const numbers: string[] = [];
+
+  // 12자리 이력제번호 패턴 (002로 시작)
+  const tracePattern = /002\d{9}/g;
+  let match = tracePattern.exec(text);
+  while (match) {
+    numbers.push(match[0]);
+    match = tracePattern.exec(text);
+  }
+
+  // 9자리 숫자 (하단 번호, 002 없이) — 자동으로 002 접두사 추가
+  const nineDigitPattern = /\b(\d{4})\s*(\d{4,5})\s*(\d?)\b/g;
+  let m2 = nineDigitPattern.exec(text);
+  while (m2) {
+    const joined = (m2[1] ?? '') + (m2[2] ?? '') + (m2[3] ?? '');
+    const digits = joined.replace(/\s/g, '');
+    if (digits.length >= 8 && digits.length <= 10) {
+      numbers.push(digits);
+      // 9자리면 002 추가
+      if (digits.length === 9) {
+        numbers.push(`002${digits}`);
+      }
+    }
+    m2 = nineDigitPattern.exec(text);
+  }
+
+  // 관리번호 패턴 (영문+숫자, 예: G5, A12)
+  const mgmtPattern = /\b([A-Z]\d{1,3})\b/g;
+  let m3 = mgmtPattern.exec(text);
+  while (m3) {
+    numbers.push(m3[1]!);
+    m3 = mgmtPattern.exec(text);
+  }
+
+  // 중복 제거
+  return [...new Set(numbers)];
 }
