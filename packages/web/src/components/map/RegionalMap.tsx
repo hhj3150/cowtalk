@@ -1,14 +1,9 @@
-// 지역 인텔리전스 지도 — react-leaflet 기반
-// 비례 마커 + 위험도 펄스 + 다크모드 + 범례 + Tooltip
+// 지역 인텔리전스 지도 — Google Maps API 기반
+// 비례 마커 + 위험도 색상 + 다크모드 + 범례 + InfoWindow
 
-import React, { useMemo, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Tooltip, Circle, GeoJSON } from 'react-leaflet';
-import type { Layer, LeafletMouseEvent } from 'leaflet';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
+import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
 import type { FarmMapMarker } from '@web/api/regional.api';
-import { TILE_URL as CARTO_LIGHT, TILE_ATTRIBUTION } from '@web/constants/map';
-import { KOREA_PROVINCES } from '@web/constants/korea-provinces';
-import type { ProvinceProperties } from '@web/constants/korea-provinces';
-import 'leaflet/dist/leaflet.css';
 
 // ── 타입 ──
 
@@ -22,7 +17,7 @@ interface Props {
   readonly selectedFarmId?: string | null;
   readonly filters?: MapFilters;
   readonly showProvinces?: boolean;
-  readonly provinceRisks?: Readonly<Record<string, string>>; // code → 'green'|'yellow'|'orange'|'red'
+  readonly provinceRisks?: Readonly<Record<string, string>>;
 }
 
 export interface MapFilters {
@@ -31,11 +26,10 @@ export interface MapFilters {
 
 // ── 상수 ──
 
-const DEFAULT_CENTER: [number, number] = [36.0, 127.5];
-const DEFAULT_ZOOM = 7;
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string || 'AIzaSyCAPsQ5P_md6veAwIw7UF7WY4tPKsfoC4A';
 
-const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const OSM_FALLBACK = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const DEFAULT_CENTER = { lat: 36.0, lng: 127.5 };
+const DEFAULT_ZOOM = 7;
 
 const STATUS_COLORS: Readonly<Record<string, string>> = {
   normal: '#22c55e',
@@ -44,24 +38,28 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
   critical: '#ef4444',
 };
 
-const GLOW_CLASSES: Readonly<Record<string, string>> = {
-  critical: 'ct-marker-glow-critical ct-pulse',
-  danger: 'ct-marker-glow-warning',
-  warning: 'ct-marker-glow-caution',
-};
+// 다크모드 스타일
+const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2d3748' }] },
+  { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4a5568' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
 
 // ── 마커 크기 (두수 비례) ──
 
 function markerRadius(totalAnimals: number): number {
-  if (totalAnimals >= 100) return 18;
-  if (totalAnimals >= 50) return 14;
-  if (totalAnimals >= 10) return 10;
-  return 6;
+  if (totalAnimals >= 100) return 1800;
+  if (totalAnimals >= 50) return 1400;
+  if (totalAnimals >= 10) return 1000;
+  return 600;
 }
-
-// ── 반경 원 옵션 ──
-
-const RADIUS_OPTIONS = [500, 1000, 3000] as const;
 
 // ── 범례 컴포넌트 ──
 
@@ -71,8 +69,8 @@ function MapLegend({ collapsed, onToggle }: { readonly collapsed: boolean; reado
       position: 'absolute',
       bottom: 24,
       right: 12,
-      zIndex: 1000,
-      background: 'rgba(15, 23, 42, 0.9)',
+      zIndex: 10,
+      background: 'rgba(15, 23, 42, 0.92)',
       border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: 10,
       padding: collapsed ? '6px 10px' : '12px 14px',
@@ -94,7 +92,7 @@ function MapLegend({ collapsed, onToggle }: { readonly collapsed: boolean; reado
             { color: '#22c55e', label: '정상' },
             { color: '#eab308', label: '주의' },
             { color: '#f97316', label: '위험' },
-            { color: '#ef4444', label: '심각 (펄스)' },
+            { color: '#ef4444', label: '심각' },
           ].map((item) => (
             <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{
@@ -118,156 +116,121 @@ function MapLegend({ collapsed, onToggle }: { readonly collapsed: boolean; reado
 
 export function RegionalMap({
   markers,
-  center = DEFAULT_CENTER,
+  center,
   zoom = DEFAULT_ZOOM,
   onMarkerClick,
-  darkMode = false,
+  darkMode = true,
   height = '500px',
   selectedFarmId,
   filters,
-  showProvinces = true,
-  provinceRisks,
 }: Props): React.JSX.Element {
   const [legendCollapsed, setLegendCollapsed] = useState(false);
-  const [radiusFarmId, setRadiusFarmId] = useState<string | null>(null);
-  const [tileError, setTileError] = useState(false);
+  const [infoFarm, setInfoFarm] = useState<FarmMapMarker | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
 
-  // 필터 적용
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    language: 'ko',
+    region: 'KR',
+  });
+
+  const mapCenter = useMemo(() =>
+    center ? { lat: center[0], lng: center[1] } : DEFAULT_CENTER,
+    [center],
+  );
+
   const filteredMarkers = useMemo(() => {
     if (!filters?.statuses || filters.statuses.length === 0) return markers;
     return markers.filter((m) => filters.statuses!.includes(m.status));
   }, [markers, filters]);
 
-  // 타일 URL 결정
-  const tileUrl = tileError
-    ? OSM_FALLBACK
-    : (darkMode ? CARTO_DARK : CARTO_LIGHT);
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+  }, []);
 
-  // 반경 표시 대상 농장
-  const radiusFarm = radiusFarmId
-    ? filteredMarkers.find((m) => m.farmId === radiusFarmId)
-    : null;
+  const mapOptions: google.maps.MapOptions = useMemo(() => ({
+    disableDefaultUI: true,
+    zoomControl: true,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true,
+    styles: darkMode ? DARK_MAP_STYLES : undefined,
+    backgroundColor: '#0f172a',
+  }), [darkMode]);
+
+  if (loadError) {
+    return (
+      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', borderRadius: 14, color: '#ef4444', fontSize: 13 }}>
+        지도 로드 실패: {loadError.message}
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', borderRadius: 14, color: '#94a3b8', fontSize: 13 }}>
+        Google Maps 로딩 중...
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: 'relative', height, width: '100%' }}>
-      <MapContainer
-        center={center}
+      <GoogleMap
+        mapContainerStyle={{ height: '100%', width: '100%', borderRadius: 14 }}
+        center={mapCenter}
         zoom={zoom}
-        style={{ height: '100%', width: '100%', borderRadius: 14, background: '#0f172a' }}
-        zoomControl={true}
-        attributionControl={false}
+        options={mapOptions}
+        onLoad={onMapLoad}
       >
-        <TileLayer
-          url={tileUrl}
-          attribution={TILE_ATTRIBUTION}
-          eventHandlers={{
-            tileerror: () => {
-              if (!tileError) setTileError(true);
-            },
-          }}
-        />
-
-        {/* 시도 경계선 오버레이 */}
-        {showProvinces && (
-          <GeoJSON
-            data={KOREA_PROVINCES}
-            style={(feature) => {
-              const code = (feature?.properties as ProvinceProperties)?.code ?? '';
-              const risk = provinceRisks?.[code] ?? 'green';
-              const riskFillColors: Record<string, string> = {
-                red: '#ef4444', orange: '#f97316', yellow: '#eab308', green: '#22c55e',
-              };
-              return {
-                color: darkMode ? 'rgba(255,255,255,0.25)' : 'rgba(100,116,139,0.4)',
-                weight: 1,
-                fillColor: riskFillColors[risk] ?? '#22c55e',
-                fillOpacity: risk === 'red' ? 0.2 : risk === 'orange' ? 0.15 : risk === 'yellow' ? 0.1 : 0.05,
-              };
-            }}
-            onEachFeature={useCallback((feature: GeoJSON.Feature, layer: Layer) => {
-              const props = feature.properties as ProvinceProperties;
-              layer.on({
-                mouseover: (e: LeafletMouseEvent) => {
-                  const target = e.target as Layer & { setStyle?: (s: Record<string, unknown>) => void };
-                  target.setStyle?.({ weight: 2, fillOpacity: 0.25 });
-                },
-                mouseout: (e: LeafletMouseEvent) => {
-                  const target = e.target as Layer & { setStyle?: (s: Record<string, unknown>) => void };
-                  const risk = provinceRisks?.[(feature.properties as ProvinceProperties)?.code] ?? 'green';
-                  target.setStyle?.({
-                    weight: 1,
-                    fillOpacity: risk === 'red' ? 0.2 : risk === 'orange' ? 0.15 : risk === 'yellow' ? 0.1 : 0.05,
-                  });
-                },
-              });
-              layer.bindTooltip(`<strong>${props.name}</strong>`, {
-                direction: 'center',
-                className: 'ct-province-tooltip',
-                permanent: false,
-              });
-            }, [provinceRisks])}
-          />
-        )}
-
-        {/* 반경 원 표시 */}
-        {radiusFarm && RADIUS_OPTIONS.map((r) => (
-          <Circle
-            key={r}
-            center={[radiusFarm.lat, radiusFarm.lng]}
-            radius={r}
-            pathOptions={{
-              color: r <= 1000 ? '#ef4444' : '#f97316',
-              fillColor: r <= 1000 ? '#ef4444' : '#f97316',
-              fillOpacity: 0.08,
-              weight: 1,
-              dashArray: '4 4',
-            }}
-          />
-        ))}
-
-        {/* 농장 마커 */}
+        {/* 농장 마커 (Circle) */}
         {filteredMarkers.map((m) => {
           if (!m.lat || !m.lng) return null;
           const color = STATUS_COLORS[m.status] ?? '#6b7280';
           const radius = markerRadius(m.totalAnimals);
           const isSelected = m.farmId === selectedFarmId;
-          const glowClass = GLOW_CLASSES[m.status] ?? '';
 
           return (
-            <CircleMarker
+            <GCircle
               key={m.farmId}
-              center={[m.lat, m.lng]}
+              center={{ lat: m.lat, lng: m.lng }}
               radius={isSelected ? radius * 1.4 : radius}
-              pathOptions={{
-                color: isSelected ? '#00d67e' : 'rgba(255,255,255,0.6)',
+              options={{
                 fillColor: color,
-                fillOpacity: 0.85,
-                weight: isSelected ? 3 : 1.5,
-                className: isSelected ? 'ct-marker-glow-selected' : glowClass,
+                fillOpacity: 0.7,
+                strokeColor: isSelected ? '#00d67e' : 'rgba(255,255,255,0.6)',
+                strokeWeight: isSelected ? 3 : 1.5,
+                clickable: true,
+                zIndex: isSelected ? 10 : m.status === 'critical' ? 5 : 1,
               }}
-              eventHandlers={{
-                click: () => {
-                  onMarkerClick?.(m.farmId);
-                  setRadiusFarmId((prev) => prev === m.farmId ? null : m.farmId);
-                },
+              onClick={() => {
+                onMarkerClick?.(m.farmId);
+                setInfoFarm(m);
               }}
-            >
-              <Tooltip direction="top" offset={[0, -radius]} opacity={0.95}>
-                <div style={{ minWidth: 140, fontSize: 12 }}>
-                  <p style={{ fontWeight: 700, margin: '0 0 4px' }}>{m.name}</p>
-                  <p style={{ margin: 0, color: '#6b7280' }}>{m.totalAnimals}두</p>
-                  {m.activeAlerts > 0 && (
-                    <p style={{ margin: '2px 0 0', color: '#dc2626' }}>알림 {m.activeAlerts}건</p>
-                  )}
-                  {m.healthScore !== null && (
-                    <p style={{ margin: '2px 0 0', color: '#6b7280' }}>건강점수: {m.healthScore}</p>
-                  )}
-                </div>
-              </Tooltip>
-            </CircleMarker>
+            />
           );
         })}
-      </MapContainer>
+
+        {/* InfoWindow (농장 클릭 시 정보 표시) */}
+        {infoFarm && (
+          <InfoWindow
+            position={{ lat: infoFarm.lat, lng: infoFarm.lng }}
+            onCloseClick={() => setInfoFarm(null)}
+            options={{ maxWidth: 200 }}
+          >
+            <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
+              <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{infoFarm.name}</p>
+              <p style={{ margin: 0 }}>{infoFarm.totalAnimals}두</p>
+              {infoFarm.activeAlerts > 0 && (
+                <p style={{ margin: '2px 0 0', color: '#dc2626', fontWeight: 600 }}>알림 {infoFarm.activeAlerts}건</p>
+              )}
+              {infoFarm.healthScore !== null && (
+                <p style={{ margin: '2px 0 0', color: '#6b7280' }}>건강점수: {infoFarm.healthScore}</p>
+              )}
+            </div>
+          </InfoWindow>
+        )}
+      </GoogleMap>
 
       {/* 범례 */}
       <MapLegend collapsed={legendCollapsed} onToggle={() => setLegendCollapsed(!legendCollapsed)} />
