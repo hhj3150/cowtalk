@@ -14,8 +14,6 @@ import {
   ReferenceArea,
   Brush,
 } from 'recharts';
-// apiGet은 deprecated 컴포넌트에서 사용
-export { apiGet } from '@web/api/client';
 import { SensorChartInline } from '@web/components/sensor/SensorChartInline';
 
 // ── 타입 ──
