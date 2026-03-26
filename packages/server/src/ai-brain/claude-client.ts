@@ -213,6 +213,105 @@ export async function callClaudeForChatJson(
 }
 
 // ===========================
+// Vision 호출 (이표 번호 인식)
+// ===========================
+
+export interface VisionResult {
+  readonly numbers: readonly string[];
+  readonly confidence: 'high' | 'medium' | 'low';
+  readonly rawText: string;
+  readonly model: string;
+  readonly durationMs: number;
+}
+
+const EAR_TAG_VISION_PROMPT = `한국 소 이표(귀표, ear tag) 사진입니다.
+이표에 적힌 번호를 모두 추출해 주세요.
+
+번호 유형:
+- 이력제번호: 12자리 숫자 (예: 002132665191)
+- 관리번호: 농장 자체 번호 (예: 423, 45-12)
+
+규칙:
+1. 사진에서 읽을 수 있는 모든 번호를 추출
+2. 숫자만 포함 (하이픈, 공백 제거)
+3. 부분적으로 보이는 번호도 가능한 만큼 추출
+
+JSON으로 응답:
+{
+  "numbers": ["추출된번호1", "추출된번호2"],
+  "confidence": "high|medium|low",
+  "description": "이표 상태 간단 설명"
+}`;
+
+type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+export async function callClaudeForVision(
+  base64Image: string,
+  mimeType: string,
+): Promise<VisionResult | null> {
+  const anthropic = getClient();
+  if (!anthropic) {
+    logger.warn('Claude API key not configured — skipping vision');
+    return null;
+  }
+
+  const startTime = Date.now();
+
+  try {
+    const response = await anthropic.messages.create({
+      model: config.ANTHROPIC_MODEL, // Sonnet (비용 효율 + Vision 충분)
+      max_tokens: 500,
+      temperature: 0.1, // 정확도 최우선
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mimeType as ImageMediaType,
+              data: base64Image,
+            },
+          },
+          {
+            type: 'text',
+            text: EAR_TAG_VISION_PROMPT,
+          },
+        ],
+      }],
+    });
+
+    const durationMs = Date.now() - startTime;
+    const rawText = extractTextContent(response);
+    const parsed = parseJsonFromText(rawText);
+
+    const numbers = Array.isArray(parsed?.numbers)
+      ? (parsed.numbers as string[]).map((n) => String(n).replace(/[\s-]/g, ''))
+      : [];
+
+    const confidence = (['high', 'medium', 'low'] as const).includes(
+      parsed?.confidence as 'high' | 'medium' | 'low',
+    )
+      ? (parsed!.confidence as 'high' | 'medium' | 'low')
+      : 'low';
+
+    logger.info({
+      model: response.model,
+      numbers,
+      confidence,
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      durationMs,
+    }, 'Claude Vision ear tag scan completed');
+
+    return { numbers, confidence, rawText, model: response.model, durationMs };
+  } catch (error) {
+    logger.error({ error, durationMs: Date.now() - startTime }, 'Claude Vision API failed');
+    return null;
+  }
+}
+
+// ===========================
 // 헬퍼
 // ===========================
 

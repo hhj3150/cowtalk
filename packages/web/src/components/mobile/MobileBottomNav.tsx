@@ -9,9 +9,10 @@ interface Props {
   readonly onQuickRecord: () => void;
   readonly onMoreMenu: () => void;
   readonly pendingCount: number;
+  readonly onScan?: () => void;
 }
 
-export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Props): React.JSX.Element {
+export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount, onScan }: Props): React.JSX.Element {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const farmIds = useAuthStore((s) => s.user?.farmIds);
@@ -53,25 +54,20 @@ export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount }: Pro
         <span className="text-[11px] font-medium">내 소</span>
       </button>
 
-      {/* 빠른 기록 (중앙 FAB) */}
+      {/* 이표 스캔 (중앙 FAB) */}
       <button
         type="button"
-        onClick={onQuickRecord}
+        onClick={onScan ?? (() => navigate('/scan'))}
         className="relative flex flex-col items-center -mt-4"
-        aria-label="빠른 기록"
+        aria-label="이표 스캔"
       >
         <span
-          className="flex h-12 w-12 items-center justify-center rounded-full shadow-lg text-white text-2xl"
+          className="flex h-12 w-12 items-center justify-center rounded-full shadow-lg text-white"
           style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
         >
-          +
+          <IconScan />
         </span>
-        <span className="text-[11px] font-medium mt-0.5 text-emerald-400">기록</span>
-        {pendingCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">
-            {pendingCount}
-          </span>
-        )}
+        <span className="text-[11px] font-medium mt-0.5 text-emerald-400">스캔</span>
       </button>
 
       {/* 알림 */}
@@ -116,6 +112,15 @@ function IconBell() {
   return (
     <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
+    </svg>
+  );
+}
+
+function IconScan() {
+  return (
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
+      <line x1="7" y1="12" x2="17" y2="12" />
     </svg>
   );
 }
