@@ -289,11 +289,11 @@ unifiedDashboardRouter.get('/fertility-management', async (req: Request, res: Re
       ...data,
     }));
 
-    // 2. 번식 관련 이벤트 (최근 24시간)
+    // 2. 번식 관련 이벤트 (최근 24시간, 고유 개체 수 — 중복 제거)
     const last24h = daysAgo(1);
     const fertRows = await db.select({
       eventType: smaxtecEvents.eventType,
-      count: count(),
+      count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`.as('count'),
     })
       .from(smaxtecEvents)
       .where(whereAll(
