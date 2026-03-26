@@ -1,4 +1,4 @@
-// 수정사 전용 대시보드 위젯 — 오늘 수정할 소 + 경로 + 번식 통계
+// 수정사 전용 대시보드 위젯 — 오늘 수정할 소 + AM/PM 경로 + 번식 통계
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
@@ -25,20 +25,42 @@ interface Props {
   readonly onFarmClick?: (farmId: string) => void;
 }
 
-function formatOptimalTime(detectedAt: string): string {
+/** 발정 감지 시간 → 수정 적기 (12~18h 후) */
+function getOptimalWindow(detectedAt: string): { start: Date; end: Date } {
   const detected = new Date(detectedAt);
-  const optimal12h = new Date(detected.getTime() + 12 * 60 * 60 * 1000);
-  const optimal18h = new Date(detected.getTime() + 18 * 60 * 60 * 1000);
-  const now = new Date();
-
-  const fmt = (d: Date): string => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-
-  if (now > optimal18h) return '⏰ 적기 지남';
-  if (now > optimal12h) return `🔴 지금! (~${fmt(optimal18h)})`;
-  return `${fmt(optimal12h)}~${fmt(optimal18h)}`;
+  return {
+    start: new Date(detected.getTime() + 12 * 60 * 60 * 1000),
+    end: new Date(detected.getTime() + 18 * 60 * 60 * 1000),
+  };
 }
 
-export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): React.JSX.Element {
+function formatTime(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatOptimalTime(detectedAt: string): string {
+  const { start, end } = getOptimalWindow(detectedAt);
+  const now = new Date();
+
+  if (now > end) return '⏰ 적기 지남';
+  if (now > start) return `🔴 지금! (~${formatTime(end)})`;
+  return `${formatTime(start)}~${formatTime(end)}`;
+}
+
+/** 목장의 대표 수정 적기가 오전인지 판단 */
+function isMorningFarm(farm: FarmEstrus): boolean {
+  if (farm.animals.length === 0) return true;
+  const first = farm.animals[0];
+  if (!first) return true;
+  // 가장 빠른 적기 시작 기준
+  const earliest = farm.animals.reduce((min, a) => {
+    const { start } = getOptimalWindow(a.detectedAt);
+    return start < min ? start : min;
+  }, getOptimalWindow(first.detectedAt).start);
+  return earliest.getHours() < 12;
+}
+
+export function InseminatorDashboard({ onFarmClick }: Props): React.JSX.Element {
   const [data, setData] = useState<InseminatorStats | null>(null);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -46,7 +68,6 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
   const farmIdsParam = selectedFarmIds.length > 0 ? `&farmIds=${selectedFarmIds.join(',')}` : '';
 
   useEffect(() => {
-    // 드릴다운 API로 발정 대상우 전체 조회 (live-alarms는 50건 제한)
     Promise.all([
       apiGet<{ items: readonly { eventId: string; farmId: string; farmName: string; animalId: string; earTag: string; eventType: string; detectedAt: string; severity: string }[]; total: number }>(
         `/unified-dashboard/drilldown?eventType=estrus${farmIdsParam}`
@@ -55,7 +76,6 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
       apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=pregnancy_check${farmIdsParam}`),
       apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=no_insemination${farmIdsParam}`),
     ]).then(([estrusRes, insemRes, pregRes, noInsemRes]) => {
-      // 농장별 그룹핑
       const farmMap = new Map<string, FarmEstrus>();
       for (const a of estrusRes.items) {
         const existing = farmMap.get(a.farmId);
@@ -95,6 +115,10 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
     );
   }
 
+  // AM/PM 분류
+  const amFarms = data.farmBreakdown.filter((f) => isMorningFarm(f));
+  const pmFarms = data.farmBreakdown.filter((f) => !isMorningFarm(f));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* 오늘 번식 KPI */}
@@ -130,7 +154,7 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
         </div>
       </div>
 
-      {/* 농장별 수정 대상 — 수정 경로 */}
+      {/* AM/PM 수정 경로 */}
       <div style={{
         background: 'var(--ct-card)',
         border: '1px solid var(--ct-border)',
@@ -139,10 +163,10 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: 0 }}>
-            🗺️ 오늘 수정 경로 ({data.farmBreakdown.length}개 농장)
+            🗺️ 오늘 수정 경로
           </h3>
           <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>
-            총 {data.todayEstrus}두 수정 대상
+            총 {data.todayEstrus}두 · {data.farmBreakdown.length}개 농장
           </span>
         </div>
 
@@ -151,96 +175,145 @@ export function InseminatorDashboard({ onAnimalClick, onFarmClick }: Props): Rea
             ✅ 오늘 수정 대상이 없습니다
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 400, overflowY: 'auto' }}>
-            {data.farmBreakdown.map((farm, idx) => (
-              <div
-                key={farm.farmId}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  background: idx === 0 ? 'rgba(239,68,68,0.1)' : 'var(--ct-bg)',
-                  border: idx === 0 ? '1px solid rgba(239,68,68,0.3)' : '1px solid transparent',
-                  cursor: 'pointer',
-                }}
-                onClick={() => onFarmClick?.(farm.farmId)}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: '#fff',
-                      background: idx < 3 ? '#ef4444' : '#64748b',
-                      borderRadius: '50%',
-                      width: 22,
-                      height: 22,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      {idx + 1}
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>
-                      {farm.farmName}
-                    </span>
-                  </div>
-                  <span style={{
-                    fontSize: 14,
-                    fontWeight: 800,
-                    color: '#ef4444',
-                    background: 'rgba(239,68,68,0.15)',
-                    padding: '2px 8px',
-                    borderRadius: 10,
-                  }}>
-                    {farm.estrusCount}두
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 30 }}>
-                  {farm.animals.slice(0, 6).map((a) => {
-                    const timing = formatOptimalTime(a.detectedAt);
-                    const isUrgent = timing.includes('지금') || timing.includes('지남');
-                    return (
-                      <div
-                        key={a.animalId}
-                        onClick={(e) => { e.stopPropagation(); onAnimalClick?.(a.animalId); }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          fontSize: 11,
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          background: isUrgent ? 'rgba(239,68,68,0.1)' : 'var(--ct-card)',
-                          cursor: 'pointer',
-                          border: '1px solid var(--ct-border)',
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontWeight: 600, color: 'var(--ct-text)' }}>#{a.earTag}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/cow/${a.animalId}`); }}
-                            style={{ background: 'none', border: 'none', color: 'var(--ct-primary)', fontSize: 9, cursor: 'pointer', padding: '0 2px', fontWeight: 600 }}
-                          >
-                            상세
-                          </button>
-                        </span>
-                        <span style={{ fontSize: 10, color: isUrgent ? '#ef4444' : 'var(--ct-text-muted)', fontWeight: isUrgent ? 700 : 400 }}>
-                          수정 적기: {timing}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {farm.animals.length > 6 && (
-                    <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', paddingLeft: 8 }}>
-                      +{farm.animals.length - 6}두 더 있음
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 500, overflowY: 'auto' }}>
+            {/* 오전 경로 */}
+            {amFarms.length > 0 && (
+              <RouteSection
+                label="☀️ 오전 수정"
+                farms={amFarms}
+                color="#f59e0b"
+                onFarmClick={onFarmClick}
+                onAnimalNavigate={(aid) => navigate(`/cow/${aid}`)}
+              />
+            )}
+            {/* 오후 경로 */}
+            {pmFarms.length > 0 && (
+              <RouteSection
+                label="🌙 오후 수정"
+                farms={pmFarms}
+                color="#6366f1"
+                onFarmClick={onFarmClick}
+                onAnimalNavigate={(aid) => navigate(`/cow/${aid}`)}
+              />
+            )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** AM/PM 경로 섹션 */
+function RouteSection({
+  label,
+  farms,
+  color,
+  onFarmClick,
+  onAnimalNavigate,
+}: {
+  readonly label: string;
+  readonly farms: readonly FarmEstrus[];
+  readonly color: string;
+  readonly onFarmClick?: (farmId: string) => void;
+  readonly onAnimalNavigate: (animalId: string) => void;
+}): React.JSX.Element {
+  const totalCount = farms.reduce((sum, f) => sum + f.estrusCount, 0);
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 6,
+        padding: '6px 10px',
+        borderRadius: 6,
+        background: `${color}15`,
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color }}>{label}</span>
+        <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
+          {farms.length}개 농장 · {totalCount}두
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {farms.map((farm, idx) => (
+          <div
+            key={farm.farmId}
+            style={{
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: 'var(--ct-bg)',
+              border: '1px solid var(--ct-border)',
+            }}
+          >
+            {/* 농장 헤더 */}
+            <div
+              onClick={() => onFarmClick?.(farm.farmId)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 800, color: '#fff',
+                  background: color, borderRadius: '50%',
+                  width: 20, height: 20,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {idx + 1}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>
+                  {farm.farmName}
+                </span>
+              </div>
+              <span style={{
+                fontSize: 12, fontWeight: 800, color,
+                background: `${color}15`, padding: '2px 8px', borderRadius: 10,
+              }}>
+                {farm.estrusCount}두
+              </span>
+            </div>
+
+            {/* 개체 목록 — 클릭 시 개체 대시보드 이동 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 26 }}>
+              {farm.animals.slice(0, 6).map((a) => {
+                const timing = formatOptimalTime(a.detectedAt);
+                const isUrgent = timing.includes('지금') || timing.includes('지남');
+                return (
+                  <div
+                    key={a.animalId}
+                    onClick={() => onAnimalNavigate(a.animalId)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') onAnimalNavigate(a.animalId); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: 11,
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      background: isUrgent ? 'rgba(239,68,68,0.1)' : 'var(--ct-card)',
+                      cursor: 'pointer',
+                      border: '1px solid var(--ct-border)',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, color: '#22c55e' }}>
+                      #{a.earTag}
+                    </span>
+                    <span style={{ fontSize: 10, color: isUrgent ? '#ef4444' : 'var(--ct-text-muted)', fontWeight: isUrgent ? 700 : 400 }}>
+                      수정 적기: {timing}
+                    </span>
+                  </div>
+                );
+              })}
+              {farm.animals.length > 6 && (
+                <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', paddingLeft: 8 }}>
+                  +{farm.animals.length - 6}두 더 있음
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

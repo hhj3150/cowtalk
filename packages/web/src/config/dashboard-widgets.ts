@@ -85,7 +85,6 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'epidemic_map',
     'inline_ai_chat',
     'vet_route',
-    'insemination_route',
     'sovereign_ai',
   ],
 

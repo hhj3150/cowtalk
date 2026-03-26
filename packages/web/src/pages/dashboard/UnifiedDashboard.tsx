@@ -741,7 +741,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {isVisible('insemination_route') && (
             <>
               <InseminatorDashboard
-                onAnimalClick={(aid) => setInseminationAnimalId(aid)}
                 onFarmClick={(fid) => selectFarm(fid)}
               />
               {selectedFarmId && (
