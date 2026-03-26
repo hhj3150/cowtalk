@@ -13,6 +13,34 @@ export const earTagScanRouter = Router();
 
 earTagScanRouter.use(authenticate);
 
+// 한국 이력제번호 규칙: 002 + 9자리 = 12자리
+// 9자리 숫자만 인식된 경우 자동으로 002 접두사 추가
+function expandKoreanTraceNumbers(numbers: readonly string[]): readonly string[] {
+  const expanded: string[] = [];
+  for (const num of numbers) {
+    if (!num) continue;
+    const cleaned = num.replace(/[\s-]/g, '');
+    expanded.push(cleaned);
+
+    // 9자리 순수 숫자 → 002 접두사 추가
+    if (/^\d{9}$/.test(cleaned)) {
+      expanded.push(`002${cleaned}`);
+    }
+    // 10자리 (공백으로 분리된 경우 등) → 002 접두사 시도
+    if (/^\d{10}$/.test(cleaned) && !cleaned.startsWith('002')) {
+      expanded.push(`002${cleaned}`);
+    }
+    // 하단 번호가 공백 포함 형태 (예: "1791 7078 0") → 합쳐서 002 추가
+    const digitsOnly = cleaned.replace(/\D/g, '');
+    if (digitsOnly !== cleaned && digitsOnly.length >= 8 && digitsOnly.length <= 10) {
+      expanded.push(digitsOnly);
+      expanded.push(`002${digitsOnly}`);
+    }
+  }
+  // 중복 제거
+  return [...new Set(expanded)];
+}
+
 // 이미지 크기 제한: 5MB (base64 기준 약 6.67MB 문자열)
 const MAX_BASE64_LENGTH = 7 * 1024 * 1024;
 
@@ -91,7 +119,10 @@ earTagScanRouter.post('/', async (req: Request, res: Response, next: NextFunctio
     const db = getDb();
     const candidates: AnimalSummary[] = [];
 
-    for (const num of visionResult.numbers) {
+    // 검색 번호 확장: 9자리 숫자면 002 접두사 추가 (한국 이력제번호 규칙)
+    const searchNumbers = expandKoreanTraceNumbers(visionResult.numbers);
+
+    for (const num of searchNumbers) {
       if (!num || num.length < 1) continue;
 
       const pattern = `%${num}%`;
@@ -112,6 +143,7 @@ earTagScanRouter.post('/', async (req: Request, res: Response, next: NextFunctio
         .where(or(
           sql`${animals.earTag} ILIKE ${pattern}`,
           sql`${animals.traceId} ILIKE ${pattern}`,
+          sql`${animals.name} ILIKE ${pattern}`,
         ))
         .limit(10);
 
@@ -132,9 +164,9 @@ earTagScanRouter.post('/', async (req: Request, res: Response, next: NextFunctio
       }
     }
 
-    // 가장 정확한 매칭 (완전 일치 우선)
+    // 가장 정확한 매칭 (완전 일치 우선 — 확장된 번호도 포함)
     const exactMatch = candidates.find((c) =>
-      visionResult.numbers.some((n) => c.earTag === n || c.traceId === n),
+      searchNumbers.some((n) => c.earTag === n || c.traceId === n),
     ) ?? null;
 
     logger.info({
@@ -176,44 +208,54 @@ earTagScanRouter.post('/manual', async (req: Request, res: Response, next: NextF
     }
 
     const cleaned = number.replace(/[\s-]/g, '').trim();
-    const pattern = `%${cleaned}%`;
+    // 002 접두사 자동 확장 적용
+    const searchNumbers = expandKoreanTraceNumbers([cleaned]);
     const db = getDb();
 
-    const results = await db
-      .select({
-        animalId: animals.animalId,
-        earTag: animals.earTag,
-        traceId: animals.traceId,
-        name: animals.name,
-        farmName: farms.name,
-        status: animals.status,
-        breed: animals.breed,
-        birthDate: animals.birthDate,
-        lactationStatus: animals.lactationStatus,
-      })
-      .from(animals)
-      .leftJoin(farms, eq(animals.farmId, farms.farmId))
-      .where(or(
-        sql`${animals.earTag} ILIKE ${pattern}`,
-        sql`${animals.traceId} ILIKE ${pattern}`,
-        sql`${animals.name} ILIKE ${pattern}`,
-      ))
-      .limit(20);
+    const allResults: AnimalSummary[] = [];
+    for (const num of searchNumbers) {
+      const pattern = `%${num}%`;
+      const results = await db
+        .select({
+          animalId: animals.animalId,
+          earTag: animals.earTag,
+          traceId: animals.traceId,
+          name: animals.name,
+          farmName: farms.name,
+          status: animals.status,
+          breed: animals.breed,
+          birthDate: animals.birthDate,
+          lactationStatus: animals.lactationStatus,
+        })
+        .from(animals)
+        .leftJoin(farms, eq(animals.farmId, farms.farmId))
+        .where(or(
+          sql`${animals.earTag} ILIKE ${pattern}`,
+          sql`${animals.traceId} ILIKE ${pattern}`,
+          sql`${animals.name} ILIKE ${pattern}`,
+        ))
+        .limit(20);
 
-    const candidates = results.map((r) => ({
-      animalId: r.animalId,
-      earTag: r.earTag,
-      traceId: r.traceId,
-      name: r.name,
-      farmName: r.farmName,
-      status: r.status,
-      breed: r.breed,
-      birthDate: r.birthDate ? String(r.birthDate).slice(0, 10) : null,
-      lactationStatus: r.lactationStatus,
-    }));
+      for (const r of results) {
+        if (allResults.some((c) => c.animalId === r.animalId)) continue;
+        allResults.push({
+          animalId: r.animalId,
+          earTag: r.earTag,
+          traceId: r.traceId,
+          name: r.name,
+          farmName: r.farmName,
+          status: r.status,
+          breed: r.breed,
+          birthDate: r.birthDate ? String(r.birthDate).slice(0, 10) : null,
+          lactationStatus: r.lactationStatus,
+        });
+      }
+    }
+
+    const candidates = allResults;
 
     const exactMatch = candidates.find((c) =>
-      c.earTag === cleaned || c.traceId === cleaned,
+      searchNumbers.some((n) => c.earTag === n || c.traceId === n),
     ) ?? null;
 
     res.json({
