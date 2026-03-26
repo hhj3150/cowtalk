@@ -475,7 +475,7 @@ const STATUS_LABELS: Record<string, string> = {
   normal: '정상',
   estrus: '발정',
   health_risk: '건강이상',
-  calving_soon: '분만임박',
+  calving_soon: '분만징후',
 };
 
 const STATUS_VARIANTS: Record<string, 'normal' | 'high' | 'critical' | 'medium' | 'info'> = {

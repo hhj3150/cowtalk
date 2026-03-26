@@ -42,16 +42,16 @@ const OUTCOME_OPTIONS: readonly { readonly value: LabelOutcome; readonly label: 
 
 const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   estrus: '발정', estrus_dnb: '발정(DNB)',
-  insemination: '수정', pregnancy_check: '임신 검정',
-  fertility_warning: '번식 경고', no_insemination: '미수정',
-  calving: '분만', calving_detection: '분만 감지',
+  insemination: '수정', pregnancy_check: '임신 감정',
+  fertility_warning: '재발정', no_insemination: '미수정',
+  calving: '분만', calving_detection: '분만 징후',
   calving_confirmation: '분만 확인', calving_waiting: '분만 대기', abortion: '유산',
-  temperature_high: '체온 상승', temperature_low: '체온 하강', temperature_warning: '체온 이상',
-  rumination_decrease: '반추 감소', rumination_warning: '반추 이상',
-  activity_increase: '활동 증가', activity_decrease: '활동 감소', activity_warning: '활동 이상',
-  health_general: '건강 종합', health_warning: '건강 경고', clinical_condition: '임상 증상',
+  temperature_high: '고체온', temperature_low: '저체온', temperature_warning: '체온 이상',
+  rumination_decrease: '반추 저하', rumination_warning: '반추 이상',
+  activity_increase: '활동량 증가', activity_decrease: '활동량 저하', activity_warning: '활동 이상',
+  health_general: '건강 주의', health_warning: '건강 경고', clinical_condition: '임상 이상',
   feeding_warning: '사양 이상', drinking_warning: '음수 이상',
-  dry_off: '건유', management: '관리',
+  dry_off: '건유 전환', management: '관리',
 };
 
 const SEVERITY_OPTIONS: readonly { readonly value: string; readonly label: string; readonly color: string }[] = [

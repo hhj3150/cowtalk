@@ -315,14 +315,14 @@ async function generateHealthEvents(): Promise<number> {
   }
 
   const diagnosisMap: Readonly<Record<string, string>> = {
-    temperature_high: '발열',
+    temperature_high: '고체온',
     temperature_low: '저체온',
-    rumination_decrease: '반추 감소',
-    activity_decrease: '활동량 감소',
+    rumination_decrease: '반추 저하',
+    activity_decrease: '활동량 저하',
     ph_low: '산성증 (pH 저하)',
     health_warning: '건강 주의',
     health_alert: '건강 경고',
-    drinking_decrease: '음수량 감소',
+    drinking_decrease: '음수 저하',
   };
 
   const values = healthEvents.map((e) => ({

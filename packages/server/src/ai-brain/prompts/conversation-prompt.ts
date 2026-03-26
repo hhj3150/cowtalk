@@ -280,14 +280,14 @@ function buildFarmContext(profile: FarmProfile): string {
 
 // smaXtec 알람 유형 한글 매핑
 const ALARM_LABELS: Readonly<Record<string, string>> = {
-  temperature_warning: '체온 알람',
-  rumination_warning: '반추 알람',
-  activity_warning: '활동 알람',
-  drinking_warning: '음수 알람',
-  feeding_warning: '사양 알람',
+  temperature_warning: '체온 이상',
+  rumination_warning: '반추 이상',
+  activity_warning: '활동 이상',
+  drinking_warning: '음수 이상',
+  feeding_warning: '사양 이상',
   health_warning: '건강 경고',
-  estrus: '발정 알람',
-  calving: '분만 알람',
+  estrus: '발정',
+  calving: '분만',
 };
 
 // 알람 유형별 출력 순서 (긴급도순)

@@ -53,11 +53,11 @@ interface AnimalDetailResponse {
 // ===========================
 
 const EVENT_LABELS: Record<string, string> = {
-  temperature_high: '발열',
-  health_103: '발열(103)',
-  health_104: '발열(104)',
-  health_308: '발열(308)',
-  health_309: '발열(309)',
+  temperature_high: '고체온',
+  health_103: '고체온(103)',
+  health_104: '고체온(104)',
+  health_308: '고체온(308)',
+  health_309: '고체온(309)',
   estrus: '발정',
   calving: '분만',
   insemination: '수정',

@@ -39,16 +39,16 @@ const OUTCOME_OPTIONS: readonly { readonly value: LabelOutcome; readonly label: 
 ];
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
-  temperature_high: '체온 상승',
-  clinical_condition: '임상 증상',
-  rumination_decrease: '반추 감소',
-  activity_decrease: '활동량 감소',
-  drinking_decrease: '음수량 감소',
+  temperature_high: '고체온',
+  clinical_condition: '임상 이상',
+  rumination_decrease: '반추 저하',
+  activity_decrease: '활동량 저하',
+  drinking_decrease: '음수 저하',
   health_warning: '건강 경고',
   estrus: '발정',
   heat: '발정',
   calving: '분만',
-  calving_detection: '분만 감지',
+  calving_detection: '분만 징후',
   activity_increase: '활동량 증가',
 };
 

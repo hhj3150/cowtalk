@@ -47,8 +47,8 @@ const GROUP_TYPE_LABELS: Readonly<Record<string, string>> = {
 };
 
 const EVENT_LABELS: Readonly<Record<string, string>> = {
-  temperature_high: '발열', rumination_decrease: '반추↓', activity_decrease: '활동↓',
-  estrus: '발정', clinical_condition: '질병의심', health_warning: '건강경고',
+  temperature_high: '고체온', rumination_decrease: '반추↓', activity_decrease: '활동↓',
+  estrus: '발정', clinical_condition: '임상이상', health_warning: '건강경고',
 };
 
 // ── 메인 컴포넌트 ──

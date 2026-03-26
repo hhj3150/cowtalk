@@ -121,7 +121,7 @@ const ESCALATION_COLORS: Record<string, string> = {
 };
 
 const ALARM_TYPE_LABELS: Record<string, string> = {
-  temperature_high: '🌡️ 발열',
+  temperature_high: '🌡️ 고체온',
   rumination_decrease: '🔄 반추↓',
   '체온+반추 동반': '⚠️ 동반',
 };

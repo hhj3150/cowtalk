@@ -58,11 +58,11 @@ interface BreedingEvent {
 
 const EVENT_LABELS: Record<string, string> = {
   estrus: '🔴 발정', insemination: '💉 수정', pregnancy_check: '🔍 임신감정',
-  calving_detection: '🍼 분만임박', calving_confirmation: '🍼 분만완료',
-  temperature_high: '🌡️ 발열', rumination_decrease: '🌾 반추감소',
-  clinical_condition: '🏥 질병의심', health_general: '💊 건강주의',
-  activity_decrease: '🦶 활동감소', activity_increase: '🏃 활동증가',
-  dry_off: '🥛 건유', fertility_warning: '⚠️ 번식주의',
+  calving_detection: '🍼 분만징후', calving_confirmation: '🍼 분만확인',
+  temperature_high: '🌡️ 고체온', rumination_decrease: '🌾 반추저하',
+  clinical_condition: '🏥 임상이상', health_general: '💊 건강주의',
+  activity_decrease: '🦶 활동저하', activity_increase: '🏃 활동증가',
+  dry_off: '🥛 건유전환', fertility_warning: '⚠️ 재발정',
   temperature_low: '❄️ 저체온', no_insemination: '❌ 미수정',
 };
 

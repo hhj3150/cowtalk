@@ -216,12 +216,12 @@ unifiedDashboardRouter.get('/health-alerts-summary', async (req: Request, res: R
     }
 
     const LABELS: Record<string, { label: string; icon: string; order: number }> = {
-      temperature_high: { label: '체온 상승', icon: '🌡️', order: 0 },
-      temperature_low: { label: '체온 저하', icon: '❄️', order: 1 },
-      rumination_decrease: { label: '반추 감소', icon: '🌾', order: 2 },
-      activity_decrease: { label: '활동량 감소', icon: '🦶', order: 3 },
+      temperature_high: { label: '고체온', icon: '🌡️', order: 0 },
+      temperature_low: { label: '저체온', icon: '❄️', order: 1 },
+      rumination_decrease: { label: '반추 저하', icon: '🌾', order: 2 },
+      activity_decrease: { label: '활동량 저하', icon: '🦶', order: 3 },
       drinking_decrease: { label: '음수 이상', icon: '💧', order: 4 },
-      clinical_condition: { label: '질병 의심', icon: '🏥', order: 5 },
+      clinical_condition: { label: '임상 이상', icon: '🏥', order: 5 },
       health_general: { label: '건강 주의', icon: '💊', order: 6 },
     };
 
@@ -304,14 +304,14 @@ unifiedDashboardRouter.get('/fertility-management', async (req: Request, res: Re
       .groupBy(smaxtecEvents.eventType);
 
     const FERT_LABELS: Record<string, string> = {
-      estrus: '발정 감지',
+      estrus: '발정',
       insemination: '수정',
-      pregnancy_check: '임신 검사',
-      fertility_warning: '번식 주의',
+      pregnancy_check: '임신 감정',
+      fertility_warning: '재발정',
       no_insemination: '미수정',
       dry_off: '건유 전환',
-      calving_detection: '분만 임박',
-      calving_confirmation: '분만 완료',
+      calving_detection: '분만 징후',
+      calving_confirmation: '분만 확인',
     };
 
     const fertilityAlerts = fertRows.map((r) => ({
@@ -744,7 +744,7 @@ function buildBriefingSummary(
     const calving = eventDist.find((e) => e.eventType === 'calving_detection');
     const parts: string[] = [];
     if (estrus && estrus.count > 0) parts.push(`발정 ${String(estrus.count)}두 수정 대상`);
-    if (calving && calving.count > 0) parts.push(`분만 임박 ${String(calving.count)}두`);
+    if (calving && calving.count > 0) parts.push(`분만 징후 ${String(calving.count)}두`);
     if (healthTotal > 0) parts.push(`건강 주의 ${String(healthTotal)}두`);
     return parts.length > 0 ? `오늘 내 농장: ${parts.join(', ')}. ${trendText}.` : `오늘 내 농장 알림 ${String(total24h)}건. ${trendText}.`;
   }
@@ -754,9 +754,9 @@ function buildBriefingSummary(
     const clinical = eventDist.find((e) => e.eventType === 'clinical_condition');
     const rum = eventDist.find((e) => e.eventType === 'rumination_decrease');
     const parts: string[] = [];
-    if (fever && fever.count > 0) parts.push(`발열 ${String(fever.count)}두 격리·진료`);
-    if (clinical && clinical.count > 0) parts.push(`질병 의심 ${String(clinical.count)}두`);
-    if (rum && rum.count > 0) parts.push(`반추 감소 ${String(rum.count)}두 관찰`);
+    if (fever && fever.count > 0) parts.push(`고체온 ${String(fever.count)}두`);
+    if (clinical && clinical.count > 0) parts.push(`임상 이상 ${String(clinical.count)}두`);
+    if (rum && rum.count > 0) parts.push(`반추 저하 ${String(rum.count)}두`);
     const topFarmText = topFarms.length > 0 ? ` 집중 농장: ${topFarms[0]!.farmName}` : '';
     return parts.length > 0 ? `오늘 진료 대상: ${parts.join(', ')}.${topFarmText}` : `오늘 건강 알림 ${String(total24h)}건. ${trendText}.`;
   }
@@ -775,14 +775,14 @@ function buildBriefingSummary(
     const fever = eventDist.find((e) => e.eventType === 'temperature_high');
     const feverCount = fever?.count ?? 0;
     const multiFarmFever = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
-    const riskText = multiFarmFever >= 3 ? '⚠️ 다수 농장 발열 — 역학 조사 검토' : '지역 방역 안정';
-    return `오늘 ${String(farmCount)}개 농장 ${String(total24h)}건 알림. 발열 ${String(feverCount)}두 (${String(multiFarmFever)}개 농장). ${riskText}. ${trendText}.`;
+    const riskText = multiFarmFever >= 3 ? '⚠️ 다수 농장 고체온 — 역학 조사 검토' : '지역 방역 안정';
+    return `오늘 ${String(farmCount)}개 농장 ${String(total24h)}건 알림. 고체온 ${String(feverCount)}두 (${String(multiFarmFever)}개 농장). ${riskText}. ${trendText}.`;
   }
 
   if (role === 'feed_company') {
     const rum = eventDist.find((e) => e.eventType === 'rumination_decrease');
     const activity = eventDist.find((e) => e.eventType === 'activity_decrease');
-    return `오늘 반추 감소 ${String(rum?.count ?? 0)}두, 활동 감소 ${String(activity?.count ?? 0)}두. TMR 점검 권장. ${trendText}.`;
+    return `오늘 반추 저하 ${String(rum?.count ?? 0)}두, 활동 저하 ${String(activity?.count ?? 0)}두. TMR 점검 권장. ${trendText}.`;
   }
 
   // 행정관리 (기본)
@@ -814,7 +814,7 @@ function buildRoleKpis(
     const healthTotal = findCount('temperature_high') + findCount('clinical_condition') + findCount('health_general');
     return [
       { label: '수정 대상', value: findCount('estrus'), color: '#ef4444', drilldownType: 'estrus' },
-      { label: '분만 임박', value: findCount('calving_detection'), color: '#f97316', drilldownType: 'calving_detection' },
+      { label: '분만 징후', value: findCount('calving_detection'), color: '#f97316', drilldownType: 'calving_detection' },
       { label: '건강 주의', value: healthTotal, color: '#eab308', drilldownType: 'HEALTH_ALL' },
       { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
     ];
@@ -823,9 +823,9 @@ function buildRoleKpis(
   if (role === 'veterinarian') {
     const feverFarms = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
     return [
-      { label: '발열·질병', value: findCount('temperature_high') + findCount('clinical_condition'), color: '#ef4444', drilldownType: 'HEALTH_ALL' },
+      { label: '고체온·임상', value: findCount('temperature_high') + findCount('clinical_condition'), color: '#ef4444', drilldownType: 'HEALTH_ALL' },
       { label: '진료 농장', value: feverFarms || topFarms.length, color: '#f97316' },
-      { label: '반추 감소', value: findCount('rumination_decrease'), color: '#eab308', drilldownType: 'rumination_decrease' },
+      { label: '반추 저하', value: findCount('rumination_decrease'), color: '#eab308', drilldownType: 'rumination_decrease' },
       { label: '긴급', value: alertStats.critical, color: '#ef4444', drilldownType: 'SEVERITY_CRITICAL' },
     ];
   }
@@ -846,8 +846,8 @@ function buildRoleKpis(
     const riskLevel = feverFarms >= 5 ? '위험' : feverFarms >= 3 ? '주의' : '안정';
     const riskColor = feverFarms >= 5 ? '#ef4444' : feverFarms >= 3 ? '#f97316' : '#22c55e';
     return [
-      { label: '발열 두수', value: findCount('temperature_high'), color: '#ef4444', drilldownType: 'temperature_high' },
-      { label: '발열 농장', value: feverFarms, color: '#f97316' },
+      { label: '고체온 두수', value: findCount('temperature_high'), color: '#ef4444', drilldownType: 'temperature_high' },
+      { label: '고체온 농장', value: feverFarms, color: '#f97316' },
       { label: '위험 등급', value: riskLevel, color: riskColor },
       { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
     ];
@@ -855,8 +855,8 @@ function buildRoleKpis(
 
   if (role === 'feed_company') {
     return [
-      { label: '반추 감소', value: findCount('rumination_decrease'), color: '#f97316', drilldownType: 'rumination_decrease' },
-      { label: '활동 감소', value: findCount('activity_decrease'), color: '#eab308', drilldownType: 'activity_decrease' },
+      { label: '반추 저하', value: findCount('rumination_decrease'), color: '#f97316', drilldownType: 'rumination_decrease' },
+      { label: '활동 저하', value: findCount('activity_decrease'), color: '#eab308', drilldownType: 'activity_decrease' },
       { label: '관리 농장', value: topFarms.length, color: '#3b82f6' },
       { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
     ];
@@ -873,31 +873,31 @@ function buildRoleKpis(
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   estrus: '발정',
-  estrus_dnb: '발정 (재발)',
+  estrus_dnb: '발정(DNB)',
   heat: '발정',
   health_warning: '건강 경고',
   health_general: '건강 주의',
   temperature_warning: '체온 이상',
-  temperature_high: '발열',
+  temperature_high: '고체온',
   temperature_low: '저체온',
   calving: '분만',
-  calving_detection: '분만 임박',
-  calving_confirmation: '분만 완료',
+  calving_detection: '분만 징후',
+  calving_confirmation: '분만 확인',
   calving_waiting: '분만 대기',
   rumination_warning: '반추 이상',
-  rumination_decrease: '반추 감소',
+  rumination_decrease: '반추 저하',
   activity_warning: '활동 이상',
-  activity_decrease: '활동 감소',
-  activity_increase: '활동 증가',
+  activity_decrease: '활동량 저하',
+  activity_increase: '활동량 증가',
   drinking_warning: '음수 이상',
-  drinking_decrease: '음수 감소',
+  drinking_decrease: '음수 저하',
   feeding_warning: '사양 이상',
   insemination: '수정',
-  pregnancy_check: '임신 검사',
-  fertility_warning: '번식 주의',
+  pregnancy_check: '임신 감정',
+  fertility_warning: '재발정',
   no_insemination: '미수정',
-  dry_off: '건유',
-  clinical_condition: '질병 의심',
+  dry_off: '건유 전환',
+  clinical_condition: '임상 이상',
   abortion: '유산',
   management: '관리',
 };
@@ -925,30 +925,30 @@ function buildRecommendations(
     }
     const rumDec = eventDist.find((e) => e.eventType === 'rumination_decrease');
     if (rumDec && rumDec.count > 0) {
-      recs.push(`반추 감소 ${String(rumDec.count)}두 — 사료 섭취량과 분변 상태를 확인하세요. 2일 이상 지속 시 수의사 진료가 필요합니다.`);
+      recs.push(`반추 저하 ${String(rumDec.count)}두 — 사료 섭취량과 분변 상태를 확인하세요. 2일 이상 지속 시 수의사 진료가 필요합니다.`);
     }
     const tempHigh = eventDist.find((e) => e.eventType === 'temperature_high');
     if (tempHigh && tempHigh.count > 0) {
-      recs.push(`발열 ${String(tempHigh.count)}두 — 직장 체온을 재측정하고, 39.5°C 이상이면 격리 후 수의사를 호출하세요.`);
+      recs.push(`고체온 ${String(tempHigh.count)}두 — 직장 체온을 재측정하고, 39.5°C 이상이면 격리 후 수의사를 호출하세요.`);
     }
     if (recs.length === 0) recs.push('현재 특이사항 없습니다. 정기 모니터링을 유지하세요.');
 
   } else if (role === 'veterinarian') {
     // 수의사: 임상 중심, 진료 우선순위
     if (alertStats.critical > 0) {
-      recs.push(`긴급 진료 ${String(alertStats.critical)}건 — 체온 상승·임상 증상 개체를 우선 방문하세요.`);
+      recs.push(`긴급 진료 ${String(alertStats.critical)}건 — 체온 상승·임상 이상 개체를 우선 방문하세요.`);
     }
     const tempHigh = eventDist.find((e) => e.eventType === 'temperature_high');
     if (tempHigh && tempHigh.count > 0) {
-      recs.push(`발열 개체 ${String(tempHigh.count)}두 — 감별 진단: 유방염, 자궁내막염, 제4위변위, 폐렴 순으로 확인. 38.8°C 이상 지속 시 항생제 투여 검토.`);
+      recs.push(`고체온 개체 ${String(tempHigh.count)}두 — 감별 진단: 유방염, 자궁내막염, 제4위변위, 폐렴 순으로 확인. 38.8°C 이상 지속 시 항생제 투여 검토.`);
     }
     const clinical = eventDist.find((e) => e.eventType === 'clinical_condition');
     if (clinical && clinical.count > 0) {
-      recs.push(`임상 증상 ${String(clinical.count)}건 — 신체검사(BCS, 탈수, 분변)를 실시하고 혈액 검사를 권장합니다.`);
+      recs.push(`임상 이상 ${String(clinical.count)}건 — 신체검사(BCS, 탈수, 분변)를 실시하고 혈액 검사를 권장합니다.`);
     }
     const rumDec = eventDist.find((e) => e.eventType === 'rumination_decrease');
     if (rumDec && rumDec.count > 0) {
-      recs.push(`반추 감소 ${String(rumDec.count)}두 — 산독증·케토시스 감별. 뇨케톤 검사 및 반추위 pH 확인을 권장합니다.`);
+      recs.push(`반추 저하 ${String(rumDec.count)}두 — 산독증·케토시스 감별. 뇨케톤 검사 및 반추위 pH 확인을 권장합니다.`);
     }
     if (topFarm) {
       recs.push(`${topFarm.farmName} 집중 방문 권장 — ${String(topFarm.alertCount)}건 알림. 사양 환경 전반 점검이 필요합니다.`);
@@ -966,7 +966,7 @@ function buildRecommendations(
     }
     const fertility = eventDist.find((e) => e.eventType === 'fertility_warning');
     if (fertility && fertility.count > 0) {
-      recs.push(`번식 주의 ${String(fertility.count)}건 — 반복 수정 실패 개체는 수의사 번식 검진을 의뢰하세요.`);
+      recs.push(`재발정 ${String(fertility.count)}건 — 반복 수정 실패 개체는 수의사 번식 검진을 의뢰하세요.`);
     }
     if (recs.length === 0) recs.push('오늘 수정 예정 개체가 없습니다. 내일 발정 예측 목록을 확인하세요.');
 
@@ -974,7 +974,7 @@ function buildRecommendations(
     // 방역관: 역학 중심
     const tempHigh = eventDist.find((e) => e.eventType === 'temperature_high');
     if (tempHigh && tempHigh.count > 0) {
-      recs.push(`발열 개체 ${String(tempHigh.count)}두 — 집단 발열 여부를 확인하세요. 동일 농장 3두 이상 발열 시 방역 당국 보고를 권장합니다.`);
+      recs.push(`고체온 개체 ${String(tempHigh.count)}두 — 집단 고체온 여부를 확인하세요. 동일 농장 3두 이상 고체온 시 방역 당국 보고를 권장합니다.`);
     }
     if (topFarm) {
       recs.push(`${topFarm.farmName}: 알림 ${String(topFarm.alertCount)}건 집중 — 인근 농장 이동제한 필요 여부를 검토하세요.`);
@@ -982,13 +982,13 @@ function buildRecommendations(
     if (alertStats.critical > 0) {
       recs.push(`긴급 알림 ${String(alertStats.critical)}건 — 법정 전염병(구제역, AI) 가능성을 배제할 수 없습니다. 역학 조사를 권장합니다.`);
     }
-    recs.push('정상 범위: 발열 개체 비율 2% 미만. 5% 초과 시 지역 방역 경보 발령을 검토하세요.');
+    recs.push('정상 범위: 고체온 개체 비율 2% 미만. 5% 초과 시 지역 방역 경보 발령을 검토하세요.');
 
   } else if (role === 'feed_company') {
     // 사료회사: 영양 중심
     const rumDec = eventDist.find((e) => e.eventType === 'rumination_decrease');
     if (rumDec && rumDec.count > 0) {
-      recs.push(`반추 감소 ${String(rumDec.count)}두 — TMR 배합비 점검과 사료 품질(수분, 곰팡이) 확인을 권장합니다.`);
+      recs.push(`반추 저하 ${String(rumDec.count)}두 — TMR 배합비 점검과 사료 품질(수분, 곰팡이) 확인을 권장합니다.`);
     }
     recs.push('사료 효율 개선: 반추 시간 480분/일 이상 유지를 목표로 조사료 비율을 조정하세요.');
     if (recs.length < 3) recs.push('계절별 사료 변경 시 최소 7일 적응 기간을 두고 반추 데이터를 모니터링하세요.');
@@ -1300,7 +1300,7 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
       .orderBy(desc(calvingEvents.calvingDate))
       .limit(3);
 
-    // 최근 임신 검사
+    // 최근 임신 감정
     const [latestPregnancy] = await db.select({
       checkDate: pregnancyChecks.checkDate,
       result: pregnancyChecks.result,
@@ -2787,7 +2787,7 @@ async function queryFertilityManagement(
   return [
     { category: 'open', label: '공태우 (미수정)', count: (openCowCount?.count ?? 0) as number, icon: 'circle-dot', severity: 'medium' as const },
     { category: 'estrus', label: '발정 감지 (금일)', count: (estrusCount?.count ?? 0) as number, icon: 'venus', severity: 'critical' as const },
-    { category: 'calving', label: '분만 임박 (금일)', count: (calvingCount?.count ?? 0) as number, icon: 'baby', severity: 'high' as const },
+    { category: 'calving', label: '분만 징후 (금일)', count: (calvingCount?.count ?? 0) as number, icon: 'baby', severity: 'high' as const },
     { category: 'dry', label: '건유우', count: (dryCount?.count ?? 0) as number, icon: 'moon', severity: 'info' as const },
   ];
 }
@@ -3004,8 +3004,8 @@ const URGENCY_POINTS: Record<string, number> = {
 
 const EVENT_ISSUE_LABELS: Record<string, string> = {
   temperature_high: '체온 상승',
-  clinical_condition: '임상 증상',
-  rumination_decrease: '반추 감소',
+  clinical_condition: '임상 이상',
+  rumination_decrease: '반추 저하',
   activity_decrease: '활동량 감소',
   drinking_decrease: '음수량 감소',
   health_warning: '건강 경고',
@@ -4307,7 +4307,7 @@ function buildBreedingUrgentActions(
         actions.push({
           animalId: animal.animalId, earTag: animal.earTag, farmId: animal.farmId, farmName: animal.farmName,
           actionType: 'pregnancy_check_due',
-          description: `수정 후 ${daysSince}일 경과 — 임신 검사 필요`,
+          description: `수정 후 ${daysSince}일 경과 — 임신 감정 필요`,
           hoursRemaining: Math.max(0, (35 - daysSince) * 24),
           detectedAt: insem.eventDate.toISOString(),
         });
@@ -4325,7 +4325,7 @@ function buildBreedingUrgentActions(
       actions.push({
         animalId: animal.animalId, earTag: animal.earTag, farmId: animal.farmId, farmName: animal.farmName,
         actionType: 'calving_imminent',
-        description: '분만 임박 — 분만실 이동 및 모니터링 강화 필요',
+        description: '분만 징후 — 분만실 이동 및 모니터링 강화 필요',
         hoursRemaining: Math.round(hoursLeft),
         detectedAt: pred.detectedAt.toISOString(),
       });
@@ -4426,8 +4426,8 @@ function generateDemoBreedingData(): BreedingPipelineData {
     },
     urgentActions: [
       { animalId: 'demo-animal-7', earTag: 'KR41100007', farmId: 'demo-farm-2', farmName: '삼척한우', actionType: 'inseminate_now', description: '발정 감지됨 — 수정 적기 (잔여 8시간)', hoursRemaining: 8, detectedAt: new Date(now.getTime() - 16 * 60 * 60 * 1000).toISOString() },
-      { animalId: 'demo-animal-23', earTag: 'KR41300023', farmId: 'demo-farm-3', farmName: '영주목장', actionType: 'pregnancy_check_due', description: '수정 후 32일 경과 — 임신 검사 필요', hoursRemaining: 72, detectedAt: new Date(now.getTime() - 32 * MS_PER_DAY).toISOString() },
-      { animalId: 'demo-animal-45', earTag: 'KR41000045', farmId: 'demo-farm-0', farmName: '갈전리목장', actionType: 'calving_imminent', description: '분만 임박 — 분만실 이동 및 모니터링 강화 필요', hoursRemaining: 48, detectedAt: new Date(now.getTime() - 5 * MS_PER_DAY).toISOString() },
+      { animalId: 'demo-animal-23', earTag: 'KR41300023', farmId: 'demo-farm-3', farmName: '영주목장', actionType: 'pregnancy_check_due', description: '수정 후 32일 경과 — 임신 감정 필요', hoursRemaining: 72, detectedAt: new Date(now.getTime() - 32 * MS_PER_DAY).toISOString() },
+      { animalId: 'demo-animal-45', earTag: 'KR41000045', farmId: 'demo-farm-0', farmName: '갈전리목장', actionType: 'calving_imminent', description: '분만 징후 — 분만실 이동 및 모니터링 강화 필요', hoursRemaining: 48, detectedAt: new Date(now.getTime() - 5 * MS_PER_DAY).toISOString() },
       { animalId: 'demo-animal-89', earTag: 'KR41400089', farmId: 'demo-farm-4', farmName: '봉화농장', actionType: 'repeat_breeder', description: '4회 수정 실패 — 리피트 브리더 의심. 수의사 정밀 검사 권고', hoursRemaining: 0, detectedAt: now.toISOString() },
     ],
     totalAnimals,
