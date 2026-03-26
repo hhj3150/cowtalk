@@ -14,7 +14,9 @@ import {
   ReferenceArea,
   Brush,
 } from 'recharts';
-import { apiGet } from '@web/api/client';
+// apiGet은 deprecated 컴포넌트에서 사용
+export { apiGet } from '@web/api/client';
+import { SensorChartInline } from '@web/components/sensor/SensorChartInline';
 
 // ── 타입 ──
 
@@ -32,7 +34,7 @@ interface EventMarker {
   readonly severity: string;
 }
 
-interface SensorChartResponse {
+export interface SensorChartResponse {
   readonly animalId: string;
   readonly earTag: string;
   readonly farmName: string;
@@ -657,7 +659,7 @@ function SyncPanel({
   );
 }
 
-function SyncedPanels({
+export function SyncedPanels({
   metrics, eventMarkers, timeRange, hasData,
 }: {
   readonly metrics: Record<string, readonly SensorPoint[]>;
@@ -715,29 +717,6 @@ function SyncedPanels({
 // ── 메인 모달 ──
 
 export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.JSX.Element {
-  const [data, setData] = useState<SensorChartResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [days, setDays] = useState(14); // 기본 14일 (24시간으로 전환 가능)
-
-  const fetchData = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    apiGet<SensorChartResponse>(`/unified-dashboard/animal/${animalId}/sensor-chart?days=${days}`)
-      .then((result) => {
-        setData(result);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-        setLoading(false);
-      });
-  }, [animalId, days]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
   useEffect(() => {
     function handleKey(e: KeyboardEvent): void {
       if (e.key === 'Escape') onClose();
@@ -745,13 +724,6 @@ export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.J
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
-
-  const timeRange = data?.period
-    ? { from: new Date(data.period.from).getTime(), to: new Date(data.period.to).getTime() }
-    : { from: Date.now() - 24 * 60 * 60 * 1000, to: Date.now() };
-
-  const metricsOrder: readonly string[] = ['temp', 'act', 'rum', 'dr'];
-  const hasData = data && metricsOrder.some((key) => data.metrics[key] && data.metrics[key].length > 0);
 
   return (
     <div
@@ -780,52 +752,16 @@ export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.J
           boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         }}
       >
-        {/* 헤더 */}
+        {/* 헤더 — 닫기 버튼만 (기간 선택은 SensorChartInline 내장) */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
+            justifyContent: 'flex-end',
+            padding: '10px 16px',
             borderBottom: '1px solid var(--ct-border)',
           }}
         >
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--ct-text)', margin: 0 }}>
-              smaXtec 센서 차트
-            </h2>
-            <p style={{ fontSize: 12, color: 'var(--ct-text-secondary)', margin: '4px 0 0' }}>
-              {data ? `${data.farmName} · ${data.earTag}번` : '로딩 중...'}
-              {data && ` · ${new Date(timeRange.from).toLocaleDateString('ko-KR')} ~ ${new Date(timeRange.to).toLocaleDateString('ko-KR')}`}
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {[
-              { d: 1, label: '24시간' },
-              { d: 3, label: '3일' },
-              { d: 7, label: '7일' },
-              { d: 14, label: '14일' },
-              { d: 30, label: '30일' },
-            ].map(({ d, label }) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setDays(d)}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  fontSize: 12,
-                  fontWeight: days === d ? 700 : 400,
-                  background: days === d ? 'var(--ct-primary)' : 'transparent',
-                  color: days === d ? '#fff' : 'var(--ct-text-secondary)',
-                  border: days === d ? 'none' : '1px solid var(--ct-border)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {label}
-              </button>
-            ))}
             <button
               type="button"
               onClick={onClose}
@@ -846,47 +782,15 @@ export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.J
             >
               ✕
             </button>
-          </div>
         </div>
 
         {/* 본문 */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-          {loading && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
-              <div
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  border: '2px solid var(--ct-primary)',
-                  borderTopColor: 'transparent',
-                  animation: 'spin 0.8s linear infinite',
-                }}
-              />
-              <span style={{ marginLeft: 12, fontSize: 13, color: 'var(--ct-text-secondary)' }}>
-                센서 데이터 조회 중...
-              </span>
-              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-            </div>
-          )}
-
-          {error && (
-            <div style={{ background: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: 8, fontSize: 13 }}>
-              오류: {error}
-            </div>
-          )}
-
-          {data && (
-            <SyncedPanels
-              metrics={data.metrics}
-              eventMarkers={data.eventMarkers}
-              timeRange={timeRange}
-              hasData={!!hasData}
-            />
-          )}
+          {/* 개체 대시보드와 100% 동일한 SensorChartInline 사용 */}
+          <SensorChartInline animalId={animalId} />
         </div>
 
-        {/* 하단 */}
+        {/* 하단 — 닫기 */}
         <div
           style={{
             padding: '10px 20px',
@@ -908,34 +812,10 @@ export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.J
             <span style={{ color: '#ef4444' }}>● 이상값</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {onAskAi && data && (
+            {onAskAi && (
               <button
                 type="button"
-                onClick={() => {
-                  // 센서 데이터 요약을 AI에게 전달
-                  const metricsToSummarize = ['temp', 'act', 'rum', 'dr'] as const;
-                  const summaryParts = metricsToSummarize
-                    .filter((k) => data.metrics[k] && data.metrics[k].length > 0)
-                    .map((k) => {
-                      const pts = data.metrics[k] ?? [];
-                      const vals = pts.map((p) => p.value);
-                      const cfg = METRIC_CONFIG[k];
-                      if (!cfg) return '';
-                      const latest = vals[vals.length - 1] ?? 0;
-                      const min = Math.min(...vals);
-                      const max = Math.max(...vals);
-                      const isAbnormal = latest < cfg.normalMin || latest > cfg.normalMax;
-                      return `${cfg.label}: 최근 ${latest.toFixed(1)}${cfg.unit} (범위 ${min.toFixed(1)}~${max.toFixed(1)}, 정상 ${cfg.normalMin}~${cfg.normalMax})${isAbnormal ? ' ⚠️이상' : ''}`;
-                    })
-                    .filter(Boolean);
-
-                  const eventSummary = data.eventMarkers.length > 0
-                    ? `\n최근 이벤트: ${data.eventMarkers.slice(0, 5).map((m) => `${EVENT_LABELS[m.smaxtecType] ?? EVENT_LABELS[m.eventType] ?? m.label}(${new Date(m.detectedAt).toLocaleDateString('ko-KR')})`).join(', ')}`
-                    : '';
-
-                  const context = `${data.farmName} ${data.earTag}번 소의 ${days}일간 센서 데이터:\n${summaryParts.join('\n')}${eventSummary}\n\n이 소의 상태를 분석해주세요.`;
-                  onAskAi(animalId, context);
-                }}
+                onClick={() => onAskAi(animalId, `이 소의 센서 데이터를 분석해주세요.`)}
                 style={{
                   padding: '6px 16px',
                   borderRadius: 6,
