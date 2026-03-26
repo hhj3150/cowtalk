@@ -1,7 +1,7 @@
-// 개체 대시보드 임베디드 센서 차트 — SensorChartModal과 동일한 품질
-// 체온/활동/반추/음수 개별 패널 + 이벤트 마커 + 기간 선택
+// 개체 대시보드 임베디드 센서 차트 — smaXtec 스타일
+// 체온/활동/반추/음수 개별 패널 + 동기화 크로스헤어 + 이벤트 마커
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
@@ -62,21 +62,45 @@ const PERIOD_OPTIONS = [
   { label: '14일', days: 14 },
 ] as const;
 
+// ── 동기화 크로스헤어: 호버 시 모든 패널에 동일 시점 표시 ──
+
+/** 타임스탬프에서 가장 가까운 데이터 포인트의 값을 찾음 */
+function findValueAtTs(data: readonly SensorPoint[], targetMs: number): number | null {
+  if (data.length === 0) return null;
+  let closest = data[0]!;
+  let minDist = Math.abs(closest.ts * 1000 - targetMs);
+  for (const p of data) {
+    const dist = Math.abs(p.ts * 1000 - targetMs);
+    if (dist < minDist) {
+      closest = p;
+      minDist = dist;
+    }
+  }
+  // 2시간 이상 차이나면 해당 없음
+  if (minDist > 2 * 3600 * 1000) return null;
+  return closest.value;
+}
+
 // ── 단일 메트릭 차트 패널 ──
 
 function MetricPanel({
-  data, metricKey, eventMarkers, timeRange,
+  data, metricKey, eventMarkers, timeRange, syncTs, onHover,
 }: {
   readonly data: readonly SensorPoint[];
   readonly metricKey: string;
   readonly eventMarkers: readonly EventMarker[];
   readonly timeRange: { from: number; to: number };
+  readonly syncTs: number | null; // 동기화된 타임스탬프 (ms)
+  readonly onHover: (ts: number | null) => void;
 }): React.JSX.Element {
   const cfg = METRIC_CONFIG[metricKey];
   if (!cfg || data.length === 0) return <></>;
 
-  const chartData = data.map((p) => ({ ts: p.ts * 1000, value: p.value }));
-  const values = chartData.map((d) => d.value);
+  const chartData = useMemo(() =>
+    data.map((p) => ({ ts: p.ts * 1000, value: p.value })),
+    [data],
+  );
+  const values = useMemo(() => chartData.map((d) => d.value), [chartData]);
   const latest = values[values.length - 1] ?? 0;
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -87,12 +111,29 @@ function MetricPanel({
     Math.ceil((max + pad) * 10) / 10,
   ];
 
-  const isAbnormal = latest < cfg.normalMin || latest > cfg.normalMax;
+  // 동기화 시점의 값
+  const syncValue = syncTs !== null ? findValueAtTs(data, syncTs) : null;
+  const displayValue = syncValue ?? latest;
+  const isAbnormal = displayValue < cfg.normalMin || displayValue > cfg.normalMax;
 
-  const relevantMarkers = eventMarkers.filter((m) => {
-    const t = new Date(m.detectedAt).getTime();
-    return t >= timeRange.from && t <= timeRange.to;
-  });
+  const relevantMarkers = useMemo(() =>
+    eventMarkers.filter((m) => {
+      const t = new Date(m.detectedAt).getTime();
+      return t >= timeRange.from && t <= timeRange.to;
+    }),
+    [eventMarkers, timeRange],
+  );
+
+  // 마우스 이동 핸들러
+  const handleMouseMove = useCallback((state: { activeLabel?: string | number }) => {
+    if (state.activeLabel != null) {
+      onHover(Number(state.activeLabel));
+    }
+  }, [onHover]);
+
+  const handleMouseLeave = useCallback(() => {
+    onHover(null);
+  }, [onHover]);
 
   return (
     <div style={{
@@ -108,14 +149,24 @@ function MetricPanel({
           <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
           <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>({cfg.normalMin}~{cfg.normalMax} {cfg.unit})</span>
         </div>
-        <span style={{ fontSize: 16, fontWeight: 800, color: isAbnormal ? '#ef4444' : cfg.color }}>
-          {latest.toFixed(1)}
+        <span style={{ fontSize: 16, fontWeight: 800, color: isAbnormal ? '#ef4444' : cfg.color, transition: 'color 0.15s' }}>
+          {displayValue.toFixed(1)}
           <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{cfg.unit}</span>
+          {syncTs !== null && (
+            <span style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginLeft: 4 }}>
+              {new Date(syncTs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </span>
       </div>
 
       <ResponsiveContainer width="100%" height={100}>
-        <LineChart data={chartData} margin={{ top: 2, right: 8, bottom: 2, left: 0 }}>
+        <LineChart
+          data={chartData}
+          margin={{ top: 2, right: 8, bottom: 2, left: 0 }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="var(--ct-border)" strokeOpacity={0.3} vertical={false} />
           <XAxis
             dataKey="ts" type="number"
@@ -136,27 +187,8 @@ function MetricPanel({
             tickLine={false} axisLine={false} width={35} tickCount={4}
           />
           <Tooltip
-            content={({ active, payload, label }) => {
-              if (!active || !payload?.[0] || !label) return null;
-              const v = payload[0].value as number;
-              const d = new Date(label as number);
-              const abnormal = v < cfg.normalMin || v > cfg.normalMax;
-              return (
-                <div style={{
-                  background: 'rgba(15,23,42,0.95)',
-                  border: `1px solid ${abnormal ? '#ef4444' : cfg.color}`,
-                  borderRadius: 6, padding: '6px 10px',
-                }}>
-                  <div style={{ fontSize: 10, color: '#94a3b8' }}>
-                    {d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} {d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: abnormal ? '#ef4444' : '#f8fafc' }}>
-                    {v.toFixed(1)} {cfg.unit}
-                  </div>
-                </div>
-              );
-            }}
-            cursor={{ stroke: cfg.color, strokeWidth: 1, strokeDasharray: '4 4' }}
+            content={() => null}
+            cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }}
             isAnimationActive={false}
           />
 
@@ -165,6 +197,16 @@ function MetricPanel({
             y1={cfg.normalMin} y2={cfg.normalMax}
             fill="#22c55e" fillOpacity={0.06} stroke="none"
           />
+
+          {/* 동기화 크로스헤어 (다른 패널에서 호버 시) */}
+          {syncTs !== null && (
+            <ReferenceLine
+              x={syncTs}
+              stroke="#f8fafc"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+            />
+          )}
 
           {/* 이벤트 마커 */}
           {relevantMarkers.map((m, i) => (
@@ -189,10 +231,65 @@ function MetricPanel({
   );
 }
 
+// ── 동기화 툴팁 (호버 시 4개 메트릭 동시 표시) ──
+
+function SyncTooltipOverlay({
+  syncTs, metrics, allData,
+}: {
+  readonly syncTs: number | null;
+  readonly metrics: readonly string[];
+  readonly allData: Record<string, readonly SensorPoint[]>;
+}): React.JSX.Element | null {
+  if (syncTs === null) return null;
+
+  const d = new Date(syncTs);
+  const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  return (
+    <div style={{
+      position: 'absolute',
+      top: 8,
+      right: 16,
+      background: 'rgba(15,23,42,0.92)',
+      border: '1px solid var(--ct-border)',
+      borderRadius: 8,
+      padding: '8px 12px',
+      zIndex: 10,
+      minWidth: 150,
+      pointerEvents: 'none',
+    }}>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 4, fontWeight: 600 }}>
+        {timeStr}
+      </div>
+      {metrics.map((key) => {
+        const cfg = METRIC_CONFIG[key];
+        const points = allData[key];
+        if (!cfg || !points || points.length === 0) return null;
+        const val = findValueAtTs(points, syncTs);
+        if (val === null) return null;
+        const abnormal = val < cfg.normalMin || val > cfg.normalMax;
+        return (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.color }} />
+            <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 24 }}>{cfg.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: abnormal ? '#ef4444' : '#f8fafc' }}>
+              {val.toFixed(1)}
+            </span>
+            <span style={{ fontSize: 9, color: '#64748b' }}>{cfg.unit}</span>
+            {abnormal && <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>!</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── 메인 컴포넌트 ──
 
 export function SensorChartInline({ animalId }: Props): React.JSX.Element {
   const [days, setDays] = useState(7);
+  const [syncTs, setSyncTs] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['sensor-chart-inline', animalId, days],
@@ -212,15 +309,28 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
   }, [data, days]);
 
   const metricsOrder = ['temp', 'act', 'rum', 'dr'] as const;
-  const hasData = data && metricsOrder.some((k) => data.metrics[k] && data.metrics[k].length > 0);
+  const availableMetrics = useMemo(() =>
+    metricsOrder.filter((k) => data?.metrics[k] && data.metrics[k].length > 0),
+    [data],
+  );
+  const hasData = availableMetrics.length > 0;
+
+  const handleHover = useCallback((ts: number | null) => {
+    setSyncTs(ts);
+  }, []);
 
   return (
-    <div style={{
-      background: 'var(--ct-card)',
-      border: '1px solid var(--ct-border)',
-      borderRadius: 12,
-      overflow: 'hidden',
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        background: 'var(--ct-card)',
+        border: '1px solid var(--ct-border)',
+        borderRadius: 12,
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+      onMouseLeave={() => setSyncTs(null)}
+    >
       {/* 헤더 */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -250,6 +360,11 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
         </div>
       </div>
 
+      {/* 동기화 툴팁 오버레이 */}
+      {data && (
+        <SyncTooltipOverlay syncTs={syncTs} metrics={availableMetrics} allData={data.metrics} />
+      )}
+
       {/* 차트 본문 */}
       <div style={{ padding: '12px 12px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {isLoading && (
@@ -270,7 +385,7 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
           </div>
         )}
 
-        {!isLoading && !error && hasData && data && metricsOrder.map((key) => {
+        {!isLoading && !error && hasData && data && availableMetrics.map((key) => {
           const points = data.metrics[key];
           if (!points || points.length === 0) return null;
           return (
@@ -280,17 +395,15 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
               metricKey={key}
               eventMarkers={data.eventMarkers}
               timeRange={timeRange}
+              syncTs={syncTs}
+              onHover={handleHover}
             />
           );
         })}
 
         {/* 이벤트 마커 범례 */}
         {data && data.eventMarkers.length > 0 && (
-          <div style={{
-            padding: '8px 8px 4px',
-            fontSize: 11,
-            color: 'var(--ct-text-muted)',
-          }}>
+          <div style={{ padding: '8px 8px 4px', fontSize: 11, color: 'var(--ct-text-muted)' }}>
             <span style={{ fontWeight: 600 }}>차트 이벤트 마커</span>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
               {data.eventMarkers.slice(0, 8).map((m, i) => {
