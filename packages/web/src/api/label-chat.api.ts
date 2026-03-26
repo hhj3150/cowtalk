@@ -66,55 +66,74 @@ export function streamLabelChat(
   onExtractedRecords?: (records: readonly ExtractedRecordClient[]) => void,
 ): () => void {
   const controller = new AbortController();
-  let lastProcessedLength = 0;
-  let isDone = false;
 
   (async () => {
     try {
-      const response = await apiClient.post('/label-chat/stream', data, {
-        responseType: 'text',
-        signal: controller.signal,
-        headers: { Accept: 'text/event-stream' },
-        onDownloadProgress: (event) => {
-          if (isDone) return;
-
-          const fullText = (event.event?.target as XMLHttpRequest | undefined)?.responseText ?? '';
-          const newText = fullText.slice(lastProcessedLength);
-          lastProcessedLength = fullText.length;
-
-          const lines = newText.split('\n');
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const payload = line.slice(6).trim();
-            if (!payload) continue;
-
-            try {
-              const parsed = JSON.parse(payload) as { type: string; content: unknown };
-              if (parsed.type === 'text' && parsed.content) {
-                onChunk(parsed.content as string);
-              } else if (parsed.type === 'extracted_records' && onExtractedRecords) {
-                onExtractedRecords(parsed.content as readonly ExtractedRecordClient[]);
-              } else if (parsed.type === 'done') {
-                isDone = true;
-                onDone();
-                return;
-              } else if (parsed.type === 'error') {
-                isDone = true;
-                onError(new Error((parsed.content as string) ?? 'Stream error'));
-                return;
-              }
-            } catch {
-              // partial JSON — ignore
-            }
-          }
+      // 팅커벨과 동일한 방식: fetch API로 SSE 스트리밍 읽기
+      const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
+      const baseUrl = apiClient.defaults.baseURL ?? '/api';
+      const response = await fetch(`${baseUrl}/label-chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
         },
+        body: JSON.stringify(data),
+        signal: controller.signal,
       });
 
-      if (!isDone && response.status === 200) {
-        onDone();
+      if (!response.ok) {
+        onError(new Error(`HTTP ${String(response.status)}`));
+        return;
       }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onError(new Error('ReadableStream not supported'));
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let done = false;
+
+      while (!done) {
+        const { value, done: streamDone } = await reader.read();
+        if (streamDone) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? ''; // 마지막 불완전 라인은 버퍼에 유지
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (!payload) continue;
+
+          try {
+            const parsed = JSON.parse(payload) as { type: string; content: unknown };
+            if (parsed.type === 'text' && parsed.content) {
+              onChunk(parsed.content as string);
+            } else if (parsed.type === 'extracted_records' && onExtractedRecords) {
+              onExtractedRecords(parsed.content as readonly ExtractedRecordClient[]);
+            } else if (parsed.type === 'done') {
+              done = true;
+              onDone();
+              return;
+            } else if (parsed.type === 'error') {
+              done = true;
+              onError(new Error((parsed.content as string) ?? 'Stream error'));
+              return;
+            }
+          } catch {
+            // partial JSON — ignore
+          }
+        }
+      }
+
+      if (!done) onDone();
     } catch (err) {
-      if (!controller.signal.aborted && !isDone) {
+      if (!controller.signal.aborted) {
         onError(err instanceof Error ? err : new Error('Stream failed'));
       }
     }
