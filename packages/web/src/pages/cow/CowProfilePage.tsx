@@ -231,6 +231,7 @@ export default function CowProfilePage(): React.JSX.Element {
 
   return (
     <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px' : '20px 24px' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* 헤더 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button type="button" onClick={() => navigate(-1)} style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 8, padding: '6px 12px', color: 'var(--ct-text)', cursor: 'pointer', fontSize: 13 }}>
@@ -292,97 +293,91 @@ export default function CowProfilePage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* KPI 카드 4개 */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>체온</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: sensor?.temperature && sensor.temperature >= 39.5 ? '#ef4444' : 'var(--ct-text)' }}>
-            {sensor?.temperature?.toFixed(1) ?? '—'}°C
+      {/* ── KPI 바이탈 카드 ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        {[
+          { label: '체온', value: sensor?.temperature?.toFixed(1) ?? '—', unit: '°C', status: tempStatus, color: sensor?.temperature && sensor.temperature >= 39.5 ? '#ef4444' : '#3b82f6' },
+          { label: '반추', value: sensor?.rumination?.toFixed(0) ?? '—', unit: '분', status: rumStatus, color: '#f97316' },
+          { label: '활동', value: sensor?.activity?.toFixed(0) ?? '—', unit: 'I/24h', status: '', color: '#22c55e' },
+          { label: 'AI 건강', value: String(healthScore ?? '—'), unit: '/100', status: healthPred ? healthPred.riskLevel : 'normal', color: scoreColor },
+        ].map((card) => (
+          <div key={card.label} style={{
+            background: 'var(--ct-card)',
+            border: `1px solid ${card.color}25`,
+            borderRadius: 10,
+            padding: '12px 14px',
+            borderLeft: `3px solid ${card.color}`,
+          }}>
+            <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{card.label}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
+              <span style={{ fontSize: 22, fontWeight: 800, color: card.color }}>{card.value}</span>
+              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>{card.unit}</span>
+            </div>
+            {card.status && <div style={{ fontSize: 9, marginTop: 2 }}>{card.status}</div>}
           </div>
-          <div style={{ fontSize: 10 }}>{tempStatus}</div>
-        </div>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>반추</div>
-          <div style={{ fontSize: 24, fontWeight: 800 }}>{sensor?.rumination?.toFixed(0) ?? '—'}<span style={{ fontSize: 12 }}>분</span></div>
-          <div style={{ fontSize: 10 }}>{rumStatus}</div>
-        </div>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>활동</div>
-          <div style={{ fontSize: 24, fontWeight: 800 }}>{sensor?.activity?.toFixed(0) ?? '—'}</div>
-          <div style={{ fontSize: 10 }}>I/24h</div>
-        </div>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>AI 건강 점수</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: scoreColor }}>{healthScore ?? '—'}</div>
-          <div style={{ fontSize: 10 }}>{healthPred ? healthPred.riskLevel : '/ 100점'}</div>
-        </div>
+        ))}
       </div>
 
-      {/* 🏛️ 축산물이력추적 — 이력번호 클릭 시 전체 공공데이터 */}
-      <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
-        <SectionErrorBoundary label="이력추적">
-          <TraceSection animalId={profile.animalId} />
-        </SectionErrorBoundary>
-      </div>
-
-      {/* 🐄 체중 측정 (AI 학습 데이터 수집) */}
+      {/* ── 센서 차트 (최상단 — 가장 중요) ── */}
       <div style={{ marginBottom: 16 }}>
-        <SectionErrorBoundary label="체중 측정">
-          <WeightDataCollector animalId={profile.animalId} farmId={profile.farmId} />
+        <SectionErrorBoundary label="센서 데이터">
+          <SensorChartInline animalId={id!} />
         </SectionErrorBoundary>
       </div>
 
-      {/* 💉 백신 접종이력 + 방역검사 */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>💉 백신 접종이력</h3>
-          <SectionErrorBoundary label="백신 접종이력">
-            <VaccinationHistory animalId={profile.animalId} />
-          </SectionErrorBoundary>
-        </div>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>🛡️ 방역검사 결과</h3>
-          <SectionErrorBoundary label="방역검사">
-            <InspectionResults animalId={profile.animalId} />
-          </SectionErrorBoundary>
-        </div>
-      </div>
+      {/* ── 2단 레이아웃: 좌측 핵심정보 + 우측 AI/이력 ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '7fr 5fr', gap: 14, marginBottom: 16 }}>
 
-      {/* 💉 번식 관리 — 수정 추천 + 보유 정액 */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-          <SectionErrorBoundary label="수정 추천">
-            <InseminationPanel animalId={profile.animalId} />
+        {/* 좌측: 이력추적 + 백신/방역 + 번식 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
+            <SectionErrorBoundary label="이력추적">
+              <TraceSection animalId={profile.animalId} />
+            </SectionErrorBoundary>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--ct-text)' }}>💉 백신 접종</h3>
+              <SectionErrorBoundary label="백신"><VaccinationHistory animalId={profile.animalId} /></SectionErrorBoundary>
+            </div>
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--ct-text)' }}>🛡️ 방역검사</h3>
+              <SectionErrorBoundary label="방역"><InspectionResults animalId={profile.animalId} /></SectionErrorBoundary>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+              <SectionErrorBoundary label="수정 추천"><InseminationPanel animalId={profile.animalId} /></SectionErrorBoundary>
+            </div>
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+              <SectionErrorBoundary label="보유 정액"><FarmSemenInventory farmId={profile.farmId} /></SectionErrorBoundary>
+            </div>
+          </div>
+
+          <SectionErrorBoundary label="체중 측정">
+            <WeightDataCollector animalId={profile.animalId} farmId={profile.farmId} />
           </SectionErrorBoundary>
         </div>
-        <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-          <SectionErrorBoundary label="보유 정액">
-            <FarmSemenInventory farmId={profile.farmId} />
-          </SectionErrorBoundary>
-        </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16 }}>
-        {/* 왼쪽: 센서 차트 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* 센서 데이터 차트 — 체온/활동/반추/음수 개별 패널 */}
-          <SectionErrorBoundary label="센서 데이터">
-            <SensorChartInline animalId={id!} />
-          </SectionErrorBoundary>
+        {/* 우측: 알림 + AI 예측 + 번식이력 + 개체정보 */}
 
-          {/* 알람 타임라인 */}
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>⚠️ 현재 알림 ({events.length}건)</h2>
+        {/* 우측 패널 내용 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* 알림 */}
+          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 8px' }}>⚠️ 알림 ({events.length})</h2>
             {events.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 20, color: 'var(--ct-text-muted)', fontSize: 13 }}>✅ 활성 알림 없음</div>
+              <div style={{ textAlign: 'center', padding: 12, color: 'var(--ct-text-muted)', fontSize: 12 }}>✅ 활성 알림 없음</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
                 {events.map((e) => (
-                  <div key={e.eventId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: `${SEVERITY_COLORS[e.severity] ?? '#64748b'}10` }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: SEVERITY_COLORS[e.severity] ?? '#64748b' }} />
-                    <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{EVENT_LABELS[e.eventType] ?? e.eventType}</span>
-                    <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
+                  <div key={e.eventId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 6, background: `${SEVERITY_COLORS[e.severity] ?? '#64748b'}10`, fontSize: 11 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: SEVERITY_COLORS[e.severity] ?? '#64748b' }} />
+                    <span style={{ fontWeight: 600, flex: 1 }}>{EVENT_LABELS[e.eventType] ?? e.eventType}</span>
+                    <span style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>
                       {new Date(e.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
@@ -390,10 +385,6 @@ export default function CowProfilePage(): React.JSX.Element {
               </div>
             )}
           </div>
-        </div>
-
-        {/* 오른쪽: AI 예측 + 번식 이력 + 개체 정보 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* AI 예측 3종 */}
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>🤖 AI 예측</h2>
@@ -550,6 +541,8 @@ export default function CowProfilePage(): React.JSX.Element {
           }}
         />
       )}
+
+    </div>{/* maxWidth container end */}
 
       {/* 건유 전환 모달 */}
       {showDryOff && profile && (
