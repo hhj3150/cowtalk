@@ -115,8 +115,8 @@ export default function FarmManagementPage(): React.JSX.Element {
   }, [listData, breedFilter]);
 
   const handleRowClick = useCallback((row: Record<string, unknown>) => {
-    navigate(`/cow/${String(row.farmId)}`);
-  }, [navigate]);
+    setDrawerFarm({ farmId: String(row.farmId), farmName: String(row.name) });
+  }, []);
 
   const handleEditClick = useCallback((farm: FarmRecord) => {
     setEditFarm(farm);
