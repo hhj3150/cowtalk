@@ -126,6 +126,14 @@ function IconClipboard(): React.JSX.Element {
   );
 }
 
+function IconBarn(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125V21m0 0h3.375c.621 0 1.125-.504 1.125-1.125V9.75M4.875 21h14.25c.621 0 1.125-.504 1.125-1.125V9.75M12 3l8.25 6.75M12 3L3.75 9.75M12 3v6" />
+    </svg>
+  );
+}
+
 // 공통 메뉴 — 모든 역할 동일 (simple is best)
 const COMMON_MENU: readonly MenuItem[] = [
   { label: '대시보드', path: '/', icon: <IconDashboard /> },
@@ -135,15 +143,17 @@ const COMMON_MENU: readonly MenuItem[] = [
 
 // 관리자 전용 추가 메뉴
 const ADMIN_EXTRA: readonly MenuItem[] = [
+  { label: '목장 관리', path: '/farm-management', icon: <IconBarn /> },
   { label: '사용자 관리', path: '/admin/users', icon: <IconUsers /> },
   { label: '시스템 상태', path: '/admin/system', icon: <IconServer /> },
   { label: 'AI 성능', path: '/ai-performance', icon: <IconAi /> },
 ];
 
-// 방역관 전용 메뉴 (10개)
+// 방역관 전용 메뉴
 const QUARANTINE_MENU: readonly MenuItem[] = [
   { label: '통합 대시보드', path: '/dashboard', icon: <IconDashboard /> },
   { label: '방역 대시보드', path: '/epidemiology/dashboard', icon: <IconShield /> },
+  { label: '목장 관리', path: '/farm-management', icon: <IconBarn /> },
   { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
   { label: '반경 분석', path: '/epidemiology/radius', icon: <IconRadar /> },
   { label: '확산 시뮬레이션', path: '/epidemiology/simulation', icon: <IconBeaker /> },

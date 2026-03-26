@@ -25,6 +25,8 @@ export {
   refreshTokenSchema,
   registerSchema,
   farmQuerySchema,
+  farmCreateSchema,
+  farmUpdateSchema,
   animalQuerySchema,
   createAnimalSchema,
   sensorQuerySchema,
@@ -35,4 +37,4 @@ export {
   apiSuccessSchema,
   apiErrorSchema,
 } from './api.js';
-export type { LoginInput, RegisterInput, PaginationInput, ChatMessageInput } from './api.js';
+export type { LoginInput, RegisterInput, PaginationInput, ChatMessageInput, FarmCreateInput, FarmUpdateInput } from './api.js';

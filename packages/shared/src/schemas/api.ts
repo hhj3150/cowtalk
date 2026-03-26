@@ -50,6 +50,23 @@ export const farmQuerySchema = paginationSchema.extend({
   search: z.string().max(100).optional(),
 });
 
+export const farmCreateSchema = z.object({
+  name: z.string().min(2, '목장명 2자 이상').max(100),
+  address: z.string().min(1, '주소 필수'),
+  lat: z.coerce.number().min(33).max(39).optional(),
+  lng: z.coerce.number().min(124).max(132).optional(),
+  capacity: z.coerce.number().int().min(1, '수용 두수 1 이상'),
+  ownerName: z.string().max(50).optional(),
+  phone: z.string().max(20).optional(),
+  regionId: z.string().uuid().optional(),
+  status: z.enum(['active', 'inactive', 'quarantine', 'suspended']).default('active'),
+});
+
+export const farmUpdateSchema = farmCreateSchema.partial();
+
+export type FarmCreateInput = z.input<typeof farmCreateSchema>;
+export type FarmUpdateInput = z.input<typeof farmUpdateSchema>;
+
 // === 동물 ===
 
 export const animalQuerySchema = paginationSchema.extend({

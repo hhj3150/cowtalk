@@ -33,6 +33,7 @@ const NationalSituation = lazy(() => import('@web/pages/epidemiology/NationalSit
 const CaseDatabase = lazy(() => import('@web/pages/epidemiology/CaseDatabase'));
 
 // 관리자 전용
+const FarmManagementPage = lazy(() => import('@web/pages/admin/FarmManagementPage'));
 const UserManagementPage = lazy(() => import('@web/pages/admin/UserManagementPage'));
 const SystemStatusPage = lazy(() => import('@web/pages/admin/SystemStatusPage'));
 const AiPerformancePage = lazy(() => import('@web/pages/intelligence/AiPerformancePage'));
@@ -103,6 +104,10 @@ export function App(): React.JSX.Element {
               <Route path="/epidemiology/cases" element={<CaseDatabase />} />
 
               {/* 관리자 전용 */}
+              <Route
+                path="/farm-management"
+                element={<RequireRole roles={['government_admin', 'quarantine_officer']}><FarmManagementPage /></RequireRole>}
+              />
               <Route
                 path="/admin/users"
                 element={<RequireRole roles={['government_admin']}><UserManagementPage /></RequireRole>}

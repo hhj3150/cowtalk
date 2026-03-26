@@ -5,10 +5,12 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
-import { farmQuerySchema } from '@cowtalk/shared';
+import { farmQuerySchema, farmCreateSchema, farmUpdateSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { farms, animals, smaxtecEvents, regions } from '../../db/schema.js';
 import { eq, and, sql, count, gt } from 'drizzle-orm';
+import { z } from 'zod';
+import { logger } from '../../lib/logger.js';
 
 export const farmRouter = Router();
 
@@ -65,6 +67,63 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
   }
 });
 
+// GET /farms/summary — KPI 집계 (목장 관리 대시보드용)
+farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+
+    const [farmCounts] = await db
+      .select({
+        total: count(),
+        totalHeadCount: sql<number>`COALESCE(SUM(${farms.currentHeadCount}), 0)`,
+        active: sql<number>`COUNT(*) FILTER (WHERE ${farms.status} = 'active')`,
+        inactive: sql<number>`COUNT(*) FILTER (WHERE ${farms.status} != 'active')`,
+      })
+      .from(farms);
+
+    const [animalCounts] = await db
+      .select({
+        traced: sql<number>`COUNT(*) FILTER (WHERE ${animals.traceId} IS NOT NULL AND ${animals.traceId} != '')`,
+        withSensor: sql<number>`COUNT(*) FILTER (WHERE ${animals.currentDeviceId} IS NOT NULL AND ${animals.currentDeviceId} != '')`,
+      })
+      .from(animals)
+      .where(eq(animals.status, 'active'));
+
+    res.json({
+      success: true,
+      data: {
+        totalFarms: farmCounts?.total ?? 0,
+        totalHeadCount: Number(farmCounts?.totalHeadCount ?? 0),
+        activeFarms: Number(farmCounts?.active ?? 0),
+        inactiveFarms: Number(farmCounts?.inactive ?? 0),
+        tracedAnimalCount: Number(animalCounts?.traced ?? 0),
+        sensorAnimalCount: Number(animalCounts?.withSensor ?? 0),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /farms/regions — 지역 목록 (폼 드롭다운용)
+farmRouter.get('/regions', requirePermission('farm', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const regionList = await db
+      .select({
+        regionId: regions.regionId,
+        province: regions.province,
+        district: regions.district,
+      })
+      .from(regions)
+      .orderBy(regions.province, regions.district);
+
+    res.json({ success: true, data: regionList });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /farms/:farmId — 단일 농장 (실제 DB)
 farmRouter.get('/:farmId', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -104,12 +163,86 @@ farmRouter.get('/:farmId', requirePermission('farm', 'read'), async (req: Reques
   }
 });
 
-farmRouter.post('/', requirePermission('farm', 'create'), (_req, res) => {
-  res.json({ success: true, data: null });
+// POST /farms — 농장 등록
+farmRouter.post('/', requirePermission('farm', 'create'), validate({ body: farmCreateSchema }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const parsed = farmCreateSchema.parse(req.body);
+
+    // regionId가 미지정이면 기본 지역 사용
+    let regionId = parsed.regionId;
+    if (!regionId) {
+      const [defaultRegion] = await db.select({ regionId: regions.regionId }).from(regions).limit(1);
+      regionId = defaultRegion?.regionId;
+    }
+    if (!regionId) {
+      res.status(400).json({ success: false, error: '지역 정보가 없습니다. 먼저 지역을 등록해주세요.' });
+      return;
+    }
+
+    const [created] = await db
+      .insert(farms)
+      .values({
+        name: parsed.name,
+        address: parsed.address,
+        lat: parsed.lat ?? 36.0,
+        lng: parsed.lng ?? 127.5,
+        capacity: parsed.capacity,
+        currentHeadCount: 0,
+        ownerName: parsed.ownerName ?? null,
+        phone: parsed.phone ?? null,
+        regionId,
+        status: parsed.status,
+      })
+      .returning();
+
+    logger.info({ farmId: created?.farmId, name: parsed.name }, 'Farm created');
+    res.status(201).json({ success: true, data: created });
+  } catch (error) {
+    next(error);
+  }
 });
 
-farmRouter.patch('/:farmId', requirePermission('farm', 'update'), (_req, res) => {
-  res.json({ success: true, data: null });
+// PATCH /farms/:farmId — 농장 수정
+farmRouter.patch('/:farmId', requirePermission('farm', 'update'), validate({ body: farmUpdateSchema, params: z.object({ farmId: z.string().uuid() }) }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const farmId = req.params.farmId as string;
+    const parsed = farmUpdateSchema.parse(req.body);
+
+    // 빈 업데이트 방지
+    if (Object.keys(parsed).length === 0) {
+      res.status(400).json({ success: false, error: '수정할 항목이 없습니다' });
+      return;
+    }
+
+    const updateValues: Record<string, unknown> = { updatedAt: new Date() };
+    if (parsed.name !== undefined) updateValues.name = parsed.name;
+    if (parsed.address !== undefined) updateValues.address = parsed.address;
+    if (parsed.lat !== undefined) updateValues.lat = parsed.lat;
+    if (parsed.lng !== undefined) updateValues.lng = parsed.lng;
+    if (parsed.capacity !== undefined) updateValues.capacity = parsed.capacity;
+    if (parsed.ownerName !== undefined) updateValues.ownerName = parsed.ownerName;
+    if (parsed.phone !== undefined) updateValues.phone = parsed.phone;
+    if (parsed.regionId !== undefined) updateValues.regionId = parsed.regionId;
+    if (parsed.status !== undefined) updateValues.status = parsed.status;
+
+    const [updated] = await db
+      .update(farms)
+      .set(updateValues)
+      .where(eq(farms.farmId, farmId))
+      .returning();
+
+    if (!updated) {
+      res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      return;
+    }
+
+    logger.info({ farmId, changes: Object.keys(parsed) }, 'Farm updated');
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
 });
 
 farmRouter.delete('/:farmId', requirePermission('farm', 'delete'), (_req, res) => {
