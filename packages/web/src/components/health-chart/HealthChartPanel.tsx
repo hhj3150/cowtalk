@@ -94,7 +94,6 @@ export function HealthChartPanel({ animalId }: Props): React.JSX.Element {
       <HealthMonitorChart
         data={allData}
         viewMode={viewMode}
-        dateRange={dateRange}
         brushIndex={brushIndex}
         onBrushChange={handleBrushChange}
       />

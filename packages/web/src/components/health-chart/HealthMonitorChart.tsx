@@ -1,4 +1,5 @@
-// 건강 모니터링 차트 — 7개 시계열, 3축, 낮밤 배경, 커스텀 툴팁
+// 건강 모니터링 차트 — 7개 시계열, 3축, 커스텀 툴팁
+// Recharts ComposedChart 기반, 더미/실데이터 겸용
 
 import React, { useMemo, useCallback } from 'react';
 import {
@@ -8,18 +9,15 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ReferenceArea,
-  ReferenceLine,
   Brush,
   ResponsiveContainer,
 } from 'recharts';
-import type { HealthChartDataPoint, ViewMode, DateRange } from '@web/types/health-chart';
+import type { HealthChartDataPoint, ViewMode } from '@web/types/health-chart';
 import { CHART_LINES } from '@web/types/health-chart';
 
 interface Props {
   readonly data: readonly HealthChartDataPoint[];
   readonly viewMode: ViewMode;
-  readonly dateRange: DateRange;
   readonly brushIndex?: { startIndex: number; endIndex: number };
   readonly onBrushChange?: (start: number, end: number) => void;
 }
@@ -38,47 +36,6 @@ function formatTooltipDate(ts: string): string {
   const ampm = h < 12 ? '오전' : '오후';
   const h12 = h % 12 || 12;
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}. ${ampm} ${String(h12)}:${String(m).padStart(2, '0')}`;
-}
-
-// ── 낮밤 밴드 계산 ──
-
-interface DayNightBand {
-  readonly x1: string;
-  readonly x2: string;
-  readonly isDay: boolean;
-}
-
-function computeDayNightBands(data: readonly HealthChartDataPoint[]): readonly DayNightBand[] {
-  if (data.length === 0) return [];
-
-  const bands: DayNightBand[] = [];
-  const first = new Date(data[0]!.timestamp);
-  const last = new Date(data[data.length - 1]!.timestamp);
-
-  // 시작일 00:00부터 종료일+1 00:00까지 6시간 단위 순회
-  const cursor = new Date(first);
-  cursor.setHours(0, 0, 0, 0);
-
-  while (cursor < last) {
-    const hour = cursor.getHours();
-    const isDay = hour >= 6 && hour < 18;
-    const bandStart = cursor.toISOString();
-    const bandEnd = new Date(cursor);
-
-    if (hour < 6) {
-      bandEnd.setHours(6, 0, 0, 0);
-    } else if (hour < 18) {
-      bandEnd.setHours(18, 0, 0, 0);
-    } else {
-      bandEnd.setDate(bandEnd.getDate() + 1);
-      bandEnd.setHours(6, 0, 0, 0);
-    }
-
-    bands.push({ x1: bandStart, x2: bandEnd.toISOString(), isDay });
-    cursor.setTime(bandEnd.getTime());
-  }
-
-  return bands;
 }
 
 // ── 커스텀 툴팁 ──
@@ -143,8 +100,6 @@ export function HealthMonitorChart({
   brushIndex,
   onBrushChange,
 }: Props): React.JSX.Element {
-  const dayNightBands = useMemo(() => computeDayNightBands(data), [data]);
-
   const visibleLines = useMemo(
     () => viewMode === 'all'
       ? CHART_LINES
@@ -152,23 +107,29 @@ export function HealthMonitorChart({
     [viewMode],
   );
 
-  const nowIso = useMemo(() => new Date().toISOString(), []);
-
   const handleBrush = useCallback((brush: { startIndex?: number; endIndex?: number }) => {
     if (brush.startIndex !== undefined && brush.endIndex !== undefined) {
       onBrushChange?.(brush.startIndex, brush.endIndex);
     }
   }, [onBrushChange]);
 
-  // X축 틱 간격 (데이터 밀도에 따라)
+  // X축 틱 간격
   const tickInterval = useMemo(() => {
     const visibleCount = brushIndex
       ? brushIndex.endIndex - brushIndex.startIndex
       : data.length;
-    if (visibleCount <= 144) return 12; // 1일: 2시간 간격
-    if (visibleCount <= 1008) return 72; // 7일: 12시간 간격
-    return 144; // 10일+: 1일 간격
+    if (visibleCount <= 144) return 12;
+    if (visibleCount <= 1008) return 72;
+    return 144;
   }, [data.length, brushIndex]);
+
+  if (data.length === 0) {
+    return (
+      <div style={{ background: '#1E1E2E', borderRadius: 12, padding: 40, textAlign: 'center', color: '#888' }}>
+        데이터가 없습니다
+      </div>
+    );
+  }
 
   return (
     <div style={{ background: '#1E1E2E', borderRadius: 12, padding: '16px 8px 8px' }}>
@@ -181,28 +142,6 @@ export function HealthMonitorChart({
             stroke="rgba(255,255,255,0.07)"
             strokeDasharray="3 3"
             vertical={false}
-          />
-
-          {/* 낮밤 배경 밴드 */}
-          {dayNightBands.map((band, i) =>
-            band.isDay ? (
-              <ReferenceArea
-                key={`band-${i}`}
-                x1={band.x1}
-                x2={band.x2}
-                fill="rgba(255,255,255,0.03)"
-                fillOpacity={1}
-                ifOverflow="extendDomain"
-              />
-            ) : null,
-          )}
-
-          {/* 현재 시간 수직선 */}
-          <ReferenceLine
-            x={nowIso}
-            stroke="#FF9800"
-            strokeWidth={2}
-            strokeDasharray="4 2"
           />
 
           {/* X축 */}
@@ -245,7 +184,7 @@ export function HealthMonitorChart({
             width={35}
           />
 
-          {/* Y축 3: 반추/활동 (오른쪽) */}
+          {/* Y축 3: 반추 (오른쪽) */}
           <YAxis
             yAxisId="rumination"
             orientation="right"
@@ -257,7 +196,7 @@ export function HealthMonitorChart({
             width={40}
           />
 
-          {/* 활동/발정/분만 (숨김 축, rumination 축에 매핑) */}
+          {/* 활동/발정/분만 (숨김 축) */}
           <YAxis yAxisId="activity" hide domain={[0, 30]} />
 
           {/* 툴팁 */}
