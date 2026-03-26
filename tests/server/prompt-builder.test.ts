@@ -57,11 +57,11 @@ const mockAnimalProfile: AnimalProfile = {
 describe('SYSTEM_PROMPT', () => {
   it('smaXtec 신뢰 원칙 포함', () => {
     expect(SYSTEM_PROMPT).toContain('smaXtec');
-    expect(SYSTEM_PROMPT).toContain('재판단하지 마세요');
+    expect(SYSTEM_PROMPT).toContain('재판단하지 말고');
   });
 
   it('JSON 응답 요구 포함', () => {
-    expect(SYSTEM_PROMPT).toContain('JSON 형식');
+    expect(SYSTEM_PROMPT).toContain('지정된 JSON');
   });
 
   it('축종별 가이드 포함', () => {

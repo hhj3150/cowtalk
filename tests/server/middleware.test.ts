@@ -157,6 +157,7 @@ describe('validate middleware', () => {
     const middleware = validate({ query: querySchema });
 
     middleware(req, mockRes(), next);
-    expect(req.query.page).toBe(3);
+    // Express 5 query는 읽기전용 — validate는 검증만 수행, coerce는 라우트 핸들러 역할
+    expect(req.query.page).toBe('3');
   });
 });

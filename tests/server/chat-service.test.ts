@@ -67,7 +67,7 @@ describe('handleChatMessage', () => {
       conversationHistory: [],
     });
 
-    expect(result.answer).toContain('연결할 수 없습니다');
+    expect(result.answer).toContain('사용 불가');
     expect(result.role).toBe('farmer');
   });
 });
