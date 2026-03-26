@@ -1,7 +1,7 @@
 // 통합 대시보드 — smaXtec 센서 차트 모달
-// recharts 기반 동적 차트 — 마우스 호버 시 데이터 표시, 줌, 애니메이션
+// recharts 기반 동적 차트 — 동기화 크로스헤어 + 개별 패널
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -237,7 +237,8 @@ function CombinedTooltip({
   );
 }
 
-function CombinedChart({ metrics, eventMarkers, timeRange }: CombinedChartProps): React.JSX.Element {
+// @deprecated SyncedPanels로 대체됨
+export function CombinedChart({ metrics, eventMarkers, timeRange }: CombinedChartProps): React.JSX.Element {
   const metricsToShow = ['temp', 'act', 'rum'] as const;
   const available = metricsToShow.filter((k) => metrics[k] && metrics[k].length > 0);
 
@@ -443,7 +444,8 @@ function CombinedChart({ metrics, eventMarkers, timeRange }: CombinedChartProps)
 
 // ── 단일 메트릭 차트 (음수량 등 개별 표시용) ──
 
-function SingleMetricChart({
+// @deprecated SyncedPanels로 대체됨
+export function SingleMetricChart({
   data,
   metricKey,
   eventMarkers,
@@ -560,6 +562,152 @@ function EventTimeline({ markers }: { readonly markers: readonly EventMarker[] }
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── 동기화 개별 패널 차트 (4패널 + 크로스헤어) ──
+
+function findValueAtTs(data: readonly SensorPoint[], targetMs: number): number | null {
+  if (data.length === 0) return null;
+  let closest = data[0]!;
+  let minDist = Math.abs(closest.ts * 1000 - targetMs);
+  for (const p of data) {
+    const dist = Math.abs(p.ts * 1000 - targetMs);
+    if (dist < minDist) { closest = p; minDist = dist; }
+  }
+  if (minDist > 2 * 3600 * 1000) return null;
+  return closest.value;
+}
+
+function SyncPanel({
+  data, metricKey, eventMarkers, timeRange, syncTs, onHover,
+}: {
+  readonly data: readonly SensorPoint[];
+  readonly metricKey: string;
+  readonly eventMarkers: readonly EventMarker[];
+  readonly timeRange: { from: number; to: number };
+  readonly syncTs: number | null;
+  readonly onHover: (ts: number | null) => void;
+}): React.JSX.Element {
+  const cfg = METRIC_CONFIG[metricKey];
+  if (!cfg || data.length === 0) return <></>;
+
+  const chartData = useMemo(() => data.map((p) => ({ ts: p.ts * 1000, value: p.value })), [data]);
+  const values = useMemo(() => chartData.map((d) => d.value), [chartData]);
+  const latest = values[values.length - 1] ?? 0;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const pad = Math.max(range * 0.15, cfg.unit === '°C' ? 0.3 : 0.5);
+  const yDomain: [number, number] = [
+    Math.floor((min - pad) * 10) / 10,
+    Math.ceil((max + pad) * 10) / 10,
+  ];
+
+  const syncValue = syncTs !== null ? findValueAtTs(data, syncTs) : null;
+  const displayValue = syncValue ?? latest;
+  const isAbnormal = displayValue < cfg.normalMin || displayValue > cfg.normalMax;
+
+  const relevantMarkers = useMemo(() =>
+    eventMarkers.filter((m) => {
+      const t = new Date(m.detectedAt).getTime();
+      return t >= timeRange.from && t <= timeRange.to;
+    }), [eventMarkers, timeRange]);
+
+  const handleMouseMove = useCallback((state: { activeLabel?: string | number }) => {
+    if (state.activeLabel != null) onHover(Number(state.activeLabel));
+  }, [onHover]);
+
+  return (
+    <div style={{ background: 'var(--ct-bg)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: '8px 8px 2px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
+          <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>({cfg.normalMin}~{cfg.normalMax} {cfg.unit})</span>
+        </div>
+        <span style={{ fontSize: 16, fontWeight: 800, color: isAbnormal ? '#ef4444' : cfg.color }}>
+          {displayValue.toFixed(1)}
+          <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{cfg.unit}</span>
+          {syncTs !== null && (
+            <span style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginLeft: 4 }}>
+              {new Date(syncTs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <LineChart data={chartData} margin={{ top: 2, right: 8, bottom: 2, left: 0 }} onMouseMove={handleMouseMove} onMouseLeave={() => onHover(null)}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--ct-border)" strokeOpacity={0.3} vertical={false} />
+          <XAxis dataKey="ts" type="number" domain={[timeRange.from, timeRange.to]} scale="time"
+            tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}시`; }}
+            tick={{ fontSize: 9, fill: 'var(--ct-text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--ct-border)' }} tickCount={8} />
+          <YAxis domain={yDomain} tick={{ fontSize: 9, fill: 'var(--ct-text-muted)' }} tickLine={false} axisLine={false} width={38} tickCount={5} />
+          <Tooltip content={() => null} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }} isAnimationActive={false} />
+          <ReferenceArea y1={cfg.normalMin} y2={cfg.normalMax} fill="#22c55e" fillOpacity={0.06} stroke="none" />
+          {syncTs !== null && <ReferenceLine x={syncTs} stroke="#f8fafc" strokeWidth={1} strokeDasharray="2 2" />}
+          {relevantMarkers.map((m, i) => (
+            <ReferenceLine key={`${m.detectedAt}-${i}`} x={new Date(m.detectedAt).getTime()} stroke={SEVERITY_COLORS[m.severity] ?? '#eab308'} strokeDasharray="4 3" strokeWidth={1} />
+          ))}
+          <Line type="monotone" dataKey="value" stroke={cfg.color} strokeWidth={1.5} dot={false} activeDot={{ r: 3, stroke: cfg.color, strokeWidth: 2, fill: '#0f172a' }} animationDuration={400} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function SyncedPanels({
+  metrics, eventMarkers, timeRange, hasData,
+}: {
+  readonly metrics: Record<string, readonly SensorPoint[]>;
+  readonly eventMarkers: readonly EventMarker[];
+  readonly timeRange: { from: number; to: number };
+  readonly hasData: boolean;
+}): React.JSX.Element {
+  const [syncTs, setSyncTs] = useState<number | null>(null);
+  const metricsOrder = ['temp', 'act', 'rum', 'dr'] as const;
+  const available = metricsOrder.filter((k) => metrics[k] && metrics[k].length > 0);
+
+  const handleHover = useCallback((ts: number | null) => setSyncTs(ts), []);
+
+  if (!hasData) {
+    return <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--ct-text-secondary)', fontSize: 13 }}>이 기간의 센서 데이터가 없습니다.</div>;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, position: 'relative' }} onMouseLeave={() => setSyncTs(null)}>
+      {/* 동기화 오버레이 */}
+      {syncTs !== null && (
+        <div style={{
+          position: 'absolute', top: 4, right: 8, background: 'rgba(15,23,42,0.92)',
+          border: '1px solid var(--ct-border)', borderRadius: 8, padding: '8px 12px', zIndex: 10, minWidth: 150, pointerEvents: 'none',
+        }}>
+          <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 4, fontWeight: 600 }}>
+            {new Date(syncTs).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} {new Date(syncTs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          {available.map((key) => {
+            const cfg = METRIC_CONFIG[key];
+            const val = findValueAtTs(metrics[key] ?? [], syncTs);
+            if (!cfg || val === null) return null;
+            const abnormal = val < cfg.normalMin || val > cfg.normalMax;
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.color }} />
+                <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 24 }}>{cfg.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: abnormal ? '#ef4444' : '#f8fafc' }}>{val.toFixed(1)}</span>
+                <span style={{ fontSize: 9, color: '#64748b' }}>{cfg.unit}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {available.map((key) => (
+        <SyncPanel key={key} data={metrics[key] ?? []} metricKey={key} eventMarkers={eventMarkers} timeRange={timeRange} syncTs={syncTs} onHover={handleHover} />
+      ))}
+
+      <EventTimeline markers={eventMarkers} />
     </div>
   );
 }
@@ -729,34 +877,12 @@ export function SensorChartModal({ animalId, onClose, onAskAi }: Props): React.J
           )}
 
           {data && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* 통합 차트: 체온 + 활동 + 반추 */}
-              <CombinedChart
-                metrics={data.metrics}
-                eventMarkers={data.eventMarkers}
-                timeRange={timeRange}
-              />
-
-              {/* 음수량 개별 차트 (있을 경우) */}
-              {data.metrics.dr && data.metrics.dr.length > 0 && (
-                <SingleMetricChart
-                  data={data.metrics.dr}
-                  metricKey="dr"
-                  eventMarkers={data.eventMarkers}
-                  timeRange={timeRange}
-                />
-              )}
-
-              {/* 이벤트 타임라인 */}
-              <EventTimeline markers={data.eventMarkers} />
-
-              {/* 데이터 없음 */}
-              {!hasData && (
-                <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--ct-text-secondary)', fontSize: 13 }}>
-                  이 기간의 센서 데이터가 없습니다.
-                </div>
-              )}
-            </div>
+            <SyncedPanels
+              metrics={data.metrics}
+              eventMarkers={data.eventMarkers}
+              timeRange={timeRange}
+              hasData={!!hasData}
+            />
           )}
         </div>
 

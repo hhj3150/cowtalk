@@ -1,9 +1,9 @@
-// 소버린 AI 지식 강화 루프 — 알람 레이블 + AI 대화 모달
+// 팅커벨 AI 지식 강화 루프 — 알람 레이블 + AI 대화 모달
 // Sovereign AI Knowledge Loop: Expert labels ground truth via AI-assisted chat
 //
 // 핵심 개념:
 // smaXtec 센서(해외)는 데이터 소스일 뿐, 현장 전문가가 AI와 대화하며
-// 레이블링한 지식은 해당 국가/지역의 고유 자산(소버린 AI)이 된다.
+// 레이블링한 지식은 해당 국가/지역의 고유 자산(팅커벨 AI)이 된다.
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useVoiceInput } from '@web/hooks/useVoiceInput';
@@ -359,7 +359,7 @@ function LabelForm({ context: _context, onSubmit, isSubmitting }: {
         <span>🏷️</span>
         <span>현장 확인 레이블</span>
         <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 400 }}>
-          (소버린 AI 학습 데이터)
+          (팅커벨 AI 학습 데이터)
         </span>
       </div>
 
@@ -492,7 +492,7 @@ function LabelForm({ context: _context, onSubmit, isSubmitting }: {
               letterSpacing: '-0.3px',
             }}
           >
-            {isSubmitting ? '저장 중...' : '🏷️ 레이블 저장 → 소버린 AI 학습'}
+            {isSubmitting ? '저장 중...' : '🏷️ 레이블 저장 → 팅커벨 AI 학습'}
           </button>
         </div>
       )}
@@ -779,7 +779,7 @@ function FollowUpForm({ labelId, eventId, animalId, onSubmit, isSubmitting: subm
               letterSpacing: '-0.3px',
             }}
           >
-            {submitting ? '저장 중...' : '📋 예후 기록 → 소버린 AI 인과관계 학습'}
+            {submitting ? '저장 중...' : '📋 예후 기록 → 팅커벨 AI 인과관계 학습'}
           </button>
         </div>
       )}
@@ -1103,7 +1103,7 @@ function ObservationForm({ animalId, farmId, onSubmit, isSubmitting: submitting 
               letterSpacing: '-0.3px',
             }}
           >
-            {submitting ? '저장 중...' : '📋 관찰 기록 → 소버린 AI 학습'}
+            {submitting ? '저장 중...' : '📋 관찰 기록 → 팅커벨 AI 학습'}
           </button>
         </div>
       )}
@@ -1556,7 +1556,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             <span style={{ fontSize: 16 }}>🧠</span>
             <div>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ct-text)' }}>
-                소버린 AI
+                팅커벨 AI
               </div>
               <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
                 현장 확인 → AI 지식 강화
@@ -1710,7 +1710,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             )}
           </div>
 
-          {/* 소버린 AI 배지 */}
+          {/* 팅커벨 AI 배지 */}
           <div style={{
             padding: '10px 14px',
             borderTop: '1px solid var(--ct-border)',
@@ -1757,7 +1757,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 boxShadow: '0 0 6px #22c55e88',
               }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>
-                소버린 AI 어시스턴트
+                팅커벨 AI 어시스턴트
               </span>
             </div>
             <button
@@ -1937,7 +1937,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                     레이블 저장 완료
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
-                    소버린 AI 지식 강화 루프에 반영되었습니다. 아래에서 예후를 추적하세요.
+                    팅커벨 AI 지식 강화 루프에 반영되었습니다. 아래에서 예후를 추적하세요.
                   </div>
                 </div>
               </div>
@@ -1971,7 +1971,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
               }}>
                 <span style={{ fontSize: 16 }}>📋</span>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#f97316' }}>
-                  예후 기록 저장 — 소버린 AI가 인과관계를 학습합니다
+                  예후 기록 저장 — 팅커벨 AI가 인과관계를 학습합니다
                 </div>
               </div>
             )}
@@ -2003,7 +2003,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
               }}>
                 <span style={{ fontSize: 16 }}>📋</span>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#06b6d4' }}>
-                  임상 관찰 기록 저장 — 소버린 AI 학습 자료로 축적됩니다
+                  임상 관찰 기록 저장 — 팅커벨 AI 학습 자료로 축적됩니다
                 </div>
               </div>
             )}
