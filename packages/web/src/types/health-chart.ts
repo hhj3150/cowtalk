@@ -41,8 +41,8 @@ export interface ChartLineConfig {
 }
 
 export const CHART_LINES: readonly ChartLineConfig[] = [
-  { key: 'temperature', label: '온도 (°C)', color: '#5C6BC0', yAxisId: 'temp', strokeWidth: 1.5 },
-  { key: 'normalTemp', label: '정상 체온 (°C)', color: '#9E9E9E', yAxisId: 'temp', strokeWidth: 1, opacity: 0.7 },
+  { key: 'temperature', label: '온도 (°C)', color: '#81D4FA', yAxisId: 'temp', strokeWidth: 1.2 },
+  { key: 'normalTemp', label: '정상 체온 (°C)', color: '#B0BEC5', yAxisId: 'temp', strokeWidth: 1, opacity: 0.5 },
   { key: 'activity', label: '활동량', color: '#E91E63', yAxisId: 'activity', strokeWidth: 1 },
   { key: 'heatIndex', label: '발정지수', color: '#FF4081', yAxisId: 'activity', strokeWidth: 1 },
   { key: 'rumination', label: '반추 (min/24h)', color: '#8BC34A', yAxisId: 'rumination', strokeWidth: 2, showInRuminationMode: true },

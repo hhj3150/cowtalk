@@ -10,7 +10,7 @@ import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
 import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
-import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { apiGet } from '@web/api/client';
 import { TILE_URL, TILE_ATTRIBUTION } from '@web/constants/map';
 
@@ -92,7 +92,7 @@ export default function NationalSituation(): React.JSX.Element {
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
   const [drillFarmName, setDrillFarmName] = useState<string>('');
-  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
+  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
 
   const { data, isLoading } = useQuery({
     queryKey: ['quarantine', 'national-situation'],
@@ -130,8 +130,8 @@ export default function NationalSituation(): React.JSX.Element {
     setDrillFarmId(null);
   }
 
-  // GeniVoiceAssistant 트리거 (개체 AI 분석 요청 시)
-  const effectiveTrigger = useMemo(() => geniTrigger, [geniTrigger]);
+  // TinkerbellAssistant 트리거 (개체 AI 분석 요청 시)
+  const effectiveTrigger = useMemo(() => tinkerbellTrigger, [tinkerbellTrigger]);
 
   return (
     <div className="space-y-6">
@@ -342,15 +342,15 @@ export default function NationalSituation(): React.JSX.Element {
           farmName={drillFarmName}
           onClose={handleCloseAnimalPanel}
           onAiRequest={(triggerText) => {
-            setGeniTrigger(triggerText);
+            setTinkerbellTrigger(triggerText);
             handleCloseAnimalPanel();
             setShowFarmPanel(false);
           }}
         />
       )}
 
-      {/* 소버린 AI (전역 — 개체 AI 분석 트리거 수신) */}
-      <GeniVoiceAssistant openTrigger={effectiveTrigger} />
+      {/* 팅커벨 AI (전역 — 개체 AI 분석 트리거 수신) */}
+      <TinkerbellAssistant openTrigger={effectiveTrigger} />
     </div>
   );
 }

@@ -7,12 +7,13 @@ import { apiGet } from '@web/api/client';
 import { HealthChartPanel } from '@web/components/health-chart/HealthChartPanel';
 import { DryOffModal } from '@web/components/cow/DryOffModal';
 import { BreedingTimeline } from '@web/components/cow/BreedingTimeline';
-import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { TraceSection } from '@web/components/trace/TraceSection';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { FarmSemenInventory } from '@web/components/breeding/FarmSemenInventory';
 import { PregnancyCheckModal } from '@web/components/breeding/PregnancyCheckModal';
 import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
+import { WeightDataCollector } from '@web/components/weight/WeightDataCollector';
 import { VaccinationHistory } from '@web/components/vaccine/VaccinationHistory';
 import { InspectionResults } from '@web/components/vaccine/InspectionResults';
 import { useIsMobile } from '@web/hooks/useIsMobile';
@@ -85,7 +86,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const [calvingPred, setCalvingPred] = useState<{ calvingRisk: string; reasons: string[]; recommendation: string } | null>(null);
   const [showDryOff, setShowDryOff] = useState(false);
   const [showPregnancyCheck, setShowPregnancyCheck] = useState(false);
-  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
+  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!id) return;
@@ -275,11 +276,11 @@ export default function CowProfilePage(): React.JSX.Element {
               breedCtx,
             ].filter(Boolean).join('\n');
 
-            setGeniTrigger(`[소버린 AI — 개체 정밀 분석]\n[개체ID] ${profile.animalId}\n[농장ID] ${profile.farmId}\n${fullContext}\n\n(${Date.now()})`);
+            setTinkerbellTrigger(`[팅커벨 AI — 개체 정밀 분석]\n[개체ID] ${profile.animalId}\n[농장ID] ${profile.farmId}\n${fullContext}\n\n(${Date.now()})`);
           }}
-          style={{ background: '#16a34a', border: 'none', borderRadius: 8, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+          style={{ background: '#7c3aed', border: 'none', borderRadius: 8, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
         >
-          🧠 소버린 AI
+          🧚 팅커벨 AI
         </button>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
@@ -322,6 +323,13 @@ export default function CowProfilePage(): React.JSX.Element {
         <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
         <SectionErrorBoundary label="이력추적">
           <TraceSection animalId={profile.animalId} />
+        </SectionErrorBoundary>
+      </div>
+
+      {/* 🐄 체중 측정 (AI 학습 데이터 수집) */}
+      <div style={{ marginBottom: 16 }}>
+        <SectionErrorBoundary label="체중 측정">
+          <WeightDataCollector animalId={profile.animalId} farmId={profile.farmId} />
         </SectionErrorBoundary>
       </div>
 
@@ -526,9 +534,9 @@ export default function CowProfilePage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 소버린 AI */}
+      {/* 팅커벨 AI */}
       <SectionErrorBoundary label="AI 어시스턴트">
-        <GeniVoiceAssistant openTrigger={geniTrigger} />
+        <TinkerbellAssistant openTrigger={tinkerbellTrigger} />
       </SectionErrorBoundary>
 
       {/* 임신감정 모달 */}

@@ -22,3 +22,4 @@ export * from './vet-route.js';
 export * from './insemination-route.js';
 export * from './label-chat.js';
 export * from './conversation-record.js';
+export * from './weight.js';

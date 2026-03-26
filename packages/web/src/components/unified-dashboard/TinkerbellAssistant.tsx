@@ -1,22 +1,24 @@
-// 지니 (Genie) — CowTalk 음성 AI 어시스턴트
-// "지니야" 호출 → 음성 입력 → Claude AI 해석 → 음성 응답
-// 현장 축산인을 위한 hands-free 인터페이스
+// 팅커벨 (Tinkerbell) — CowTalk 목장 전담 AI 요정
+// 클로드 전체 지식 + 카우톡 데이터베이스 + 소버린 학습 지식 = 통합 AI 어시스턴트
+// 음성 입력 → Claude AI 해석 → 음성 응답 + 소버린 학습 현황 통합
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { getSovereignStats } from '@web/api/label-chat.api';
+import type { SovereignAiStats } from '@cowtalk/shared';
 import axios from 'axios';
 
 // ── 타입 ──
 
-interface GeniMessage {
+interface TinkerbellMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
   readonly timestamp: Date;
 }
 
-type GeniState = 'idle' | 'listening' | 'thinking' | 'speaking';
+type TinkerbellState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 interface StreamChunk {
   readonly type: string;
@@ -136,6 +138,21 @@ function stopSpeaking(): void {
   }
 }
 
+// ── 소버린 학습 현황 요약 ──
+
+function formatSovereignContext(stats: SovereignAiStats): string {
+  const verdictTotal = stats.confirmedCount + stats.falsePositiveCount + stats.modifiedCount + stats.missedCount;
+  return [
+    `[팅커벨 학습 현황]`,
+    `총 레이블: ${stats.totalLabels}건`,
+    `정확도: ${stats.accuracyRate.toFixed(1)}% (30일 변화: ${stats.improvementRate > 0 ? '+' : ''}${stats.improvementRate.toFixed(1)}%)`,
+    `판정 분포: 정확 ${stats.confirmedCount}, 오탐 ${stats.falsePositiveCount}, 수정 ${stats.modifiedCount}, 미탐 ${stats.missedCount} (총 ${verdictTotal}건)`,
+    stats.topMisclassifications.length > 0
+      ? `주요 오분류: ${stats.topMisclassifications.map((m) => `${m.predictedType}→${m.actualType}(${m.count}건)`).join(', ')}`
+      : '',
+  ].filter(Boolean).join('\n');
+}
+
 // ── 맥락 인식 추천 질문 ──
 
 interface DashboardContext {
@@ -157,12 +174,12 @@ function getContextualSuggestions(ctx?: DashboardContext): readonly string[] {
       base.push(`건강 이상 ${ctx.healthIssues}두 원인 분석해줘`);
     }
     base.push('오늘 가장 먼저 해야 할 일은?');
-    base.push('번식성적 어때?');
+    base.push('팅커벨 학습 현황 알려줘');
     base.push('발정 감지된 소 알려줘');
   } else {
     base.push('오늘 긴급한 소 알려줘');
     base.push('전체 농장 현황 요약');
-    base.push('번식성적 분석해줘');
+    base.push('팅커벨 학습 현황 알려줘');
   }
 
   return base.slice(0, 4);
@@ -170,20 +187,20 @@ function getContextualSuggestions(ctx?: DashboardContext): readonly string[] {
 
 // ── 메인 컴포넌트 ──
 
-interface GeniVoiceAssistantProps {
+interface TinkerbellAssistantProps {
   readonly dashboardContext?: DashboardContext;
   /** 이 값이 바뀌면 패널을 자동 열고 해당 내용으로 즉시 질문 전송 */
   readonly openTrigger?: string;
 }
 
-export function GeniVoiceAssistant({
+export function TinkerbellAssistant({
   dashboardContext,
   openTrigger,
-}: GeniVoiceAssistantProps): React.JSX.Element {
-  const [state, setState] = useState<GeniState>('idle');
+}: TinkerbellAssistantProps): React.JSX.Element {
+  const [state, setState] = useState<TinkerbellState>('idle');
   const [isOpen, setIsOpen] = useState(false);
   const isMobile = useIsMobile();
-  const [messages, setMessages] = useState<readonly GeniMessage[]>([]);
+  const [messages, setMessages] = useState<readonly TinkerbellMessage[]>([]);
   const [transcript, setTranscript] = useState('');
   const [inputText, setInputText] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -195,6 +212,8 @@ export function GeniVoiceAssistant({
   const [animalContext, setAnimalContext] = useState<string | null>(null);
   const [animalIdForChat, setAnimalIdForChat] = useState<string | null>(null);
   const [farmIdForChat, setFarmIdForChat] = useState<string | null>(null);
+  // 소버린 학습 현황 캐시
+  const [sovereignStats, setSovereignStats] = useState<SovereignAiStats | null>(null);
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
@@ -222,11 +241,25 @@ export function GeniVoiceAssistant({
     }
   }, []);
 
+  // 패널 열릴 때 소버린 통계 로드
+  useEffect(() => {
+    if (!isOpen) return;
+    getSovereignStats()
+      .then((stats) => setSovereignStats(stats))
+      .catch(() => { /* 통계 로드 실패는 무시 */ });
+  }, [isOpen]);
+
   // AI에 질문 전송
-  const askGeni = useCallback(async (question: string) => {
-    const userMsg: GeniMessage = { role: 'user', content: question, timestamp: new Date() };
+  const askTinkerbell = useCallback(async (question: string) => {
+    const userMsg: TinkerbellMessage = { role: 'user', content: question, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
     setState('thinking');
+
+    // 학습 현황 질문 감지 → 소버린 통계 컨텍스트 주입
+    const isLearningQuery = /학습|배웠|소버린|정확도|오탐|레이블|지식.*강화/i.test(question);
+    const sovereignContext = isLearningQuery && sovereignStats
+      ? `\n\n${formatSovereignContext(sovereignStats)}`
+      : '';
 
     try {
       const token = useAuthStore.getState().accessToken;
@@ -234,8 +267,8 @@ export function GeniVoiceAssistant({
         '/api/chat/stream',
         {
           question: animalContext
-            ? `[소버린 AI — 개체 대화 모드] 당신은 축산 전문 AI 수의사 "소버린"입니다. 이 개체의 DB 데이터(센서, 알람, 번식이력, 건강이력)를 기반으로 답하세요. 사용자가 무엇을 물어보든 이 개체 기준으로 답하세요. 간결하되 전문적으로, 구체적 행동 지시를 포함하세요. 데이터에 없는 내용은 추측하지 말고 "데이터 없음"으로 명시하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
-            : `[음성 대화 모드] 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.\n\n질문: ${question}`,
+            ? `[팅커벨 AI — 개체 대화 모드] 당신은 축산 전문 AI 요정 "팅커벨"입니다. 이 개체의 DB 데이터(센서, 알람, 번식이력, 건강이력)를 기반으로 답하세요. 사용자가 무엇을 물어보든 이 개체 기준으로 답하세요. 간결하되 전문적으로, 구체적 행동 지시를 포함하세요. 데이터에 없는 내용은 추측하지 말고 "데이터 없음"으로 명시하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
+            : `[음성 대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다. 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.${sovereignContext}\n\n질문: ${question}`,
           role: user?.role ?? 'farm_owner',
           farmId: farmIdForChat ?? selectedFarmId ?? undefined,
           animalId: animalIdForChat ?? undefined,
@@ -276,7 +309,7 @@ export function GeniVoiceAssistant({
       }
 
       const answer = fullText || '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.';
-      const assistantMsg: GeniMessage = { role: 'assistant', content: answer, timestamp: new Date() };
+      const assistantMsg: TinkerbellMessage = { role: 'assistant', content: answer, timestamp: new Date() };
       setMessages((prev) => [...prev, assistantMsg]);
 
       setState('speaking');
@@ -289,7 +322,7 @@ export function GeniVoiceAssistant({
         ? '인터넷 연결을 확인해 주세요. 네트워크 오류가 발생했습니다.'
         : `서버 오류가 발생했습니다 (${String(axiosErr.response?.status ?? '')}). 잠시 후 다시 시도해 주세요.`;
 
-      const errorMsg: GeniMessage = {
+      const errorMsg: TinkerbellMessage = {
         role: 'assistant',
         content: errorContent,
         timestamp: new Date(),
@@ -297,7 +330,7 @@ export function GeniVoiceAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat]);
+  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -305,7 +338,7 @@ export function GeniVoiceAssistant({
     lastTriggerRef.current = openTrigger;
 
     // 개체 분석 trigger면 컨텍스트 저장 (이후 대화에도 유지)
-    if (openTrigger.startsWith('[소버린 AI')) {
+    if (openTrigger.startsWith('[팅커벨 AI') || openTrigger.startsWith('[소버린 AI')) {
       setAnimalContext(openTrigger);
       // trigger에서 animalId 추출 (여러 패턴 지원)
       const idMatch = /\[개체ID\]\s*([a-f0-9-]{36})/i.exec(openTrigger)
@@ -332,8 +365,8 @@ export function GeniVoiceAssistant({
     const pending = pendingAskRef.current;
     if (!pending || messages.length !== 0 || state !== 'idle') return;
     pendingAskRef.current = undefined;
-    void askGeni(pending);
-  }, [messages, state, askGeni]);
+    void askTinkerbell(pending);
+  }, [messages, state, askTinkerbell]);
 
   // 음성 인식 시작
   const startListening = useCallback(() => {
@@ -378,7 +411,7 @@ export function GeniVoiceAssistant({
     recognition.onend = () => {
       const finalText = transcriptRef.current.trim();
       if (finalText) {
-        askGeni(finalText);
+        askTinkerbell(finalText);
       } else {
         setState('idle');
       }
@@ -393,7 +426,7 @@ export function GeniVoiceAssistant({
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [hasSpeechRecognition, transcript, askGeni]);
+  }, [hasSpeechRecognition, transcript, askTinkerbell]);
 
   // 음성 인식 중지
   const stopListening = useCallback(() => {
@@ -409,19 +442,19 @@ export function GeniVoiceAssistant({
     setInputText('');
     // iOS Safari: 사용자 제스처 직후에 TTS 잠금 해제
     unlockTts();
-    askGeni(text);
-  }, [inputText, askGeni]);
+    askTinkerbell(text);
+  }, [inputText, askTinkerbell]);
 
-  // 상태별 색상
-  const stateColors: Record<GeniState, string> = {
-    idle: '#22c55e',
+  // 상태별 색상 — 팅커벨 테마 (요정의 빛)
+  const stateColors: Record<TinkerbellState, string> = {
+    idle: '#a78bfa',      // 보라빛 (요정 대기)
     listening: '#ef4444',
-    thinking: '#f97316',
-    speaking: '#3b82f6',
+    thinking: '#f59e0b',  // 골드 (생각 중)
+    speaking: '#38bdf8',  // 하늘빛 (말하는 중)
   };
 
-  const stateLabels: Record<GeniState, string> = {
-    idle: '지니',
+  const stateLabels: Record<TinkerbellState, string> = {
+    idle: '팅커벨',
     listening: '듣는 중...',
     thinking: '생각 중...',
     speaking: '말하는 중...',
@@ -429,7 +462,7 @@ export function GeniVoiceAssistant({
 
   const color = stateColors[state];
 
-  // ── 플로팅 버튼 (닫힌 상태) ──
+  // ── 플로팅 버튼 (닫힌 상태) — 요정 지팡이 아이콘 ──
   if (!isOpen) {
     return (
       <button
@@ -441,30 +474,38 @@ export function GeniVoiceAssistant({
           width: 60,
           height: 60,
           borderRadius: '50%',
-          background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+          background: `linear-gradient(135deg, #a78bfa, #7c3aed)`,
           border: 'none',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: `0 4px 20px ${color}40`,
+          boxShadow: `0 4px 20px rgba(167,139,250,0.4)`,
           transition: 'all 0.3s ease',
           zIndex: 9999,
-          animation: state !== 'idle' ? 'geni-pulse 2s ease-in-out infinite' : undefined,
+          animation: state !== 'idle' ? 'tinkerbell-pulse 2s ease-in-out infinite' : 'tinkerbell-sparkle 3s ease-in-out infinite',
         }}
-        title="CowTalk AI 어시스턴트"
+        title="팅커벨 AI 어시스턴트"
       >
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" y1="19" x2="12" y2="23" />
-          <line x1="8" y1="23" x2="16" y2="23" />
+        {/* 요정 별 아이콘 */}
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          {/* 별 (sparkle) */}
+          <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" fill="white" stroke="none" />
+          {/* 작은 별 */}
+          <circle cx="18" cy="4" r="1" fill="white" />
+          <circle cx="6" cy="16" r="0.8" fill="white" opacity="0.7" />
+          {/* 지팡이 */}
+          <line x1="14" y1="14" x2="20" y2="20" strokeWidth="2" />
         </svg>
 
         <style>{`
-          @keyframes geni-pulse {
-            0%, 100% { box-shadow: 0 4px 20px ${color}40; transform: scale(1); }
-            50% { box-shadow: 0 4px 30px ${color}60; transform: scale(1.05); }
+          @keyframes tinkerbell-pulse {
+            0%, 100% { box-shadow: 0 4px 20px rgba(167,139,250,0.4); transform: scale(1); }
+            50% { box-shadow: 0 4px 30px rgba(167,139,250,0.6); transform: scale(1.05); }
+          }
+          @keyframes tinkerbell-sparkle {
+            0%, 100% { box-shadow: 0 4px 20px rgba(167,139,250,0.3); }
+            50% { box-shadow: 0 4px 25px rgba(167,139,250,0.5), 0 0 40px rgba(167,139,250,0.15); }
           }
         `}</style>
       </button>
@@ -503,23 +544,23 @@ export function GeniVoiceAssistant({
             width: 32,
             height: 32,
             borderRadius: '50%',
-            background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+            background: `linear-gradient(135deg, #a78bfa, #7c3aed)`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            animation: state !== 'idle' ? 'geni-pulse-sm 1.5s ease-in-out infinite' : undefined,
+            animation: state !== 'idle' ? 'tinkerbell-pulse-sm 1.5s ease-in-out infinite' : undefined,
           }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" fill="white" stroke="none" />
+              <line x1="14" y1="14" x2="19" y2="19" strokeWidth="2" />
             </svg>
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ct-text, #f1f5f9)' }}>
-              {animalContext ? '🧠 소버린 AI' : '🐄 CowTalk AI'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
+              {animalContext ? '🧚 팅커벨 AI' : '🧚 팅커벨 AI'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
             </div>
-            <div style={{ fontSize: 10, color: animalContext ? '#16a34a' : 'var(--ct-text-muted, #94a3b8)' }}>
-              {animalContext ? '이 개체 전용 주치의 모드' : '농장·전체 대시보드 AI 어시스턴트'}
+            <div style={{ fontSize: 10, color: animalContext ? '#a78bfa' : 'var(--ct-text-muted, #94a3b8)' }}>
+              {animalContext ? '이 개체 전담 요정 모드' : '목장 전담 AI 요정'}
             </div>
           </div>
         </div>
@@ -551,18 +592,18 @@ export function GeniVoiceAssistant({
       }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>{animalContext ? '🧠' : '🐄'}</div>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🧚</div>
             <div style={{ fontSize: 13, color: 'var(--ct-text-muted, #94a3b8)', marginBottom: 16 }}>
               {animalContext
-                ? <>이 개체의 <strong style={{ color: '#16a34a' }}>소버린 AI</strong> 주치의입니다.<br />센서·알람·번식이력 기반으로 답변합니다.</>
-                : <>안녕하세요! <strong style={{ color }}>CowTalk AI</strong>입니다.<br />농장·대시보드 데이터로 무엇이든 답변합니다.</>
+                ? <>이 개체의 <strong style={{ color: '#a78bfa' }}>팅커벨 AI</strong> 전담 요정입니다.<br />센서·알람·번식이력 기반으로 답변합니다.</>
+                : <>안녕하세요! <strong style={{ color: '#a78bfa' }}>팅커벨</strong>이에요.<br />목장 데이터로 무엇이든 답변합니다.</>
               }
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
               {suggestions.map((q) => (
                 <button
                   key={q}
-                  onClick={() => { unlockTts(); askGeni(q); }}
+                  onClick={() => { unlockTts(); askTinkerbell(q); }}
                   style={{
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid var(--ct-border, #334155)',
@@ -647,9 +688,9 @@ export function GeniVoiceAssistant({
             display: 'flex',
             gap: 4,
           }}>
-            <span style={{ animation: 'geni-dot 1.4s infinite', animationDelay: '0s' }}>●</span>
-            <span style={{ animation: 'geni-dot 1.4s infinite', animationDelay: '0.2s' }}>●</span>
-            <span style={{ animation: 'geni-dot 1.4s infinite', animationDelay: '0.4s' }}>●</span>
+            <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0s' }}>✦</span>
+            <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0.2s' }}>✦</span>
+            <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0.4s' }}>✦</span>
           </div>
         )}
 
@@ -668,7 +709,7 @@ export function GeniVoiceAssistant({
           <button
             onClick={() => {
               if (!hasSpeechRecognition) {
-                askGeni('오늘 긴급한 소 알려줘');
+                askTinkerbell('오늘 긴급한 소 알려줘');
                 return;
               }
               if (state === 'listening') { stopListening(); } else { startListening(); }
@@ -686,7 +727,7 @@ export function GeniVoiceAssistant({
               justifyContent: 'center',
               flexShrink: 0,
               transition: 'all 0.2s',
-              animation: state === 'listening' ? 'geni-pulse-mic 1s ease-in-out infinite' : undefined,
+              animation: state === 'listening' ? 'tinkerbell-pulse-mic 1s ease-in-out infinite' : undefined,
             }}
             title={state === 'listening' ? '듣기 중지' : '음성으로 질문하기'}
           >
@@ -706,7 +747,7 @@ export function GeniVoiceAssistant({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
-          placeholder={state === 'listening' ? '듣는 중...' : '지니에게 물어보세요...'}
+          placeholder={state === 'listening' ? '듣는 중...' : '팅커벨에게 물어보세요...'}
           disabled={state === 'thinking' || state === 'listening'}
           style={{
             flex: 1,
@@ -772,15 +813,15 @@ export function GeniVoiceAssistant({
 
       {/* 애니메이션 */}
       <style>{`
-        @keyframes geni-pulse-sm {
+        @keyframes tinkerbell-pulse-sm {
           0%, 100% { box-shadow: 0 0 0 0 ${color}40; }
           50% { box-shadow: 0 0 10px 3px ${color}30; }
         }
-        @keyframes geni-pulse-mic {
+        @keyframes tinkerbell-pulse-mic {
           0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
           50% { box-shadow: 0 0 15px 5px rgba(239,68,68,0.2); }
         }
-        @keyframes geni-dot {
+        @keyframes tinkerbell-dot {
           0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
           40% { opacity: 1; transform: scale(1.2); }
         }

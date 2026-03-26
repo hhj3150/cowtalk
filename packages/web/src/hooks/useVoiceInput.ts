@@ -1,5 +1,5 @@
 // 음성 입력 훅 — Web Speech API 한국어 음성 인식
-// InlineAiChat, AlarmLabelChatModal, GeniVoiceAssistant 공용
+// InlineAiChat, AlarmLabelChatModal, TinkerbellAssistant 공용
 
 import { useState, useRef, useCallback } from 'react';
 

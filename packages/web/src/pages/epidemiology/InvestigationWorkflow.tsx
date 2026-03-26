@@ -7,7 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiGet, apiPost, apiPatch } from '@web/api/client';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
-import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 
 // ===========================
 // 타입
@@ -174,7 +174,7 @@ export default function InvestigationWorkflow(): React.JSX.Element {
   const [selectedAnimal, setSelectedAnimal] = useState<string | null>(null);
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
-  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
+  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
 
   // 기존 조사 조회
   const { data, isLoading, refetch } = useQuery({
@@ -528,13 +528,13 @@ export default function InvestigationWorkflow(): React.JSX.Element {
           onAiRequest={(triggerText) => {
             setDrillAnimalId(null);
             setDrillFarmId(null);
-            setGeniTrigger(triggerText);
+            setTinkerbellTrigger(triggerText);
           }}
         />
       )}
 
-      {/* 소버린 AI */}
-      <GeniVoiceAssistant openTrigger={geniTrigger} />
+      {/* 팅커벨 AI */}
+      <TinkerbellAssistant openTrigger={tinkerbellTrigger} />
     </div>
   );
 }

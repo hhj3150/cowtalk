@@ -1284,3 +1284,33 @@ export const epidemicWarningsRelations = relations(epidemicWarnings, ({ one }) =
   cluster: one(diseaseClusters, { fields: [epidemicWarnings.clusterId], references: [diseaseClusters.clusterId] }),
   region: one(regions, { fields: [epidemicWarnings.regionId], references: [regions.regionId] }),
 }));
+
+// ======================================================================
+// 체중 측정 (AI 체중 추정 Phase 1 — 데이터 수집)
+// ======================================================================
+
+export const weightMeasurements = pgTable('weight_measurements', {
+  measurementId: uuid('measurement_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  measuredAt: timestamp('measured_at', { withTimezone: true }).notNull(),
+  actualWeightKg: real('actual_weight_kg').notNull(),
+  sidePhotoBase64: text('side_photo_base64'),
+  rearPhotoBase64: text('rear_photo_base64'),
+  sidePhotoUrl: text('side_photo_url'),   // 향후 S3 마이그레이션용
+  rearPhotoUrl: text('rear_photo_url'),   // 향후 S3 마이그레이션용
+  estimatedWeightKg: real('estimated_weight_kg'), // Phase 2 AI 추정값
+  measuredBy: uuid('measured_by').references(() => users.userId),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('weight_measurements_animal_id_idx').on(table.animalId),
+  index('weight_measurements_farm_id_idx').on(table.farmId),
+  index('weight_measurements_measured_at_idx').on(table.measuredAt),
+]);
+
+export const weightMeasurementsRelations = relations(weightMeasurements, ({ one }) => ({
+  animal: one(animals, { fields: [weightMeasurements.animalId], references: [animals.animalId] }),
+  farm: one(farms, { fields: [weightMeasurements.farmId], references: [farms.farmId] }),
+  measurer: one(users, { fields: [weightMeasurements.measuredBy], references: [users.userId] }),
+}));

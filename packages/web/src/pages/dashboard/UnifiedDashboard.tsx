@@ -47,7 +47,7 @@ import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonito
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
-import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { BreedingPerformanceCard } from '@web/components/breeding/BreedingPerformanceCard';
@@ -553,7 +553,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const [epidemicClusterId, setEpidemicClusterId] = useState<string | null>(null);
   const [labelChatAnimalId, setLabelChatAnimalId] = useState<string | null>(null);
   const [inseminationAnimalId, setInseminationAnimalId] = useState<string | null>(null);
-  const [geniTrigger, setGeniTrigger] = useState<string | undefined>(undefined);
+  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
 
   const handleTodoClick = (item: TodoItem): void => {
     // eventType이 있으면 직접 사용 (정확한 드릴다운), 없으면 카테고리 매핑 (fallback)
@@ -880,7 +880,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           onAnimalClick={(aid) => { setDrilldown(null); setLabelChatAnimalId(aid); }}
           onSovereignClick={(aid) => {
             setDrilldown(null);
-            setGeniTrigger(`[소버린 AI — 개체 정밀 분석]\n[개체ID] ${aid}\n이 개체의 센서 데이터, 최근 알람, 번식 이력, 건강 상태를 모두 조회하여 종합 분석해주세요. 즉각 조치가 필요하면 우선순위별로, 목장주가 지금 해야 할 행동을 구체적으로 알려주세요. (${Date.now()})`);
+            setTinkerbellTrigger(`[팅커벨 AI — 개체 정밀 분석]\n[개체ID] ${aid}\n이 개체의 센서 데이터, 최근 알람, 번식 이력, 건강 상태를 모두 조회하여 종합 분석해주세요. 즉각 조치가 필요하면 우선순위별로, 목장주가 지금 해야 할 행동을 구체적으로 알려주세요. (${Date.now()})`);
           }}
         />
       )}
@@ -939,9 +939,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
         </div>
       )}
 
-      {/* 지니 AI 음성 어시스턴트 */}
-      <GeniVoiceAssistant
-        openTrigger={geniTrigger}
+      {/* 팅커벨 AI 어시스턴트 */}
+      <TinkerbellAssistant
+        openTrigger={tinkerbellTrigger}
         dashboardContext={data ? {
           totalAlarms: alarms.length,
           criticalCount: alarms.filter((a) => a.severity === 'critical').length,

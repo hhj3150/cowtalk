@@ -96,6 +96,7 @@ export function HealthChartPanel({ animalId }: Props): React.JSX.Element {
         viewMode={viewMode}
         brushIndex={brushIndex}
         onBrushChange={handleBrushChange}
+        onWheelZoom={(dir) => dir === 'in' ? handleZoomIn() : handleZoomOut()}
       />
     </div>
   );

@@ -14,7 +14,7 @@ import { SituationBoard } from '@web/components/epidemiology/SituationBoard';
 import type { RiskFarm } from '@web/components/epidemiology/SituationBoard';
 import { ActionQueue } from '@web/components/epidemiology/ActionQueue';
 import type { ActionQueueItem } from '@web/components/epidemiology/ActionQueue';
-import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
+import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
 import { apiGet } from '@web/api/client';
 import { listAnimals } from '@web/api/animal.api';
@@ -142,7 +142,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
   const [selectedFarm, setSelectedFarm] = useState<RiskFarm | null>(null);
   const [farmTab, setFarmTab] = useState<'info' | 'animals'>('info');
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
-  const [geniTriggerOverride, setGeniTriggerOverride] = useState<string | undefined>(undefined);
+  const [tinkerbellTriggerOverride, setTinkerbellTriggerOverride] = useState<string | undefined>(undefined);
 
   const { data: dashboard, isLoading: dashLoading } = useQuery({
     queryKey: ['quarantine', 'dashboard'],
@@ -171,8 +171,8 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
     riskLevel === 'yellow' ? `발열률 ${((kpi?.feverRate ?? 0) * 100).toFixed(1)}%` :
     '이상 징후 없음';
 
-  // 농장 선택 시 소버린 AI 자동 브리핑 트리거 (farmId 기반 고유 키)
-  const geniTrigger = useMemo(() => {
+  // 농장 선택 시 팅커벨 AI 자동 브리핑 트리거 (farmId 기반 고유 키)
+  const tinkerbellTrigger = useMemo(() => {
     if (!selectedFarm) return undefined;
     const flags = [
       selectedFarm.clusterAlert && '집단발열 발생',
@@ -339,7 +339,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
                 style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)' }}
               >
                 <p className="text-xs font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--ct-text)' }}>
-                  <span>🤖</span> 소버린 AI 브리핑
+                  <span>🧚</span> 팅커벨 AI 브리핑
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--ct-text-secondary)' }}>
                   {selectedFarm.farmName} 농장에 대한 역학 분석을 지니 AI에 자동 요청했습니다.
@@ -369,10 +369,10 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
           onClose={() => setDrillAnimalId(null)}
           onAiRequest={(triggerText) => {
             setDrillAnimalId(null);
-            // geniTrigger를 새 값으로 갱신 — GeniVoiceAssistant가 열림
+            // tinkerbellTrigger를 새 값으로 갱신 — TinkerbellAssistant가 열림
             const updatedTrigger = triggerText;
             // useMemo 우회: 직접 ref 업데이트 대신 state 사용
-            setGeniTriggerOverride(updatedTrigger);
+            setTinkerbellTriggerOverride(updatedTrigger);
           }}
         />
       )}
@@ -512,7 +512,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         <ActionQueue items={actionQueue ?? []} isLoading={queueLoading} />
       </div>
 
-      <GeniVoiceAssistant openTrigger={geniTriggerOverride ?? geniTrigger} />
+      <TinkerbellAssistant openTrigger={tinkerbellTriggerOverride ?? tinkerbellTrigger} />
     </div>
   );
 }

@@ -44,6 +44,7 @@ import { investigationRouter } from './routes/investigation.routes.js';
 import { smaxtecNotesRouter } from './routes/smaxtec-notes.routes.js';
 import { adminRouter } from './routes/admin.routes.js';
 import { earTagScanRouter } from './routes/ear-tag-scan.routes.js';
+import { weightRouter } from './routes/weight.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -93,6 +94,7 @@ export function createApiRouter(): Router {
   api.use('/smaxtec-notes', smaxtecNotesRouter);
   api.use('/admin', adminRouter);
   api.use('/ear-tag-scan', earTagScanRouter);
+  api.use('/weight', weightRouter);
 
   return api;
 }
