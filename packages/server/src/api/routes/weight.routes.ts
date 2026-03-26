@@ -93,10 +93,12 @@ weightRouter.get('/:animalId', async (req: Request, res: Response, next: NextFun
     const db = getDb();
     const limit = Math.min(Number(req.query.limit) || 20, 100);
 
-    const records = await db
-      .select({
-        measurementId: weightMeasurements.measurementId,
-        animalId: weightMeasurements.animalId,
+    let records;
+    try {
+      records = await db
+        .select({
+          measurementId: weightMeasurements.measurementId,
+          animalId: weightMeasurements.animalId,
         farmId: weightMeasurements.farmId,
         measuredAt: weightMeasurements.measuredAt,
         actualWeightKg: weightMeasurements.actualWeightKg,
@@ -110,6 +112,11 @@ weightRouter.get('/:animalId', async (req: Request, res: Response, next: NextFun
       .where(eq(weightMeasurements.animalId, animalId))
       .orderBy(desc(weightMeasurements.measuredAt))
       .limit(limit);
+    } catch {
+      // 테이블이 아직 없는 경우 빈 배열 반환
+      res.json({ data: [] });
+      return;
+    }
 
     // base64 데이터는 목록에서 반환하지 않음 (hasSidePhoto → boolean 변환)
     const mapped = records.map((r) => ({
@@ -136,18 +143,25 @@ weightRouter.get('/:animalId/latest', async (req: Request, res: Response, next: 
     }
 
     const db = getDb();
-    const [record] = await db
-      .select({
-        measurementId: weightMeasurements.measurementId,
-        measuredAt: weightMeasurements.measuredAt,
-        actualWeightKg: weightMeasurements.actualWeightKg,
-        estimatedWeightKg: weightMeasurements.estimatedWeightKg,
-        notes: weightMeasurements.notes,
-      })
-      .from(weightMeasurements)
-      .where(eq(weightMeasurements.animalId, animalId))
-      .orderBy(desc(weightMeasurements.measuredAt))
-      .limit(1);
+    let record;
+    try {
+      [record] = await db
+        .select({
+          measurementId: weightMeasurements.measurementId,
+          measuredAt: weightMeasurements.measuredAt,
+          actualWeightKg: weightMeasurements.actualWeightKg,
+          estimatedWeightKg: weightMeasurements.estimatedWeightKg,
+          notes: weightMeasurements.notes,
+        })
+        .from(weightMeasurements)
+        .where(eq(weightMeasurements.animalId, animalId))
+        .orderBy(desc(weightMeasurements.measuredAt))
+        .limit(1);
+    } catch {
+      // 테이블이 아직 없는 경우
+      res.json({ data: null });
+      return;
+    }
 
     if (!record) {
       res.json({ data: null });

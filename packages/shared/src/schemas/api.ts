@@ -71,6 +71,7 @@ export type FarmUpdateInput = z.input<typeof farmUpdateSchema>;
 // === 동물 ===
 
 export const animalQuerySchema = paginationSchema.extend({
+  limit: z.coerce.number().int().min(1).max(500).default(20), // 목장별 전체 소 목록 조회
   farmId: z.string().uuid().optional(),
   status: z.enum([
     'active', 'dry', 'pregnant', 'calving', 'sick',
