@@ -83,8 +83,8 @@ export function generateDummyData(days = 11): readonly HealthChartDataPoint[] {
         // 회복 중: 기저로 돌아가는 중
         temperature = prevTemp + (39.0 - prevTemp) * rand(0.4, 0.7);
       } else {
-        // 급락: 20~36°C까지 떨어짐 (smaXtec 실데이터에서 관찰되는 패턴)
-        temperature = rand(20.0, 36.0);
+        // 급락: 28~37°C까지 떨어짐 (smaXtec 실데이터 — 대부분 30°C 전후)
+        temperature = rand(28.0, 37.0);
       }
     } else {
       // 정상: 38.5~39.5 범위에서 미세 변동
@@ -135,30 +135,30 @@ export function generateDummyData(days = 11): readonly HealthChartDataPoint[] {
     const isDayTime = activityHour >= 5 && activityHour < 21;
 
     if (isDayTime) {
-      // 낮: 기저 5~15 + 빈번한 스파이크
-      const spikeChance = 0.15; // 10분마다 15% 확률
+      // 낮: 기저 0~8, 가끔 작은 스파이크 (smaXtec 원본은 바닥에 머묾)
+      const spikeChance = 0.06; // 10분마다 6% 확률 (드물게)
       if (Math.random() < spikeChance) {
-        activity = rand(40, 100); // 높은 스파이크
-      } else if (Math.random() < 0.08) {
         activity = rand(20, 50); // 중간 스파이크
+      } else if (Math.random() < 0.03) {
+        activity = rand(10, 25); // 작은 스파이크
       } else {
-        activity = rand(2, 18); // 기저
+        activity = rand(0, 8); // 기저 — 바닥
       }
     } else {
-      // 밤: 거의 0, 가끔 작은 움직임
-      if (Math.random() < 0.03) {
-        activity = rand(15, 40); // 드문 야간 활동
+      // 밤: 거의 0
+      if (Math.random() < 0.02) {
+        activity = rand(5, 15); // 드문 야간 활동
       } else {
-        activity = rand(0, 8);
+        activity = rand(0, 4);
       }
     }
 
-    // 착유 시간대 높은 활동
-    if ([5, 6, 17, 18].some((h) => Math.abs(hour - h) < 0.7)) {
-      activity = Math.max(activity, rand(30, 80));
+    // 착유 시간대만 약간 높음 (smaXtec에서 관찰되는 패턴)
+    if ([5, 6, 17, 18].some((h) => Math.abs(hour - h) < 0.5)) {
+      activity = Math.max(activity, rand(15, 40));
     }
 
-    activity = clamp(activity, 0, 120);
+    activity = clamp(activity, 0, 80);
 
     // ═══════════════════════════════════════════════
     // 4. 발정지수 — 대부분 0, 발정 시 상승
