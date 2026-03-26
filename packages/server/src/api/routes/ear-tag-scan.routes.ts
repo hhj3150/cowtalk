@@ -126,7 +126,7 @@ earTagScanRouter.post('/', async (req: Request, res: Response, next: NextFunctio
           farmName: r.farmName,
           status: r.status,
           breed: r.breed,
-          birthDate: r.birthDate?.toISOString().slice(0, 10) ?? null,
+          birthDate: r.birthDate ? String(r.birthDate).slice(0, 10) : null,
           lactationStatus: r.lactationStatus,
         });
       }
@@ -208,7 +208,7 @@ earTagScanRouter.post('/manual', async (req: Request, res: Response, next: NextF
       farmName: r.farmName,
       status: r.status,
       breed: r.breed,
-      birthDate: r.birthDate?.toISOString().slice(0, 10) ?? null,
+      birthDate: r.birthDate ? String(r.birthDate).slice(0, 10) : null,
       lactationStatus: r.lactationStatus,
     }));
 
