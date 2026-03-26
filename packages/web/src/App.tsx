@@ -43,7 +43,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
-      retry: 2,
+      retry: (failureCount, error) => {
+        // 네트워크 에러(ECONNREFUSED 등)는 재시도하지 않음
+        if (error instanceof Error && (error.message.includes('fetch') || error.message.includes('network'))) return false;
+        return failureCount < 2;
+      },
       refetchOnWindowFocus: false,
     },
   },
