@@ -765,11 +765,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </div>
           )}
 
-          {/* ── AI 예측 위험 TOP 10 ── */}
-          <RiskTop10Widget
-            farmId={selectedFarmId}
-            onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
-          />
+          {/* ── AI 예측 위험 TOP 10 (수정사 제외) ── */}
+          {!isVisible('insemination_route') && (
+            <RiskTop10Widget
+              farmId={selectedFarmId}
+              onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
+            />
+          )}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>

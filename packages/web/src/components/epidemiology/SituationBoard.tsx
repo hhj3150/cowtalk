@@ -36,6 +36,7 @@ interface Props {
   activeAlerts: readonly ActiveAlert[];
   isLoading?: boolean;
   onFarmClick?: (farm: RiskFarm) => void;
+  onAlertClick?: (alert: ActiveAlert) => void;
 }
 
 function priorityToRisk(priority: string): RiskLevel {
@@ -61,7 +62,7 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}일 전`;
 }
 
-export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmClick }: Props): React.JSX.Element {
+export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmClick, onAlertClick }: Props): React.JSX.Element {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -110,7 +111,7 @@ export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmC
                   </p>
                   <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
                     건강알림 {farm.healthAlertCount ?? farm.feverCount}건
-                    {farm.feverCount > 0 && ` · 발열 ${farm.feverCount}`}
+                    {farm.feverCount > 0 && ` · 고체온 ${farm.feverCount}`}
                     {(farm.ruminationCount ?? 0) > 0 && ` · 반추↓ ${farm.ruminationCount}`}
                     {farm.clusterAlert && ' · 집단 발생'}
                     {farm.legalSuspect && ' · 법정전염병 의심'}
@@ -148,9 +149,11 @@ export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmC
         ) : (
           <div className="space-y-2 max-h-56 overflow-y-auto">
             {activeAlerts.map((alert) => (
-              <div
+              <button
+                type="button"
                 key={alert.alertId}
-                className="flex items-start gap-2.5 rounded-lg p-2.5"
+                onClick={() => onAlertClick?.(alert)}
+                className="w-full flex items-start gap-2.5 rounded-lg p-2.5 transition-colors text-left cursor-pointer"
                 style={{ background: 'var(--ct-bg)' }}
               >
                 <RiskLevelBadge level={priorityToRisk(alert.priority)} size="sm" showLabel={false} />
@@ -165,7 +168,7 @@ export function SituationBoard({ top5RiskFarms, activeAlerts, isLoading, onFarmC
                 <span className="text-xs shrink-0" style={{ color: 'var(--ct-text-secondary)' }}>
                   {timeAgo(alert.createdAt)}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         )}

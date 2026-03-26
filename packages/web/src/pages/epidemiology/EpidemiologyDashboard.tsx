@@ -259,6 +259,10 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         activeAlerts={dashboard?.activeAlerts ?? []}
         isLoading={dashLoading}
         onFarmClick={(farm) => { setSelectedFarm(farm); setFarmTab('info'); }}
+        onAlertClick={(alert) => {
+          const farm = (dashboard?.top5RiskFarms ?? []).find((f) => f.farmId === alert.farmId);
+          if (farm) { setSelectedFarm(farm); setFarmTab('info'); }
+        }}
       />
 
       {/* 농장 드릴다운 패널 */}

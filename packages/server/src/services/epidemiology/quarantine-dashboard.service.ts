@@ -315,14 +315,44 @@ async function fetchActiveAlerts(): Promise<readonly ActiveAlert[]> {
     .orderBy(desc(smaxtecEvents.detectedAt))
     .limit(20);
 
-  return rows.map((r) => ({
-    alertId: r.eventId,
-    farmId: r.farmId,
-    farmName: r.farmName,
-    alertType: r.eventType,
-    priority: r.severity === 'critical' ? 'critical' : 'high',
-    title: `${r.eventType} 이벤트 — ${r.farmName}`,
-    createdAt: r.detectedAt.toISOString(),
+  const EVENT_LABELS: Record<string, string> = {
+    temperature_high: '고체온', temperature_low: '저체온', temperature_warning: '체온 이상',
+    rumination_decrease: '반추 저하', rumination_warning: '반추 이상',
+    activity_decrease: '활동량 저하', activity_increase: '활동량 증가',
+    clinical_condition: '임상 이상', health_general: '건강 주의', health_warning: '건강 경고',
+    drinking_warning: '음수 이상', drinking_decrease: '음수 저하',
+    estrus: '발정', calving_detection: '분만 징후', calving_confirmation: '분만 확인',
+  };
+
+  // 농장별 집계 — 방역관은 herd health 관점
+  const farmGrouped = new Map<string, { farmId: string; farmName: string; types: string[]; priority: string; latestAt: string }>();
+  for (const r of rows) {
+    const existing = farmGrouped.get(r.farmId);
+    const pri = r.severity === 'critical' ? 'critical' : 'high';
+    if (existing) {
+      const typeName = EVENT_LABELS[r.eventType] ?? r.eventType;
+      if (!existing.types.includes(typeName)) existing.types.push(typeName);
+      if (pri === 'critical') existing.priority = 'critical';
+      if (r.detectedAt.toISOString() > existing.latestAt) existing.latestAt = r.detectedAt.toISOString();
+    } else {
+      farmGrouped.set(r.farmId, {
+        farmId: r.farmId,
+        farmName: r.farmName,
+        types: [EVENT_LABELS[r.eventType] ?? r.eventType],
+        priority: pri,
+        latestAt: r.detectedAt.toISOString(),
+      });
+    }
+  }
+
+  return Array.from(farmGrouped.values()).map((f) => ({
+    alertId: f.farmId,
+    farmId: f.farmId,
+    farmName: f.farmName,
+    alertType: f.types[0] ?? 'health',
+    priority: f.priority,
+    title: f.types.join(' · '),
+    createdAt: f.latestAt,
   }));
 }
 
