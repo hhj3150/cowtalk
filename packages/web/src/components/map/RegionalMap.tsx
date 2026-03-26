@@ -26,7 +26,7 @@ export interface MapFilters {
 
 // ── 상수 ──
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string || 'AIzaSyCAPsQ5P_md6veAwIw7UF7WY4tPKsfoC4A';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string || 'AIzaSyBvdUMuz7NNTfA6PEI4Cqa8Iw4QqDije7M';
 
 const DEFAULT_CENTER = { lat: 36.0, lng: 127.5 };
 const DEFAULT_ZOOM = 7;
