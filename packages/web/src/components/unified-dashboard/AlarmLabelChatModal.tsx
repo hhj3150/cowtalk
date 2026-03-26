@@ -1717,11 +1717,11 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             background: 'rgba(99,102,241,0.05)',
           }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#6366f1', marginBottom: 2 }}>
-              🌏 Sovereign AI Knowledge Loop
+              🧚 팅커벨 AI Knowledge Loop
             </div>
             <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', lineHeight: 1.5 }}>
               현장 전문가의 레이블이 국가별 고유 AI 지식으로 축적됩니다.
-              센서는 해외 기술이지만, 레이블 데이터는 대한민국의 소버린 자산입니다.
+              센서는 해외 기술이지만, 레이블 데이터는 대한민국의 고유 자산입니다.
             </div>
           </div>
         </div>

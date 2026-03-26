@@ -163,7 +163,7 @@ export function AnimalDrilldownPanel({
 
     const fullContext = [animalInfo, `[센서] ${sensorCtx || '데이터 없음'}`, eventCtx, tempChartCtx].filter(Boolean).join('\n');
 
-    const trigger = `[소버린 AI — 개체 정밀 분석]\n${fullContext}\n\n위 데이터를 기반으로 이 소의 현재 상태를 분석해주세요. 즉각 조치가 필요하면 우선순위별로, 목장주와 수의사가 지금 해야 할 행동을 구체적으로 알려주세요. (${Date.now()})`;
+    const trigger = `[팅커벨 AI — 개체 정밀 분석]\n${fullContext}\n\n위 데이터를 기반으로 이 소의 현재 상태를 분석해주세요. 즉각 조치가 필요하면 우선순위별로, 목장주와 수의사가 지금 해야 할 행동을 구체적으로 알려주세요. (${Date.now()})`;
     onAiRequest(trigger);
   }
 
@@ -348,7 +348,7 @@ export function AnimalDrilldownPanel({
                 style={{ background: 'var(--ct-primary, #3b82f6)' }}
               >
                 <span>🤖</span>
-                <span>소버린 AI 분석 시작</span>
+                <span>팅커벨 AI 분석</span>
               </button>
             </>
           )}

@@ -119,7 +119,7 @@ export function ExtractedRecordCard({ record, onConfirm, onDismiss, saving, save
         }}
       >
         <span style={{ color: '#22c55e', fontSize: 13 }}>
-          ✅ {config.icon} {config.label} 기록이 저장되었습니다 → 소버린 AI 학습 데이터로 축적
+          ✅ {config.icon} {config.label} 기록이 저장되었습니다 → 팅커벨 AI 학습 데이터로 축적
         </span>
       </div>
     );

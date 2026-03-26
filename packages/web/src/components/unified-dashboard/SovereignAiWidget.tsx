@@ -353,7 +353,7 @@ export function SovereignAiWidget({ stats, onOpenLabelChat }: Props): React.JSX.
             letterSpacing: '-0.2px',
           }}
         >
-          🧠 소버린 AI 현장 확인 → 지식 강화
+          🧚 팅커벨 AI 현장 확인 → 지식 강화
         </button>
       )}
     </div>

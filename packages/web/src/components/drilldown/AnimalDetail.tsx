@@ -115,7 +115,7 @@ export function AnimalDetail({ animalId }: Props): React.JSX.Element {
             className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white ml-auto"
             style={{ background: '#16a34a' }}
           >
-            🧠 소버린 AI
+            🧚 팅커벨 AI
           </button>
         </div>
 

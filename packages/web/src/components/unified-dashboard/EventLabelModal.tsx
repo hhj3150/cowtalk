@@ -142,7 +142,7 @@ export function EventLabelModal({ alarm, onClose, onSaved }: Props): React.JSX.E
         >
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--ct-text)' }}>
-              {'\uD83C\uDFF7\uFE0F'} 소버린 AI 현장 확인
+              {'\uD83C\uDFF7\uFE0F'} 팅커벨 AI 현장 확인
             </h2>
             <p className="mt-0.5 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
               AI 예측을 검증하고 학습 데이터를 축적합니다

@@ -350,7 +350,7 @@ export function AnimalTimelineModal({ animalId, onClose, onSovereignClick }: Pro
                   color: '#fff',
                 }}
               >
-                {'\uD83E\uDDE0'} 소버린 AI
+                {'\uD83E\uDDE0'} 팅커벨 AI
               </button>
             )}
             <button

@@ -490,7 +490,7 @@ function AnimalRow({
         </span>
         {onAnimalClick && (
           <span style={{ fontSize: 11, color: 'var(--ct-primary)', fontWeight: 600 }}>
-            소버린 →
+            팅커벨 →
           </span>
         )}
       </div>
