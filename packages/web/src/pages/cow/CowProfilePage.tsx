@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
-import { HealthChartPanel } from '@web/components/health-chart/HealthChartPanel';
+import { SensorChartInline } from '@web/components/sensor/SensorChartInline';
 import { DryOffModal } from '@web/components/cow/DryOffModal';
 import { BreedingTimeline } from '@web/components/cow/BreedingTimeline';
 import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
@@ -366,13 +366,9 @@ export default function CowProfilePage(): React.JSX.Element {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16 }}>
         {/* 왼쪽: 센서 차트 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* 건강 모니터링 차트 (smaXtec 다이어그램 스타일) */}
-          <SectionErrorBoundary label="건강 모니터링">
-            <HealthChartPanel
-              animalId={id!}
-              parity={profile.parity}
-              lactationStatus={profile.lactationStatus}
-            />
+          {/* 센서 데이터 차트 — 체온/활동/반추/음수 개별 패널 */}
+          <SectionErrorBoundary label="센서 데이터">
+            <SensorChartInline animalId={id!} />
           </SectionErrorBoundary>
 
           {/* 알람 타임라인 */}
