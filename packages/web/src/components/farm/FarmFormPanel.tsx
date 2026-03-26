@@ -75,7 +75,8 @@ export function FarmFormPanel({ editFarm, onClose, onSaved }: Props): React.JSX.
     queryFn: getRegions,
     staleTime: 5 * 60 * 1000,
   });
-  const regionsList = regionsData?.data ?? [];
+  // apiGet이 data 배열을 직접 반환
+  const regionsList = regionsData ?? [];
 
   const mutation = useMutation({
     mutationFn: async (data: FarmFormData) => {

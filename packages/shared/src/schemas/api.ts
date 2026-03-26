@@ -46,7 +46,7 @@ export const registerSchema = z.object({
 
 export const farmQuerySchema = paginationSchema.extend({
   regionId: z.string().uuid().optional(),
-  status: z.enum(['active', 'inactive', 'quarantine', 'suspended']).optional(),
+  status: z.enum(['all', 'active', 'inactive', 'quarantine', 'suspended']).optional(),
   search: z.string().max(100).optional(),
 });
 

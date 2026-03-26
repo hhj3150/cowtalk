@@ -157,7 +157,8 @@ export default function FarmManagementPage(): React.JSX.Element {
     staleTime: 60 * 1000,
   });
 
-  const summary: FarmSummaryKpi = summaryData?.data ?? {
+  // apiGet이 res.data.data를 반환하므로 summaryData가 FarmSummaryKpi 직접
+  const summary: FarmSummaryKpi = summaryData ?? {
     totalFarms: 0,
     totalHeadCount: 0,
     activeFarms: 0,
@@ -166,7 +167,8 @@ export default function FarmManagementPage(): React.JSX.Element {
     sensorAnimalCount: 0,
   };
 
-  const farmList = useMemo(() => (listData?.data ?? []) as readonly FarmRecord[], [listData]);
+  // apiGet이 data 배열을 직접 반환
+  const farmList = useMemo(() => (listData ?? []) as readonly FarmRecord[], [listData]);
 
   const handleRowClick = useCallback((row: Record<string, unknown>) => {
     navigate(`/farm/${String(row.farmId)}/groups`);

@@ -61,22 +61,25 @@ export interface FarmFormData {
 
 // === API 함수 ===
 
-export function getFarmSummary(): Promise<{ data: FarmSummaryKpi }> {
-  return apiGet<{ data: FarmSummaryKpi }>('/farms/summary');
+// apiGet은 res.data.data를 자동 반환
+// 서버: { success, data: FarmSummaryKpi } → apiGet → FarmSummaryKpi
+
+export function getFarmSummary(): Promise<FarmSummaryKpi> {
+  return apiGet<FarmSummaryKpi>('/farms/summary');
 }
 
-export function getFarmList(params?: Record<string, unknown>): Promise<FarmListResponse> {
-  return apiGet<FarmListResponse>('/farms', { ...params, limit: 200 });
+export function getFarmList(params?: Record<string, unknown>): Promise<readonly FarmRecord[]> {
+  return apiGet<readonly FarmRecord[]>('/farms', { ...params, limit: 300 });
 }
 
-export function getRegions(): Promise<{ data: readonly RegionOption[] }> {
-  return apiGet<{ data: readonly RegionOption[] }>('/farms/regions');
+export function getRegions(): Promise<readonly RegionOption[]> {
+  return apiGet<readonly RegionOption[]>('/farms/regions');
 }
 
-export function createFarm(data: FarmFormData): Promise<{ data: FarmRecord }> {
-  return apiPost<{ data: FarmRecord }>('/farms', data);
+export function createFarm(data: FarmFormData): Promise<FarmRecord> {
+  return apiPost<FarmRecord>('/farms', data);
 }
 
-export function updateFarm(farmId: string, data: Partial<FarmFormData>): Promise<{ data: FarmRecord }> {
-  return apiPatch<{ data: FarmRecord }>(`/farms/${farmId}`, data);
+export function updateFarm(farmId: string, data: Partial<FarmFormData>): Promise<FarmRecord> {
+  return apiPatch<FarmRecord>(`/farms/${farmId}`, data);
 }

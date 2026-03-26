@@ -21,9 +21,11 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
   try {
     const db = getDb();
     const page = Number(req.query.page) || 1;
-    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const limit = Math.min(Number(req.query.limit) || 20, 300);
     const offset = (page - 1) * limit;
-    const status = (req.query.status as string) || 'active';
+    const status = (req.query.status as string) || 'all';
+
+    const statusFilter = status !== 'all' ? eq(farms.status, status) : undefined;
 
     const farmList = await db
       .select({
@@ -45,7 +47,7 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
       })
       .from(farms)
       .leftJoin(regions, eq(farms.regionId, regions.regionId))
-      .where(eq(farms.status, status))
+      .where(statusFilter)
       .orderBy(farms.name)
       .limit(limit)
       .offset(offset);
@@ -53,7 +55,7 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
     const [totalResult] = await db
       .select({ count: count() })
       .from(farms)
-      .where(eq(farms.status, status));
+      .where(statusFilter);
 
     const total = totalResult?.count ?? 0;
 
