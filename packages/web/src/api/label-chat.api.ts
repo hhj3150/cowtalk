@@ -1,6 +1,7 @@
 // 소버린 AI 지식 강화 루프 API 클라이언트
 
-import { apiGet, apiPost, apiClient } from './client';
+import axios from 'axios';
+import { apiGet, apiPost } from './client';
 import type {
   EventContext,
   SubmitLabelRequest,
@@ -69,72 +70,65 @@ export function streamLabelChat(
 
   (async () => {
     try {
-      // 팅커벨과 동일한 방식: fetch API로 SSE 스트리밍 읽기
+      // 팅커벨 메인과 동일: /api/chat/stream + axios (전체 응답 후 파싱)
       const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
-      const baseUrl = apiClient.defaults.baseURL ?? '/api';
-      const response = await fetch(`${baseUrl}/label-chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
+
+      // label-chat 전용 질문 래핑 — 이벤트 컨텍스트를 질문에 포함
+      const wrappedQuestion = data.eventContext
+        ? `[팅커벨 AI — 알람 분석 모드]\n${data.eventContext}\n\n사용자 질문: ${data.question}`
+        : data.question;
+
+      const response = await axios.post<string>(
+        '/api/chat/stream',
+        {
+          question: wrappedQuestion,
+          role: 'veterinarian',
+          farmId: data.farmId ?? undefined,
+          animalId: data.animalId ?? undefined,
+          dashboardContext: data.eventContext ?? undefined,
+          conversationHistory: data.conversationHistory ?? [],
         },
-        body: JSON.stringify(data),
-        signal: controller.signal,
-      });
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: 'text',
+          signal: controller.signal,
+          timeout: 60000, // 60초 (Claude 응답 대기)
+        },
+      );
 
-      if (!response.ok) {
-        onError(new Error(`HTTP ${String(response.status)}`));
-        return;
-      }
+      const raw = typeof response.data === 'string' ? response.data : '';
+      const lines = raw.split('\n');
+      let fullText = '';
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError(new Error('ReadableStream not supported'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let done = false;
-
-      while (!done) {
-        const { value, done: streamDone } = await reader.read();
-        if (streamDone) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? ''; // 마지막 불완전 라인은 버퍼에 유지
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6).trim();
-          if (!payload) continue;
-
-          try {
-            const parsed = JSON.parse(payload) as { type: string; content: unknown };
-            if (parsed.type === 'text' && parsed.content) {
-              onChunk(parsed.content as string);
-            } else if (parsed.type === 'extracted_records' && onExtractedRecords) {
-              onExtractedRecords(parsed.content as readonly ExtractedRecordClient[]);
-            } else if (parsed.type === 'done') {
-              done = true;
-              onDone();
-              return;
-            } else if (parsed.type === 'error') {
-              done = true;
-              onError(new Error((parsed.content as string) ?? 'Stream error'));
-              return;
-            }
-          } catch {
-            // partial JSON — ignore
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6)) as { type: string; content: unknown };
+          if (parsed.type === 'text' && parsed.content) {
+            fullText += parsed.content as string;
+            onChunk(parsed.content as string);
+          } else if (parsed.type === 'extracted_records' && onExtractedRecords) {
+            onExtractedRecords(parsed.content as readonly ExtractedRecordClient[]);
+          } else if (parsed.type === 'done') {
+            fullText = (parsed.content as string) || fullText;
+            break;
+          } else if (parsed.type === 'error') {
+            onError(new Error((parsed.content as string) ?? 'AI 응답 오류'));
+            return;
           }
+        } catch {
+          // skip partial JSON
         }
       }
 
-      if (!done) onDone();
+      if (fullText) {
+        onDone();
+      } else {
+        onError(new Error('AI 응답이 비어 있습니다'));
+      }
     } catch (err) {
       if (!controller.signal.aborted) {
-        onError(err instanceof Error ? err : new Error('Stream failed'));
+        onError(err instanceof Error ? err : new Error('AI 연결 실패'));
       }
     }
   })();
