@@ -3,7 +3,6 @@
 
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@web/stores/auth.store';
 
 interface Props {
   readonly onQuickRecord?: () => void;
@@ -15,9 +14,6 @@ interface Props {
 export function MobileBottomNav({ onMoreMenu, onScan }: Props): React.JSX.Element {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const farmIds = useAuthStore((s) => s.user?.farmIds);
-  const primaryFarmId = farmIds?.[0];
-
   function isActive(path: string) {
     return pathname === path || pathname.startsWith(path + '/');
   }
@@ -47,8 +43,10 @@ export function MobileBottomNav({ onMoreMenu, onScan }: Props): React.JSX.Elemen
       {/* 내소 */}
       <button
         type="button"
-        className={iconClass(isActive('/farm'))}
-        onClick={() => primaryFarmId ? navigate(`/farm/${primaryFarmId}/groups`) : navigate('/farm')}
+        aria-label="내 소"
+        aria-current={isActive('/my-cattle') ? 'page' : undefined}
+        className={iconClass(isActive('/my-cattle'))}
+        onClick={() => navigate('/my-cattle')}
       >
         <IconCow />
         <span className="text-[11px] font-medium">내 소</span>

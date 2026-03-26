@@ -23,6 +23,7 @@ const SpreadSimulationPage = lazy(() => import('@web/pages/epidemiology/SpreadSi
 const ContactNetworkPage = lazy(() => import('@web/pages/epidemiology/ContactNetworkPage'));
 
 const HerdGroupPage = lazy(() => import('@web/pages/farm/HerdGroupPage'));
+const MyCattlePage = lazy(() => import('@web/pages/farm/MyCattlePage'));
 const EarTagScanPage = lazy(() => import('@web/pages/ear-tag/EarTagScanPage'));
 
 // 방역관 전용 페이지
@@ -87,6 +88,7 @@ export function App(): React.JSX.Element {
               <Route path="/dashboard" element={<UnifiedDashboard />} />
               <Route path="/regional-map" element={<RegionalMapPage />} />
               <Route path="/cow/:id" element={<CowProfilePage />} />
+              <Route path="/my-cattle" element={<MyCattlePage />} />
               <Route path="/farm/:farmId/groups" element={<HerdGroupPage />} />
               <Route path="/report/farm/:farmId/monthly" element={<MonthlyReportPage />} />
               <Route path="/scan" element={<EarTagScanPage />} />

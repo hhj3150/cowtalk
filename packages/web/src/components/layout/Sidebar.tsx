@@ -134,9 +134,20 @@ function IconBarn(): React.JSX.Element {
   );
 }
 
+function IconCow(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <ellipse cx="12" cy="13" rx="7" ry="5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 10c-1-2-2-4-1-6M19 10c1-2 2-4 1-6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 18v2M15 18v2" />
+    </svg>
+  );
+}
+
 // 공통 메뉴 — 모든 역할 동일 (simple is best)
 const COMMON_MENU: readonly MenuItem[] = [
   { label: '대시보드', path: '/', icon: <IconDashboard /> },
+  { label: '내 소', path: '/my-cattle', icon: <IconCow /> },
   { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
   { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
 ];

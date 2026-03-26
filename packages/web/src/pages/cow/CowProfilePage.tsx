@@ -368,7 +368,11 @@ export default function CowProfilePage(): React.JSX.Element {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* 건강 모니터링 차트 (smaXtec 다이어그램 스타일) */}
           <SectionErrorBoundary label="건강 모니터링">
-            <HealthChartPanel animalId={profile.earTag ?? id!} />
+            <HealthChartPanel
+              animalId={id!}
+              parity={profile.parity}
+              lactationStatus={profile.lactationStatus}
+            />
           </SectionErrorBoundary>
 
           {/* 알람 타임라인 */}
