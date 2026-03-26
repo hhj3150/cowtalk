@@ -99,9 +99,26 @@ earTagScanRouter.post('/', async (req: Request, res: Response, next: NextFunctio
     }
 
     // Claude Vision으로 이표 번호 인식
+    logger.info({ mimeType, imageSize: image.length }, 'Starting ear tag Vision scan');
     const visionResult = await callClaudeForVision(image, mimeType);
 
-    if (!visionResult || visionResult.numbers.length === 0) {
+    if (!visionResult) {
+      logger.warn('Vision API returned null — possible API error');
+      res.json({
+        success: true,
+        data: {
+          recognized: [],
+          confidence: 'low',
+          animal: null,
+          candidates: [],
+          message: 'AI 이미지 분석에 실패했습니다. 번호를 직접 입력해 주세요.',
+        },
+      });
+      return;
+    }
+
+    if (visionResult.numbers.length === 0) {
+      logger.warn({ rawText: visionResult.rawText?.slice(0, 200) }, 'Vision returned 0 numbers');
       res.json({
         success: true,
         data: {
