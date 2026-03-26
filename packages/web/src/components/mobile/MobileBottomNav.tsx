@@ -6,13 +6,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@web/stores/auth.store';
 
 interface Props {
-  readonly onQuickRecord: () => void;
+  readonly onQuickRecord?: () => void;
   readonly onMoreMenu: () => void;
-  readonly pendingCount: number;
+  readonly pendingCount?: number;
   readonly onScan?: () => void;
 }
 
-export function MobileBottomNav({ onQuickRecord, onMoreMenu, pendingCount, onScan }: Props): React.JSX.Element {
+export function MobileBottomNav({ onMoreMenu, onScan }: Props): React.JSX.Element {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const farmIds = useAuthStore((s) => s.user?.farmIds);

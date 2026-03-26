@@ -534,7 +534,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const isMobile = useIsMobile();
   const { completedTodos } = useDxCompletion();
 
-  const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
   // 로그인 시 전체 목장 모드로 시작 (개별 농장 클릭 시 해당 농장 대시보드로 전환)
