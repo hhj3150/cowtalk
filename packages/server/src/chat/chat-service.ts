@@ -94,7 +94,7 @@ export async function handleChatStream(
     question, farmId, animalId, role, dashboardContext,
   );
 
-  // 레이블 컨텍스트 조회
+  // 레이블 컨텍스트 조회 — 개체 이벤트 기반 + 농장 단위 학습 데이터
   let labelContext: string | undefined;
   if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
     const primaryEvent = context.profile.activeEvents[0];
@@ -103,6 +103,23 @@ export async function handleChatStream(
       if (summary) {
         labelContext = formatLabelContext(summary, primaryEvent.type);
       }
+    }
+  }
+
+  // 농장 단위 최근 학습 패턴도 항상 주입 (팅커벨 진화 루프)
+  if (!labelContext && farmId) {
+    try {
+      // 최근 가장 많이 발생한 이벤트 타입의 레이블 데이터
+      const commonTypes = ['temperature_high', 'rumination_decrease', 'estrus', 'health_general'];
+      for (const eventType of commonTypes) {
+        const summary = await getLabelContextForEventType(eventType, farmId);
+        if (summary) {
+          labelContext = formatLabelContext(summary, eventType);
+          break;
+        }
+      }
+    } catch {
+      // 레이블 데이터 없으면 무시 (비치명적)
     }
   }
 
