@@ -61,10 +61,10 @@ export function useLiveAlarms() {
 }
 
 export function useFarmRanking() {
-  const { farmIds, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['farm-ranking', ...queryKey],
-    queryFn: () => api.getFarmRanking(farmIds),
+    queryFn: () => api.getFarmRanking(farmId, farmIds),
     staleTime: ALARM_STALE_TIME,
     refetchInterval: ALARM_STALE_TIME,
   });
@@ -177,13 +177,21 @@ export function useVitalMonitor(days = 30) {
 }
 
 export function useFarmMapMarkers() {
+  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
   return useQuery({
-    queryKey: ['farm-map-markers', selectedFarmIds],
+    queryKey: ['farm-map-markers', selectedFarmId, selectedFarmIds],
     queryFn: async () => {
       const data = await getRegionalMapData({ mode: 'status' });
-      // 농장 그룹 선택 시 해당 농장만 필터링
+      // 개별 농장 선택 시 해당 농장만 표시
+      if (selectedFarmId && data.markers) {
+        return {
+          ...data,
+          markers: data.markers.filter((m: { farmId?: string }) => m.farmId === selectedFarmId),
+        };
+      }
+      // 그룹 선택 시 해당 농장들만 표시
       if (selectedFarmIds.length > 0 && data.markers) {
         const idSet = new Set(selectedFarmIds);
         return {
@@ -201,20 +209,20 @@ export function useFarmMapMarkers() {
 // ── 역학 감시 ──
 
 export function useEpidemicIntelligence() {
-  const { farmIds, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['epidemic-intelligence', ...queryKey],
-    queryFn: () => api.fetchEpidemicIntelligence(farmIds),
+    queryFn: () => api.fetchEpidemicIntelligence(farmId, farmIds),
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
   });
 }
 
 export function useFarmHealthScores() {
-  const { farmIds, queryKey } = useEffectiveFarmId();
+  const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['farm-health-scores', ...queryKey],
-    queryFn: () => api.fetchFarmHealthScores(farmIds),
+    queryFn: () => api.fetchFarmHealthScores(farmId, farmIds),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });

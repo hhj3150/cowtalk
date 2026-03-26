@@ -147,6 +147,16 @@ export interface FarmProfile {
   readonly animalProfiles: readonly AnimalProfile[];
   readonly farmHealthScore: number | null;
   readonly todayActions: readonly string[];
+  // 최근 30일 이벤트 타임라인 (시간순, 질병 패턴 분석용)
+  readonly eventTimeline?: readonly FarmEventTimelineEntry[];
+}
+
+export interface FarmEventTimelineEntry {
+  readonly date: string;         // ISO date
+  readonly eventType: string;
+  readonly earTag: string;
+  readonly severity: string;
+  readonly details: string;
 }
 
 // ===========================

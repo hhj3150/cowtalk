@@ -191,16 +191,12 @@ function FarmFilterDropdown(): React.JSX.Element {
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const clearSelection = useFarmStore((s) => s.clearSelection);
   const clearGroupSelection = useFarmGroupStore((s) => s.clearSelection);
-  const user = useAuthStore((s) => s.user);
   const allFarms = farmsData?.farms ?? [];
   const totalCount = farmsData?.total ?? 0;
 
-  // 사용자에게 배정된 farmIds가 있으면 해당 농장만 드롭다운에 표시
-  const userFarmIds = user?.farmIds ?? [];
-  const farmList = userFarmIds.length > 0
-    ? allFarms.filter((f) => userFarmIds.includes(f.farmId))
-    : allFarms;
-  const displayCount = userFarmIds.length > 0 ? farmList.length : totalCount;
+  // 전체 농장 표시 (드롭다운에서 개별 농장 클릭 → 해당 농장 대시보드)
+  const farmList = allFarms;
+  const displayCount = totalCount;
 
   // 그룹 선택 중이면 드롭다운 레이블 변경
   const groupLabel = selectedFarmIds.length > 0 ? `그룹 (${selectedFarmIds.length}개)` : null;
@@ -541,17 +537,17 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
-  // 로그인 시 user.farmIds가 있으면 자동 필터링 (계정에 배정된 농장만 표시)
+  // 로그인 시 전체 목장 모드로 시작 (개별 농장 클릭 시 해당 농장 대시보드로 전환)
+  // user.farmIds가 1개인 경우에만 해당 농장 자동 선택
   useEffect(() => {
     if (!user?.farmIds || user.farmIds.length === 0) return;
     if (selectedFarmIds.length > 0 || selectedFarmId) return; // 이미 선택됨
 
     if (user.farmIds.length === 1) {
       selectFarm(user.farmIds[0]!);
-    } else {
-      selectFarmGroup(user.farmIds);
     }
-  }, [user?.farmIds, selectedFarmIds.length, selectedFarmId, selectFarm, selectFarmGroup]);
+    // farmIds가 2개 이상이면 전체 모드 유지 (clearSelection 상태)
+  }, [user?.farmIds, selectedFarmIds.length, selectedFarmId, selectFarm]);
 
   const [drilldown, setDrilldown] = useState<{ eventType: string; label: string } | null>(null);
   const [sensorChartAnimalId, setSensorChartAnimalId] = useState<string | null>(null);

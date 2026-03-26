@@ -167,6 +167,35 @@ export async function buildFarmProfile(farmId: string): Promise<FarmProfile | nu
     await Promise.all(profileIds.map(buildAnimalProfile))
   ).filter((p): p is AnimalProfile => p !== null);
 
+  // 최근 30일 이벤트 타임라인 (질병 패턴 분석용 — acknowledged 여부 무관)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const timelineRows = await db
+    .select({
+      detectedAt: smaxtecEvents.detectedAt,
+      eventType: smaxtecEvents.eventType,
+      earTag: animals.earTag,
+      severity: smaxtecEvents.severity,
+      details: smaxtecEvents.details,
+    })
+    .from(smaxtecEvents)
+    .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
+    .where(
+      and(
+        eq(smaxtecEvents.farmId, farmId),
+        gte(smaxtecEvents.detectedAt, thirtyDaysAgo),
+      ),
+    )
+    .orderBy(desc(smaxtecEvents.detectedAt))
+    .limit(200);
+
+  const eventTimeline = timelineRows.map((r) => ({
+    date: r.detectedAt?.toISOString() ?? '',
+    eventType: r.eventType,
+    earTag: r.earTag ?? '',
+    severity: r.severity ?? 'medium',
+    details: (r.details as Record<string, unknown>)?.message as string ?? r.eventType,
+  }));
+
   return {
     farmId: farm.farmId,
     name: farm.name,
@@ -181,6 +210,7 @@ export async function buildFarmProfile(farmId: string): Promise<FarmProfile | nu
     animalProfiles,
     farmHealthScore: null, // Intelligence Loop에서 계산
     todayActions: [],
+    eventTimeline,
   };
 }
 

@@ -41,6 +41,7 @@ epidemicIntelligenceRouter.use((req: Request, _res: Response, next: NextFunction
   let ids: readonly string[] = [];
   if (farmIdsParam) ids = farmIdsParam.split(',').filter((id) => UUID_RE.test(id));
   else if (farmId && farmId.includes(',')) ids = farmId.split(',').filter((id) => UUID_RE.test(id));
+  else if (farmId && UUID_RE.test(farmId)) ids = [farmId];
   epidemicFarmIdsStorage.run(ids, () => next());
 });
 

@@ -139,6 +139,10 @@ unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) =>
     ids = farmId.split(',').filter((id) => UUID_REGEX.test(id));
     req.query.farmId = undefined as unknown as string;
   }
+  // 단일 farmId도 farmIdsStorage에 포함 → 모든 라우트가 자동 필터링
+  else if (farmId && UUID_REGEX.test(farmId)) {
+    ids = [farmId];
+  }
 
   // AsyncLocalStorage로 요청별 격리 — 동시 요청 간 간섭 없음
   farmIdsStorage.run(ids, () => {

@@ -244,6 +244,35 @@ function buildFarmContext(profile: FarmProfile): string {
     }
   }
 
+  // 최근 30일 이벤트 타임라인 (질병 패턴·발생 시점 분석용)
+  if (profile.eventTimeline && profile.eventTimeline.length > 0) {
+    lines.push(`\n### 📋 최근 30일 이벤트 타임라인 (${String(profile.eventTimeline.length)}건)`);
+
+    // 일자별 그룹핑하여 패턴 파악 용이하게
+    const byDate = new Map<string, Array<{ eventType: string; earTag: string; severity: string }>>();
+    for (const e of profile.eventTimeline) {
+      const dateKey = e.date.slice(0, 10); // YYYY-MM-DD
+      const arr = byDate.get(dateKey) ?? [];
+      arr.push({ eventType: e.eventType, earTag: e.earTag, severity: e.severity });
+      byDate.set(dateKey, arr);
+    }
+
+    // 최근 날짜부터 표시 (최대 15일)
+    const sortedDates = [...byDate.keys()].sort().reverse().slice(0, 15);
+    for (const date of sortedDates) {
+      const events = byDate.get(date) ?? [];
+      const typeCounts = new Map<string, number>();
+      for (const e of events) {
+        const label = ALARM_LABELS[e.eventType] ?? e.eventType;
+        typeCounts.set(label, (typeCounts.get(label) ?? 0) + 1);
+      }
+      const summary = [...typeCounts.entries()].map(([t, c]) => `${t} ${String(c)}건`).join(', ');
+      lines.push(`- ${date}: ${summary} (총 ${String(events.length)}건)`);
+    }
+
+    lines.push(`\n→ 이 타임라인을 분석하여 질병 발생 시점, 패턴 변화, 확산 추이를 답변에 포함하세요.`);
+  }
+
   lines.push(`\n→ 이 농장의 현재 상황에 대해 구체적으로 답변하세요.`);
 
   return lines.join('\n');

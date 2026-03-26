@@ -55,8 +55,8 @@ export function getLiveAlarms(farmId?: string, farmIds?: string): Promise<{ alar
   return apiGet<{ alarms: readonly LiveAlarm[] }>(`/unified-dashboard/live-alarms${farmQuery(farmId, farmIds)}`);
 }
 
-export function getFarmRanking(farmIds?: string): Promise<{ rankings: readonly DashboardFarmRanking[] }> {
-  return apiGet<{ rankings: readonly DashboardFarmRanking[] }>(`/unified-dashboard/farm-ranking${farmQuery(undefined, farmIds)}`);
+export function getFarmRanking(farmId?: string, farmIds?: string): Promise<{ rankings: readonly DashboardFarmRanking[] }> {
+  return apiGet<{ rankings: readonly DashboardFarmRanking[] }>(`/unified-dashboard/farm-ranking${farmQuery(farmId, farmIds)}`);
 }
 
 export function getDashboardFarms(): Promise<{ farms: readonly DashboardFarm[]; total: number }> {
@@ -130,12 +130,12 @@ export function fetchVitalMonitor(
 import type { EpidemicIntelligence } from '@web/components/unified-dashboard/EpidemicCommandCenter';
 import type { FarmHealthScore } from '@web/components/unified-dashboard/FarmHealthScoreWidget';
 
-export function fetchEpidemicIntelligence(farmIds?: string): Promise<EpidemicIntelligence> {
-  return apiGet<EpidemicIntelligence>(`/epidemic-intelligence/intelligence${farmQuery(undefined, farmIds)}`);
+export function fetchEpidemicIntelligence(farmId?: string, farmIds?: string): Promise<EpidemicIntelligence> {
+  return apiGet<EpidemicIntelligence>(`/epidemic-intelligence/intelligence${farmQuery(farmId, farmIds)}`);
 }
 
-export function fetchFarmHealthScores(farmIds?: string): Promise<readonly FarmHealthScore[]> {
-  return apiGet<readonly FarmHealthScore[]>(`/epidemic-intelligence/farm-health-scores${farmQuery(undefined, farmIds)}`);
+export function fetchFarmHealthScores(farmId?: string, farmIds?: string): Promise<readonly FarmHealthScore[]> {
+  return apiGet<readonly FarmHealthScore[]>(`/epidemic-intelligence/farm-health-scores${farmQuery(farmId, farmIds)}`);
 }
 
 export interface EpidemicDrilldownAnimal {
