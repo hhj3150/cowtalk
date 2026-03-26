@@ -2416,22 +2416,22 @@ async function queryTodoList(
   // 목장에서 매일 가장 중요한 업무: 발정 개체 수정 + 아픈소 조기 관리
   const typeToTodo: Record<string, { label: string; category: string; icon: string; severity: TodoItem['severity']; priority: number }> = {
     // 🔴 긴급
-    estrus: { label: '발정 — 수정 대상', category: 'fertility', icon: '🔴', severity: 'critical', priority: 0 },
-    calving_detection: { label: '분만 임박 — 분만방 이동', category: 'fertility', icon: '🔴', severity: 'critical', priority: 1 },
-    calving_confirmation: { label: '분만 완료 — 초유 급여', category: 'fertility', icon: '🔴', severity: 'critical', priority: 2 },
-    temperature_high: { label: '발열 — 격리·진료', category: 'health', icon: '🟠', severity: 'high', priority: 3 },
-    clinical_condition: { label: '질병 의심 — 수의 진료', category: 'health', icon: '🟠', severity: 'high', priority: 4 },
-    health_general: { label: '건강 주의 — 경과 관찰', category: 'health', icon: '🟠', severity: 'high', priority: 5 },
+    estrus: { label: '발정', category: 'fertility', icon: '🔴', severity: 'critical', priority: 0 },
+    calving_detection: { label: '분만 징후', category: 'fertility', icon: '🔴', severity: 'critical', priority: 1 },
+    calving_confirmation: { label: '분만 확인', category: 'fertility', icon: '🔴', severity: 'critical', priority: 2 },
+    temperature_high: { label: '고체온', category: 'health', icon: '🟠', severity: 'high', priority: 3 },
+    clinical_condition: { label: '임상 이상', category: 'health', icon: '🟠', severity: 'high', priority: 4 },
+    health_general: { label: '건강 주의', category: 'health', icon: '🟠', severity: 'high', priority: 5 },
     // 🟡 금일 중
-    insemination: { label: '수정 기록 확인', category: 'fertility', icon: '🟢', severity: 'medium', priority: 6 },
-    rumination_decrease: { label: '반추 감소 — 사료·건강 점검', category: 'feeding', icon: '🟡', severity: 'medium', priority: 7 },
-    activity_decrease: { label: '활동 감소 — 파행 확인', category: 'health', icon: '🟡', severity: 'medium', priority: 8 },
-    temperature_low: { label: '저체온 — 신생우 보온', category: 'health', icon: '🟡', severity: 'medium', priority: 9 },
-    fertility_warning: { label: '번식 주의 — 재발정 관찰', category: 'fertility', icon: '🟡', severity: 'medium', priority: 10 },
-    pregnancy_check: { label: '임신 감정 예정', category: 'fertility', icon: '🟢', severity: 'info', priority: 11 },
-    no_insemination: { label: '미수정 — 원인 확인', category: 'fertility', icon: '🟡', severity: 'medium', priority: 12 },
-    dry_off: { label: '건유 전환 대상', category: 'fertility', icon: '🟢', severity: 'info', priority: 13 },
-    activity_increase: { label: '활동 증가 — 발정 의심', category: 'fertility', icon: '🟢', severity: 'info', priority: 14 },
+    insemination: { label: '수정 완료', category: 'fertility', icon: '🟢', severity: 'medium', priority: 6 },
+    rumination_decrease: { label: '반추 저하', category: 'feeding', icon: '🟡', severity: 'medium', priority: 7 },
+    activity_decrease: { label: '활동량 저하', category: 'health', icon: '🟡', severity: 'medium', priority: 8 },
+    temperature_low: { label: '저체온', category: 'health', icon: '🟡', severity: 'medium', priority: 9 },
+    fertility_warning: { label: '재발정', category: 'fertility', icon: '🟡', severity: 'medium', priority: 10 },
+    pregnancy_check: { label: '임신 감정', category: 'fertility', icon: '🟢', severity: 'info', priority: 11 },
+    no_insemination: { label: '미수정', category: 'fertility', icon: '🟡', severity: 'medium', priority: 12 },
+    dry_off: { label: '건유 전환', category: 'fertility', icon: '🟢', severity: 'info', priority: 13 },
+    activity_increase: { label: '활동량 증가', category: 'fertility', icon: '🟢', severity: 'info', priority: 14 },
   };
 
   // 역할별 할일 필터 — 각 역할에 의미 있는 이벤트만 표시
@@ -2467,7 +2467,7 @@ async function queryTodoList(
   if (unacked > 0) {
     return [
       ...todos,
-      { category: 'system', label: `미확인 알림 처리 (${String(unacked)}건)`, count: unacked, severity: 'info' as const, icon: '🔔' },
+      { category: 'system', label: `미확인 알림 (${String(unacked)}건)`, count: unacked, severity: 'info' as const, icon: '🔔' },
     ];
   }
 
