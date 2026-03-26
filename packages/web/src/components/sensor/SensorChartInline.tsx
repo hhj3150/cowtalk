@@ -289,6 +289,7 @@ function SyncTooltipOverlay({
 export function SensorChartInline({ animalId }: Props): React.JSX.Element {
   const [days, setDays] = useState(7);
   const [syncTs, setSyncTs] = useState<number | null>(null);
+  const [zoomRange, setZoomRange] = useState<{ from: number; to: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { data, isLoading, error } = useQuery({
@@ -301,12 +302,45 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
     enabled: !!animalId,
   });
 
-  const timeRange = useMemo(() => {
+  const fullRange = useMemo(() => {
     if (data?.period) {
       return { from: new Date(data.period.from).getTime(), to: new Date(data.period.to).getTime() };
     }
     return { from: Date.now() - days * 86400000, to: Date.now() };
   }, [data, days]);
+
+  // 줌 리셋 on days change
+  const handleDaysChange = useCallback((d: number) => {
+    setDays(d);
+    setZoomRange(null);
+  }, []);
+
+  const timeRange = zoomRange ?? fullRange;
+
+  // 마우스 휠 줌: 호버 시점 중심으로 확대/축소
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const current = zoomRange ?? fullRange;
+    const span = current.to - current.from;
+    const minSpan = 2 * 3600 * 1000;   // 최소 2시간
+    const maxSpan = fullRange.to - fullRange.from; // 최대 전체 기간
+
+    // 줌인: 휠 위, 줌아웃: 휠 아래
+    const factor = e.deltaY < 0 ? 0.7 : 1.4;
+    const newSpan = Math.max(minSpan, Math.min(maxSpan, span * factor));
+
+    // 마우스 위치를 중심으로 줌 (syncTs 활용)
+    const center = syncTs ?? (current.from + current.to) / 2;
+    const ratio = (center - current.from) / span;
+    const newFrom = Math.max(fullRange.from, center - newSpan * ratio);
+    const newTo = Math.min(fullRange.to, newFrom + newSpan);
+
+    if (Math.abs(newSpan - maxSpan) < 1000) {
+      setZoomRange(null); // 전체 범위면 줌 해제
+    } else {
+      setZoomRange({ from: newFrom, to: newTo });
+    }
+  }, [zoomRange, fullRange, syncTs]);
 
   const metricsOrder = ['temp', 'act', 'rum', 'dr'] as const;
   const availableMetrics = useMemo(() =>
@@ -330,6 +364,7 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
         position: 'relative',
       }}
       onMouseLeave={() => setSyncTs(null)}
+      onWheel={handleWheel}
     >
       {/* 헤더 */}
       <div style={{
@@ -339,13 +374,22 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
         <h2 style={{ fontSize: 14, fontWeight: 800, margin: 0, color: 'var(--ct-text)' }}>
           📊 센서 데이터
           {data?.earTag && <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--ct-text-muted)', marginLeft: 8 }}>{data.earTag}</span>}
+          {zoomRange && (
+            <button
+              type="button"
+              onClick={() => setZoomRange(null)}
+              style={{ marginLeft: 8, fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
+            >
+              줌 리셋
+            </button>
+          )}
         </h2>
         <div style={{ display: 'flex', gap: 4 }}>
           {PERIOD_OPTIONS.map((opt) => (
             <button
               key={opt.days}
               type="button"
-              onClick={() => setDays(opt.days)}
+              onClick={() => handleDaysChange(opt.days)}
               style={{
                 padding: '4px 10px', borderRadius: 6, border: '1px solid',
                 borderColor: days === opt.days ? 'var(--ct-primary, #10b981)' : 'var(--ct-border)',
