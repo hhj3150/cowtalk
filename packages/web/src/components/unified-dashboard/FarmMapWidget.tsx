@@ -1,8 +1,9 @@
 // 대시보드 농장 지도 위젯 — Leaflet + OpenStreetMap 다크 테마
-// 146개 농장을 좌표 기반으로 표시, 건강알람 비율(두수 대비)에 따라 색상 구분
+// 500+ 농장 대응: 줌 레벨에 따른 그리드 클러스터링
+// 줌 ≤9 → 클러스터, 줌 ≥10 → 개별 마커
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import type { LiveAlarm } from '@cowtalk/shared';
 import { apiGet } from '@web/api/client';
 import 'leaflet/dist/leaflet.css';
@@ -74,6 +75,81 @@ function FlyToSelected({ markers, selectedFarmId }: {
   return null;
 }
 
+// ── 클러스터링 ──
+
+const CLUSTER_ZOOM_THRESHOLD = 9; // 이 줌 이하에서 클러스터링 활성화
+
+interface ClusterGroup {
+  readonly id: string;
+  readonly lat: number;
+  readonly lng: number;
+  readonly markers: readonly FarmMarkerData[];
+  readonly totalHead: number;
+  readonly worstStatus: FarmMarkerData['status'];
+}
+
+/** 그리드 기반 클러스터링 — 줌 레벨에 따라 그리드 셀 크기 결정 */
+function clusterMarkers(
+  markers: readonly FarmMarkerData[],
+  zoom: number,
+): readonly ClusterGroup[] {
+  if (markers.length <= 20 || zoom > CLUSTER_ZOOM_THRESHOLD) return [];
+
+  // 줌별 그리드 크기 (도 단위)
+  const gridSize = zoom <= 6 ? 2.0 : zoom <= 7 ? 1.0 : zoom <= 8 ? 0.5 : 0.3;
+
+  const grid = new Map<string, FarmMarkerData[]>();
+  for (const m of markers) {
+    const cellX = Math.floor(m.lng / gridSize);
+    const cellY = Math.floor(m.lat / gridSize);
+    const key = `${String(cellX)}_${String(cellY)}`;
+    const existing = grid.get(key) ?? [];
+    existing.push(m);
+    grid.set(key, existing);
+  }
+
+  const STATUS_PRIORITY: Record<string, number> = { critical: 3, warning: 2, caution: 1, normal: 0 };
+
+  const clusters: ClusterGroup[] = [];
+  for (const [key, group] of grid) {
+    if (group.length <= 1) continue; // 단독 마커는 클러스터 아님
+
+    const avgLat = group.reduce((s, m) => s + m.lat, 0) / group.length;
+    const avgLng = group.reduce((s, m) => s + m.lng, 0) / group.length;
+    const totalHead = group.reduce((s, m) => s + m.headCount, 0);
+    const worstStatus = group.reduce<FarmMarkerData['status']>(
+      (worst, m) => (STATUS_PRIORITY[m.status] ?? 0) > (STATUS_PRIORITY[worst] ?? 0) ? m.status : worst,
+      'normal',
+    );
+
+    clusters.push({ id: key, lat: avgLat, lng: avgLng, markers: group, totalHead, worstStatus });
+  }
+
+  return clusters;
+}
+
+/** 클러스터에 포함되지 않은 단독 마커 추출 */
+function getUnclusteredMarkers(
+  markers: readonly FarmMarkerData[],
+  clusters: readonly ClusterGroup[],
+): readonly FarmMarkerData[] {
+  const clusteredIds = new Set<string>();
+  for (const c of clusters) {
+    for (const m of c.markers) {
+      clusteredIds.add(m.farmId);
+    }
+  }
+  return markers.filter((m) => !clusteredIds.has(m.farmId));
+}
+
+/** 줌 레벨 추적 */
+function ZoomTracker({ onZoomChange }: { readonly onZoomChange: (zoom: number) => void }): null {
+  useMapEvents({
+    zoomend: (e) => onZoomChange(e.target.getZoom()),
+  });
+  return null;
+}
+
 // ── 메인 컴포넌트 ──
 
 // ── 기상 데이터 타입 ──
@@ -89,6 +165,12 @@ interface WeatherInfo {
 
 export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 420 }: Props): React.JSX.Element {
   const [weatherMap, setWeatherMap] = useState<Map<string, WeatherInfo>>(new Map());
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+
+  // 클러스터링 계산 (zoom 변경 시 재계산)
+  const clusters = useMemo(() => clusterMarkers(markers, zoom), [markers, zoom]);
+  const unclustered = useMemo(() => getUnclusteredMarkers(markers, clusters), [markers, clusters]);
+  const isClusterMode = clusters.length > 0;
 
   // 마커 hover 시 기상 데이터 lazy fetch
   const fetchWeather = useCallback((farmId: string) => {
@@ -178,8 +260,38 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
             maxZoom={19}
           />
           <FlyToSelected markers={markers} selectedFarmId={selectedFarmId} />
+          <ZoomTracker onZoomChange={setZoom} />
 
-          {markers.map((m) => {
+          {/* 클러스터 마커 (줌 ≤9 & 마커 20개 초과) */}
+          {clusters.map((c) => {
+            const color = STATUS_COLORS[c.worstStatus] ?? '#6b7280';
+            const clusterRadius = Math.min(8 + Math.sqrt(c.markers.length) * 3, 24);
+            return (
+              <CircleMarker
+                key={`cluster-${c.id}`}
+                center={[c.lat, c.lng]}
+                radius={clusterRadius}
+                pathOptions={{
+                  color: 'rgba(255,255,255,0.8)',
+                  fillColor: color,
+                  fillOpacity: 0.9,
+                  weight: 2,
+                }}
+              >
+                <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>
+                    {c.markers.length}개 농장
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: 11 }}>
+                    {c.totalHead.toLocaleString('ko-KR')}두 · 줌인하여 상세 보기
+                  </div>
+                </Tooltip>
+              </CircleMarker>
+            );
+          })}
+
+          {/* 개별 마커 (클러스터에 포함되지 않은 것 or 줌 ≥10) */}
+          {(isClusterMode ? unclustered : markers).map((m) => {
             const color = STATUS_COLORS[m.status] ?? '#6b7280';
             const radius = markerRadius(m.headCount);
             const isSelected = m.farmId === selectedFarmId;
