@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
-import { SensorDataPanel } from '@web/components/unified-dashboard/SensorDataPanel';
+import { HealthChartPanel } from '@web/components/health-chart/HealthChartPanel';
 import { DryOffModal } from '@web/components/cow/DryOffModal';
 import { BreedingTimeline } from '@web/components/cow/BreedingTimeline';
 import { GeniVoiceAssistant } from '@web/components/unified-dashboard/GeniVoiceAssistant';
@@ -358,13 +358,10 @@ export default function CowProfilePage(): React.JSX.Element {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16 }}>
         {/* 왼쪽: 센서 차트 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* 센서 데이터 패널 */}
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>📊 센서 데이터 (7일)</h2>
-            <SectionErrorBoundary label="센서 데이터">
-              <SensorDataPanel animalId={id!} selectedEventId={null} />
-            </SectionErrorBoundary>
-          </div>
+          {/* 건강 모니터링 차트 (smaXtec 다이어그램 스타일) */}
+          <SectionErrorBoundary label="건강 모니터링">
+            <HealthChartPanel animalId={profile.earTag ?? id!} />
+          </SectionErrorBoundary>
 
           {/* 알람 타임라인 */}
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
