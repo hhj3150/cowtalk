@@ -44,6 +44,10 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
         regionDistrict: regions.district,
         createdAt: farms.createdAt,
         updatedAt: farms.updatedAt,
+        // 센서 장착 두수 (currentDeviceId가 있는 개체 수)
+        sensorCount: sql<number>`(SELECT COUNT(*) FROM ${animals} WHERE ${animals.farmId} = ${farms.farmId} AND ${animals.currentDeviceId} IS NOT NULL AND ${animals.currentDeviceId} != '')`.as('sensor_count'),
+        // 주요 품종 (가장 많은 품종)
+        primaryBreed: sql<string>`COALESCE((SELECT ${animals.breed} FROM ${animals} WHERE ${animals.farmId} = ${farms.farmId} AND ${animals.breed} IS NOT NULL GROUP BY ${animals.breed} ORDER BY COUNT(*) DESC LIMIT 1), '-')`.as('primary_breed'),
       })
       .from(farms)
       .leftJoin(regions, eq(farms.regionId, regions.regionId))
@@ -100,6 +104,9 @@ farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Reque
         inactiveFarms: Number(farmCounts?.inactive ?? 0),
         tracedAnimalCount: Number(animalCounts?.traced ?? 0),
         sensorAnimalCount: Number(animalCounts?.withSensor ?? 0),
+        avgOperationRate: Number(farmCounts?.totalHeadCount ?? 0) > 0
+          ? Number(((Number(animalCounts?.withSensor ?? 0) / Number(farmCounts?.totalHeadCount ?? 1)) * 100).toFixed(1))
+          : 0,
       },
     });
   } catch (error) {

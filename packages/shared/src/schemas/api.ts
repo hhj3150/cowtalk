@@ -45,6 +45,7 @@ export const registerSchema = z.object({
 // === 농장 ===
 
 export const farmQuerySchema = paginationSchema.extend({
+  limit: z.coerce.number().int().min(1).max(500).default(20), // 농장은 최대 500 (146+ 농장 한 번에 조회)
   regionId: z.string().uuid().optional(),
   status: z.enum(['all', 'active', 'inactive', 'quarantine', 'suspended']).optional(),
   search: z.string().max(100).optional(),

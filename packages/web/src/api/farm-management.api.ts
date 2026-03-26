@@ -11,6 +11,7 @@ export interface FarmSummaryKpi {
   readonly inactiveFarms: number;
   readonly tracedAnimalCount: number;
   readonly sensorAnimalCount: number;
+  readonly avgOperationRate: number;
 }
 
 export interface FarmRecord {
@@ -29,6 +30,8 @@ export interface FarmRecord {
   readonly regionDistrict: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly sensorCount: number;
+  readonly primaryBreed: string;
 }
 
 export interface FarmListResponse {
