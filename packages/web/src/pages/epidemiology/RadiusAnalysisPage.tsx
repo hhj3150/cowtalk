@@ -64,7 +64,6 @@ const RISK_LABELS: Readonly<Record<string, string>> = {
 
 const RADIUS_OPTIONS = [0.5, 1, 3, 5, 10] as const;
 
-const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
 
 const DARK_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
