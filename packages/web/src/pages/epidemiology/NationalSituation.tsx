@@ -4,7 +4,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
@@ -113,11 +114,7 @@ export default function NationalSituation(): React.JSX.Element {
 
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    language: 'ko',
-    region: 'KR',
-  });
+  const { isLoaded } = useGoogleMaps();
 
   const [hasTimedOut, setHasTimedOut] = useState(false);
   useEffect(() => {

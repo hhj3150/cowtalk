@@ -1,7 +1,8 @@
 // 목장 관리 미니맵 — Google Maps 기반 농장 위치 표시
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
 import type { FarmRecord } from '@web/api/farm-management.api';
 
 interface Props {
@@ -51,11 +52,7 @@ export function FarmMiniMap({ farms, onFarmClick }: Props): React.JSX.Element {
   const [infoFarm, setInfoFarm] = useState<MarkerData | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    language: 'ko',
-    region: 'KR',
-  });
+  const { isLoaded } = useGoogleMaps();
 
   const [hasTimedOut, setHasTimedOut] = useState(false);
   useEffect(() => {

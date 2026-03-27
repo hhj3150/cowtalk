@@ -2,7 +2,8 @@
 // 비례 마커 + 위험도 색상 + 다크모드 + 범례 + InfoWindow
 
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
 import type { FarmMapMarker } from '@web/api/regional.api';
 
 // ── 타입 ──
@@ -128,11 +129,7 @@ export function RegionalMap({
   const [infoFarm, setInfoFarm] = useState<FarmMapMarker | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    language: 'ko',
-    region: 'KR',
-  });
+  const { isLoaded, loadError } = useGoogleMaps();
 
   const [hasTimedOut, setHasTimedOut] = useState(false);
   useEffect(() => {

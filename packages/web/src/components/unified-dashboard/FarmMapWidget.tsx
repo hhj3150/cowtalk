@@ -2,7 +2,8 @@
 // 500+ 농장 대응: 비례 마커 + 다크모드
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
 import type { LiveAlarm } from '@cowtalk/shared';
 
 // ── 타입 ──
@@ -64,11 +65,7 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
   const [infoFarm, setInfoFarm] = useState<FarmMarkerData | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    language: 'ko',
-    region: 'KR',
-  });
+  const { isLoaded } = useGoogleMaps();
 
   const [hasTimedOut, setHasTimedOut] = useState(false);
   useEffect(() => {

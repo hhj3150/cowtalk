@@ -4,7 +4,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { apiGet } from '@web/api/client';
 import { useAuthStore } from '@web/stores/auth.store';
-import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
+import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
 
 // ===========================
 // 타입
@@ -89,11 +90,7 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
   const [infoFarm, setInfoFarm] = useState<NearbyFarm | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    language: 'ko',
-    region: 'KR',
-  });
+  const { isLoaded } = useGoogleMaps();
 
   const [hasTimedOut, setHasTimedOut] = useState(false);
   useEffect(() => {
