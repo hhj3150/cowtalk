@@ -117,37 +117,49 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     dashboardContext: body.dashboardContext,
   };
 
-  // API 키 없으면 데이터 기반 fallback 응답 생성
-  if (!isClaudeAvailable()) {
-    const { context } = await resolveContext(
-      chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
-    );
-    const fallbackText = buildStreamFallback(chatRequest.question, chatRequest.role, context);
-    res.write(`data: ${JSON.stringify({ type: 'text', content: fallbackText })}\n\n`);
-    res.write(`data: ${JSON.stringify({ type: 'done', content: fallbackText })}\n\n`);
-    clearInterval(keepAlive);
-    res.end();
-    return;
-  }
+  try {
+    // API 키 없으면 데이터 기반 fallback 응답 생성
+    if (!isClaudeAvailable()) {
+      let fallbackText: string;
+      try {
+        const { context } = await resolveContext(
+          chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
+        );
+        fallbackText = buildStreamFallback(chatRequest.question, chatRequest.role, context);
+      } catch {
+        fallbackText = 'AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.\n\n💡 잠시 후 다시 시도해 주세요.';
+      }
+      res.write(`data: ${JSON.stringify({ type: 'text', content: fallbackText })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done', content: fallbackText })}\n\n`);
+      clearInterval(keepAlive);
+      res.end();
+      return;
+    }
 
-  await handleChatStream(
-    chatRequest,
-    {
-      onText: (text) => {
-        res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+    await handleChatStream(
+      chatRequest,
+      {
+        onText: (text) => {
+          res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+        },
+        onDone: (fullText) => {
+          clearInterval(keepAlive);
+          res.write(`data: ${JSON.stringify({ type: 'done', content: fullText })}\n\n`);
+          res.end();
+        },
+        onError: (error) => {
+          clearInterval(keepAlive);
+          res.write(`data: ${JSON.stringify({ type: 'error', content: error.message })}\n\n`);
+          res.end();
+        },
       },
-      onDone: (fullText) => {
-        clearInterval(keepAlive);
-        res.write(`data: ${JSON.stringify({ type: 'done', content: fullText })}\n\n`);
-        res.end();
-      },
-      onError: (error) => {
-        clearInterval(keepAlive);
-        res.write(`data: ${JSON.stringify({ type: 'error', content: error.message })}\n\n`);
-        res.end();
-      },
-    },
-  );
+    );
+  } catch (error) {
+    clearInterval(keepAlive);
+    const msg = error instanceof Error ? error.message : 'AI 서비스 오류가 발생했습니다';
+    res.write(`data: ${JSON.stringify({ type: 'error', content: msg })}\n\n`);
+    res.end();
+  }
 });
 
 // 대화 이력 (클라이언트-사이드 관리, 서버는 빈 배열 반환)

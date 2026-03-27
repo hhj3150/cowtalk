@@ -692,7 +692,33 @@ epidemicIntelligenceRouter.get('/intelligence', async (_req: Request, res: Respo
 
     res.json({ success: true, data });
   } catch (error) {
-    logger.error({ error }, 'Epidemic intelligence query failed');
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error({ error, message: msg }, 'Epidemic intelligence query failed');
+    // DB 미연결 등 초기 상태면 빈 데이터 반환 (500 방지)
+    if (msg.includes('connect') || msg.includes('relation') || msg.includes('does not exist') || msg.includes('ECONNREFUSED')) {
+      res.json({
+        success: true,
+        data: {
+          overallRiskLevel: 'low' as EpidemicRiskLevel,
+          riskScore: 0,
+          clusters: [],
+          nationalSummary: {
+            totalFarmsMonitored: 0,
+            farmsWithAnomalies: 0,
+            anomalyRate: 0,
+            topAlarmTypes: [],
+            last24hTrend: 'stable' as TrendDirection,
+          },
+          timeline: [],
+          escalation: {
+            level: 'farm',
+            reason: '데이터 조회 중 오류 발생',
+            suggestedActions: ['시스템 연결 상태를 확인하세요'],
+          },
+        } satisfies EpidemicIntelligenceData,
+      });
+      return;
+    }
     next(error);
   }
 });
@@ -817,7 +843,12 @@ epidemicIntelligenceRouter.get('/farm-health-scores', async (_req: Request, res:
 
     res.json({ success: true, data: sorted });
   } catch (error) {
-    logger.error({ error }, 'Farm health scores query failed');
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error({ error, message: msg }, 'Farm health scores query failed');
+    if (msg.includes('connect') || msg.includes('relation') || msg.includes('does not exist') || msg.includes('ECONNREFUSED')) {
+      res.json({ success: true, data: [] });
+      return;
+    }
     next(error);
   }
 });
