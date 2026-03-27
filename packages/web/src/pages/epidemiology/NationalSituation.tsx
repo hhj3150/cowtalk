@@ -80,7 +80,6 @@ const RISK_COLOR: Record<RiskLevel, string> = {
   red: '#ef4444',
 };
 
-const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
 
 const DARK_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
