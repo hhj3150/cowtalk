@@ -4,10 +4,7 @@
 
 import { useState, useEffect } from 'react';
 
-const GOOGLE_MAPS_API_KEY =
-  (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) ||
-  'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
-
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
 const SCRIPT_ID = 'google-maps-script';
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
