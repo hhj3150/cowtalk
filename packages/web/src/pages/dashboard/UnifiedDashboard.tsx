@@ -598,10 +598,17 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const rankings = rankingData?.rankings ?? [];
 
   // 농장 지도 마커 데이터 변환
-  const farmMapMarkers = React.useMemo(
+  const allFarmMapMarkers = React.useMemo(
     () => buildFarmMapMarkers(mapData?.markers ?? [], alarms),
     [mapData?.markers, alarms],
   );
+
+  // 농장/그룹 선택 시 해당 마커만 필터링
+  const farmMapMarkers = React.useMemo(() => {
+    if (selectedFarmIds.length > 0) return allFarmMapMarkers.filter((m) => selectedFarmIds.includes(m.farmId));
+    if (selectedFarmId) return allFarmMapMarkers.filter((m) => m.farmId === selectedFarmId);
+    return allFarmMapMarkers;
+  }, [allFarmMapMarkers, selectedFarmId, selectedFarmIds]);
 
   // DX 완료율 계산
   const todoItems = data?.todoList ?? [];

@@ -1,12 +1,10 @@
 // 반경별 역학 위험 분석 페이지
-// 동심원 위험 지도 (Leaflet) + 반경별 요약 카드
+// 동심원 위험 지도 (Google Maps) + 반경별 요약 카드
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { apiGet } from '@web/api/client';
 import { useAuthStore } from '@web/stores/auth.store';
-import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import { TILE_URL, TILE_ATTRIBUTION } from '@web/constants/map';
+import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
 
 // ===========================
 // 타입
@@ -63,11 +61,20 @@ const RISK_LABELS: Readonly<Record<string, string>> = {
   critical: '위험',
 };
 
-// ===========================
-// 반경 선택 슬라이더
-// ===========================
-
 const RADIUS_OPTIONS = [0.5, 1, 3, 5, 10] as const;
+
+const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
+
+const DARK_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a4a' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
 
 // ===========================
 // 메인 컴포넌트
@@ -79,6 +86,21 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
   const [loading, setLoading] = useState(false);
   const [selectedRadius, setSelectedRadius] = useState<number>(5);
   const [selectedZone, setSelectedZone] = useState<RadiusZone | null>(null);
+  const [infoFarm, setInfoFarm] = useState<NearbyFarm | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    language: 'ko',
+    region: 'KR',
+  });
+
+  const [hasTimedOut, setHasTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
 
   const loadData = useCallback(() => {
     if (!farmId) return;
@@ -104,14 +126,14 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
     }
   }, [data, selectedRadius]);
 
-  const center: [number, number] = data
-    ? [data.centerLat, data.centerLng]
-    : [37.5665, 126.9780];  // 서울 기본값
+  const center = data
+    ? { lat: data.centerLat, lng: data.centerLng }
+    : { lat: 37.5665, lng: 126.9780 };
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: '0 auto' }}>
       <h1 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px', color: 'var(--ct-text)' }}>
-        🗺️ 반경별 역학 위험 분석
+        반경별 역학 위험 분석
       </h1>
       <p style={{ fontSize: 12, color: 'var(--ct-text-muted)', margin: '0 0 20px' }}>
         우리 농장 기준 각 반경 내 농장·두수·발열 현황 실시간 분석
@@ -147,60 +169,87 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
           disabled={loading}
           style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'var(--ct-primary)', color: '#fff', border: 'none', opacity: loading ? 0.6 : 1 }}
         >
-          {loading ? '분석 중...' : '🔄 갱신'}
+          {loading ? '분석 중...' : '갱신'}
         </button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 20 }}>
-        {/* 지도 */}
+        {/* Google Maps 지도 */}
         <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--ct-border)', height: 500 }}>
-          <MapContainer center={center} zoom={11} style={{ width: '100%', height: '100%' }}>
-            <TileLayer
-              url={TILE_URL}
-              attribution={TILE_ATTRIBUTION}
-            />
+          {hasTimedOut ? (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#ef4444', fontSize: 13 }}>
+              지도 로드 실패 (타임아웃)
+            </div>
+          ) : !isLoaded ? (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontSize: 13 }}>
+              지도 로딩 중...
+            </div>
+          ) : (
+            <GoogleMap
+              mapContainerStyle={{ height: '100%', width: '100%' }}
+              center={center}
+              zoom={11}
+              options={{
+                disableDefaultUI: true,
+                zoomControl: true,
+                styles: DARK_STYLES,
+                backgroundColor: '#0f172a',
+              }}
+              onLoad={(map) => { mapRef.current = map; }}
+            >
+              {/* 중심 농장 */}
+              {data && (
+                <GCircle
+                  center={{ lat: data.centerLat, lng: data.centerLng }}
+                  radius={300}
+                  options={{
+                    fillColor: '#3b82f6',
+                    fillOpacity: 1,
+                    strokeColor: '#1d4ed8',
+                    strokeWeight: 3,
+                    zIndex: 10,
+                  }}
+                />
+              )}
 
-            {/* 중심 농장 */}
-            {data && (
-              <CircleMarker
-                center={[data.centerLat, data.centerLng]}
-                radius={14}
-                pathOptions={{ fillColor: '#3b82f6', color: '#1d4ed8', weight: 3, fillOpacity: 1 }}
-              >
-                <Tooltip permanent>{data.centerFarmName}</Tooltip>
-              </CircleMarker>
-            )}
+              {/* 선택 반경 내 농장들 */}
+              {selectedZone?.farms.map((farm) => (
+                <GCircle
+                  key={farm.farmId}
+                  center={{ lat: farm.lat, lng: farm.lng }}
+                  radius={farm.feverCount > 0 ? 500 : 300}
+                  options={{
+                    fillColor: farm.feverCount > 0 ? '#ef4444' : '#22c55e',
+                    fillOpacity: 0.8,
+                    strokeColor: farm.feverCount > 0 ? '#b91c1c' : '#15803d',
+                    strokeWeight: 2,
+                    clickable: true,
+                    zIndex: farm.feverCount > 0 ? 5 : 1,
+                  }}
+                  onClick={() => setInfoFarm(farm)}
+                />
+              ))}
 
-            {/* 선택 반경 내 농장들 */}
-            {selectedZone?.farms.map((farm) => (
-              <CircleMarker
-                key={farm.farmId}
-                center={[farm.lat, farm.lng]}
-                radius={farm.feverCount > 0 ? 10 : 7}
-                pathOptions={{
-                  fillColor: farm.feverCount > 0 ? '#ef4444' : '#22c55e',
-                  color: farm.feverCount > 0 ? '#b91c1c' : '#15803d',
-                  weight: 2,
-                  fillOpacity: 0.8,
-                }}
-              >
-                <Popup>
-                  <div style={{ fontSize: 13 }}>
-                    <strong>{farm.farmName}</strong><br />
-                    거리: {farm.distanceKm}km<br />
-                    두수: {farm.headCount.toLocaleString()}두<br />
-                    {farm.feverCount > 0 && <span style={{ color: '#ef4444' }}>⚠️ 발열 {farm.feverCount}두</span>}
-                    {farm.hasSensor && <span style={{ color: '#22c55e' }}> 📡 센서</span>}
+              {infoFarm && (
+                <InfoWindow
+                  position={{ lat: infoFarm.lat, lng: infoFarm.lng }}
+                  onCloseClick={() => setInfoFarm(null)}
+                >
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: '#1e293b' }}>
+                    <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{infoFarm.farmName}</p>
+                    <p style={{ margin: 0 }}>거리: {infoFarm.distanceKm}km</p>
+                    <p style={{ margin: 0 }}>두수: {infoFarm.headCount.toLocaleString()}두</p>
+                    {infoFarm.feverCount > 0 && <p style={{ margin: 0, color: '#ef4444' }}>발열 {infoFarm.feverCount}두</p>}
+                    {infoFarm.hasSensor && <p style={{ margin: 0, color: '#22c55e' }}>센서 장착</p>}
                   </div>
-                </Popup>
-              </CircleMarker>
-            ))}
-          </MapContainer>
+                </InfoWindow>
+              )}
+            </GoogleMap>
+          )}
         </div>
 
         {/* 사이드 패널 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* 선택 반경 요약 */}
           {selectedZone ? (
             <div style={{ background: 'var(--ct-card)', border: `2px solid ${RISK_COLORS[selectedZone.riskLevel]}`, borderRadius: 12, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -228,7 +277,6 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
             </div>
           )}
 
-          {/* 전 반경 요약 */}
           {data?.zones.map((zone) => (
             <div
               key={zone.radiusKm}

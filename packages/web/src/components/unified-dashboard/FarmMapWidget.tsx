@@ -77,13 +77,24 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
     return () => clearTimeout(timer);
   }, [isLoaded]);
 
-  // 선택된 농장으로 이동
+  // 마커가 변경되면 지도 영역 자동 조정
   React.useEffect(() => {
-    if (!mapRef.current || !selectedFarmId) return;
-    const selected = markers.find((m) => m.farmId === selectedFarmId);
-    if (selected) {
-      mapRef.current.panTo({ lat: selected.lat, lng: selected.lng });
-      mapRef.current.setZoom(11);
+    if (!mapRef.current || markers.length === 0) return;
+    if (markers.length === 1) {
+      const m = markers[0]!;
+      mapRef.current.panTo({ lat: m.lat, lng: m.lng });
+      mapRef.current.setZoom(13);
+    } else if (selectedFarmId) {
+      const selected = markers.find((m) => m.farmId === selectedFarmId);
+      if (selected) {
+        mapRef.current.panTo({ lat: selected.lat, lng: selected.lng });
+        mapRef.current.setZoom(11);
+      }
+    } else if (markers.length <= 20) {
+      // 그룹 선택 시 모든 마커가 보이도록 bounds 자동 조정
+      const bounds = new google.maps.LatLngBounds();
+      markers.forEach((m) => bounds.extend({ lat: m.lat, lng: m.lng }));
+      mapRef.current.fitBounds(bounds, 40);
     }
   }, [selectedFarmId, markers]);
 

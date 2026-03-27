@@ -2,9 +2,9 @@
 // 시도별 위험 등급 지도 + 드릴다운 + 광역 경보 배너
 // 드릴다운: 시도 → 농장 → 개체 → AI
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet';
+import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
@@ -12,7 +12,6 @@ import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarm
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
 import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { apiGet } from '@web/api/client';
-import { TILE_URL, TILE_ATTRIBUTION } from '@web/constants/map';
 
 // ===========================
 // 타입
@@ -80,6 +79,23 @@ const RISK_COLOR: Record<RiskLevel, string> = {
   red: '#ef4444',
 };
 
+const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
+
+const DARK_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
+  { featureType: 'road', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+
+function provinceRadius(farmCount: number): number {
+  return Math.max(8000, Math.min(30000, farmCount * 2000));
+}
+
 // ===========================
 // 메인 컴포넌트
 // ===========================
@@ -87,12 +103,28 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 export default function NationalSituation(): React.JSX.Element {
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
   const [showFarmPanel, setShowFarmPanel] = useState(false);
+  const [infoProvince, setInfoProvince] = useState<ProvinceStats | null>(null);
 
   // 개체 드릴다운 상태
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
   const [drillFarmName, setDrillFarmName] = useState<string>('');
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+
+  const mapRef = useRef<google.maps.Map | null>(null);
+
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    language: 'ko',
+    region: 'KR',
+  });
+
+  const [hasTimedOut, setHasTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['quarantine', 'national-situation'],
@@ -112,13 +144,11 @@ export default function NationalSituation(): React.JSX.Element {
     rate: (d.feverRate * 100).toFixed(2),
   }));
 
-  // 시도 클릭 → 농장 패널 열기
   function handleProvinceClick(province: string): void {
     setSelectedProvince(province);
     setShowFarmPanel(true);
   }
 
-  // 개체 선택 → 드릴다운 패널
   function handleAnimalSelect(animalId: string, farmId: string, farmName: string): void {
     setDrillAnimalId(animalId);
     setDrillFarmId(farmId);
@@ -130,7 +160,6 @@ export default function NationalSituation(): React.JSX.Element {
     setDrillFarmId(null);
   }
 
-  // TinkerbellAssistant 트리거 (개체 AI 분석 요청 시)
   const effectiveTrigger = useMemo(() => tinkerbellTrigger, [tinkerbellTrigger]);
 
   return (
@@ -138,7 +167,7 @@ export default function NationalSituation(): React.JSX.Element {
       {/* 헤더 */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--ct-text)' }}>
-          🇰🇷 전국 방역 상황 종합
+          전국 방역 상황 종합
         </h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
           시도별 위험 등급 — 시도 클릭 시 농장 드릴다운
@@ -148,7 +177,7 @@ export default function NationalSituation(): React.JSX.Element {
       {/* 광역 경보 배너 */}
       {summary?.broadAlertActive && (
         <div className="rounded-xl bg-red-600 p-4 text-white animate-pulse">
-          <p className="font-bold text-sm">🚨 광역 방역 경보 발령</p>
+          <p className="font-bold text-sm">광역 방역 경보 발령</p>
           <p className="text-sm mt-0.5 opacity-90">{summary.broadAlertMessage}</p>
         </div>
       )}
@@ -156,17 +185,16 @@ export default function NationalSituation(): React.JSX.Element {
       {/* 전국 요약 카드 4개 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: '감시 농장', value: summary?.totalFarms.toLocaleString() ?? '—', icon: '🏠' },
-          { label: '감시 두수', value: summary?.totalAnimals.toLocaleString() ?? '—', icon: '🐄' },
-          { label: '발열 두수', value: summary?.feverAnimals.toLocaleString() ?? '—', icon: '🌡️' },
-          { label: '발열률', value: summary ? `${(summary.nationalFeverRate * 100).toFixed(2)}%` : '—', icon: '📊' },
+          { label: '감시 농장', value: summary?.totalFarms.toLocaleString() ?? '—' },
+          { label: '감시 두수', value: summary?.totalAnimals.toLocaleString() ?? '—' },
+          { label: '발열 두수', value: summary?.feverAnimals.toLocaleString() ?? '—' },
+          { label: '발열률', value: summary ? `${(summary.nationalFeverRate * 100).toFixed(2)}%` : '—' },
         ].map((item) => (
           <div
             key={item.label}
             className="rounded-xl border p-4"
             style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
           >
-            <span className="text-xl">{item.icon}</span>
             <p className="text-xl font-bold mt-2" style={{ color: 'var(--ct-text)' }}>{item.value}</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>{item.label}</p>
           </div>
@@ -174,52 +202,80 @@ export default function NationalSituation(): React.JSX.Element {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 전국 지도 */}
+        {/* 전국 지도 — Google Maps */}
         <div
           className="lg:col-span-2 rounded-xl border overflow-hidden"
           style={{ borderColor: 'var(--ct-border)' }}
         >
           <div className="p-3" style={{ background: 'var(--ct-card)' }}>
             <p className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
-              🗺️ 시도별 위험 등급 지도
+              시도별 위험 등급 지도
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
               원 클릭 시 해당 시도 농장 드릴다운
             </p>
           </div>
-          <MapContainer
-            center={[36.5, 127.5]}
-            zoom={7}
-            style={{ height: '400px', width: '100%' }}
-          >
-            <TileLayer
-              url={TILE_URL}
-              attribution={TILE_ATTRIBUTION}
-            />
-            {(data?.provinces ?? []).map((p) => (
-              <CircleMarker
-                key={p.province}
-                center={[p.centerLat, p.centerLng]}
-                radius={Math.max(10, Math.min(30, p.farmCount / 5))}
-                fillColor={RISK_COLOR[p.riskLevel]}
-                color={RISK_COLOR[p.riskLevel]}
-                fillOpacity={0.7}
-                opacity={1}
-                weight={2}
-                eventHandlers={{ click: () => handleProvinceClick(p.province) }}
+          <div style={{ height: 400 }}>
+            {hasTimedOut ? (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#ef4444', fontSize: 13 }}>
+                지도 로드 실패 (타임아웃)
+              </div>
+            ) : !isLoaded ? (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontSize: 13 }}>
+                지도 로딩 중...
+              </div>
+            ) : (
+              <GoogleMap
+                mapContainerStyle={{ height: '100%', width: '100%' }}
+                center={{ lat: 36.5, lng: 127.5 }}
+                zoom={7}
+                options={{
+                  disableDefaultUI: true,
+                  zoomControl: true,
+                  styles: DARK_STYLES,
+                  backgroundColor: '#0f172a',
+                }}
+                onLoad={(map) => { mapRef.current = map; }}
               >
-                <Tooltip>
-                  <div className="text-sm">
-                    <strong>{p.province}</strong><br />
-                    농장 {p.farmCount}개 | {p.totalAnimals.toLocaleString()}두<br />
-                    발열 {p.feverAnimals}두 ({(p.feverRate * 100).toFixed(1)}%)<br />
-                    등급: <strong>{p.riskLevel.toUpperCase()}</strong><br />
-                    <em style={{ color: '#6b7280' }}>클릭하여 농장 목록 보기</em>
-                  </div>
-                </Tooltip>
-              </CircleMarker>
-            ))}
-          </MapContainer>
+                {(data?.provinces ?? []).map((p) => {
+                  const color = RISK_COLOR[p.riskLevel];
+                  return (
+                    <GCircle
+                      key={p.province}
+                      center={{ lat: p.centerLat, lng: p.centerLng }}
+                      radius={provinceRadius(p.farmCount)}
+                      options={{
+                        fillColor: color,
+                        fillOpacity: 0.6,
+                        strokeColor: color,
+                        strokeWeight: 2,
+                        clickable: true,
+                        zIndex: p.riskLevel === 'red' ? 5 : p.riskLevel === 'orange' ? 3 : 1,
+                      }}
+                      onClick={() => {
+                        handleProvinceClick(p.province);
+                        setInfoProvince(p);
+                      }}
+                    />
+                  );
+                })}
+
+                {infoProvince && (
+                  <InfoWindow
+                    position={{ lat: infoProvince.centerLat, lng: infoProvince.centerLng }}
+                    onCloseClick={() => setInfoProvince(null)}
+                  >
+                    <div style={{ fontSize: 12, lineHeight: 1.6, color: '#1e293b' }}>
+                      <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{infoProvince.province}</p>
+                      <p style={{ margin: 0 }}>농장 {infoProvince.farmCount}개 | {infoProvince.totalAnimals.toLocaleString()}두</p>
+                      <p style={{ margin: 0 }}>발열 {infoProvince.feverAnimals}두 ({(infoProvince.feverRate * 100).toFixed(1)}%)</p>
+                      <p style={{ margin: 0 }}>등급: <strong>{infoProvince.riskLevel.toUpperCase()}</strong></p>
+                    </div>
+                  </InfoWindow>
+                )}
+              </GoogleMap>
+            )}
+          </div>
         </div>
 
         {/* 시도별 통계 테이블 + 시군구 드릴다운 */}
@@ -305,7 +361,7 @@ export default function NationalSituation(): React.JSX.Element {
         style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
       >
         <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ct-text)' }}>
-          📉 전국 발열률 주간 추이 (%)
+          전국 발열률 주간 추이 (%)
         </h3>
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={trendData}>
@@ -334,7 +390,7 @@ export default function NationalSituation(): React.JSX.Element {
         />
       )}
 
-      {/* 개체 상세 패널 (z-50, AnimalDrilldownPanel 위에 렌더) */}
+      {/* 개체 상세 패널 */}
       {drillAnimalId != null && drillFarmId != null && (
         <AnimalDrilldownPanel
           animalId={drillAnimalId}
@@ -349,7 +405,7 @@ export default function NationalSituation(): React.JSX.Element {
         />
       )}
 
-      {/* 팅커벨 AI (전역 — 개체 AI 분석 트리거 수신) */}
+      {/* 팅커벨 AI */}
       <TinkerbellAssistant openTrigger={effectiveTrigger} />
     </div>
   );

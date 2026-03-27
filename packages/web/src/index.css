@@ -1,48 +1,5 @@
 @import 'tailwindcss';
 
-/* ── Leaflet + Tailwind v4 호환 ── */
-/* Tailwind preflight resets: img { max-width:100%; height:auto; display:block } */
-/* 이 리셋이 Leaflet 타일을 깨뜨리므로 모두 명시적으로 복원 */
-.leaflet-container img {
-  max-width: none !important;
-  max-height: none !important;
-  height: auto;
-}
-.leaflet-tile,
-.leaflet-tile-container img {
-  max-width: none !important;
-  max-height: none !important;
-  width: 256px !important;
-  height: 256px !important;
-}
-.leaflet-tile-pane {
-  opacity: 1 !important;
-}
-/* Leaflet 패널/레이어 z-index 보장 */
-.leaflet-pane {
-  z-index: 400;
-}
-.leaflet-tile-pane {
-  z-index: 200;
-}
-.leaflet-overlay-pane {
-  z-index: 400;
-}
-.leaflet-marker-pane {
-  z-index: 600;
-}
-.leaflet-tooltip-pane {
-  z-index: 650;
-}
-.leaflet-popup-pane {
-  z-index: 700;
-}
-/* Leaflet 컨테이너 기본 스타일 보장 */
-.leaflet-container {
-  font: 12px/1.5 "Helvetica Neue", Arial, Helvetica, sans-serif;
-  position: relative;
-}
-
 /* ── 모바일 좌우 스크롤 방지 ── */
 html, body, #root {
   max-width: 100vw;
