@@ -419,6 +419,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
               <YAxis
                 yAxisId="temp"
                 orientation="left"
+                width={45}
                 tick={{ fontSize: 10, fill: '#f8717190' }}
                 stroke="#1e2a38"
                 axisLine={false}
@@ -428,7 +429,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                   angle: -90,
                   position: 'insideLeft',
                   style: { fontSize: 10, fill: '#f8717180' },
-                  offset: 10,
+                  offset: -15,
                 }}
               />
 
@@ -436,6 +437,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
               <YAxis
                 yAxisId="rum"
                 orientation="right"
+                width={60}
                 tick={{ fontSize: 10, fill: '#38bdf890' }}
                 stroke="#1e2a38"
                 axisLine={false}
@@ -445,7 +447,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                   angle: 90,
                   position: 'insideRight',
                   style: { fontSize: 10, fill: '#38bdf880' },
-                  offset: 10,
+                  offset: -20,
                 }}
               />
 

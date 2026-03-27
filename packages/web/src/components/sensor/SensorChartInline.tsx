@@ -45,10 +45,10 @@ const METRIC_CONFIG: Record<string, {
   readonly normalMin: number;
   readonly normalMax: number;
 }> = {
-  temp: { label: '체온', color: '#3b82f6', unit: '°C', normalMin: 38.0, normalMax: 39.3 },
-  act: { label: '활동', color: '#22c55e', unit: 'I/24h', normalMin: 0, normalMax: 300 },
-  rum: { label: '반추', color: '#f97316', unit: '분', normalMin: 300, normalMax: 600 },
-  dr: { label: '음수', color: '#ec4899', unit: 'L', normalMin: 40, normalMax: 120 },
+  temp: { label: '체온', color: '#ef4444', unit: '°C', normalMin: 38.0, normalMax: 39.3 },
+  act: { label: '활동', color: '#3b82f6', unit: 'I/24h', normalMin: 0, normalMax: 300 },
+  rum: { label: '반추', color: '#22c55e', unit: '분', normalMin: 300, normalMax: 600 },
+  dr: { label: '음수', color: '#f97316', unit: 'L', normalMin: 40, normalMax: 120 },
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -174,7 +174,10 @@ function MetricPanel({
             scale="time"
             tickFormatter={(ts: number) => {
               const d = new Date(ts);
-              return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}시`;
+              const spanMs = timeRange.to - timeRange.from;
+              return spanMs <= 48 * 3600 * 1000
+                ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+                : `${d.getMonth() + 1}/${d.getDate()}`;
             }}
             tick={{ fontSize: 9, fill: 'var(--ct-text-muted)' }}
             tickLine={false}

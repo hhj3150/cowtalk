@@ -148,6 +148,12 @@ export async function callClaudeForChat(
       callbacks.onText(text);
     });
 
+    stream.on('error', (err: Error) => {
+      clearTimeout(timeout);
+      logger.error({ error: err }, 'Claude chat stream error event');
+      callbacks.onError(err);
+    });
+
     const finalMessage = await stream.finalMessage();
     clearTimeout(timeout);
 

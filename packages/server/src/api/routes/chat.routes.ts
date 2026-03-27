@@ -149,7 +149,8 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
         },
         onError: (error) => {
           clearInterval(keepAlive);
-          res.write(`data: ${JSON.stringify({ type: 'error', content: error.message })}\n\n`);
+          const errorMsg = `AI service unavailable: ${error.message}`;
+          res.write(`data: ${JSON.stringify({ type: 'error', content: errorMsg })}\n\n`);
           res.end();
         },
       },

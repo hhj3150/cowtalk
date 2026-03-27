@@ -22,10 +22,10 @@ interface MetricConfig {
 }
 
 const METRICS: readonly MetricConfig[] = [
-  { key: 'temp', label: '체온', color: '#3b82f6', unit: '°C', yMin: 36.5, yMax: 42, normalMin: 38.0, normalMax: 39.3 },
-  { key: 'act', label: '활동', color: '#22c55e', unit: 'I/24h', yMin: 0, yMax: 500, normalMin: 0, normalMax: 300 },
-  { key: 'rum', label: '반추', color: '#f97316', unit: '분', yMin: 0, yMax: 700, normalMin: 300, normalMax: 600 },
-  { key: 'dr', label: '음수', color: '#ec4899', unit: 'L', yMin: 0, yMax: 200, normalMin: 40, normalMax: 120 },
+  { key: 'temp', label: '체온', color: '#ef4444', unit: '°C', yMin: 36.5, yMax: 42, normalMin: 38.0, normalMax: 39.3 },
+  { key: 'act', label: '활동', color: '#3b82f6', unit: 'I/24h', yMin: 0, yMax: 500, normalMin: 0, normalMax: 300 },
+  { key: 'rum', label: '반추', color: '#22c55e', unit: '분', yMin: 0, yMax: 700, normalMin: 300, normalMax: 600 },
+  { key: 'dr', label: '음수', color: '#f97316', unit: 'L', yMin: 0, yMax: 200, normalMin: 40, normalMax: 120 },
 ];
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -307,8 +307,8 @@ function MiniChart({ metric, points, eventMarkers, selectedEventId, tsMin, tsMax
               ticks.push(t);
             }
 
-            // 24h 이하면 HH:mm, 그 이상이면 M/D
-            const useTimeFormat = totalHours <= 72;
+            // 48h 이하면 HH:mm, 그 이상이면 M/D
+            const useTimeFormat = totalHours <= 48;
 
             return ticks.map((t) => {
               const x = toX(t, tsMin, tsMax);
@@ -421,12 +421,16 @@ function TimeAxis({ tsMin, tsMax }: {
 }): React.JSX.Element {
   const labels = useMemo(() => {
     const rangeS = tsMax - tsMin;
+    const totalHours = rangeS / 3600;
+    const useTimeFormat = totalHours <= 48;
     const count = 5;
     const result: { label: string; pct: number }[] = [];
     for (let i = 0; i <= count; i++) {
       const ts = tsMin + (rangeS * i) / count;
       const d = new Date(ts * 1000);
-      const label = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}시`;
+      const label = useTimeFormat
+        ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        : `${d.getMonth() + 1}/${d.getDate()}`;
       result.push({ label, pct: (i / count) * 100 });
     }
     return result;
