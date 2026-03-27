@@ -224,11 +224,21 @@ export interface VisionResult {
   readonly durationMs: number;
 }
 
-const EAR_TAG_VISION_PROMPT = `이 사진에서 노란색 소 이표(ear tag)의 숫자를 읽어주세요.
+const EAR_TAG_VISION_PROMPT = `이 사진에서 소의 귀에 달린 노란색 이표(ear tag)의 숫자를 읽어주세요.
 
-중요: 왼쪽 귀의 노란 이표 하단에 큰 숫자가 있습니다. 예: "1791" 위에 "7078 0" 아래.
-이 숫자들을 모두 이어 붙이고 앞에 "002"를 추가하세요.
-예: 하단이 "1791" + "70780" → "002179170780"
+사진 유형: 소 머리 전체, 소 옆모습, 또는 이표 클로즈업 모두 가능합니다.
+이표가 작게 보여도 최대한 확대하여 숫자를 읽어주세요.
+
+한국 소 이표 구조:
+- 노란색 플라스틱 이표가 귀에 달려 있음
+- 이표 하단에 9자리 큰 숫자가 2줄로 적혀 있음 (예: 상단 "1791" + 하단 "70780")
+- 이 9자리를 이어붙이고 앞에 "002"를 추가하면 12자리 이력제번호가 됨
+- 예: "179170780" → "002179170780"
+
+읽기 우선순위:
+1. 이표 하단의 큰 숫자 9자리 (가장 중요)
+2. 이표 상단의 작은 바코드 아래 숫자 (보조)
+3. 양쪽 귀에 이표가 있으면 더 선명한 쪽을 읽으세요
 
 JSON으로만 응답하세요:
 {"numbers":["002179170780"],"confidence":"high"}`;
@@ -367,20 +377,29 @@ function extractNumbersFromText(text: string): string[] {
     match = tracePattern.exec(text);
   }
 
-  // 9자리 숫자 (하단 번호, 002 없이) — 자동으로 002 접두사 추가
-  const nineDigitPattern = /\b(\d{4})\s*(\d{4,5})\s*(\d?)\b/g;
-  let m2 = nineDigitPattern.exec(text);
-  while (m2) {
-    const joined = (m2[1] ?? '') + (m2[2] ?? '') + (m2[3] ?? '');
-    const digits = joined.replace(/\s/g, '');
-    if (digits.length >= 8 && digits.length <= 10) {
+  // 연속 9~10자리 숫자 (이표 하단 번호) — 002가 아닌 것만
+  const contiguousPattern = /\b(\d{9,10})\b/g;
+  let m2a = contiguousPattern.exec(text);
+  while (m2a) {
+    const digits = m2a[1]!;
+    if (!digits.startsWith('002')) {
       numbers.push(digits);
-      // 9자리면 002 추가
-      if (digits.length === 9) {
-        numbers.push(`002${digits}`);
-      }
+      if (digits.length === 9) numbers.push(`002${digits}`);
     }
-    m2 = nineDigitPattern.exec(text);
+    m2a = contiguousPattern.exec(text);
+  }
+
+  // 공백으로 분리된 9자리 패턴 (예: "1791 70780", "1791 7078 0")
+  const splitPattern = /\b(\d{4})\s+(\d{4,5})\s*(\d?)\b/g;
+  let m2b = splitPattern.exec(text);
+  while (m2b) {
+    const joined = (m2b[1] ?? '') + (m2b[2] ?? '') + (m2b[3] ?? '');
+    const digits = joined.replace(/\s/g, '');
+    if (digits.length >= 8 && digits.length <= 10 && !digits.startsWith('002')) {
+      numbers.push(digits);
+      if (digits.length === 9) numbers.push(`002${digits}`);
+    }
+    m2b = splitPattern.exec(text);
   }
 
   // 관리번호 패턴 (영문+숫자, 예: G5, A12)

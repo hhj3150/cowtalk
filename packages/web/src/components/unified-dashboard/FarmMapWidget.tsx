@@ -1,7 +1,7 @@
 // 대시보드 농장 지도 위젯 — Google Maps API
 // 500+ 농장 대응: 비례 마커 + 다크모드
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
 import type { LiveAlarm } from '@cowtalk/shared';
 
@@ -38,7 +38,7 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
   critical: '#ef4444',
 };
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string || 'AIzaSyBvdUMuz7NNTfA6PEI4Cqa8Iw4QqDije7M';
+const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
 
 const DARK_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
@@ -69,6 +69,13 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
     language: 'ko',
     region: 'KR',
   });
+
+  const [hasTimedOut, setHasTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
 
   // 선택된 농장으로 이동
   React.useEffect(() => {
@@ -141,7 +148,11 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
 
       {/* Google Maps */}
       <div style={{ height, width: '100%' }}>
-        {!isLoaded ? (
+        {hasTimedOut ? (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#ef4444', fontSize: 13 }}>
+            지도 로드 실패 (타임아웃)
+          </div>
+        ) : !isLoaded ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontSize: 13 }}>
             지도 로딩 중...
           </div>

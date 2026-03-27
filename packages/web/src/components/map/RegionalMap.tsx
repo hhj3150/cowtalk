@@ -1,7 +1,7 @@
 // 지역 인텔리전스 지도 — Google Maps API 기반
 // 비례 마커 + 위험도 색상 + 다크모드 + 범례 + InfoWindow
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleMap, useJsApiLoader, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
 import type { FarmMapMarker } from '@web/api/regional.api';
 
@@ -26,7 +26,7 @@ export interface MapFilters {
 
 // ── 상수 ──
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string || 'AIzaSyBvdUMuz7NNTfA6PEI4Cqa8Iw4QqDije7M';
+const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 'AIzaSyBvdUMuz7NNTfA6PEl4Cqa8Iw4QqDije7M';
 
 const DEFAULT_CENTER = { lat: 36.0, lng: 127.5 };
 const DEFAULT_ZOOM = 7;
@@ -134,6 +134,13 @@ export function RegionalMap({
     region: 'KR',
   });
 
+  const [hasTimedOut, setHasTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded || loadError) return;
+    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isLoaded, loadError]);
+
   const mapCenter = useMemo(() =>
     center ? { lat: center[0], lng: center[1] } : DEFAULT_CENTER,
     [center],
@@ -158,10 +165,10 @@ export function RegionalMap({
     backgroundColor: '#0f172a',
   }), [darkMode]);
 
-  if (loadError) {
+  if (loadError || hasTimedOut) {
     return (
       <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', borderRadius: 14, color: '#ef4444', fontSize: 13 }}>
-        지도 로드 실패: {loadError.message}
+        지도 로드 실패{loadError ? `: ${loadError.message}` : ' (타임아웃)'}
       </div>
     );
   }
