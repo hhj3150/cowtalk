@@ -17,6 +17,7 @@ import { WeightDataCollector } from '@web/components/weight/WeightDataCollector'
 import { VaccinationHistory } from '@web/components/vaccine/VaccinationHistory';
 import { InspectionResults } from '@web/components/vaccine/InspectionResults';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { AnimalEventPanel } from '@web/components/animals/AnimalEventPanel';
 
 interface CowProfile {
   readonly animalId: string;
@@ -688,6 +689,17 @@ export default function CowProfilePage(): React.JSX.Element {
             </button>
           )}
         </div>
+      </div>
+
+      {/* ── 이벤트 기록 패널 ── */}
+      <div style={{ marginBottom: 16 }}>
+        <SectionErrorBoundary label="이벤트 기록">
+          <AnimalEventPanel
+            animalId={profile.animalId}
+            farmId={profile.farmId}
+            earTag={profile.earTag}
+          />
+        </SectionErrorBoundary>
       </div>
 
       {/* 팅커벨 AI */}

@@ -46,6 +46,7 @@ import { adminRouter } from './routes/admin.routes.js';
 import { earTagScanRouter } from './routes/ear-tag-scan.routes.js';
 import { weightRouter } from './routes/weight.routes.js';
 import { sovereignAlarmRouter } from './routes/sovereign-alarm.routes.js';
+import { animalEventsRouter } from './routes/animal-events.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -97,6 +98,7 @@ export function createApiRouter(): Router {
   api.use('/ear-tag-scan', earTagScanRouter);
   api.use('/weight', weightRouter);
   api.use('/sovereign-alarms', sovereignAlarmRouter);
+  api.use('/animal-events', animalEventsRouter);
 
   return api;
 }

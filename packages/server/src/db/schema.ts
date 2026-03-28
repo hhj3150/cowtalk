@@ -757,6 +757,25 @@ export const farmEvents = pgTable('farm_events', {
   index('farm_events_ai_processed_idx').on(table.aiProcessed),
 ]);
 
+// 개체 이벤트 통합 로그 (9종: calving|insemination|pregnancy_check|treatment|dry_off|dhi|cull|vaccination|herd_move)
+export const animalEvents = pgTable('animal_events', {
+  eventId:         uuid('event_id').primaryKey().defaultRandom(),
+  animalId:        uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId:          uuid('farm_id').notNull().references(() => farms.farmId),
+  eventType:       varchar('event_type', { length: 30 }).notNull(),
+  eventDate:       timestamp('event_date', { withTimezone: true }).notNull(),
+  recordedBy:      uuid('recorded_by'),
+  recordedByName:  varchar('recorded_by_name', { length: 100 }),
+  details:         jsonb('details').notNull().default('{}').$type<Record<string, unknown>>(),
+  notes:           text('notes'),
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('animal_events_animal_id_idx').on(table.animalId),
+  index('animal_events_farm_id_idx').on(table.farmId),
+  index('animal_events_event_type_idx').on(table.eventType),
+  index('animal_events_event_date_idx').on(table.eventDate),
+]);
+
 export const eventAttachments = pgTable('event_attachments', {
   attachmentId: uuid('attachment_id').primaryKey().defaultRandom(),
   eventId: uuid('event_id').notNull().references(() => farmEvents.eventId),
