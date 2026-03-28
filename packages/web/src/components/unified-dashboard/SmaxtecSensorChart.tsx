@@ -406,7 +406,7 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart
           data={chartData}
-          margin={{ top: 20, right: 58, left: 58, bottom: 30 }}
+          margin={{ top: 8, right: 4, left: 4, bottom: 20 }}
         >
           {/* 주야간 밴드 */}
           {bands.map((b, i) => (
@@ -421,7 +421,7 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
           ))}
 
           {/* 그리드 */}
-          <CartesianGrid stroke={C.grid} strokeDasharray="3 3" vertical={false} />
+          <CartesianGrid stroke="#333" strokeDasharray="2 4" vertical={false} strokeOpacity={0.6} />
 
           {/* X축 */}
           <XAxis
@@ -431,13 +431,9 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
             domain={[tsMin, tsMax]}
             ticks={xTicks}
             tickFormatter={(v) => fmtTs(v)}
-            tick={{ fill: C.muted, fontSize: 9 }}
-            tickLine={{ stroke: '#555' }}
-            axisLine={{ stroke: '#555' }}
-            label={{
-              value: '',
-              position: 'insideBottom',
-            }}
+            tick={{ fill: C.muted, fontSize: 8 }}
+            tickLine={false}
+            axisLine={{ stroke: '#444' }}
           />
 
           {/* 좌측 Y축 — l/24h (활동/음수 + 체온 스케일)
@@ -451,12 +447,10 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
             orientation="left"
             domain={[0, 700]}
             ticks={[0, 100, 200, 300, 400, 500, 600, 700]}
-            tickFormatter={(v) => `${v}`}
-            tick={{ fill: C.muted, fontSize: 9 }}
+            tick={false}
             tickLine={false}
             axisLine={false}
-            width={46}
-            label={{ value: 'l/24h', angle: -90, position: 'insideLeft', offset: -10, style: { fill: C.muted, fontSize: 9 } }}
+            width={28}
           />
 
           {/* 우측 Y축 — 반추 (분)
@@ -466,13 +460,12 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
             yAxisId="rum"
             orientation="right"
             domain={[0, 600]}
-            ticks={[0, 100, 200, 300, 400, 500, 600]}
+            ticks={[0, 150, 300, 450, 600]}
             tickFormatter={(v) => `${v}`}
-            tick={{ fill: C.rum, fontSize: 9 }}
+            tick={{ fill: C.rum, fontSize: 8 }}
             tickLine={false}
             axisLine={false}
-            width={46}
-            label={{ value: '분', angle: 90, position: 'insideRight', offset: 10, style: { fill: C.rum, fontSize: 9 } }}
+            width={26}
           />
 
           {/* 이벤트 마커 수직선 */}
@@ -495,7 +488,7 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
           {/* 체온 °C 오버레이 축 레이블 */}
           <Customized component={(props: Record<string, unknown>) => {
             const { top, left, height: h } = props as { top?: number; left?: number; height?: number };
-            return <TempAxisOverlay top={top} left={(left as number ?? 58) - 44} height={h} />;
+            return <TempAxisOverlay top={top} left={(left as number ?? 32) - 26} height={h} />;
           }} />
 
           {/* 툴팁 */}

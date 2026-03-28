@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimalSensorChart } from '@web/api/unified-dashboard.api';
 import { SmaxtecSensorChart } from '@web/components/unified-dashboard/SmaxtecSensorChart';
+import { useIsMobile } from '@web/hooks/useIsMobile';
 
 interface Props {
   readonly animalId: string;
@@ -18,6 +19,8 @@ const PERIOD_OPTIONS = [
 
 export function SensorChartInline({ animalId }: Props): React.JSX.Element {
   const [days, setDays] = useState(7);
+  const isMobile = useIsMobile();
+  const chartHeight = isMobile ? 280 : 420;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['sensor-chart-inline', animalId, days],
@@ -78,7 +81,7 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
       {/* 차트 영역 */}
       {isLoading && (
         <div style={{
-          height: 480,
+          height: chartHeight,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -101,7 +104,7 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
         </div>
       )}
       {data && (
-        <SmaxtecSensorChart data={data} height={480} />
+        <SmaxtecSensorChart data={data} height={chartHeight} />
       )}
       {!isLoading && !error && !data && (
         <div style={{
