@@ -342,6 +342,12 @@ export default function CowProfilePage(): React.JSX.Element {
   const healthScore = healthPred ? (100 - healthPred.riskScore) : aiScore;
   const scoreColor = healthScore !== null ? (healthScore >= 80 ? '#22c55e' : healthScore >= 50 ? '#eab308' : '#ef4444') : '#64748b';
 
+  // 현장용 — 가장 심각한 알람 1건 (critical > high > medium)
+  const criticalEvents = events.filter((e) => e.severity === 'critical');
+  const highEvents = events.filter((e) => e.severity === 'high');
+  const topAlert = criticalEvents[0] ?? highEvents[0] ?? null;
+  const topAlertColor = topAlert?.severity === 'critical' ? '#ef4444' : '#f97316';
+
   return (
     <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px' : '20px 24px', overflowX: 'hidden' }}>
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -406,6 +412,31 @@ export default function CowProfilePage(): React.JSX.Element {
         </div>
       </div>
 
+      {/* ── 현장 경보 배너 — critical/high 알람 시 항상 노출 ── */}
+      {isMobile && topAlert && (
+        <div style={{
+          background: `${topAlertColor}18`,
+          border: `1.5px solid ${topAlertColor}60`,
+          borderRadius: 10,
+          padding: '10px 14px',
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: topAlertColor, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: topAlertColor }}>
+              {EVENT_LABELS[topAlert.eventType] ?? topAlert.eventType}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 1 }}>
+              {new Date(topAlert.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {events.length > 1 && ` · 외 ${events.length - 1}건`}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── KPI 바이탈 카드 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
         {/* 체온 — 정상체온(베이스라인) 표시, 음수 피크 제외 24h 평균 */}
@@ -418,12 +449,12 @@ export default function CowProfilePage(): React.JSX.Element {
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>체온</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9' }}>
+            <span style={{ fontSize: isMobile ? 32 : 22, fontWeight: 800, color: displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9' }}>
               {displayTemp?.toFixed(2) ?? '—'}
             </span>
-            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>°C</span>
+            <span style={{ fontSize: isMobile ? 12 : 10, color: 'var(--ct-text-muted)' }}>°C</span>
           </div>
-          <div style={{ fontSize: 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
             <span>{tempStatus}</span>
             {sensor && (
               <span style={{ color: sensor.drinkingCount > 0 ? '#81D4FA' : '#64748b', fontWeight: sensor.drinkingCount > 0 ? 600 : 400 }}>
@@ -443,12 +474,12 @@ export default function CowProfilePage(): React.JSX.Element {
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>반추</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e' }}>
+            <span style={{ fontSize: isMobile ? 32 : 22, fontWeight: 800, color: rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e' }}>
               {rumDisplay?.toFixed(0) ?? '—'}
             </span>
-            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>분</span>
+            <span style={{ fontSize: isMobile ? 12 : 10, color: 'var(--ct-text-muted)' }}>분</span>
           </div>
-          <div style={{ fontSize: 9, marginTop: 2 }}>{rumStatus} <span style={{ color: '#64748b' }}>24h 평균</span></div>
+          <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2 }}>{rumStatus} <span style={{ color: '#64748b' }}>24h 평균</span></div>
         </div>
 
         {/* 음수 — 하루 음수량 + 음수횟수 */}
@@ -461,12 +492,12 @@ export default function CowProfilePage(): React.JSX.Element {
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>음수</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: '#06b6d4' }}>
+            <span style={{ fontSize: isMobile ? 32 : 22, fontWeight: 800, color: '#06b6d4' }}>
               {sensor?.drinking?.toFixed(0) ?? '—'}
             </span>
-            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>L</span>
+            <span style={{ fontSize: isMobile ? 12 : 10, color: 'var(--ct-text-muted)' }}>L</span>
           </div>
-          <div style={{ fontSize: 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--ct-text-muted)' }}>음수량</span>
             {sensor && (
               <span style={{ color: '#06b6d4', fontWeight: 600 }}>{sensor.drinkingCount}회</span>
@@ -484,10 +515,10 @@ export default function CowProfilePage(): React.JSX.Element {
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>AI 건강</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: scoreColor }}>{String(healthScore ?? '—')}</span>
-            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>/100</span>
+            <span style={{ fontSize: isMobile ? 32 : 22, fontWeight: 800, color: scoreColor }}>{String(healthScore ?? '—')}</span>
+            <span style={{ fontSize: isMobile ? 12 : 10, color: 'var(--ct-text-muted)' }}>/100</span>
           </div>
-          {healthPred && <div style={{ fontSize: 9, marginTop: 2 }}>{healthPred.riskLevel}</div>}
+          {healthPred && <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2 }}>{healthPred.riskLevel}</div>}
         </div>
       </div>
 
