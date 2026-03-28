@@ -38,40 +38,55 @@ interface DailySummary {
   readonly drSum: number | null;    // L/day
 }
 
-async function getAnimalDailySummary(animalId: string, days: number): Promise<DailySummary[]> {
+// 배치 일간 요약 — N+1 → 1쿼리 (80두 목장도 1회 SELECT)
+async function getBatchDailySummaries(
+  animalIds: readonly string[],
+  days: number,
+): Promise<Map<string, DailySummary[]>> {
+  if (animalIds.length === 0) return new Map();
   const db = getDb();
   const since = new Date(Date.now() - days * 86400_000);
 
   const rows = await db.select()
     .from(sensorDailyAgg)
     .where(and(
-      eq(sensorDailyAgg.animalId, animalId),
+      sql`${sensorDailyAgg.animalId} = ANY(${animalIds})`,
       gte(sensorDailyAgg.date, since.toISOString().slice(0, 10)),
     ))
-    .orderBy(desc(sensorDailyAgg.date))
-    .limit(days * 4);  // 4 metric types × days
+    .orderBy(desc(sensorDailyAgg.date));
 
-  // Group by date
-  const byDate = new Map<string, { temp?: number; rum?: number; act?: number; dr?: number }>();
+  // Group by animalId → date
+  const nested = new Map<string, Map<string, { temp?: number; rum?: number; act?: number; dr?: number }>>();
   for (const row of rows) {
+    const aid = row.animalId;
     const d = typeof row.date === 'string' ? row.date : (row.date as Date).toISOString().slice(0, 10);
+    if (!nested.has(aid)) nested.set(aid, new Map());
+    const byDate = nested.get(aid)!;
     if (!byDate.has(d)) byDate.set(d, {});
     const entry = byDate.get(d)!;
-    if (row.metricType === 'temp') entry.temp = row.avg;
-    if (row.metricType === 'rum_index') entry.rum = row.avg / 60; // seconds → minutes
-    if (row.metricType === 'act') entry.act = row.avg;
-    if (row.metricType === 'water_intake') entry.dr = row.avg * 144; // 10-min avg → daily L (144 intervals)
+    if (row.metricType === 'temp')         entry.temp = row.avg;
+    if (row.metricType === 'rum_index')    entry.rum  = row.avg / 60;    // seconds → minutes
+    if (row.metricType === 'act')          entry.act  = row.avg;
+    if (row.metricType === 'water_intake') entry.dr   = row.avg * 144;   // 10-min avg → daily L
   }
 
-  return Array.from(byDate.entries())
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([date, v]) => ({
-      date,
-      tempAvg: v.temp ?? null,
-      rumAvg: v.rum ?? null,
-      actAvg: v.act ?? null,
-      drSum: v.dr ?? null,
-    }));
+  const result = new Map<string, DailySummary[]>();
+  for (const aid of animalIds) {
+    const byDate = nested.get(aid);
+    if (!byDate) { result.set(aid, []); continue; }
+    result.set(aid,
+      Array.from(byDate.entries())
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([date, v]) => ({
+          date,
+          tempAvg: v.temp ?? null,
+          rumAvg:  v.rum  ?? null,
+          actAvg:  v.act  ?? null,
+          drSum:   v.dr   ?? null,
+        })),
+    );
+  }
+  return result;
 }
 
 // ── 수의학 룰 엔진 ──
@@ -353,9 +368,13 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
 
   const alarms: SovereignAlarm[] = [];
 
+  // 1쿼리로 전체 목장 센서 데이터 배치 조회 (N+1 → 1)
+  const animalIds = farmAnimals.map((a) => a.animalId);
+  const summaryMap = await getBatchDailySummaries(animalIds, 10);
+
   for (const animal of farmAnimals) {
     try {
-      const summary = await getAnimalDailySummary(animal.animalId, 10);
+      const summary = summaryMap.get(animal.animalId) ?? [];
       if (summary.length < 3) continue; // 데이터 부족
 
       const rules = [
