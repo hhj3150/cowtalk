@@ -20,6 +20,7 @@ import { useIsMobile } from '@web/hooks/useIsMobile';
 import { AnimalEventPanel } from '@web/components/animals/AnimalEventPanel';
 import { useSovereignAlarms } from '@web/hooks/useUnifiedDashboard';
 import { SovereignAlarmFeed } from '@web/components/unified-dashboard/SovereignAlarmFeed';
+import { CollapsibleCard } from '@web/components/common/CollapsibleCard';
 
 interface CowProfile {
   readonly animalId: string;
@@ -503,31 +504,28 @@ export default function CowProfilePage(): React.JSX.Element {
         {/* 좌측: 이벤트 기록 + 이력추적 + 백신/방역 + 번식 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
+          <CollapsibleCard title="🏛️ 축산물이력추적">
             <SectionErrorBoundary label="이력추적">
               <TraceSection animalId={profile.animalId} />
             </SectionErrorBoundary>
-          </div>
+          </CollapsibleCard>
 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--ct-text)' }}>💉 백신 접종</h3>
+            <CollapsibleCard title="💉 백신 접종">
               <SectionErrorBoundary label="백신"><VaccinationHistory animalId={profile.animalId} /></SectionErrorBoundary>
-            </div>
-            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--ct-text)' }}>🛡️ 방역검사</h3>
+            </CollapsibleCard>
+            <CollapsibleCard title="🛡️ 방역검사">
               <SectionErrorBoundary label="방역"><InspectionResults animalId={profile.animalId} /></SectionErrorBoundary>
-            </div>
+            </CollapsibleCard>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+            <CollapsibleCard title="💊 수정 추천">
               <SectionErrorBoundary label="수정 추천"><InseminationPanel animalId={profile.animalId} /></SectionErrorBoundary>
-            </div>
-            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+            </CollapsibleCard>
+            <CollapsibleCard title="🧪 보유 정액 재고">
               <SectionErrorBoundary label="보유 정액"><FarmSemenInventory farmId={profile.farmId} /></SectionErrorBoundary>
-            </div>
+            </CollapsibleCard>
           </div>
 
           <SectionErrorBoundary label="체중 측정">
@@ -540,8 +538,12 @@ export default function CowProfilePage(): React.JSX.Element {
         {/* 우측 패널 내용 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* 알림 */}
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
-            <h2 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 8px' }}>⚠️ 알림 ({events.length})</h2>
+          <CollapsibleCard
+            title="⚠️ 알림"
+            badge={events.length > 0 ? events.length : null}
+            badgeColor="#ef4444"
+            defaultOpen={events.length > 0}
+          >
             {events.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 12, color: 'var(--ct-text-muted)', fontSize: 12 }}>✅ 활성 알림 없음</div>
             ) : (
@@ -557,7 +559,7 @@ export default function CowProfilePage(): React.JSX.Element {
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleCard>
           {/* 소버린 AI 알람 */}
           {(animalSovereignAlarms.length > 0 || sovereignLoading) && (
             <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
@@ -571,10 +573,13 @@ export default function CowProfilePage(): React.JSX.Element {
           )}
 
           {/* AI 예측 3종 */}
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>🤖 AI 예측</h2>
+          <CollapsibleCard
+            title="🤖 AI 예측"
+            defaultOpen={healthPred?.riskLevel !== 'normal' || !!calvingPred}
+            badge={healthPred?.riskLevel === 'critical' ? '긴급' : healthPred?.riskLevel === 'warning' ? '주의' : null}
+            badgeColor={healthPred?.riskLevel === 'critical' ? '#ef4444' : '#f97316'}
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* 질병 예측 */}
               {healthPred && (
                 <div style={{ padding: '8px 10px', borderRadius: 8, background: healthPred.riskLevel === 'critical' ? 'rgba(239,68,68,0.1)' : healthPred.riskLevel === 'warning' ? 'rgba(249,115,22,0.1)' : 'rgba(34,197,94,0.1)' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
@@ -586,8 +591,6 @@ export default function CowProfilePage(): React.JSX.Element {
                   <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, fontStyle: 'italic' }}>{healthPred.recommendation}</div>
                 </div>
               )}
-
-              {/* 발정 예측 */}
               {estrusPred && (
                 <div style={{ padding: '8px 10px', borderRadius: 8, background: estrusPred.isWithin3Days ? 'rgba(239,68,68,0.1)' : 'rgba(99,102,241,0.05)' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
@@ -599,8 +602,6 @@ export default function CowProfilePage(): React.JSX.Element {
                   </div>
                 </div>
               )}
-
-              {/* 분만 예측 */}
               {calvingPred && calvingPred.calvingRisk !== 'low' && (
                 <div style={{ padding: '8px 10px', borderRadius: 8, background: calvingPred.calvingRisk === 'imminent' ? 'rgba(239,68,68,0.15)' : 'rgba(249,115,22,0.1)' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: calvingPred.calvingRisk === 'imminent' ? '#ef4444' : '#f97316' }}>
@@ -616,11 +617,10 @@ export default function CowProfilePage(): React.JSX.Element {
             <div style={{ marginTop: 8, fontSize: 9, color: 'var(--ct-text-muted)', fontStyle: 'italic' }}>
               이 정보는 수의사의 임상적 판단을 보조하기 위한 참고 자료입니다.
             </div>
-          </div>
+          </CollapsibleCard>
 
           {/* 번식 이력 */}
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>🐄 번식 이력</h2>
+          <CollapsibleCard title="🐄 번식 이력" badge={breeding.length > 0 ? breeding.length : null} badgeColor="#a78bfa">
             {breeding.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 20, color: 'var(--ct-text-muted)', fontSize: 13 }}>번식 기록 없음</div>
             ) : (
@@ -636,11 +636,10 @@ export default function CowProfilePage(): React.JSX.Element {
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleCard>
 
           {/* 개체 정보 */}
-          <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>📋 개체 정보</h2>
+          <CollapsibleCard title="📋 개체 정보">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--ct-text-muted)' }}>귀표번호</span>
@@ -669,7 +668,7 @@ export default function CowProfilePage(): React.JSX.Element {
                 </div>
               )}
             </div>
-          </div>
+          </CollapsibleCard>
 
           {/* 임신 관리 타임라인 */}
           <SectionErrorBoundary label="임신 관리">
