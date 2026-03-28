@@ -292,6 +292,7 @@ export function TinkerbellAssistant({
       const lines = raw.split('\n');
       let fullText = '';
 
+      let errorText = '';
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         try {
@@ -303,12 +304,15 @@ export function TinkerbellAssistant({
           if (parsed.type === 'text') {
             fullText += parsed.content;
           }
+          if (parsed.type === 'error') {
+            errorText = parsed.content;
+          }
         } catch {
           // skip
         }
       }
 
-      const answer = fullText || '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.';
+      const answer = fullText || (errorText ? `⚠️ AI 오류: ${errorText}` : '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
       const assistantMsg: TinkerbellMessage = { role: 'assistant', content: answer, timestamp: new Date() };
       setMessages((prev) => [...prev, assistantMsg]);
 

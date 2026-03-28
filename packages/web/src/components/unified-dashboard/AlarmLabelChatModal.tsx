@@ -1358,7 +1358,18 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
         });
       },
       () => setIsStreaming(false),
-      () => setIsStreaming(false),
+      (err) => {
+        setIsStreaming(false);
+        const errMsg = err?.message ?? 'AI 응답 오류';
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant' && last.content === '') {
+            updated[updated.length - 1] = { ...last, content: `⚠️ ${errMsg}\n\n잠시 후 다시 시도해 주세요.` };
+          }
+          return updated;
+        });
+      },
       (records) => {
         // AI가 대화에서 기록을 추출함 → 마지막 어시스턴트 메시지에 첨부
         if (records.length > 0) {
