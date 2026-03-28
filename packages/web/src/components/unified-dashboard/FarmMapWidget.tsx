@@ -1,9 +1,9 @@
-// 대시보드 농장 지도 위젯 — Google Maps API
-// 500+ 농장 대응: 비례 마커 + 다크모드
+// 대시보드 농장 지도 위젯 — Leaflet / CartoDB Dark Matter
+// Google Maps API → Leaflet 마이그레이션 (API 키 불필요)
 
-import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
-import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
+import React, { useMemo } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { LiveAlarm } from '@cowtalk/shared';
 
 // ── 타입 ──
@@ -29,7 +29,7 @@ interface Props {
 
 // ── 상수 ──
 
-const KOREA_CENTER = { lat: 36.0, lng: 127.5 };
+const KOREA_CENTER: [number, number] = [36.0, 127.5];
 const DEFAULT_ZOOM = 7;
 
 const STATUS_COLORS: Readonly<Record<string, string>> = {
@@ -39,61 +39,53 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
   critical: '#ef4444',
 };
 
-
-const DARK_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
-  { featureType: 'road', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
+const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 function markerRadius(headCount: number): number {
-  if (headCount >= 200) return 1800;
-  if (headCount >= 100) return 1400;
-  if (headCount >= 50) return 1000;
-  return 600;
+  if (headCount >= 200) return 20;
+  if (headCount >= 100) return 16;
+  if (headCount >= 50) return 12;
+  return 8;
+}
+
+// ── 지도 뷰 제어 (MapContainer 내부 전용) ──
+
+function MapController({
+  markers,
+  selectedFarmId,
+}: {
+  readonly markers: readonly FarmMarkerData[];
+  readonly selectedFarmId?: string | null;
+}): null {
+  const map = useMap();
+
+  React.useEffect(() => {
+    if (markers.length === 0) return;
+    if (selectedFarmId) {
+      const sel = markers.find((m) => m.farmId === selectedFarmId);
+      if (sel) {
+        map.setView([sel.lat, sel.lng], 11);
+        return;
+      }
+    }
+    if (markers.length === 1) {
+      const m = markers[0]!;
+      map.setView([m.lat, m.lng], 13);
+      return;
+    }
+    if (markers.length <= 20) {
+      const bounds = markers.map((m) => [m.lat, m.lng] as [number, number]);
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }, [map, markers, selectedFarmId]);
+
+  return null;
 }
 
 // ── 메인 컴포넌트 ──
 
 export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 420 }: Props): React.JSX.Element {
-  const [infoFarm, setInfoFarm] = useState<FarmMarkerData | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-
-  const { isLoaded } = useGoogleMaps();
-
-  const [hasTimedOut, setHasTimedOut] = useState(false);
-  useEffect(() => {
-    if (isLoaded) return;
-    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
-    return () => clearTimeout(timer);
-  }, [isLoaded]);
-
-  // 마커가 변경되면 지도 영역 자동 조정
-  React.useEffect(() => {
-    if (!mapRef.current || markers.length === 0) return;
-    if (markers.length === 1) {
-      const m = markers[0]!;
-      mapRef.current.panTo({ lat: m.lat, lng: m.lng });
-      mapRef.current.setZoom(13);
-    } else if (selectedFarmId) {
-      const selected = markers.find((m) => m.farmId === selectedFarmId);
-      if (selected) {
-        mapRef.current.panTo({ lat: selected.lat, lng: selected.lng });
-        mapRef.current.setZoom(11);
-      }
-    } else if (markers.length <= 20) {
-      // 그룹 선택 시 모든 마커가 보이도록 bounds 자동 조정
-      const bounds = new google.maps.LatLngBounds();
-      markers.forEach((m) => bounds.extend({ lat: m.lat, lng: m.lng }));
-      mapRef.current.fitBounds(bounds, 40);
-    }
-  }, [selectedFarmId, markers]);
-
   const stats = useMemo(() => {
     const total = markers.length;
     const normal = markers.filter((m) => m.status === 'normal').length;
@@ -153,68 +145,48 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
         </div>
       </div>
 
-      {/* Google Maps */}
-      <div style={{ height, width: '100%' }}>
-        {hasTimedOut ? (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#ef4444', fontSize: 13 }}>
-            지도 로드 실패 (타임아웃)
-          </div>
-        ) : !isLoaded ? (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontSize: 13 }}>
-            지도 로딩 중...
-          </div>
-        ) : (
-          <GoogleMap
-            mapContainerStyle={{ height: '100%', width: '100%' }}
-            center={KOREA_CENTER}
-            zoom={DEFAULT_ZOOM}
-            options={{
-              disableDefaultUI: true,
-              zoomControl: true,
-              styles: DARK_STYLES,
-              backgroundColor: '#0f172a',
-            }}
-            onLoad={(map) => { mapRef.current = map; }}
-          >
-            {markers.map((m) => {
-              const color = STATUS_COLORS[m.status] ?? '#6b7280';
-              const radius = markerRadius(m.headCount);
-              const isSelected = m.farmId === selectedFarmId;
+      {/* Leaflet 지도 */}
+      <div style={{ height, width: '100%', background: '#0f172a' }}>
+        <MapContainer
+          center={KOREA_CENTER}
+          zoom={DEFAULT_ZOOM}
+          style={{ height: '100%', width: '100%' }}
+          zoomControl={true}
+          attributionControl={true}
+        >
+          <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} />
+          <MapController markers={markers} selectedFarmId={selectedFarmId} />
 
-              return (
-                <GCircle
-                  key={m.farmId}
-                  center={{ lat: m.lat, lng: m.lng }}
-                  radius={isSelected ? radius * 1.4 : radius}
-                  options={{
-                    fillColor: color,
-                    fillOpacity: 0.7,
-                    strokeColor: isSelected ? '#00d67e' : 'rgba(255,255,255,0.6)',
-                    strokeWeight: isSelected ? 3 : 1.5,
-                    clickable: true,
-                    zIndex: isSelected ? 10 : m.status === 'critical' ? 5 : 1,
-                  }}
-                  onClick={() => {
-                    onFarmClick?.(m.farmId);
-                    setInfoFarm(m);
-                  }}
-                />
-              );
-            })}
+          {markers.map((m) => {
+            const color = STATUS_COLORS[m.status] ?? '#6b7280';
+            const radius = markerRadius(m.headCount);
+            const isSelected = m.farmId === selectedFarmId;
 
-            {infoFarm && (
-              <InfoWindow
-                position={{ lat: infoFarm.lat, lng: infoFarm.lng }}
-                onCloseClick={() => setInfoFarm(null)}
+            return (
+              <CircleMarker
+                key={m.farmId}
+                center={[m.lat, m.lng]}
+                radius={isSelected ? Math.round(radius * 1.4) : radius}
+                pathOptions={{
+                  fillColor: color,
+                  fillOpacity: 0.7,
+                  color: isSelected ? '#00d67e' : 'rgba(255,255,255,0.6)',
+                  weight: isSelected ? 3 : 1.5,
+                }}
+                eventHandlers={{
+                  click: () => onFarmClick?.(m.farmId),
+                }}
               >
-                <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
-                  <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{infoFarm.name}</p>
-                  <p style={{ margin: 0 }}>{infoFarm.headCount}두 · 알람 {infoFarm.alertCount}건</p>
-                </div>
-              </InfoWindow>
-            )}
-          </GoogleMap>
-        )}
+                <Popup>
+                  <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
+                    <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
+                    <p style={{ margin: 0 }}>{m.headCount}두 · 알람 {m.alertCount}건</p>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+        </MapContainer>
       </div>
     </div>
   );

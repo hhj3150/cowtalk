@@ -39,8 +39,16 @@ const C = {
 
 // ── 데이터 변환 ──
 
-/** 체온 °C → l/24h 축 스케일 (×10, smaXtec 동일: 38°C → 380) */
-const tempToScale = (t: number) => t * 10;
+/**
+ * 체온 °C → 좌측 축 스케일 (가독성 최우선)
+ * 공식: (t - 20) × 25
+ *   20°C →   0  (바닥)
+ *   30°C → 250  (음수 최저점 가시화)
+ *   38°C → 450  (정상체온 중간 배치)
+ *   42°C → 550  (고열 영역)
+ * → 1°C 변화 = 25/650 ≈ 3.8% 차트 높이 (기존 ×10 방식 대비 3.5배 민감도)
+ */
+const tempToScale = (t: number) => (t - 20) * 25;
 
 interface ChartRow {
   ts: number;
@@ -55,7 +63,11 @@ interface ChartRow {
   dr?: number;
 }
 
-/** 24h 롤링 평균 체온 계산 */
+/**
+ * 24h 롤링 평균 체온 계산 — 음수 피크 제외
+ * 소가 물을 마실 때 위내 온도가 30°C 대로 급강하하므로
+ * 37.5°C 미만 포인트를 제외하고 평균 산출 (smaXtec 흰 직선과 동일 기법)
+ */
 function computeNormalTemp(pts: readonly SensorChartPoint[]): Map<number, number> {
   const WIN = 24 * 3600;
   const map = new Map<number, number>();
@@ -63,9 +75,14 @@ function computeNormalTemp(pts: readonly SensorChartPoint[]): Map<number, number
     const t = pts[i]!.ts;
     let sum = 0, cnt = 0;
     for (let j = i; j >= 0 && pts[j]!.ts >= t - WIN; j--) {
-      sum += pts[j]!.value; cnt++;
+      if (pts[j]!.value >= 37.5) { sum += pts[j]!.value; cnt++; }
     }
     if (cnt > 0) map.set(t, sum / cnt);
+    else if (i > 0) {
+      // 전 구간이 모두 음수 피크인 경우 이전 베이스라인 유지
+      const prev = map.get(pts[i - 1]!.ts);
+      if (prev !== undefined) map.set(t, prev);
+    }
   }
   return map;
 }
@@ -152,16 +169,21 @@ interface TempAxisProps {
 
 function TempAxisOverlay(props: TempAxisProps): React.JSX.Element {
   const { top = 0, left = 0, height = 300 } = props;
-  const ticks = [20, 30, 40, 50, 60];
-  const domainMin = 0, domainMax = 900;
+  // 음수 이벤트 가시화를 위해 30°C 포함, 주요 임상 기준점 강조
+  const ticks = [22, 26, 30, 34, 38, 42];
+  const domainMin = 0, domainMax = 650;
   return (
     <g>
       {ticks.map((tc) => {
         const pct = (tempToScale(tc) - domainMin) / (domainMax - domainMin);
         const y = top + height * (1 - pct);
+        const isKey = tc === 38 || tc === 39; // 정상체온 범위 강조
         return (
           <text key={tc} x={left + 2} y={y + 4}
-            textAnchor="start" fill={C.temp} fontSize={9} fontWeight={500}>
+            textAnchor="start"
+            fill={isKey ? '#81D4FA' : C.temp}
+            fontSize={isKey ? 9.5 : 8.5}
+            fontWeight={isKey ? 700 : 400}>
             {tc}°C
           </text>
         );
@@ -414,11 +436,15 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
           />
 
           {/* 좌측 Y축 — l/24h (활동/음수 + 체온 스케일)
-              domain [0,900]: 체온(38°C×10=380→42%) vs 반추(440분→63%) 시각적 분리 */}
+              domain [0,650]: (t-20)×25 공식
+                38°C → 450 → 69% (정상 체온 상단 배치)
+                30°C → 250 → 38% (음수 피크 시 큰 낙차 가시화)
+                act/dr 0-100 → 0-15% (하단 배치, 시각적 분리)
+          */}
           <YAxis
             yAxisId="lh"
             orientation="left"
-            domain={[0, 900]}
+            domain={[0, 650]}
             ticks={[0, 100, 200, 300, 400, 500, 600]}
             tickFormatter={(v) => `${v}`}
             tick={{ fill: C.muted, fontSize: 9 }}
@@ -428,11 +454,12 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
             label={{ value: 'l/24h', angle: -90, position: 'insideLeft', offset: -10, style: { fill: C.muted, fontSize: 9 } }}
           />
 
-          {/* 우측 Y축 — 반추 (분) */}
+          {/* 우측 Y축 — 반추 (분)
+              domain [0,800]: 반추 440분 → 55% (체온 69%와 14% 시각 분리) */}
           <YAxis
             yAxisId="rum"
             orientation="right"
-            domain={[0, 700]}
+            domain={[0, 800]}
             ticks={[0, 100, 200, 300, 400, 500, 600, 700]}
             tickFormatter={(v) => `${v}`}
             tick={{ fill: C.rum, fontSize: 9 }}

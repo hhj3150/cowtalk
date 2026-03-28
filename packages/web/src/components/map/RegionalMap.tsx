@@ -1,9 +1,9 @@
-// 지역 인텔리전스 지도 — Google Maps API 기반
-// 비례 마커 + 위험도 색상 + 다크모드 + 범례 + InfoWindow
+// 지역 인텔리전스 지도 — Leaflet / CartoDB Dark Matter
+// Google Maps API → Leaflet 마이그레이션 (API 키 불필요)
 
-import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
-import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
+import React, { useMemo, useState } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { FarmMapMarker } from '@web/api/regional.api';
 
 // ── 타입 ──
@@ -27,8 +27,7 @@ export interface MapFilters {
 
 // ── 상수 ──
 
-
-const DEFAULT_CENTER = { lat: 36.0, lng: 127.5 };
+const DEFAULT_CENTER: [number, number] = [36.0, 127.5];
 const DEFAULT_ZOOM = 7;
 
 const STATUS_COLORS: Readonly<Record<string, string>> = {
@@ -38,38 +37,74 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
   critical: '#ef4444',
 };
 
-// 다크모드 스타일
-const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2d3748' }] },
-  { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4a5568' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
+const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-// ── 마커 크기 (두수 비례) ──
+// ── 마커 크기 (두수 비례, px) ──
 
 function markerRadius(totalAnimals: number): number {
-  if (totalAnimals >= 100) return 1800;
-  if (totalAnimals >= 50) return 1400;
-  if (totalAnimals >= 10) return 1000;
-  return 600;
+  if (totalAnimals >= 100) return 18;
+  if (totalAnimals >= 50) return 14;
+  if (totalAnimals >= 10) return 10;
+  return 7;
+}
+
+// ── 지도 뷰 제어 ──
+
+function MapController({
+  markers,
+  selectedFarmId,
+  center,
+  zoom,
+}: {
+  readonly markers: readonly FarmMapMarker[];
+  readonly selectedFarmId?: string | null;
+  readonly center?: [number, number];
+  readonly zoom?: number;
+}): null {
+  const map = useMap();
+
+  React.useEffect(() => {
+    if (center) {
+      map.setView(center, zoom ?? DEFAULT_ZOOM);
+      return;
+    }
+    if (selectedFarmId) {
+      const sel = markers.find((m) => m.farmId === selectedFarmId);
+      if (sel?.lat && sel.lng) {
+        map.setView([sel.lat, sel.lng], 11);
+        return;
+      }
+    }
+    const valid = markers.filter((m) => m.lat && m.lng);
+    if (valid.length === 0) return;
+    if (valid.length === 1) {
+      map.setView([valid[0]!.lat, valid[0]!.lng], 11);
+      return;
+    }
+    const bounds = valid.map((m) => [m.lat, m.lng] as [number, number]);
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }, [map, markers, selectedFarmId, center, zoom]);
+
+  return null;
 }
 
 // ── 범례 컴포넌트 ──
 
-function MapLegend({ collapsed, onToggle }: { readonly collapsed: boolean; readonly onToggle: () => void }): React.JSX.Element {
+function MapLegend({
+  collapsed,
+  onToggle,
+}: {
+  readonly collapsed: boolean;
+  readonly onToggle: () => void;
+}): React.JSX.Element {
   return (
     <div style={{
       position: 'absolute',
       bottom: 24,
       right: 12,
-      zIndex: 10,
+      zIndex: 1000,
       background: 'rgba(15, 23, 42, 0.92)',
       border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: 10,
@@ -125,68 +160,31 @@ export function RegionalMap({
   filters,
 }: Props): React.JSX.Element {
   const [legendCollapsed, setLegendCollapsed] = useState(false);
-  const [infoFarm, setInfoFarm] = useState<FarmMapMarker | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-
-  const { isLoaded, loadError } = useGoogleMaps();
-
-  const [hasTimedOut, setHasTimedOut] = useState(false);
-  useEffect(() => {
-    if (isLoaded || loadError) return;
-    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
-    return () => clearTimeout(timer);
-  }, [isLoaded, loadError]);
-
-  const mapCenter = useMemo(() =>
-    center ? { lat: center[0], lng: center[1] } : DEFAULT_CENTER,
-    [center],
-  );
 
   const filteredMarkers = useMemo(() => {
     if (!filters?.statuses || filters.statuses.length === 0) return markers;
     return markers.filter((m) => filters.statuses!.includes(m.status));
   }, [markers, filters]);
 
-  const onMapLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-  }, []);
-
-  const mapOptions: google.maps.MapOptions = useMemo(() => ({
-    disableDefaultUI: true,
-    zoomControl: true,
-    mapTypeControl: false,
-    streetViewControl: false,
-    fullscreenControl: true,
-    styles: darkMode ? DARK_MAP_STYLES : undefined,
-    backgroundColor: '#0f172a',
-  }), [darkMode]);
-
-  if (loadError || hasTimedOut) {
-    return (
-      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', borderRadius: 14, color: '#ef4444', fontSize: 13 }}>
-        지도 로드 실패{loadError ? `: ${loadError.message}` : ' (타임아웃)'}
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', borderRadius: 14, color: '#94a3b8', fontSize: 13 }}>
-        Google Maps 로딩 중...
-      </div>
-    );
-  }
+  const tileUrl = darkMode ? CARTO_DARK : CARTO_LIGHT;
 
   return (
     <div style={{ position: 'relative', height, width: '100%' }}>
-      <GoogleMap
-        mapContainerStyle={{ height: '100%', width: '100%', borderRadius: 14 }}
-        center={mapCenter}
+      <MapContainer
+        center={center ?? DEFAULT_CENTER}
         zoom={zoom}
-        options={mapOptions}
-        onLoad={onMapLoad}
+        style={{ height: '100%', width: '100%', borderRadius: 14 }}
+        zoomControl={true}
+        attributionControl={true}
       >
-        {/* 농장 마커 (Circle) */}
+        <TileLayer url={tileUrl} attribution={CARTO_ATTRIBUTION} />
+        <MapController
+          markers={filteredMarkers}
+          selectedFarmId={selectedFarmId}
+          center={center}
+          zoom={zoom}
+        />
+
         {filteredMarkers.map((m) => {
           if (!m.lat || !m.lng) return null;
           const color = STATUS_COLORS[m.status] ?? '#6b7280';
@@ -194,48 +192,38 @@ export function RegionalMap({
           const isSelected = m.farmId === selectedFarmId;
 
           return (
-            <GCircle
+            <CircleMarker
               key={m.farmId}
-              center={{ lat: m.lat, lng: m.lng }}
-              radius={isSelected ? radius * 1.4 : radius}
-              options={{
+              center={[m.lat, m.lng]}
+              radius={isSelected ? Math.round(radius * 1.4) : radius}
+              pathOptions={{
                 fillColor: color,
                 fillOpacity: 0.7,
-                strokeColor: isSelected ? '#00d67e' : 'rgba(255,255,255,0.6)',
-                strokeWeight: isSelected ? 3 : 1.5,
-                clickable: true,
-                zIndex: isSelected ? 10 : m.status === 'critical' ? 5 : 1,
+                color: isSelected ? '#00d67e' : 'rgba(255,255,255,0.6)',
+                weight: isSelected ? 3 : 1.5,
               }}
-              onClick={() => {
-                onMarkerClick?.(m.farmId);
-                setInfoFarm(m);
+              eventHandlers={{
+                click: () => onMarkerClick?.(m.farmId),
               }}
-            />
+            >
+              <Popup>
+                <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
+                  <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
+                  <p style={{ margin: 0 }}>{m.totalAnimals}두</p>
+                  {m.activeAlerts > 0 && (
+                    <p style={{ margin: '2px 0 0', color: '#dc2626', fontWeight: 600 }}>알림 {m.activeAlerts}건</p>
+                  )}
+                  {m.healthScore !== null && (
+                    <p style={{ margin: '2px 0 0', color: '#6b7280' }}>건강점수: {m.healthScore}</p>
+                  )}
+                </div>
+              </Popup>
+            </CircleMarker>
           );
         })}
+      </MapContainer>
 
-        {/* InfoWindow (농장 클릭 시 정보 표시) */}
-        {infoFarm && (
-          <InfoWindow
-            position={{ lat: infoFarm.lat, lng: infoFarm.lng }}
-            onCloseClick={() => setInfoFarm(null)}
-            options={{ maxWidth: 200 }}
-          >
-            <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
-              <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{infoFarm.name}</p>
-              <p style={{ margin: 0 }}>{infoFarm.totalAnimals}두</p>
-              {infoFarm.activeAlerts > 0 && (
-                <p style={{ margin: '2px 0 0', color: '#dc2626', fontWeight: 600 }}>알림 {infoFarm.activeAlerts}건</p>
-              )}
-              {infoFarm.healthScore !== null && (
-                <p style={{ margin: '2px 0 0', color: '#6b7280' }}>건강점수: {infoFarm.healthScore}</p>
-              )}
-            </div>
-          </InfoWindow>
-        )}
-      </GoogleMap>
-
-      {/* 범례 */}
+      {/* 범례 오버레이 */}
       <MapLegend collapsed={legendCollapsed} onToggle={() => setLegendCollapsed(!legendCollapsed)} />
     </div>
   );

@@ -2,10 +2,10 @@
 // 시도별 위험 등급 지도 + 드릴다운 + 광역 경보 배너
 // 드릴다운: 시도 → 농장 → 개체 → AI
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GoogleMap, Circle as GCircle, InfoWindow } from '@react-google-maps/api';
-import { useGoogleMaps } from '@web/hooks/useGoogleMaps';
+import { MapContainer, TileLayer, Circle as LCircle, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
@@ -81,16 +81,8 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 };
 
 
-const DARK_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
-  { featureType: 'road', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
+const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 function provinceRadius(farmCount: number): number {
   return Math.max(8000, Math.min(30000, farmCount * 2000));
@@ -103,24 +95,12 @@ function provinceRadius(farmCount: number): number {
 export default function NationalSituation(): React.JSX.Element {
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
   const [showFarmPanel, setShowFarmPanel] = useState(false);
-  const [infoProvince, setInfoProvince] = useState<ProvinceStats | null>(null);
 
   // 개체 드릴다운 상태
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
   const [drillFarmName, setDrillFarmName] = useState<string>('');
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
-
-  const mapRef = useRef<google.maps.Map | null>(null);
-
-  const { isLoaded } = useGoogleMaps();
-
-  const [hasTimedOut, setHasTimedOut] = useState(false);
-  useEffect(() => {
-    if (isLoaded) return;
-    const timer = setTimeout(() => setHasTimedOut(true), 10_000);
-    return () => clearTimeout(timer);
-  }, [isLoaded]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['quarantine', 'national-situation'],
@@ -212,65 +192,43 @@ export default function NationalSituation(): React.JSX.Element {
             </p>
           </div>
           <div style={{ height: 400 }}>
-            {hasTimedOut ? (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#ef4444', fontSize: 13 }}>
-                지도 로드 실패 (타임아웃)
-              </div>
-            ) : !isLoaded ? (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontSize: 13 }}>
-                지도 로딩 중...
-              </div>
-            ) : (
-              <GoogleMap
-                mapContainerStyle={{ height: '100%', width: '100%' }}
-                center={{ lat: 36.5, lng: 127.5 }}
-                zoom={7}
-                options={{
-                  disableDefaultUI: true,
-                  zoomControl: true,
-                  styles: DARK_STYLES,
-                  backgroundColor: '#0f172a',
-                }}
-                onLoad={(map) => { mapRef.current = map; }}
-              >
-                {(data?.provinces ?? []).map((p) => {
-                  const color = RISK_COLOR[p.riskLevel];
-                  return (
-                    <GCircle
-                      key={p.province}
-                      center={{ lat: p.centerLat, lng: p.centerLng }}
-                      radius={provinceRadius(p.farmCount)}
-                      options={{
-                        fillColor: color,
-                        fillOpacity: 0.6,
-                        strokeColor: color,
-                        strokeWeight: 2,
-                        clickable: true,
-                        zIndex: p.riskLevel === 'red' ? 5 : p.riskLevel === 'orange' ? 3 : 1,
-                      }}
-                      onClick={() => {
-                        handleProvinceClick(p.province);
-                        setInfoProvince(p);
-                      }}
-                    />
-                  );
-                })}
-
-                {infoProvince && (
-                  <InfoWindow
-                    position={{ lat: infoProvince.centerLat, lng: infoProvince.centerLng }}
-                    onCloseClick={() => setInfoProvince(null)}
+            <MapContainer
+              center={[36.5, 127.5]}
+              zoom={7}
+              style={{ height: '100%', width: '100%' }}
+              zoomControl={true}
+              attributionControl={true}
+            >
+              <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} />
+              {(data?.provinces ?? []).map((p) => {
+                const color = RISK_COLOR[p.riskLevel];
+                return (
+                  <LCircle
+                    key={p.province}
+                    center={[p.centerLat, p.centerLng]}
+                    radius={provinceRadius(p.farmCount)}
+                    pathOptions={{
+                      fillColor: color,
+                      fillOpacity: 0.6,
+                      color: color,
+                      weight: 2,
+                    }}
+                    eventHandlers={{
+                      click: () => handleProvinceClick(p.province),
+                    }}
                   >
-                    <div style={{ fontSize: 12, lineHeight: 1.6, color: '#1e293b' }}>
-                      <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{infoProvince.province}</p>
-                      <p style={{ margin: 0 }}>농장 {infoProvince.farmCount}개 | {infoProvince.totalAnimals.toLocaleString()}두</p>
-                      <p style={{ margin: 0 }}>발열 {infoProvince.feverAnimals}두 ({(infoProvince.feverRate * 100).toFixed(1)}%)</p>
-                      <p style={{ margin: 0 }}>등급: <strong>{infoProvince.riskLevel.toUpperCase()}</strong></p>
-                    </div>
-                  </InfoWindow>
-                )}
-              </GoogleMap>
-            )}
+                    <Popup>
+                      <div style={{ fontSize: 12, lineHeight: 1.6, color: '#1e293b' }}>
+                        <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{p.province}</p>
+                        <p style={{ margin: 0 }}>농장 {p.farmCount}개 | {p.totalAnimals.toLocaleString()}두</p>
+                        <p style={{ margin: 0 }}>발열 {p.feverAnimals}두 ({(p.feverRate * 100).toFixed(1)}%)</p>
+                        <p style={{ margin: 0 }}>등급: <strong>{p.riskLevel.toUpperCase()}</strong></p>
+                      </div>
+                    </Popup>
+                  </LCircle>
+                );
+              })}
+            </MapContainer>
           </div>
         </div>
 

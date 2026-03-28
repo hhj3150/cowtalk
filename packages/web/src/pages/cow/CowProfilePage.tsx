@@ -51,43 +51,67 @@ interface SensorLatest {
  * 정상체온 = 음수 피크(37.5°C 미만) 제외 후 24h 평균
  * 소의 위내 체온은 물 섭취 시 급강하했다가 회복됨.
  * smaXtec 차트의 흰 직선(정상체온 라인)과 동일한 계산.
+ *
+ * ⚠️ pts.ts는 Unix 초(seconds) 단위 → Date.now() / 1000으로 비교
  */
 function computeBaselineTemp(pts: readonly { ts: number; value: number }[]): number | null {
   if (pts.length === 0) return null;
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() / 1000 - 24 * 60 * 60; // seconds
   const recent = pts.filter((p) => p.ts >= cutoff);
-  const src = recent.length > 0 ? recent : pts.slice(-12);
+  const src = recent.length > 0 ? recent : pts.slice(-48);
   const valid = src.filter((p) => p.value >= 37.5);
   if (valid.length === 0) return src[src.length - 1]!.value;
   return valid.reduce((s, p) => s + p.value, 0) / valid.length;
 }
 
 /**
- * 24h 음수횟수 = 체온이 정상체온 대비 0.8°C 이상 급강하한 별개 이벤트 수
- * 소가 물을 마시면 위내 온도가 30°C대로 떨어졌다 회복됨.
- * 음수횟수 ≈ 사료섭취횟수 (동일한 신체 행동)
+ * 24h 음수횟수 — 체온 급강하-회복 사이클 카운팅
+ *
+ * 소가 물을 마시면 위내 온도가 급격히 낮아졌다가 40분~2시간에 걸쳐 정상 회복됨.
+ * → 회복 완료 시점을 "음수 1회"로 카운트 (복구 피크 = 1 이벤트)
+ *
+ * 알고리즘:
+ * 1. 베이스라인 = 37.5°C 이상 포인트의 평균
+ * 2. 기준 - 1.5°C 이하 → 음수 시작 (DIP_START)
+ * 3. 기준 - 0.5°C 이상 → 회복 완료 (DIP_END) → count++
+ * 4. 최소 딥 지속시간: 20분 (노이즈 제거)
+ * 5. 최소 이벤트 간격: 30분 (동일 음수 세션 중복 방지)
+ *
+ * ⚠️ pts.ts는 Unix 초(seconds) 단위
  */
 function computeDrinkingCount(pts: readonly { ts: number; value: number }[]): number {
-  if (pts.length < 3) return 0;
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  if (pts.length < 5) return 0;
+  const cutoff = Date.now() / 1000 - 24 * 60 * 60; // seconds
   const recent = pts.filter((p) => p.ts >= cutoff);
-  if (recent.length < 3) return 0;
+  if (recent.length < 5) return 0;
+
   const validForBaseline = recent.filter((p) => p.value >= 37.5);
-  if (validForBaseline.length === 0) return 0;
+  if (validForBaseline.length < 3) return 0;
   const baseline = validForBaseline.reduce((s, p) => s + p.value, 0) / validForBaseline.length;
-  const dipThreshold = baseline - 0.8;
-  const MIN_GAP_MS = 30 * 60 * 1000;
+
+  const DIP_THRESHOLD   = baseline - 1.5; // 음수 시작: 1.5°C 이상 낙하
+  const RECOVERY_THRESH = baseline - 0.5; // 회복 완료: 0.5°C 이내 복귀
+  const MIN_DIP_S       = 20 * 60;        // 최소 딥 지속 20분 (초)
+  const MIN_GAP_S       = 30 * 60;        // 이벤트 간 최소 간격 30분 (초)
+
   let count = 0;
   let inDip = false;
-  let lastDipEndTs = 0;
+  let dipStartTs = 0;
+  let lastEventTs = -(MIN_GAP_S * 2); // 첫 이벤트 허용
+
   for (const pt of recent) {
-    if (pt.value < dipThreshold) {
-      if (!inDip && pt.ts - lastDipEndTs >= MIN_GAP_MS) {
+    if (!inDip && pt.value < DIP_THRESHOLD) {
+      // 음수 시작
+      inDip = true;
+      dipStartTs = pt.ts;
+    } else if (inDip && pt.value >= RECOVERY_THRESH) {
+      // 체온 회복 완료 — 음수 1회 카운트
+      const dipDuration = pt.ts - dipStartTs;
+      const gapSinceLast = dipStartTs - lastEventTs;
+      if (dipDuration >= MIN_DIP_S && gapSinceLast >= MIN_GAP_S) {
         count++;
-        inDip = true;
+        lastEventTs = pt.ts;
       }
-    } else if (inDip) {
-      lastDipEndTs = pt.ts;
       inDip = false;
     }
   }
@@ -95,13 +119,16 @@ function computeDrinkingCount(pts: readonly { ts: number; value: number }[]): nu
 }
 
 /**
- * 반추 24h 평균 — 마지막 순간 값이 아닌 하루 평균
+ * 반추 24h 평균 — 마지막 순간 값이 아닌 하루치 10분 단위 전체 평균
+ * smaXtec은 10분 간격으로 반추시간을 측정하므로 하루 평균이 더 의미 있음.
+ *
+ * ⚠️ pts.ts는 Unix 초(seconds) 단위
  */
 function computeRumAvg(pts: readonly { ts: number; value: number }[]): number | null {
   if (pts.length === 0) return null;
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() / 1000 - 24 * 60 * 60; // seconds
   const recent = pts.filter((p) => p.ts >= cutoff);
-  const src = recent.length > 0 ? recent : pts.slice(-12);
+  const src = recent.length > 3 ? recent : pts.slice(-144); // 최소 144포인트(24h × 6/h)
   return src.reduce((s, p) => s + p.value, 0) / src.length;
 }
 
@@ -383,8 +410,10 @@ export default function CowProfilePage(): React.JSX.Element {
           </div>
           <div style={{ fontSize: 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
             <span>{tempStatus}</span>
-            {sensor && sensor.drinkingCount > 0 && (
-              <span style={{ color: '#64748b' }}>음수 {sensor.drinkingCount}회</span>
+            {sensor && (
+              <span style={{ color: sensor.drinkingCount > 0 ? '#81D4FA' : '#64748b', fontWeight: sensor.drinkingCount > 0 ? 600 : 400 }}>
+                음수 {sensor.drinkingCount}회
+              </span>
             )}
           </div>
         </div>
@@ -424,7 +453,7 @@ export default function CowProfilePage(): React.JSX.Element {
           </div>
           <div style={{ fontSize: 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--ct-text-muted)' }}>음수량</span>
-            {sensor && sensor.drinkingCount > 0 && (
+            {sensor && (
               <span style={{ color: '#06b6d4', fontWeight: 600 }}>{sensor.drinkingCount}회</span>
             )}
           </div>

@@ -785,25 +785,39 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
 
           {/* ── 소버린 AI 어시스턴트 — 지식 강화 루프 ── */}
-          {(data?.assistantAlerts && data.assistantAlerts.length > 0 || sovereignStats) && (
           <>
           <SectionLabel>AI 어시스턴트</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (sovereignStats ? '1fr 1fr' : '1fr'), gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : ((data?.assistantAlerts && data.assistantAlerts.length > 0) ? '1fr 1fr' : '1fr'), gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             {data?.assistantAlerts && data.assistantAlerts.length > 0 && (
               <AssistantAlertPanel
                 alerts={data.assistantAlerts}
                 onAlertClick={(alert) => setDrilldown({ eventType: alert.type, label: alert.label })}
               />
             )}
-            {sovereignStats && (
+            {sovereignStats ? (
               <SovereignAiWidget
                 stats={sovereignStats}
                 onOpenLabelChat={() => setTinkerbellTrigger('소버린AI 지식 강화를 시작합니다')}
               />
+            ) : (
+              <div style={{
+                background: 'var(--ct-card)',
+                borderRadius: 14,
+                border: '1px solid var(--ct-border)',
+                padding: '32px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--ct-text-muted)',
+                fontSize: 13,
+                gap: 8,
+              }}>
+                <span>🌏</span>
+                <span>Sovereign AI 데이터 로딩 중...</span>
+              </div>
             )}
           </div>
           </>
-          )}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>
