@@ -155,25 +155,49 @@ export function FarmAnimalDrawer({
           </button>
         </div>
 
-        {/* ── 목장 선택기 (트리 1단계) ── */}
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e293b' }}>
-          <select
-            value={selectedFarmId ?? ''}
-            onChange={(e) => onFarmSelect(e.target.value)}
-            style={{
-              width: '100%', padding: '7px 10px', borderRadius: 6,
-              background: '#0f172a', border: '1px solid #334155',
-              color: '#f1f5f9', fontSize: 12, cursor: 'pointer',
-            }}
-          >
-            <option value="">— 목장을 선택하세요 —</option>
-            {farms.map((f) => (
-              <option key={f.farmId} value={f.farmId}>
-                {f.name} {f.currentHeadCount ? `(${f.currentHeadCount}두)` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* ── 목장 선택기: 미선택 시 드롭다운 / 선택 시 변경 버튼 ── */}
+        {!selectedFarmId ? (
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e293b' }}>
+            <select
+              value=""
+              onChange={(e) => { if (e.target.value) onFarmSelect(e.target.value); }}
+              style={{
+                width: '100%', padding: '7px 10px', borderRadius: 6,
+                background: '#0f172a', border: '1px solid #334155',
+                color: '#f1f5f9', fontSize: 12, cursor: 'pointer',
+              }}
+            >
+              <option value="">— 목장을 선택하세요 —</option>
+              {farms.map((f) => (
+                <option key={f.farmId} value={f.farmId}>
+                  {f.name} {f.currentHeadCount ? `(${f.currentHeadCount}두)` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div style={{
+            padding: '6px 12px',
+            borderBottom: '1px solid #1e293b',
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          }}>
+            <select
+              value={selectedFarmId}
+              onChange={(e) => { if (e.target.value) onFarmSelect(e.target.value); }}
+              style={{
+                padding: '4px 8px', borderRadius: 5,
+                background: '#0f172a', border: '1px solid #334155',
+                color: '#94a3b8', fontSize: 11, cursor: 'pointer',
+              }}
+            >
+              {farms.map((f) => (
+                <option key={f.farmId} value={f.farmId}>
+                  {f.name} {f.currentHeadCount ? `(${f.currentHeadCount}두)` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* ── 검색 ── */}
         {selectedFarmId && (

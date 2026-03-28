@@ -500,8 +500,9 @@ export default function CowProfilePage(): React.JSX.Element {
       {/* ── 2단 레이아웃: 좌측 핵심정보 + 우측 AI/이력 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '7fr 5fr', gap: 14, marginBottom: 16 }}>
 
-        {/* 좌측: 이력추적 + 백신/방역 + 번식 */}
+        {/* 좌측: 이벤트 기록 + 이력추적 + 백신/방역 + 번식 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
             <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--ct-text)' }}>🏛️ 축산물이력추적</h3>
             <SectionErrorBoundary label="이력추적">
@@ -675,50 +676,16 @@ export default function CowProfilePage(): React.JSX.Element {
             <BreedingTimeline animalId={profile.animalId} />
           </SectionErrorBoundary>
 
-          {/* 임신감정 기록 버튼 */}
-          <button
-            type="button"
-            onClick={() => setShowPregnancyCheck(true)}
-            style={{
-              width: '100%', padding: '12px 16px', borderRadius: 10,
-              background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
-              color: '#fff', border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 800,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}
-          >
-            🔍 임신감정 기록
-          </button>
-
-          {/* 건유 전환 버튼 */}
-          {profile.lactationStatus !== 'dry' && (
-            <button
-              type="button"
-              onClick={() => setShowDryOff(true)}
-              style={{
-                width: '100%', padding: '12px 16px', borderRadius: 10,
-                background: 'linear-gradient(135deg, #eab308, #f59e0b)',
-                color: '#000', border: 'none', cursor: 'pointer',
-                fontSize: 13, fontWeight: 800,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              }}
-            >
-              🏖️ 건유 전환
-            </button>
-          )}
+          {/* ── 이벤트 기록 패널 ── */}
+          <SectionErrorBoundary label="이벤트 기록">
+            <AnimalEventPanel
+              animalId={profile.animalId}
+              farmId={profile.farmId}
+              earTag={profile.earTag}
+              onProfileChange={() => window.location.reload()}
+            />
+          </SectionErrorBoundary>
         </div>
-      </div>
-
-      {/* ── 이벤트 기록 패널 ── */}
-      <div style={{ marginBottom: 16 }}>
-        <SectionErrorBoundary label="이벤트 기록">
-          <AnimalEventPanel
-            animalId={profile.animalId}
-            farmId={profile.farmId}
-            earTag={profile.earTag}
-            onProfileChange={() => window.location.reload()}
-          />
-        </SectionErrorBoundary>
       </div>
 
       {/* 팅커벨 AI */}

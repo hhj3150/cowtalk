@@ -43,8 +43,8 @@ const envSchema = z.object({
 
   // Anthropic Claude API — 이중 모델 구성
   ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default('claude-3-7-sonnet-20250219'),
-  ANTHROPIC_MODEL_DEEP: z.string().default('claude-3-7-sonnet-20250219'),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+  ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-5-20251101'),
   ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(4000),
   ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
 
