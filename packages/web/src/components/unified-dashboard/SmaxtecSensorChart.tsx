@@ -65,8 +65,7 @@ interface ChartRow {
   actRaw?: number;      // original raw value for tooltip
   estrus?: number;
   calving?: number;
-  dr?: number;          // raw × 10 (scaled for visibility, actual range 0-20 L/10min)
-  drRaw?: number;       // original raw value for tooltip
+  dr?: number;          // 일별 합산 L (서버에서 집계, 100-170L 범위)
 }
 
 /**
@@ -114,13 +113,9 @@ function mergeMetrics(data: AnimalSensorChartData): ChartRow[] {
   for (const p of data.metrics['estrus'] ?? []) { const r = ensure(p.ts); r.estrus = p.value; }
   for (const p of data.metrics['calving']?? []) { const r = ensure(p.ts); r.calving= p.value; }
 
-  // 음수 — water_intake: smaXtec 10분 단위 실시간 데이터 (L/10min)
-  // 실제 범위 0~20L/10min → ×10 스케일로 차트 하단 스파이크 가시화
-  for (const p of data.metrics['dr'] ?? []) {
-    const r = ensure(p.ts);
-    r.drRaw = p.value;
-    r.dr = p.value * 10;
-  }
+  // 음수 — 서버에서 일별 합산된 값 (L/day, 100-170L 범위)
+  // smaXtec 동일 계단형: 각 날짜 시작 ts → 해당 일 전체에 stepAfter로 표시
+  for (const p of data.metrics['dr'] ?? []) { const r = ensure(p.ts); r.dr = p.value; }
 
   return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
 }
@@ -208,7 +203,7 @@ function buildTooltipRows(payload: readonly { dataKey: string; value: unknown }[
   if (point.estrus !== undefined)      rows.push({ name: '발정지수',    value: point.estrus,      color: C.estrus,   unit: '',        precision: 2 });
   if (point.rum !== undefined)         rows.push({ name: '반추 (min)',  value: point.rum,         color: C.rum,      unit: '/24h',    precision: 2 });
   if (point.calving !== undefined)     rows.push({ name: '분만지수',    value: point.calving,     color: C.calving,  unit: '',        precision: 0 });
-  if (point.drRaw !== undefined && point.drRaw > 0) rows.push({ name: '음수량', value: point.drRaw, color: C.dr, unit: ' L', precision: 1 });
+  if (point.dr !== undefined && point.dr > 0) rows.push({ name: '음수량(일)', value: point.dr, color: C.dr, unit: ' L/일', precision: 0 });
   return rows;
 }
 
@@ -525,11 +520,11 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
               connectNulls />
           )}
 
-          {/* 음수량 — 10분 단위 스파이크 (×10 스케일) */}
+          {/* 음수량 — 일별 합산 계단형 (smaXtec 동일) */}
           {effectiveVisible['dr'] && (
-            <Line yAxisId="lh" type="monotone" dataKey="dr"
-              stroke={C.dr} strokeWidth={1.5} dot={false} isAnimationActive={false}
-              connectNulls={false} />
+            <Line yAxisId="lh" type="stepAfter" dataKey="dr"
+              stroke={C.dr} strokeWidth={2} dot={false} isAnimationActive={false}
+              connectNulls />
           )}
 
           {/* 분만지수 */}

@@ -1387,8 +1387,21 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
               (metrics as Record<string, { ts: number; value: number }[]>)['rum'] =
                 values.map((p) => ({ ts: p.ts, value: Math.round(p.value / 60) }));
             } else if (key === 'water_intake') {
-              // water_intake: L/10min 실시간 음수량 → 'dr' 키로 저장
-              (metrics as Record<string, readonly { ts: number; value: number }[]>)['dr'] = values;
+              // water_intake: L/10min 원시값 → 일별 합산 → smaXtec 동일한 계단형 표시
+              // 각 날짜의 시작 ts에 일일 합계를 배치 (step-after로 하루 전체에 표시)
+              const dailyMap = new Map<string, { ts: number; sum: number }>();
+              for (const p of values) {
+                const d = new Date(p.ts * 1000);
+                const kst = new Date(d.getTime() + 9 * 3600_000); // UTC→KST
+                const dayKey = `${kst.getUTCFullYear()}-${kst.getUTCMonth()}-${kst.getUTCDate()}`;
+                const dayStartTs = Math.floor((p.ts + 9 * 3600) / 86400) * 86400 - 9 * 3600; // KST 자정 → UTC ts
+                if (!dailyMap.has(dayKey)) dailyMap.set(dayKey, { ts: dayStartTs, sum: 0 });
+                dailyMap.get(dayKey)!.sum += p.value;
+              }
+              const dailyDr = Array.from(dailyMap.values())
+                .sort((a, b) => a.ts - b.ts)
+                .map((d) => ({ ts: d.ts, value: Math.round(d.sum * 10) / 10 }));
+              (metrics as Record<string, { ts: number; value: number }[]>)['dr'] = dailyDr;
             } else {
               (metrics as Record<string, readonly { ts: number; value: number }[]>)[key] = values;
             }
