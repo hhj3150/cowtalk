@@ -81,7 +81,7 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 };
 
 
-const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 function provinceRadius(farmCount: number): number {
@@ -199,7 +199,7 @@ export default function NationalSituation(): React.JSX.Element {
               zoomControl={true}
               attributionControl={true}
             >
-              <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} />
+              <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} subdomains="abcd" maxZoom={20} />
               {(data?.provinces ?? []).map((p) => {
                 const color = RISK_COLOR[p.riskLevel];
                 return (

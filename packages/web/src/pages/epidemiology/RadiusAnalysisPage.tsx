@@ -65,7 +65,7 @@ const RISK_LABELS: Readonly<Record<string, string>> = {
 const RADIUS_OPTIONS = [0.5, 1, 3, 5, 10] as const;
 
 
-const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 // 지도 중심 동적 이동 (MapContainer 내부 전용)
@@ -169,7 +169,7 @@ export default function RadiusAnalysisPage(): React.JSX.Element {
             zoomControl={true}
             attributionControl={true}
           >
-            <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} />
+            <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} subdomains="abcd" maxZoom={20} />
             <MapCenterController center={center} />
 
             {/* 중심 농장 */}

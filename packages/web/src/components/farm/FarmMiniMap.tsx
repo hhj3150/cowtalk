@@ -21,7 +21,7 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
   suspended: '#f59e0b',
 };
 
-const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 interface MarkerData {
@@ -82,7 +82,7 @@ export function FarmMiniMap({ farms, onFarmClick }: Props): React.JSX.Element {
           zoomControl={true}
           attributionControl={true}
         >
-          <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} />
+          <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} subdomains="abcd" maxZoom={20} />
           <MapController markers={markers} />
 
           {markers.map((m) => {
