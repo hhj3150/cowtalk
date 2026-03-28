@@ -18,6 +18,7 @@ import {
   useHealthAlertsSummary,
   useFertilityManagement,
   useSovereignAiStats,
+  useSovereignAlarms,
 } from '@web/hooks/useUnifiedDashboard';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
@@ -40,6 +41,7 @@ import {
   RiskTop10Widget,
   SovereignAiWidget,
   AssistantAlertPanel,
+  SovereignAlarmFeed,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -535,6 +537,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: farmsData } = useDashboardFarms();
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const { data: sovereignAlarmData, isLoading: sovereignLoading } = useSovereignAlarms(selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const { isVisible, roleLabel } = useRoleDashboard();
   const isMobile = useIsMobile();
@@ -730,6 +733,31 @@ export default function UnifiedDashboard(): React.JSX.Element {
             {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
             {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
           </div>
+          )}
+
+          {isVisible('live_alarm_feed') && selectedFarmId && (
+            <div style={{
+              background: 'var(--ct-card)',
+              borderRadius: 14,
+              border: '1px solid var(--ct-border)',
+              padding: '14px 16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 16 }}>🧚</span>
+                <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ct-text)' }}>소버린 AI 알람</span>
+                <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>CowTalk 독자 수의학 분석</span>
+                {sovereignAlarmData?.alarms.length ? (
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#f97316', fontWeight: 700 }}>
+                    {sovereignAlarmData.alarms.length}건 감지
+                  </span>
+                ) : null}
+              </div>
+              <SovereignAlarmFeed
+                alarms={sovereignAlarmData?.alarms ?? []}
+                isLoading={sovereignLoading}
+                farmId={selectedFarmId}
+              />
+            </div>
           )}
 
           {/* ── 수의사 전용 섹션 ── */}

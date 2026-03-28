@@ -302,6 +302,20 @@ export function useInseminationRoute(date?: string) {
   });
 }
 
+// ── 소버린 AI 알람 ──
+
+import { getSovereignAlarms } from '@web/api/unified-dashboard.api';
+
+export function useSovereignAlarms(farmId: string | null) {
+  return useQuery({
+    queryKey: ['sovereign-alarms', farmId],
+    queryFn: () => getSovereignAlarms(farmId!, 30),
+    enabled: !!farmId,
+    staleTime: 5 * 60_000, // 5분 캐시
+    retry: 1,
+  });
+}
+
 // ── 소버린 AI 지식 강화 ──
 
 import { getSovereignStats } from '@web/api/label-chat.api';

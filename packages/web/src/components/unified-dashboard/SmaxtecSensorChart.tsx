@@ -120,22 +120,16 @@ function mergeMetrics(data: AnimalSensorChartData): ChartRow[] {
   return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
 }
 
-/** 주야간 밴드 생성 (한국시간 UTC+9) */
-function buildDayNightBands(tsMin: number, tsMax: number) {
-  const OFFSET = 9 * 3600;
-  const bands: Array<{ x1: number; x2: number; day: boolean }> = [];
-  const dayFloor = Math.floor((tsMin + OFFSET) / 86400) * 86400 - OFFSET - 86400;
-  for (let d = dayFloor; d < tsMax + 86400; d += 86400) {
-    const night1S = d;                  const night1E = d + 6 * 3600;
-    const dayS    = d + 6 * 3600;       const dayE    = d + 18 * 3600;
-    const night2S = d + 18 * 3600;      const night2E = d + 24 * 3600;
-    const clamp = (s: number, e: number, day: boolean) => {
-      const cs = Math.max(s, tsMin), ce = Math.min(e, tsMax);
-      if (cs < ce) bands.push({ x1: cs, x2: ce, day });
-    };
-    clamp(night1S, night1E, false);
-    clamp(dayS, dayE, true);
-    clamp(night2S, night2E, false);
+/** KST 날짜 기준 하루 단위 교대 배경 밴드 — 짝수=녹색, 홀수=어둠 */
+function buildDayBands(tsMin: number, tsMax: number) {
+  const OFFSET = 9 * 3600; // KST
+  const bands: Array<{ x1: number; x2: number; even: boolean }> = [];
+  const firstDayStart = Math.floor((tsMin + OFFSET) / 86400) * 86400 - OFFSET;
+  let idx = 0;
+  for (let d = firstDayStart; d < tsMax + 86400; d += 86400, idx++) {
+    const cs = Math.max(d, tsMin);
+    const ce = Math.min(d + 86400, tsMax);
+    if (cs < ce) bands.push({ x1: cs, x2: ce, even: idx % 2 === 0 });
   }
   return bands;
 }
@@ -194,7 +188,11 @@ function TempAxisOverlay(props: TempAxisProps): React.JSX.Element {
 
 interface TTPayload { name: string; value: number | undefined; color: string; unit: string; precision: number }
 
-function buildTooltipRows(payload: readonly { dataKey: string; value: unknown }[], point: ChartRow): TTPayload[] {
+function buildTooltipRows(
+  payload: readonly { dataKey: string; value: unknown }[],
+  point: ChartRow,
+  currentDr?: number,
+): TTPayload[] {
   void payload; // Recharts payload가 scaled이므로 raw 값 직접 사용
   const rows: TTPayload[] = [];
   if (point.tempRaw !== undefined)     rows.push({ name: '온도',        value: point.tempRaw,     color: C.temp,     unit: '°C',      precision: 2 });
@@ -203,7 +201,8 @@ function buildTooltipRows(payload: readonly { dataKey: string; value: unknown }[
   if (point.estrus !== undefined)      rows.push({ name: '발정지수',    value: point.estrus,      color: C.estrus,   unit: '',        precision: 2 });
   if (point.rum !== undefined)         rows.push({ name: '반추 (min)',  value: point.rum,         color: C.rum,      unit: '/24h',    precision: 2 });
   if (point.calving !== undefined)     rows.push({ name: '분만지수',    value: point.calving,     color: C.calving,  unit: '',        precision: 0 });
-  if (point.dr !== undefined && point.dr > 0) rows.push({ name: '음수량(일)', value: point.dr, color: C.dr, unit: ' L/일', precision: 0 });
+  const dr = point.dr ?? currentDr;
+  if (dr !== undefined && dr > 0)      rows.push({ name: '음수량(일)', value: dr,                color: C.dr,       unit: ' L/일',   precision: 0 });
   return rows;
 }
 
@@ -216,7 +215,15 @@ function CustomTooltip({ active, payload, label, chartData }: {
   if (!active || !payload?.length || label === undefined) return null;
   const point = chartData.find((r) => r.ts === label);
   if (!point) return null;
-  const rows = buildTooltipRows(payload, point);
+
+  // 일별 음수량: 해당 시점 이전 가장 최근 dr 값
+  let currentDr: number | undefined;
+  for (let i = chartData.length - 1; i >= 0; i--) {
+    const r = chartData[i]!;
+    if (r.ts <= label && r.dr !== undefined) { currentDr = r.dr; break; }
+  }
+
+  const rows = buildTooltipRows(payload, point, currentDr);
 
   return (
     <div style={{
@@ -295,8 +302,8 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
     return { tsMin: chartData[0]!.ts, tsMax: chartData[chartData.length - 1]!.ts };
   }, [chartData]);
 
-  // 주야간 밴드
-  const bands = useMemo(() => buildDayNightBands(tsMin, tsMax), [tsMin, tsMax]);
+  // 하루 단위 교대 밴드
+  const bands = useMemo(() => buildDayBands(tsMin, tsMax), [tsMin, tsMax]);
 
   // 뷰 모드에 따른 가시성
   const effectiveVisible = useMemo<Record<string, boolean>>(() => {
@@ -407,7 +414,7 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
               key={i}
               x1={b.x1} x2={b.x2}
               yAxisId="lh"
-              fill={b.day ? C.day : C.night}
+              fill={b.even ? C.day : C.night}
               fillOpacity={1}
               stroke="none"
             />

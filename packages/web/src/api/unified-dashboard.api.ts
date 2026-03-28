@@ -303,3 +303,25 @@ export function fetchAnimalSensorChart(
     `/unified-dashboard/animal/${animalId}/sensor-chart?days=${days}`,
   );
 }
+
+// ── 소버린 AI 알람 ──
+
+export interface SovereignAlarm {
+  readonly alarmId: string;
+  readonly animalId: string;
+  readonly earTag: string;
+  readonly animalName: string | null;
+  readonly farmId: string;
+  readonly type: string;
+  readonly severity: 'info' | 'caution' | 'warning' | 'critical';
+  readonly title: string;
+  readonly reasoning: string;
+  readonly actionPlan: string;
+  readonly confidence: number;
+  readonly detectedAt: string;
+  readonly dataPoints: Record<string, number>;
+}
+
+export function getSovereignAlarms(farmId: string, limit = 30): Promise<{ alarms: readonly SovereignAlarm[]; generatedAt: string }> {
+  return apiGet<{ alarms: readonly SovereignAlarm[]; generatedAt: string }>(`/sovereign-alarms?farmId=${farmId}&limit=${limit}`);
+}
