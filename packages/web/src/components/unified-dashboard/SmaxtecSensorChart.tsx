@@ -1,7 +1,10 @@
 // smaXtec 완전 복제 센서 차트
 // - 7개 시리즈 통합 (체온·평균체온·반추·활동·음수·발정지수·분만지수)
-// - 3축: 좌 0-600 l/24h + °C 오버레이, 우 0-700 분
-// - 체온 × 10 스케일링 → l/24h 축에 오버레이 (smaXtec 동일 기법)
+// - 3축: 좌 0-700 l/24h + °C 오버레이, 우 0-600 분 (반추)
+// - 시각 레이아웃 (smaXtec 골드 스탠다드 일치):
+//     반추 GREEN → 73% (상단)
+//     체온 BLUE → 67% (중단, W딥 가시화)
+//     활동 DARKRED → 0-43% (하단, raw×3 스케일)
 // - 주야간 배경 밴드, 이벤트 마커(주황 수직선), 마우스무브 크로스헤어 툴팁
 // - 뷰 모드: 전체보기 / 반추+음수 토글
 // - 시리즈별 ON/OFF 설정 드롭다운
@@ -43,21 +46,23 @@ const C = {
  * 체온 °C → 좌측 축 스케일 (가독성 최우선)
  * 공식: (t - 20) × 25
  *   20°C →   0  (바닥)
- *   30°C → 250  (음수 최저점 가시화)
- *   38°C → 450  (정상체온 중간 배치)
+ *   30°C → 250  (음수 최저점 — 드링킹 딥 가시화)
+ *   38°C → 450  (정상체온)
  *   42°C → 550  (고열 영역)
- * → 1°C 변화 = 25/650 ≈ 3.8% 차트 높이 (기존 ×10 방식 대비 3.5배 민감도)
+ * left domain [0,700]: 38.8°C → 470/700 = 67% (반추 440/600=73% 아래 배치)
+ * → 1°C 변화 = 25/700 ≈ 3.6% 차트 높이, 8°C 음수딥 = 28.6% 낙차
  */
 const tempToScale = (t: number) => (t - 20) * 25;
 
 interface ChartRow {
   ts: number;
-  temp?: number;        // scaled (°C × 10)
+  temp?: number;        // scaled via tempToScale
   tempRaw?: number;     // actual °C
   tempNorm?: number;    // scaled
   tempNormRaw?: number; // actual °C
   rum?: number;
-  act?: number;
+  act?: number;         // raw × 3 (scaled for visibility)
+  actRaw?: number;      // original raw value for tooltip
   estrus?: number;
   calving?: number;
   dr?: number;
@@ -102,18 +107,22 @@ function mergeMetrics(data: AnimalSensorChartData): ChartRow[] {
     const n = normMap.get(p.ts);
     if (n !== undefined) { r.tempNormRaw = n; r.tempNorm = tempToScale(n); }
   }
-  for (const p of data.metrics['act']    ?? []) { const r = ensure(p.ts); r.act    = p.value; }
+  for (const p of data.metrics['act']    ?? []) { const r = ensure(p.ts); r.actRaw = p.value; r.act = p.value * 3; }
   for (const p of data.metrics['rum']    ?? []) { const r = ensure(p.ts); r.rum    = p.value; }
   for (const p of data.metrics['estrus'] ?? []) { const r = ensure(p.ts); r.estrus = p.value; }
   for (const p of data.metrics['calving']?? []) { const r = ensure(p.ts); r.calving= p.value; }
 
-  // 음수 — 하루 단위 step: 마지막 하루값을 해당 일 전체에 적용
+  // 음수 — 하루 단위 step, 24시간 딜레이
+  // smaXtec에서 오늘 음수량 데이터는 내일 올라오므로:
+  //   - dr 데이터가 존재하는 마지막 시점까지만 표시
+  //   - 그 이후(오늘) 구간은 undefined → 라인 끊김 (오늘 추정값은 KPI drinkingCount로 별도 표시)
   const drPts = [...(data.metrics['dr'] ?? [])].sort((a, b) => a.ts - b.ts);
   if (drPts.length > 0) {
-    // 각 timestamp row에 해당하는 dr값 부여
+    const lastDrTs = drPts[drPts.length - 1]!.ts;
     let drIdx = 0;
     const sorted = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
     for (const row of sorted) {
+      if (row.ts > lastDrTs) break; // 마지막 dr 데이터 이후(오늘)는 표시 안 함
       while (drIdx + 1 < drPts.length && drPts[drIdx + 1]!.ts <= row.ts) drIdx++;
       row.dr = drPts[drIdx]?.value;
     }
@@ -169,15 +178,15 @@ interface TempAxisProps {
 
 function TempAxisOverlay(props: TempAxisProps): React.JSX.Element {
   const { top = 0, left = 0, height = 300 } = props;
-  // 음수 이벤트 가시화를 위해 30°C 포함, 주요 임상 기준점 강조
-  const ticks = [22, 26, 30, 34, 38, 42];
-  const domainMin = 0, domainMax = 650;
+  // 음수 이벤트 가시화를 위해 20°C 기점 포함, 주요 임상 기준점 강조
+  const ticks = [20, 24, 28, 32, 36, 40, 44];
+  const domainMin = 0, domainMax = 700;
   return (
     <g>
       {ticks.map((tc) => {
         const pct = (tempToScale(tc) - domainMin) / (domainMax - domainMin);
         const y = top + height * (1 - pct);
-        const isKey = tc === 38 || tc === 39; // 정상체온 범위 강조
+        const isKey = tc === 36 || tc === 40; // 정상체온 범위 경계 강조
         return (
           <text key={tc} x={left + 2} y={y + 4}
             textAnchor="start"
@@ -201,7 +210,7 @@ function buildTooltipRows(payload: readonly { dataKey: string; value: unknown }[
   const rows: TTPayload[] = [];
   if (point.tempRaw !== undefined)     rows.push({ name: '온도',        value: point.tempRaw,     color: C.temp,     unit: '°C',      precision: 2 });
   if (point.tempNormRaw !== undefined) rows.push({ name: '정상 체온',   value: point.tempNormRaw, color: C.tempNorm, unit: '°C',      precision: 2 });
-  if (point.act !== undefined)         rows.push({ name: '활동량',      value: point.act,         color: C.act,      unit: '',        precision: 2 });
+  if (point.actRaw !== undefined)      rows.push({ name: '활동량',      value: point.actRaw,      color: C.act,      unit: '',        precision: 1 });
   if (point.estrus !== undefined)      rows.push({ name: '발정지수',    value: point.estrus,      color: C.estrus,   unit: '',        precision: 2 });
   if (point.rum !== undefined)         rows.push({ name: '반추 (min)',  value: point.rum,         color: C.rum,      unit: '/24h',    precision: 2 });
   if (point.calving !== undefined)     rows.push({ name: '분만지수',    value: point.calving,     color: C.calving,  unit: '',        precision: 0 });
@@ -436,16 +445,16 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
           />
 
           {/* 좌측 Y축 — l/24h (활동/음수 + 체온 스케일)
-              domain [0,650]: (t-20)×25 공식
-                38°C → 450 → 69% (정상 체온 상단 배치)
-                30°C → 250 → 38% (음수 피크 시 큰 낙차 가시화)
-                act/dr 0-100 → 0-15% (하단 배치, 시각적 분리)
+              domain [0,700]: (t-20)×25 공식
+                38.8°C → 470 → 67% (정상 체온, 반추 73% 아래 배치)
+                30°C → 250 → 36% (음수 피크 → 31% 낙차 — W딥 명확)
+                act raw×3: 0-300 → 0-43% (하단 가시화)
           */}
           <YAxis
             yAxisId="lh"
             orientation="left"
-            domain={[0, 650]}
-            ticks={[0, 100, 200, 300, 400, 500, 600]}
+            domain={[0, 700]}
+            ticks={[0, 100, 200, 300, 400, 500, 600, 700]}
             tickFormatter={(v) => `${v}`}
             tick={{ fill: C.muted, fontSize: 9 }}
             tickLine={false}
@@ -455,12 +464,13 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
           />
 
           {/* 우측 Y축 — 반추 (분)
-              domain [0,800]: 반추 440분 → 55% (체온 69%와 14% 시각 분리) */}
+              domain [0,600]: 반추 440분 → 73% (체온 67% 위에 배치 — smaXtec 레이아웃 일치)
+              최대 600분: 정상 젖소 반추 상한값, 이상 시 600분 초과 가능 */}
           <YAxis
             yAxisId="rum"
             orientation="right"
-            domain={[0, 800]}
-            ticks={[0, 100, 200, 300, 400, 500, 600, 700]}
+            domain={[0, 600]}
+            ticks={[0, 100, 200, 300, 400, 500, 600]}
             tickFormatter={(v) => `${v}`}
             tick={{ fill: C.rum, fontSize: 9 }}
             tickLine={false}
@@ -507,10 +517,10 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
 
           {/* ── 시리즈 ── */}
 
-          {/* 활동량 */}
+          {/* 활동량 — raw×3 스케일 (가시성 3배 향상) */}
           {effectiveVisible['act'] && (
             <Line yAxisId="lh" type="monotone" dataKey="act"
-              stroke={C.act} strokeWidth={1.5} dot={false} isAnimationActive={false}
+              stroke={C.act} strokeWidth={2.0} dot={false} isAnimationActive={false}
               connectNulls />
           )}
 
