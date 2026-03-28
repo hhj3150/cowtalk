@@ -37,7 +37,6 @@ import {
   EventTimelineChart,
   EpidemicCommandCenter,
   FarmHealthScoreWidget,
-  AlarmLabelChatModal,
   HealthAlertsWidget,
   FertilityManagementWidget,
   RiskTop10Widget,
@@ -581,7 +580,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const [drilldown, setDrilldown] = useState<{ eventType: string; label: string } | null>(null);
   const [sensorChartAnimalId, setSensorChartAnimalId] = useState<string | null>(null);
   const [epidemicClusterId, setEpidemicClusterId] = useState<string | null>(null);
-  const [labelChatAnimalId, setLabelChatAnimalId] = useState<string | null>(null);
   const [inseminationAnimalId, setInseminationAnimalId] = useState<string | null>(null);
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
 
@@ -832,7 +830,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {!isVisible('insemination_route') && (
             <RiskTop10Widget
               farmId={selectedFarmId}
-              onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
+              onAnimalClick={(aid) => navigate(`/animals/${aid}`)}
             />
           )}
 
@@ -874,7 +872,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>
           <SectionLabel>방역 인텔리전스</SectionLabel>
-          {isVisible('epidemic_command_center') && epidemicData && <EpidemicCommandCenter data={epidemicData} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
+          {isVisible('epidemic_command_center') && epidemicData && <EpidemicCommandCenter data={epidemicData} onAnimalClick={(aid) => navigate(`/animals/${aid}`)} />}
           {isVisible('farm_health_score') && healthScoresData && healthScoresData.length > 0 && (
             <FarmHealthScoreWidget scores={healthScoresData} onFarmClick={(fid) => selectFarm(fid)} />
           )}
@@ -920,7 +918,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {isVisible('vital_monitor_chart') && vitalData && (
             <VitalMonitorChart
               data={vitalData}
-              onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
+              onAnimalClick={(aid) => navigate(`/animals/${aid}`)}
             />
           )}
 
@@ -976,7 +974,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           label={drilldown.label}
           farmId={selectedFarmId}
           onClose={() => setDrilldown(null)}
-          onAnimalClick={(aid) => { setDrilldown(null); setLabelChatAnimalId(aid); }}
+          onAnimalClick={(aid) => { setDrilldown(null); navigate(`/animals/${aid}`); }}
           onSovereignClick={(aid) => {
             setDrilldown(null);
             setTinkerbellTrigger(`[팅커벨 AI — 개체 정밀 분석]\n[개체ID] ${aid}\n이 개체의 센서 데이터, 최근 알람, 번식 이력, 건강 상태를 모두 조회하여 종합 분석해주세요. 즉각 조치가 필요하면 우선순위별로, 목장주가 지금 해야 할 행동을 구체적으로 알려주세요. (${Date.now()})`);
@@ -988,30 +986,16 @@ export default function UnifiedDashboard(): React.JSX.Element {
         <SensorChartModal
           animalId={sensorChartAnimalId}
           onClose={() => setSensorChartAnimalId(null)}
-          onAskAi={(aid, context) => {
+          onAskAi={(_aid, context) => {
             setSensorChartAnimalId(null);
-            setLabelChatAnimalId(aid);
-            // AI 채팅에 센서 데이터 컨텍스트 전달 — labelChat이 열리면 자동 질문
-            setTimeout(() => {
-              const chatInput = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
-              if (chatInput) {
-                chatInput.value = context;
-                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-              }
-            }, 500);
+            // 팅커벨 AI로 센서 데이터 컨텍스트 전달
+            setTinkerbellTrigger(context);
           }}
         />
       )}
 
       {epidemicClusterId && epidemicClusterId !== '__dashboard__' && (
         <ClusterDetailModal clusterId={epidemicClusterId} onClose={() => setEpidemicClusterId(null)} />
-      )}
-
-      {labelChatAnimalId && (
-        <AlarmLabelChatModal
-          animalId={labelChatAnimalId}
-          onClose={() => setLabelChatAnimalId(null)}
-        />
       )}
 
       {/* 수정 추천 패널 (발정 개체 클릭 시 표시) */}
