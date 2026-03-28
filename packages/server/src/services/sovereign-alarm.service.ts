@@ -91,7 +91,8 @@ function ruleKetosisRisk(summary: DailySummary[], animal: { parity: number | nul
   const rumDecline = (prevRumAvg - recentRumAvg) / prevRumAvg;
   if (rumDecline < 0.15) return null; // 15% 이상 감소만 알람
 
-  const recentTempAvg = recent3.filter(d => d.tempAvg).reduce((s, d) => s + d.tempAvg!, 0) / recent3.filter(d => d.tempAvg).length;
+  const tempPts = recent3.filter(d => d.tempAvg);
+  const recentTempAvg = tempPts.length > 0 ? tempPts.reduce((s, d) => s + d.tempAvg!, 0) / tempPts.length : null;
 
   const severity = rumDecline > 0.35 ? 'critical' : rumDecline > 0.25 ? 'warning' : 'caution';
   const pct = Math.round(rumDecline * 100);
@@ -125,7 +126,9 @@ function ruleMastitisRisk(summary: DailySummary[]): SovereignAlarm | null {
   const recentRum = recent2.filter(d => d.rumAvg);
   const prev = summary.slice(2, 5).filter(d => d.rumAvg);
 
-  const tempAvg = recent2.filter(d => d.tempAvg).reduce((s, d) => s + d.tempAvg!, 0) / recent2.filter(d => d.tempAvg).length;
+  const tempPts2 = recent2.filter(d => d.tempAvg);
+  if (tempPts2.length === 0) return null;
+  const tempAvg = tempPts2.reduce((s, d) => s + d.tempAvg!, 0) / tempPts2.length;
 
   let rumDecline = 0;
   if (recentRum.length > 0 && prev.length > 0) {
@@ -168,6 +171,7 @@ function ruleAcidosisRisk(summary: DailySummary[], animal: { daysInMilk: number 
 
   const recentRumAvg = rRum.reduce((s, d) => s + d.rumAvg!, 0) / rRum.length;
   const prevRumAvg = pRum.reduce((s, d) => s + d.rumAvg!, 0) / pRum.length;
+  if (prevRumAvg <= 0) return null; // 분모 0 방지
   const rumDecline = (prevRumAvg - recentRumAvg) / prevRumAvg;
 
   if (rumDecline < 0.28) return null; // SARA 기준: 반추 28% 이상 감소

@@ -1,6 +1,7 @@
 // 통합 대시보드 — AI 강화 + 동적 차트 + 실시간 운영 (다크 테마)
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   useUnifiedDashboard,
   useLiveAlarms,
@@ -520,6 +521,7 @@ const LOADING_PLACEHOLDER = (
 export default function UnifiedDashboard(): React.JSX.Element {
   // WebSocket → React Query 알람 캐시 동기화
   useSocketAlarmSync();
+  const navigate = useNavigate();
 
   const { data, isLoading, error, refetch } = useUnifiedDashboard();
   const { data: alarmsData } = useLiveAlarms();
@@ -736,7 +738,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
-            {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => setLabelChatAnimalId(aid)} />}
+            {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => navigate(`/animals/${aid}`)} />}
           </div>
           )}
 

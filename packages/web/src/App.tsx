@@ -92,6 +92,7 @@ export function App(): React.JSX.Element {
               <Route path="/dashboard" element={<UnifiedDashboard />} />
               <Route path="/regional-map" element={<RegionalMapPage />} />
               <Route path="/cow/:id" element={<CowProfilePage />} />
+              <Route path="/animals/:id" element={<CowProfilePage />} />
               <Route path="/my-cattle" element={<MyCattlePage />} />
               <Route path="/farm/:farmId/groups" element={<HerdGroupPage />} />
               <Route path="/report/farm/:farmId/monthly" element={<MonthlyReportPage />} />

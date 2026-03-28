@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --ignore 'node_modules/**' src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
