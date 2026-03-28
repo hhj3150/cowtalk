@@ -23,6 +23,7 @@ export { BreedingPipelineWidget } from './BreedingPipelineWidget';
 // Phase 8 — 소버린 AI 지식 강화 루프
 export { AlarmLabelChatModal } from './AlarmLabelChatModal';
 export { SovereignAiWidget } from './SovereignAiWidget';
+export { AssistantAlertPanel } from './AssistantAlertPanel';
 
 // smaXtec 기본 — 건강 알림 + 번식 관리
 export { HealthAlertsWidget } from './HealthAlertsWidget';

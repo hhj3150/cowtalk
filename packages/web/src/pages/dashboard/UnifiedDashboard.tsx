@@ -17,6 +17,7 @@ import {
   useFarmHealthScores,
   useHealthAlertsSummary,
   useFertilityManagement,
+  useSovereignAiStats,
 } from '@web/hooks/useUnifiedDashboard';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
@@ -37,6 +38,8 @@ import {
   HealthAlertsWidget,
   FertilityManagementWidget,
   RiskTop10Widget,
+  SovereignAiWidget,
+  AssistantAlertPanel,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -527,6 +530,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: healthScoresData } = useFarmHealthScores();
   const { data: healthAlertsData } = useHealthAlertsSummary();
   const { data: fertilityMgmtData } = useFertilityManagement();
+  const { data: sovereignStats } = useSovereignAiStats();
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
@@ -778,6 +782,27 @@ export default function UnifiedDashboard(): React.JSX.Element {
               farmId={selectedFarmId}
               onAnimalClick={(aid) => setLabelChatAnimalId(aid)}
             />
+          )}
+
+          {/* ── 소버린 AI 어시스턴트 — 지식 강화 루프 ── */}
+          {(data?.assistantAlerts && data.assistantAlerts.length > 0 || sovereignStats) && (
+          <>
+          <SectionLabel>AI 어시스턴트</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (sovereignStats ? '1fr 1fr' : '1fr'), gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+            {data?.assistantAlerts && data.assistantAlerts.length > 0 && (
+              <AssistantAlertPanel
+                alerts={data.assistantAlerts}
+                onAlertClick={(alert) => setDrilldown({ eventType: alert.type, label: alert.label })}
+              />
+            )}
+            {sovereignStats && (
+              <SovereignAiWidget
+                stats={sovereignStats}
+                onOpenLabelChat={() => setTinkerbellTrigger('소버린AI 지식 강화를 시작합니다')}
+              />
+            )}
+          </div>
+          </>
           )}
 
           {/* ── 역학 감시 ── */}

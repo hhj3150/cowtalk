@@ -45,10 +45,16 @@ epidemicIntelligenceRouter.use((req: Request, _res: Response, next: NextFunction
   epidemicFarmIdsStorage.run(ids, () => next());
 });
 
-function getEpidemicFarmFilter(): ReturnType<typeof inArray> | undefined {
+function getEpidemicFarmFilter(column: typeof farms.farmId | typeof smaxtecEvents.farmId = farms.farmId): ReturnType<typeof inArray> | undefined {
   const ids = epidemicFarmIdsStorage.getStore();
-  if (ids && ids.length > 0) return inArray(farms.farmId, [...ids]);
+  if (ids && ids.length > 0) return inArray(column, [...ids]);
   return undefined;
+}
+
+/** and() 안전 래퍼: undefined 조건을 필터링하여 Drizzle 크래시 방지 */
+function safeAnd(...conditions: (ReturnType<typeof eq> | ReturnType<typeof gte> | ReturnType<typeof inArray> | ReturnType<typeof sql> | undefined)[]) {
+  const valid = conditions.filter((c): c is Exclude<typeof c, undefined> => c !== undefined);
+  return valid.length > 0 ? and(...valid) : undefined;
 }
 
 // ===========================
@@ -155,7 +161,7 @@ async function queryActiveFarms(db: DbInstance): Promise<readonly FarmInfo[]> {
       headCount: farms.currentHeadCount,
     })
     .from(farms)
-    .where(and(eq(farms.status, 'active'), getEpidemicFarmFilter()) ?? eq(farms.status, 'active'));
+    .where(safeAnd(eq(farms.status, 'active'), getEpidemicFarmFilter()) ?? eq(farms.status, 'active'));
 
   return rows.map((r) => ({
     farmId: r.farmId,
@@ -179,10 +185,10 @@ async function queryHealthAlarms48h(db: DbInstance): Promise<readonly HourlyAlar
     })
     .from(smaxtecEvents)
     .where(
-      and(
+      safeAnd(
         gte(smaxtecEvents.detectedAt, since),
         sql`${smaxtecEvents.eventType} IN ('temperature_high','rumination_decrease')`,
-        getEpidemicFarmFilter() as ReturnType<typeof gte> | undefined,
+        getEpidemicFarmFilter(smaxtecEvents.farmId),
       ),
     )
     .groupBy(
@@ -275,10 +281,10 @@ async function queryAlarms7d(db: DbInstance): Promise<readonly HourlyAlarm[]> {
     })
     .from(smaxtecEvents)
     .where(
-      and(
+      safeAnd(
         gte(smaxtecEvents.detectedAt, since),
         sql`${smaxtecEvents.eventType} IN ('temperature_high','rumination_decrease')`,
-        getEpidemicFarmFilter() as ReturnType<typeof gte> | undefined,
+        getEpidemicFarmFilter(smaxtecEvents.farmId),
       ),
     )
     .groupBy(
