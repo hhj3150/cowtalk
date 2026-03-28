@@ -1,6 +1,6 @@
 // 통합 대시보드 — AI 강화 + 동적 차트 + 실시간 운영 (다크 테마)
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useUnifiedDashboard,
   useLiveAlarms,
@@ -48,6 +48,7 @@ import { EpidemicMapWidget } from '@web/components/epidemic/EpidemicMapWidget';
 import { ClusterDetailModal } from '@web/components/epidemic/ClusterDetailModal';
 import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonitorChart';
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
+import { FarmAnimalDrawer } from '@web/components/unified-dashboard/FarmAnimalDrawer';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
@@ -531,6 +532,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: healthAlertsData } = useHealthAlertsSummary();
   const { data: fertilityMgmtData } = useFertilityManagement();
   const { data: sovereignStats } = useSovereignAiStats();
+  const { data: farmsData } = useDashboardFarms();
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectFarm = useFarmStore((s) => s.selectFarm);
@@ -539,6 +541,20 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { completedTodos } = useDxCompletion();
 
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
+
+  // ── 목장-개체 드로어 ──
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerFarmId, setDrawerFarmId] = useState<string | null>(null);
+  const isFirstRender = useRef(true);
+
+  // 목장 선택 시 자동으로 드로어 오픈 (초기 로드 제외)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (selectedFarmId) {
+      setDrawerFarmId(selectedFarmId);
+      setDrawerOpen(true);
+    }
+  }, [selectedFarmId]);
 
   // 로그인 시 전체 목장 모드로 시작 (개별 농장 클릭 시 해당 농장 대시보드로 전환)
   // user.farmIds가 1개인 경우에만 해당 농장 자동 선택
@@ -901,7 +917,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           <FarmMapWidget
             markers={farmMapMarkers}
             selectedFarmId={selectedFarmId}
-            onFarmClick={(fid) => selectFarm(fid)}
+            onFarmClick={(fid) => { selectFarm(fid); setDrawerFarmId(fid); setDrawerOpen(true); }}
           />
           </>)}
 
@@ -985,6 +1001,15 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </div>
         </div>
       )}
+
+      {/* 목장-개체 트리 드로어 */}
+      <FarmAnimalDrawer
+        isOpen={drawerOpen}
+        selectedFarmId={drawerFarmId}
+        farms={farmsData?.farms ?? []}
+        onClose={() => setDrawerOpen(false)}
+        onFarmSelect={(fid) => { setDrawerFarmId(fid); selectFarm(fid); }}
+      />
 
       {/* 팅커벨 AI 어시스턴트 */}
       <TinkerbellAssistant

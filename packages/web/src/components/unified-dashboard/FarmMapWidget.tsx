@@ -2,7 +2,7 @@
 // Google Maps API → Leaflet 마이그레이션 (API 키 불필요)
 
 import React, { useMemo } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LiveAlarm } from '@cowtalk/shared';
 
@@ -177,12 +177,12 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
                   click: () => onFarmClick?.(m.farmId),
                 }}
               >
-                <Popup>
+                <Tooltip direction="top" offset={[0, -6]} opacity={0.95} permanent={false}>
                   <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
                     <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
                     <p style={{ margin: 0 }}>{m.headCount}두 · 알람 {m.alertCount}건</p>
                   </div>
-                </Popup>
+                </Tooltip>
               </CircleMarker>
             );
           })}
