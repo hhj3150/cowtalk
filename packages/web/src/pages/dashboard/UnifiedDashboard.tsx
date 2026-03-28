@@ -1,6 +1,6 @@
 // 통합 대시보드 — AI 강화 + 동적 차트 + 실시간 운영 (다크 테마)
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useUnifiedDashboard,
   useLiveAlarms,
@@ -20,6 +20,7 @@ import {
   useSovereignAiStats,
   useSovereignAlarms,
 } from '@web/hooks/useUnifiedDashboard';
+import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
@@ -538,6 +539,10 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const { data: sovereignAlarmData, isLoading: sovereignLoading } = useSovereignAlarms(selectedFarmId);
+  const queryClient = useQueryClient();
+  const handleSovereignLabelChange = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['sovereign-alarms', selectedFarmId] });
+  }, [queryClient, selectedFarmId]);
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const { isVisible, roleLabel } = useRoleDashboard();
   const isMobile = useIsMobile();
@@ -756,6 +761,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 alarms={sovereignAlarmData?.alarms ?? []}
                 isLoading={sovereignLoading}
                 farmId={selectedFarmId}
+                onLabelChange={handleSovereignLabelChange}
               />
             </div>
           )}

@@ -1314,3 +1314,23 @@ export const weightMeasurementsRelations = relations(weightMeasurements, ({ one 
   farm: one(farms, { fields: [weightMeasurements.farmId], references: [farms.farmId] }),
   measurer: one(users, { fields: [weightMeasurements.measuredBy], references: [users.userId] }),
 }));
+
+// ======================================================================
+// K-2. 소버린 AI 알람 레이블 (강화학습 피드백 루프)
+// ======================================================================
+
+export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
+  labelId:           uuid('label_id').primaryKey().defaultRandom(),
+  alarmSignature:    varchar('alarm_signature', { length: 200 }).notNull().unique(), // animalId:type:YYYY-MM-DD
+  animalId:          uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId:            uuid('farm_id').notNull().references(() => farms.farmId),
+  alarmType:         varchar('alarm_type', { length: 50 }).notNull(),
+  predictedSeverity: varchar('predicted_severity', { length: 20 }).notNull(),
+  verdict:           varchar('verdict', { length: 20 }).notNull(), // confirmed | false_positive | modified
+  notes:             text('notes'),
+  labeledAt:         timestamp('labeled_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('sovereign_alarm_labels_farm_id_idx').on(table.farmId),
+  index('sovereign_alarm_labels_animal_id_idx').on(table.animalId),
+  index('sovereign_alarm_labels_labeled_at_idx').on(table.labeledAt),
+]);

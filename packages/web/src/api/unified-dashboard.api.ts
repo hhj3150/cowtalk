@@ -308,6 +308,8 @@ export function fetchAnimalSensorChart(
 
 export interface SovereignAlarm {
   readonly alarmId: string;
+  readonly alarmSignature: string;
+  readonly verdict?: 'confirmed' | 'false_positive' | 'modified';
   readonly animalId: string;
   readonly earTag: string;
   readonly animalName: string | null;
@@ -324,4 +326,31 @@ export interface SovereignAlarm {
 
 export function getSovereignAlarms(farmId: string, limit = 30): Promise<{ alarms: readonly SovereignAlarm[]; generatedAt: string }> {
   return apiGet<{ alarms: readonly SovereignAlarm[]; generatedAt: string }>(`/sovereign-alarms?farmId=${farmId}&limit=${limit}`);
+}
+
+export interface SovereignAlarmLabelRequest {
+  readonly alarmSignature:    string;
+  readonly animalId:          string;
+  readonly farmId:            string;
+  readonly alarmType:         string;
+  readonly predictedSeverity: string;
+  readonly verdict:           'confirmed' | 'false_positive' | 'modified';
+  readonly notes?:            string;
+}
+
+export interface SovereignAlarmAccuracy {
+  readonly totalLabeled:  number;
+  readonly confirmed:     number;
+  readonly falsePositive: number;
+  readonly modified:      number;
+  readonly accuracy:      number;
+  readonly byType: Record<string, { confirmed: number; falsePositive: number; modified: number; total: number }>;
+}
+
+export function labelSovereignAlarm(data: SovereignAlarmLabelRequest): Promise<{ success: true }> {
+  return apiPost('/sovereign-alarms/label', data);
+}
+
+export function fetchSovereignAlarmAccuracy(farmId: string): Promise<SovereignAlarmAccuracy> {
+  return apiGet<SovereignAlarmAccuracy>(`/sovereign-alarms/accuracy?farmId=${farmId}`);
 }

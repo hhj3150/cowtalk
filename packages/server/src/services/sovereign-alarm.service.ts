@@ -6,12 +6,15 @@
  */
 
 import { getDb } from '../config/database.js';
-import { animals, sensorDailyAgg } from '../db/schema.js';
+import { animals, sensorDailyAgg, sovereignAlarmLabels } from '../db/schema.js';
 import { eq, and, gte, desc } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 
 export interface SovereignAlarm {
   readonly alarmId: string;
+  readonly alarmSignature: string; // deterministic: animalId:type:YYYY-MM-DD
+  readonly verdict?: 'confirmed' | 'false_positive' | 'modified'; // already labeled?
   readonly animalId: string;
   readonly earTag: string;
   readonly animalName: string | null;
@@ -94,7 +97,8 @@ function ruleKetosisRisk(summary: DailySummary[], animal: { parity: number | nul
   const pct = Math.round(rumDecline * 100);
 
   return {
-    alarmId: `ketosis-${Date.now()}`,
+    alarmId: '',
+    alarmSignature: '',
     animalId: '',
     earTag: '',
     animalName: null,
@@ -135,7 +139,8 @@ function ruleMastitisRisk(summary: DailySummary[]): SovereignAlarm | null {
   const severity = tempAvg > 40.2 ? 'critical' : tempAvg > 39.7 ? 'warning' : 'caution';
 
   return {
-    alarmId: `mastitis-${Date.now()}`,
+    alarmId: '',
+    alarmSignature: '',
     animalId: '',
     earTag: '',
     animalName: null,
@@ -177,7 +182,8 @@ function ruleAcidosisRisk(summary: DailySummary[], animal: { daysInMilk: number 
   const severity = (rumDecline > 0.40 || actDecline > 0.20) ? 'critical' : 'warning';
 
   return {
-    alarmId: `acidosis-${Date.now()}`,
+    alarmId: '',
+    alarmSignature: '',
     animalId: '',
     earTag: '',
     animalName: null,
@@ -216,7 +222,8 @@ function ruleLaminitisRisk(summary: DailySummary[], animal: { daysInMilk: number
   const tempAvg = tempVals.length > 0 ? tempVals.reduce((s, v) => s + v, 0) / tempVals.length : 0;
 
   return {
-    alarmId: `laminitis-${Date.now()}`,
+    alarmId: '',
+    alarmSignature: '',
     animalId: '',
     earTag: '',
     animalName: null,
@@ -255,7 +262,8 @@ function ruleWaterIntakeAnomaly(summary: DailySummary[]): SovereignAlarm | null 
   const pct = Math.round(Math.abs(change) * 100);
 
   return {
-    alarmId: `water-${Date.now()}`,
+    alarmId: '',
+    alarmSignature: '',
     animalId: '',
     earTag: '',
     animalName: null,
@@ -290,7 +298,8 @@ function ruleHeatStressRisk(summary: DailySummary[]): SovereignAlarm | null {
   if (avgTemp <= 39.2) return null;
 
   return {
-    alarmId: `heat-${Date.now()}`,
+    alarmId: '',
+    alarmSignature: '',
     animalId: '',
     earTag: '',
     animalName: null,
@@ -354,10 +363,14 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
         ruleHeatStressRisk(summary),
       ];
 
+      const today = new Date().toISOString().slice(0, 10);
       for (const alarm of rules) {
         if (alarm) {
+          const signature = `${animal.animalId}:${alarm.type}:${today}`;
           alarms.push({
             ...alarm,
+            alarmId: `sov-${signature}`,
+            alarmSignature: signature,
             animalId: animal.animalId,
             earTag: animal.earTag,
             animalName: animal.name,
@@ -372,7 +385,96 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
 
   // severity 우선순위 정렬 + limit
   const ORDER: Record<string, number> = { critical: 0, warning: 1, caution: 2, info: 3 };
-  return alarms
+  const sorted = alarms
     .sort((a, b) => (ORDER[a.severity] ?? 3) - (ORDER[b.severity] ?? 3))
     .slice(0, limit);
+
+  // Load existing labels for these alarms
+  try {
+    const signatures = sorted.map(a => a.alarmSignature);
+    if (signatures.length > 0) {
+      const labels = await db.select()
+        .from(sovereignAlarmLabels)
+        .where(sql`alarm_signature = ANY(${signatures})`);
+      const labelMap = new Map(labels.map(l => [l.alarmSignature, l.verdict as 'confirmed' | 'false_positive' | 'modified']));
+      return sorted.map(a => ({ ...a, verdict: labelMap.get(a.alarmSignature) }));
+    }
+  } catch (err) {
+    logger.warn({ err }, 'failed to load sovereign alarm labels');
+  }
+  return sorted;
+}
+
+// ── 레이블 저장 ──
+
+export interface SaveSovereignLabelInput {
+  readonly alarmSignature: string;
+  readonly animalId: string;
+  readonly farmId: string;
+  readonly alarmType: string;
+  readonly predictedSeverity: string;
+  readonly verdict: 'confirmed' | 'false_positive' | 'modified';
+  readonly notes?: string;
+}
+
+export async function saveSovereignAlarmLabel(input: SaveSovereignLabelInput): Promise<void> {
+  const db = getDb();
+  await db.insert(sovereignAlarmLabels)
+    .values({
+      alarmSignature:    input.alarmSignature,
+      animalId:          input.animalId,
+      farmId:            input.farmId,
+      alarmType:         input.alarmType,
+      predictedSeverity: input.predictedSeverity,
+      verdict:           input.verdict,
+      notes:             input.notes ?? null,
+    })
+    .onConflictDoUpdate({
+      target: sovereignAlarmLabels.alarmSignature,
+      set: {
+        verdict:   input.verdict,
+        notes:     input.notes ?? null,
+        labeledAt: new Date(),
+      },
+    });
+}
+
+// ── 정확도 통계 ──
+
+export interface SovereignAlarmAccuracy {
+  readonly totalLabeled: number;
+  readonly confirmed: number;
+  readonly falsePositive: number;
+  readonly modified: number;
+  readonly accuracy: number; // confirmed / totalLabeled * 100
+  readonly byType: Record<string, { confirmed: number; falsePositive: number; modified: number; total: number }>;
+}
+
+export async function getSovereignAlarmAccuracy(farmId: string): Promise<SovereignAlarmAccuracy> {
+  const db = getDb();
+  const rows = await db.select()
+    .from(sovereignAlarmLabels)
+    .where(eq(sovereignAlarmLabels.farmId, farmId));
+
+  const byType: Record<string, { confirmed: number; falsePositive: number; modified: number; total: number }> = {};
+  let confirmed = 0, falsePositive = 0, modified = 0;
+
+  for (const row of rows) {
+    const t = byType[row.alarmType] ?? { confirmed: 0, falsePositive: 0, modified: 0, total: 0 };
+    if (row.verdict === 'confirmed') { t.confirmed++; confirmed++; }
+    else if (row.verdict === 'false_positive') { t.falsePositive++; falsePositive++; }
+    else if (row.verdict === 'modified') { t.modified++; modified++; }
+    t.total++;
+    byType[row.alarmType] = t;
+  }
+
+  const total = rows.length;
+  return {
+    totalLabeled: total,
+    confirmed,
+    falsePositive,
+    modified,
+    accuracy: total > 0 ? Math.round((confirmed / total) * 100) : 0,
+    byType,
+  };
 }

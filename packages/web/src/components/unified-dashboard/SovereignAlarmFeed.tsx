@@ -1,9 +1,10 @@
 // 소버린 AI 자체 생성 알람 피드
 // smaXtec이 주지 않는 CowTalk AI 독자 수의학 알람
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { SovereignAlarm } from '@web/api/unified-dashboard.api';
+import type { SovereignAlarm, SovereignAlarmLabelRequest } from '@web/api/unified-dashboard.api';
+import { labelSovereignAlarm } from '@web/api/unified-dashboard.api';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: '#ef4444',
@@ -33,11 +34,44 @@ interface Props {
   readonly alarms: readonly SovereignAlarm[];
   readonly isLoading?: boolean;
   readonly farmId?: string | null;
+  readonly onLabelChange?: () => void; // callback to re-fetch after labeling
 }
 
-export function SovereignAlarmFeed({ alarms, isLoading, farmId }: Props): React.JSX.Element {
+export function SovereignAlarmFeed({ alarms, isLoading, farmId, onLabelChange }: Props): React.JSX.Element {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [labeling, setLabeling] = useState<string | null>(null); // alarmSignature being labeled
+  const [localVerdicts, setLocalVerdicts] = useState<Record<string, 'confirmed' | 'false_positive' | 'modified'>>({}); // optimistic
+
+  const handleLabel = useCallback(async (
+    alarm: SovereignAlarm,
+    verdict: 'confirmed' | 'false_positive' | 'modified',
+  ) => {
+    if (labeling) return;
+    setLabeling(alarm.alarmSignature);
+    setLocalVerdicts(prev => ({ ...prev, [alarm.alarmSignature]: verdict }));
+    try {
+      const req: SovereignAlarmLabelRequest = {
+        alarmSignature:    alarm.alarmSignature,
+        animalId:          alarm.animalId,
+        farmId:            alarm.farmId,
+        alarmType:         alarm.type,
+        predictedSeverity: alarm.severity,
+        verdict,
+      };
+      await labelSovereignAlarm(req);
+      onLabelChange?.();
+    } catch {
+      // revert optimistic
+      setLocalVerdicts(prev => {
+        const next = { ...prev };
+        delete next[alarm.alarmSignature];
+        return next;
+      });
+    } finally {
+      setLabeling(null);
+    }
+  }, [labeling, onLabelChange]);
 
   if (isLoading) {
     return (
@@ -146,6 +180,54 @@ export function SovereignAlarmFeed({ alarms, isLoading, farmId }: Props): React.
                     </span>
                   ))}
                 </div>
+                {/* 레이블 버튼 */}
+                {(() => {
+                  const currentVerdict = localVerdicts[alarm.alarmSignature] ?? alarm.verdict;
+                  return (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #1e293b' }}>
+                      <div style={{ fontSize: 10, color: '#475569', marginBottom: 6 }}>
+                        🧠 이 알람이 실제로 맞았나요? 레이블을 달면 AI가 점점 강화됩니다
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {(['confirmed', 'false_positive', 'modified'] as const).map((v) => {
+                          const active = currentVerdict === v;
+                          const cfg = {
+                            confirmed:      { label: '✅ 실제 발생', color: '#22c55e' },
+                            false_positive: { label: '❌ 오탐 (틀림)', color: '#ef4444' },
+                            modified:       { label: '⚠️ 부분 정확', color: '#f97316' },
+                          }[v];
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              disabled={labeling === alarm.alarmSignature}
+                              onClick={(e) => { e.stopPropagation(); void handleLabel(alarm, v); }}
+                              style={{
+                                flex: 1,
+                                padding: '5px 4px',
+                                borderRadius: 5,
+                                border: `1px solid ${active ? cfg.color : 'rgba(255,255,255,0.1)'}`,
+                                background: active ? `${cfg.color}20` : 'rgba(255,255,255,0.03)',
+                                color: active ? cfg.color : '#64748b',
+                                fontSize: 10,
+                                fontWeight: active ? 700 : 400,
+                                cursor: labeling ? 'wait' : 'pointer',
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {cfg.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {currentVerdict && (
+                        <div style={{ fontSize: 9, color: '#475569', marginTop: 4, textAlign: 'right' }}>
+                          레이블 저장됨 ✓
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
