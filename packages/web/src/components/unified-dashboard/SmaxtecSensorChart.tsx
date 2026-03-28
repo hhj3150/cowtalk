@@ -107,26 +107,15 @@ function mergeMetrics(data: AnimalSensorChartData): ChartRow[] {
     const n = normMap.get(p.ts);
     if (n !== undefined) { r.tempNormRaw = n; r.tempNorm = tempToScale(n); }
   }
-  for (const p of data.metrics['act']    ?? []) { const r = ensure(p.ts); r.actRaw = p.value; r.act = p.value * 3; }
+  // act: smaXtec 실제 범위 0~9 → ×10 스케일로 차트 하단 0~13% 배치
+  for (const p of data.metrics['act']    ?? []) { const r = ensure(p.ts); r.actRaw = p.value; r.act = p.value * 10; }
   for (const p of data.metrics['rum']    ?? []) { const r = ensure(p.ts); r.rum    = p.value; }
   for (const p of data.metrics['estrus'] ?? []) { const r = ensure(p.ts); r.estrus = p.value; }
   for (const p of data.metrics['calving']?? []) { const r = ensure(p.ts); r.calving= p.value; }
 
-  // 음수 — 하루 단위 step, 24시간 딜레이
-  // smaXtec에서 오늘 음수량 데이터는 내일 올라오므로:
-  //   - dr 데이터가 존재하는 마지막 시점까지만 표시
-  //   - 그 이후(오늘) 구간은 undefined → 라인 끊김 (오늘 추정값은 KPI drinkingCount로 별도 표시)
-  const drPts = [...(data.metrics['dr'] ?? [])].sort((a, b) => a.ts - b.ts);
-  if (drPts.length > 0) {
-    const lastDrTs = drPts[drPts.length - 1]!.ts;
-    let drIdx = 0;
-    const sorted = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
-    for (const row of sorted) {
-      if (row.ts > lastDrTs) break; // 마지막 dr 데이터 이후(오늘)는 표시 안 함
-      while (drIdx + 1 < drPts.length && drPts[drIdx + 1]!.ts <= row.ts) drIdx++;
-      row.dr = drPts[drIdx]?.value;
-    }
-  }
+  // 음수 — water_intake: smaXtec 10분 단위 실시간 데이터 (L/10min)
+  // 실시간 이벤트 데이터이므로 딜레이 없이 직접 매핑
+  for (const p of data.metrics['dr'] ?? []) { const r = ensure(p.ts); r.dr = p.value; }
 
   return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
 }

@@ -1370,8 +1370,9 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
     const connector = animal.externalId ? await getSmaxtecConnector() : null;
 
     if (connector && animal.externalId) {
-      // 각 메트릭을 개별 요청 (사용 불가한 메트릭은 무시)
-      const metricNames = ['temp', 'act', 'rum', 'dr'];
+      // smaXtec 실제 메트릭명: rum_index(초→분 변환), water_intake(L/10min→dr)
+      // temp, act는 그대로 사용
+      const metricNames = ['temp', 'act', 'rum_index', 'water_intake'];
       const results = await Promise.allSettled(
         metricNames.map((m) =>
           connector.fetchSensorData(animal.externalId!, m, fromDate, toDate),
@@ -1379,9 +1380,18 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
       );
       for (const result of results) {
         if (result.status === 'fulfilled') {
-          const m = result.value.metrics as Record<string, readonly { ts: number; value: number }[]>;
-          for (const [key, values] of Object.entries(m)) {
-            (metrics as Record<string, readonly { ts: number; value: number }[]>)[key] = values;
+          const raw = result.value.metrics as Record<string, readonly { ts: number; value: number }[]>;
+          for (const [key, values] of Object.entries(raw)) {
+            if (key === 'rum_index') {
+              // rum_index 단위: 초(rolling 24h) → 분으로 변환하여 'rum' 키로 저장
+              (metrics as Record<string, { ts: number; value: number }[]>)['rum'] =
+                values.map((p) => ({ ts: p.ts, value: Math.round(p.value / 60) }));
+            } else if (key === 'water_intake') {
+              // water_intake: L/10min 실시간 음수량 → 'dr' 키로 저장
+              (metrics as Record<string, readonly { ts: number; value: number }[]>)['dr'] = values;
+            } else {
+              (metrics as Record<string, readonly { ts: number; value: number }[]>)[key] = values;
+            }
           }
         }
       }
@@ -1471,12 +1481,12 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
         return { near: false, intensity: 0 };
       };
 
-      // 4개 메트릭 생성
+      // 4개 메트릭 생성 (실제 smaXtec 데이터 범위 기반)
       const metricConfigs: readonly { key: string; base: number; noise: number; abnormalDelta: number }[] = [
-        { key: 'temp', base: 38.6, noise: 0.3, abnormalDelta: 1.8 },  // 체온 °C
-        { key: 'act', base: 180, noise: 40, abnormalDelta: -80 },      // 활동 I/24h
-        { key: 'rum', base: 450, noise: 50, abnormalDelta: -200 },     // 반추 분
-        { key: 'dr', base: 80, noise: 15, abnormalDelta: -40 },        // 음수 L
+        { key: 'temp', base: 38.6, noise: 0.8, abnormalDelta: 1.8 },  // 체온 °C (음수딥 포함 변동성 0.8)
+        { key: 'act', base: 4.0, noise: 2.0, abnormalDelta: -2.5 },   // 활동 (실제 범위 0~9)
+        { key: 'rum', base: 450, noise: 50, abnormalDelta: -200 },     // 반추 분 (rolling 24h)
+        { key: 'dr', base: 3.0, noise: 4.0, abnormalDelta: -2.0 },    // 음수 L/10min (실제 범위 0~20)
       ];
 
       for (const mc of metricConfigs) {
