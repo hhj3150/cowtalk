@@ -191,14 +191,18 @@ interface TinkerbellAssistantProps {
   readonly dashboardContext?: DashboardContext;
   /** 이 값이 바뀌면 패널을 자동 열고 해당 내용으로 즉시 질문 전송 */
   readonly openTrigger?: string;
+  /** Claude AI처럼 항상 하단 고정 채팅창 모드 */
+  readonly alwaysOpen?: boolean;
 }
 
 export function TinkerbellAssistant({
   dashboardContext,
   openTrigger,
+  alwaysOpen = false,
 }: TinkerbellAssistantProps): React.JSX.Element {
   const [state, setState] = useState<TinkerbellState>('idle');
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(alwaysOpen);
+  const [isExpanded, setIsExpanded] = useState(false); // alwaysOpen 모드: 메시지 영역 펼침
   const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly TinkerbellMessage[]>([]);
   const [transcript, setTranscript] = useState('');
@@ -225,10 +229,11 @@ export function TinkerbellAssistant({
   const hasSpeechRecognition = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
-  // 스크롤
+  // 스크롤 + alwaysOpen 모드에서 메시지 추가 시 자동 펼침
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (alwaysOpen && messages.length > 0) setIsExpanded(true);
+  }, [messages, alwaysOpen]);
 
   // TTS 보이스 로드 (일부 브라우저는 비동기 로드)
   useEffect(() => {
@@ -465,6 +470,211 @@ export function TinkerbellAssistant({
   };
 
   const color = stateColors[state];
+
+  // ── alwaysOpen 모드 — Claude AI처럼 항상 하단 고정 ──
+  if (alwaysOpen) {
+    const bottomOffset = isMobile ? 60 : 0;
+
+    return (
+      <>
+        <style>{`
+          @keyframes tinkerbell-dot { 0%,80%,100%{opacity:0.2}40%{opacity:1} }
+          @keyframes tb-slide-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        `}</style>
+
+        {/* 하단 고정 채팅창 */}
+        <div style={{
+          position: 'fixed',
+          bottom: bottomOffset,
+          left: 0,
+          right: 0,
+          zIndex: 9990,
+          background: 'var(--ct-card, #1e293b)',
+          borderTop: `1px solid ${color}40`,
+          boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+        }}>
+
+          {/* 메시지 영역 — 펼쳐졌을 때만 표시 */}
+          {isExpanded && (
+            <div style={{
+              maxHeight: isMobile ? '40vh' : '45vh',
+              overflowY: 'auto',
+              padding: '12px 16px 4px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              animation: 'tb-slide-up 0.2s ease',
+            }}>
+              {messages.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--ct-text-muted, #94a3b8)', fontSize: 12 }}>
+                  🧚 이 개체에 대해 무엇이든 물어보세요
+                </div>
+              )}
+              {messages.map((msg, idx) => (
+                <div key={idx} style={{
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '88%',
+                }}>
+                  <div style={{
+                    padding: '9px 13px',
+                    borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                    background: msg.role === 'user'
+                      ? `linear-gradient(135deg, ${color}, ${color}cc)`
+                      : 'rgba(255,255,255,0.07)',
+                    color: msg.role === 'user' ? 'white' : 'var(--ct-text, #f1f5f9)',
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}>
+                    {msg.content}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--ct-text-muted, #64748b)', marginTop: 2, textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                    {msg.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              ))}
+              {state === 'listening' && transcript && (
+                <div style={{ alignSelf: 'flex-end', padding: '9px 13px', borderRadius: '14px 14px 4px 14px', background: `${color}30`, color: 'var(--ct-text, #f1f5f9)', fontSize: 13, fontStyle: 'italic', border: `1px dashed ${color}` }}>
+                  {transcript}...
+                </div>
+              )}
+              {state === 'thinking' && (
+                <div style={{ alignSelf: 'flex-start', padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.06)', display: 'flex', gap: 4 }}>
+                  <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0s', color }}>✦</span>
+                  <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0.2s', color }}>✦</span>
+                  <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0.4s', color }}>✦</span>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+
+          {/* 추천 질문 — 메시지 없을 때 + 펼쳐진 상태 */}
+          {isExpanded && messages.length === 0 && state === 'idle' && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '0 16px 8px' }}>
+              {suggestions.map((q) => (
+                <button key={q} type="button"
+                  onClick={() => { unlockTts(); void askTinkerbell(q); }}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${color}40`, borderRadius: 20, padding: '5px 11px', fontSize: 11, color: 'var(--ct-text-secondary, #cbd5e1)', cursor: 'pointer' }}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 입력 바 — 항상 표시 (Claude 스타일) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 14px 10px',
+          }}>
+            {/* 팅커벨 아이콘 + 상태 표시 (클릭 시 메시지 토글) */}
+            <button type="button"
+              onClick={() => setIsExpanded((v) => !v)}
+              style={{
+                width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                background: `linear-gradient(135deg, #a78bfa, #7c3aed)`,
+                border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 2px 10px ${color}50`,
+              }}
+              title={isExpanded ? '대화창 접기' : '대화창 펼치기'}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none">
+                <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+              </svg>
+            </button>
+
+            {/* 마이크 버튼 */}
+            <button type="button"
+              onClick={() => {
+                if (!hasSpeechRecognition) return;
+                if (state === 'listening') { stopListening(); } else { unlockTts(); startListening(); }
+              }}
+              disabled={state === 'thinking'}
+              style={{
+                width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                background: state === 'listening' ? '#ef4444' : 'rgba(255,255,255,0.07)',
+                border: state === 'listening' ? '2px solid #ef4444' : '1px solid var(--ct-border, #334155)',
+                cursor: state === 'thinking' ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              title={state === 'listening' ? '듣기 중지' : '음성 질문'}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke={state === 'listening' ? 'white' : 'var(--ct-text-muted, #94a3b8)'}
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+              </svg>
+            </button>
+
+            {/* 텍스트 입력 */}
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
+              onFocus={() => setIsExpanded(true)}
+              placeholder={
+                state === 'listening' ? '듣는 중...' :
+                state === 'thinking' ? '답변 생성 중...' :
+                animalContext ? '이 개체에 대해 질문하세요...' : '팅커벨에게 물어보세요...'
+              }
+              disabled={state === 'thinking' || state === 'listening'}
+              style={{
+                flex: 1,
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--ct-border, #334155)',
+                borderRadius: 24,
+                padding: '9px 16px',
+                fontSize: 13,
+                color: 'var(--ct-text, #f1f5f9)',
+                outline: 'none',
+              }}
+            />
+
+            {/* 전송 버튼 */}
+            <button type="button"
+              onClick={handleTextSubmit}
+              disabled={!inputText.trim() || state === 'thinking'}
+              style={{
+                width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                background: inputText.trim() && state !== 'thinking' ? color : 'rgba(255,255,255,0.06)',
+                border: 'none',
+                cursor: inputText.trim() && state !== 'thinking' ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+
+            {/* 말하는 중 중지 */}
+            {state === 'speaking' && (
+              <button type="button"
+                onClick={() => { stopSpeaking(); setState('idle'); }}
+                style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: '#ef444420', border: '1px solid #ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="말하기 중지"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 하단 채팅창 높이만큼 페이지 하단 여백 확보 */}
+        <div style={{ height: isMobile ? (isExpanded ? 'calc(40vh + 60px)' : '70px') : (isExpanded ? 'calc(45vh + 65px)' : '65px'), pointerEvents: 'none' }} />
+      </>
+    );
+  }
 
   // ── 플로팅 버튼 (닫힌 상태) — 요정 지팡이 아이콘 ──
   if (!isOpen) {

@@ -690,7 +690,7 @@ export default function CowProfilePage(): React.JSX.Element {
 
       {/* 팅커벨 AI */}
       <SectionErrorBoundary label="AI 어시스턴트">
-        <TinkerbellAssistant openTrigger={tinkerbellTrigger} />
+        <TinkerbellAssistant openTrigger={tinkerbellTrigger} alwaysOpen />
       </SectionErrorBoundary>
 
       {/* 임신감정 모달 */}
