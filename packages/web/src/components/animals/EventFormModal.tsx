@@ -301,7 +301,7 @@ interface Props {
   readonly farmId: string;
   readonly earTag: string;
   readonly onClose: () => void;
-  readonly onSuccess: () => void;
+  readonly onSuccess: (savedEventType: string) => void;
 }
 
 export function EventFormModal({ animalId, earTag, onClose, onSuccess }: Props): React.JSX.Element {
@@ -339,7 +339,7 @@ export function EventFormModal({ animalId, earTag, onClose, onSuccess }: Props):
         details,
       };
       await createAnimalEvent(animalId, input);
-      onSuccess();
+      onSuccess(selectedType);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '저장 실패';
       setError(msg);

@@ -62,15 +62,20 @@ function EventDetailText({ event }: { readonly event: AnimalEvent }): React.JSX.
   }
 }
 
+// 상태 변경 이벤트 — 이 3종은 저장 후 프로필 재로드 필요
+const STATUS_CHANGING_EVENTS = new Set(['calving', 'dry_off', 'cull']);
+
 interface Props {
   readonly animalId: string;
   readonly farmId: string;
   readonly earTag: string;
+  readonly onProfileChange?: () => void; // 산차·상태 변경 후 프로필 새로고침
 }
 
-export function AnimalEventPanel({ animalId, farmId, earTag }: Props): React.JSX.Element {
+export function AnimalEventPanel({ animalId, farmId, earTag, onProfileChange }: Props): React.JSX.Element {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [lastSavedType, setLastSavedType] = useState<string | null>(null);
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['animal-events', animalId],
@@ -78,10 +83,15 @@ export function AnimalEventPanel({ animalId, farmId, earTag }: Props): React.JSX
     staleTime: 2 * 60_000,
   });
 
-  const handleEventCreated = useCallback(() => {
+  const handleEventCreated = useCallback((savedEventType: string) => {
     setShowForm(false);
+    setLastSavedType(savedEventType);
     void queryClient.invalidateQueries({ queryKey: ['animal-events', animalId] });
-  }, [queryClient, animalId]);
+    // 산차·상태 변경 이벤트 → 프로필 새로고침
+    if (STATUS_CHANGING_EVENTS.has(savedEventType)) {
+      onProfileChange?.();
+    }
+  }, [queryClient, animalId, onProfileChange]);
 
   // 이벤트 타입별 카운트 (상단 통계바)
   const counts = events.reduce<Record<string, number>>((acc, e) => {
@@ -90,6 +100,27 @@ export function AnimalEventPanel({ animalId, farmId, earTag }: Props): React.JSX
 
   return (
     <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
+
+      {/* ── 저장 성공 알림 ── */}
+      {lastSavedType && (() => {
+        const meta = EVENT_META[lastSavedType];
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '6px 10px', borderRadius: 6, marginBottom: 10,
+            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+            fontSize: 11, color: '#22c55e',
+          }}>
+            <span>✅</span>
+            <span>{meta?.label ?? lastSavedType} 이벤트가 저장되었습니다</span>
+            <button
+              type="button"
+              onClick={() => setLastSavedType(null)}
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#22c55e', cursor: 'pointer', fontSize: 12 }}
+            >✕</button>
+          </div>
+        );
+      })()}
 
       {/* ── 헤더 ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

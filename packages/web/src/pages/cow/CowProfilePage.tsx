@@ -18,6 +18,8 @@ import { VaccinationHistory } from '@web/components/vaccine/VaccinationHistory';
 import { InspectionResults } from '@web/components/vaccine/InspectionResults';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { AnimalEventPanel } from '@web/components/animals/AnimalEventPanel';
+import { useSovereignAlarms } from '@web/hooks/useUnifiedDashboard';
+import { SovereignAlarmFeed } from '@web/components/unified-dashboard/SovereignAlarmFeed';
 
 interface CowProfile {
   readonly animalId: string;
@@ -178,6 +180,10 @@ export default function CowProfilePage(): React.JSX.Element {
   const [showDryOff, setShowDryOff] = useState(false);
   const [showPregnancyCheck, setShowPregnancyCheck] = useState(false);
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+
+  // 소버린 AI 알람 — 이 개체에 해당하는 것만 필터
+  const { data: sovereignData, isLoading: sovereignLoading } = useSovereignAlarms(profile?.farmId ?? null);
+  const animalSovereignAlarms = (sovereignData?.alarms ?? []).filter((a) => a.animalId === id);
 
   useEffect(() => {
     if (!id) return;
@@ -551,6 +557,18 @@ export default function CowProfilePage(): React.JSX.Element {
               </div>
             )}
           </div>
+          {/* 소버린 AI 알람 */}
+          {(animalSovereignAlarms.length > 0 || sovereignLoading) && (
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 14 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 8px' }}>🧠 소버린 AI 알람</h2>
+              <SovereignAlarmFeed
+                alarms={animalSovereignAlarms}
+                isLoading={sovereignLoading}
+                farmId={profile?.farmId ?? null}
+              />
+            </div>
+          )}
+
           {/* AI 예측 3종 */}
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 12px' }}>🤖 AI 예측</h2>
@@ -698,6 +716,7 @@ export default function CowProfilePage(): React.JSX.Element {
             animalId={profile.animalId}
             farmId={profile.farmId}
             earTag={profile.earTag}
+            onProfileChange={() => window.location.reload()}
           />
         </SectionErrorBoundary>
       </div>
