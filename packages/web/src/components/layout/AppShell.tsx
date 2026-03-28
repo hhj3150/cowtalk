@@ -52,7 +52,7 @@ export function AppShell(): React.JSX.Element {
         <MobileNav isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         {/* 메인 콘텐츠 */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <Header
             onMenuClick={() => setSidebarOpen(true)}
             onChatClick={() => setChatOpen(true)}
@@ -62,7 +62,7 @@ export function AppShell(): React.JSX.Element {
           <main
             id="main-content"
             role="main"
-            className="flex-1 overflow-y-auto p-4 lg:p-6 pb-20 lg:pb-6"
+            className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-6 pb-20 lg:pb-6"
           >
             <Outlet />
           </main>

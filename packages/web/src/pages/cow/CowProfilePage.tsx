@@ -342,7 +342,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const scoreColor = healthScore !== null ? (healthScore >= 80 ? '#22c55e' : healthScore >= 50 ? '#eab308' : '#ef4444') : '#64748b';
 
   return (
-    <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px' : '20px 24px' }}>
+    <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px' : '20px 24px', overflowX: 'hidden' }}>
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* 헤더 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -412,12 +412,12 @@ export default function CowProfilePage(): React.JSX.Element {
           background: 'var(--ct-card)',
           border: `1px solid ${displayTemp && displayTemp >= 39.4 ? '#ef444425' : '#4A90D925'}`,
           borderRadius: 10,
-          padding: '12px 14px',
+          padding: isMobile ? '10px 12px' : '12px 14px',
           borderLeft: `3px solid ${displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9'}`,
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>체온</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9' }}>
+            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9' }}>
               {displayTemp?.toFixed(2) ?? '—'}
             </span>
             <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>°C</span>
@@ -437,12 +437,12 @@ export default function CowProfilePage(): React.JSX.Element {
           background: 'var(--ct-card)',
           border: `1px solid #22c55e25`,
           borderRadius: 10,
-          padding: '12px 14px',
+          padding: isMobile ? '10px 12px' : '12px 14px',
           borderLeft: `3px solid ${rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e'}`,
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>반추</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e' }}>
+            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e' }}>
               {rumDisplay?.toFixed(0) ?? '—'}
             </span>
             <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>분</span>
@@ -455,12 +455,12 @@ export default function CowProfilePage(): React.JSX.Element {
           background: 'var(--ct-card)',
           border: `1px solid #06b6d425`,
           borderRadius: 10,
-          padding: '12px 14px',
+          padding: isMobile ? '10px 12px' : '12px 14px',
           borderLeft: `3px solid #06b6d4`,
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>음수</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: '#06b6d4' }}>
+            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: '#06b6d4' }}>
               {sensor?.drinking?.toFixed(0) ?? '—'}
             </span>
             <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>L</span>
@@ -478,12 +478,12 @@ export default function CowProfilePage(): React.JSX.Element {
           background: 'var(--ct-card)',
           border: `1px solid ${scoreColor}25`,
           borderRadius: 10,
-          padding: '12px 14px',
+          padding: isMobile ? '10px 12px' : '12px 14px',
           borderLeft: `3px solid ${scoreColor}`,
         }}>
           <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>AI 건강</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: scoreColor }}>{String(healthScore ?? '—')}</span>
+            <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: scoreColor }}>{String(healthScore ?? '—')}</span>
             <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>/100</span>
           </div>
           {healthPred && <div style={{ fontSize: 9, marginTop: 2 }}>{healthPred.riskLevel}</div>}

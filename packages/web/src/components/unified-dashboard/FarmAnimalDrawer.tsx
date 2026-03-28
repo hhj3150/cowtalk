@@ -94,6 +94,9 @@ export function FarmAnimalDrawer({
   });
 
   const selectedFarm = farms.find((f) => f.farmId === selectedFarmId);
+  const drawerWidth = typeof window !== 'undefined' && window.innerWidth < 430
+    ? window.innerWidth
+    : 340;
 
   return (
     <>
@@ -114,7 +117,7 @@ export function FarmAnimalDrawer({
         top: 0,
         right: 0,
         bottom: 0,
-        width: 340,
+        width: drawerWidth,
         zIndex: 201,
         background: '#1a1f2e',
         borderLeft: '1px solid #334155',

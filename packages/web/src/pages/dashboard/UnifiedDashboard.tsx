@@ -687,7 +687,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 <RoleSwitcher />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, overflow: 'hidden' }}>
               <FarmFilterDropdown />
               <FarmGroupSelector />
             </div>
