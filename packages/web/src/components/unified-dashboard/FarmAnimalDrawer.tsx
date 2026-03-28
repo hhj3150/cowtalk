@@ -68,8 +68,8 @@ export function FarmAnimalDrawer({
     setLoading(true);
     setAnimals([]);
     try {
-      const res = await apiGet<{ data: AnimalRow[] }>(`/animals?farmId=${farmId}&status=active&limit=500`);
-      setAnimals(res?.data ?? []);
+      const res = await apiGet<AnimalRow[]>(`/animals?farmId=${farmId}&status=active&limit=500`);
+      setAnimals(res ?? []);
     } catch {
       setAnimals([]);
     } finally {
