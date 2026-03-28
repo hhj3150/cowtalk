@@ -203,24 +203,7 @@ sensorRouter.get('/:animalId/history', requirePermission('sensor', 'read'), asyn
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
 
-    if (chartData.length === 0) {
-      // 해당 기간에 이벤트가 없으면 정상 범위의 시뮬레이션 데이터
-      const pointCount = range === '24h' ? 24 : range === '48h' ? 48 : range === '7d' ? 168 : 720;
-      const step = Math.max(1, Math.floor(pointCount / 50)); // 최대 50포인트
-      const now = Date.now();
-      chartData = [];
-      for (let i = pointCount; i >= 0; i -= step) {
-        const ts = new Date(now - i * 3600000);
-        chartData.push({
-          timestamp: ts.toISOString(),
-          temperature: 38.3 + Math.random() * 0.6,
-          rumination: 400 + Math.random() * 100,
-          activity: 50 + Math.random() * 30,
-          waterIntake: null,
-          ph: null,
-        });
-      }
-    }
+    // 데이터 없음 — 시뮬레이션 제거 (프론트엔드가 빈 배열을 "데이터 없음"으로 표시)
 
     res.json({
       success: true,
@@ -229,6 +212,7 @@ sensorRouter.get('/:animalId/history', requirePermission('sensor', 'read'), asyn
         earTag: animal?.earTag ?? animalId.slice(0, 8),
         range,
         data: chartData,
+        noData: chartData.length === 0,
       },
     });
   } catch (error) {

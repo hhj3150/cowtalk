@@ -1567,6 +1567,8 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
         metrics,
         eventMarkers: markers,
         animalProfile,
+        // 시뮬레이션된 메트릭 목록 — 프론트엔드에서 "추정치" 라벨 표시용
+        simulatedMetrics: missingMetrics,
       },
     });
   } catch (error) {
@@ -1957,9 +1959,9 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
         .where(eq(smaxtecEvents.farmId, farm.farmId));
       const sensorRate = total > 0 ? Math.min(100, Math.round((Number(sensorAnimals?.count ?? 0) / total) * 100)) : 0;
 
-      // placeholder 값
-      const ruminationScore = 60 + Math.round(Math.random() * 35);
-      const feedEfficiency = 70 + Math.round(Math.random() * 20);
+      // 반추·사료효율은 TimescaleDB aggregation 파이프라인 미구현 — 0으로 반환
+      const ruminationScore = 0;
+      const feedEfficiency = 0;
 
       return {
         farmName: farm.farmName,
@@ -4498,13 +4500,14 @@ async function buildBreedingPipeline(farmId: string | null): Promise<BreedingPip
   const urgentActions = buildBreedingUrgentActions(animalRows, smaxtecBreeding, breedingEvtsData, pregnancyRows);
 
   const hasRealKpis = kpis.conceptionRate > 0 || kpis.avgDaysOpen > 0 || kpis.avgCalvingInterval > 0;
+  // 실데이터 없으면 null — 프론트엔드가 "데이터 부족" 표시 (가짜 수치 제거)
   const finalKpis: BreedingKpis = hasRealKpis ? kpis : {
-    conceptionRate: 42 + Math.round(Math.random() * 130) / 10,
-    estrusDetectionRate: 60 + Math.round(Math.random() * 200) / 10,
-    avgDaysOpen: 120 + Math.floor(Math.random() * 40),
-    avgCalvingInterval: 385 + Math.floor(Math.random() * 35),
-    avgDaysToFirstService: 65 + Math.floor(Math.random() * 30),
-    pregnancyRate: Math.round(Math.random() * 350) / 10 + 25,
+    conceptionRate: 0,
+    estrusDetectionRate: 0,
+    avgDaysOpen: 0,
+    avgCalvingInterval: 0,
+    avgDaysToFirstService: 0,
+    pregnancyRate: 0,
   };
 
   return {

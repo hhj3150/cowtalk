@@ -28,7 +28,7 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
     staleTime: 5 * 60 * 1000,
   });
 
-  const pointCount = data ? Object.values(data.metrics).reduce((s, pts) => s + pts.length, 0) : null;
+  const hasSimulated = (data?.simulatedMetrics?.length ?? 0) > 0;
 
   return (
     <div style={{
@@ -47,9 +47,15 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>📊</span>
           <span>센서 데이터</span>
-          {pointCount !== null && (
-            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 400 }}>
-              {pointCount}
+          {hasSimulated && (
+            <span style={{
+              fontSize: 9, fontWeight: 600,
+              background: 'rgba(245,158,11,0.15)',
+              color: '#b45309',
+              padding: '1px 5px', borderRadius: 4,
+              border: '1px solid rgba(245,158,11,0.3)',
+            }}>
+              추정치 포함
             </span>
           )}
         </div>

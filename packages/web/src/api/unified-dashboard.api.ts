@@ -293,6 +293,8 @@ export interface AnimalSensorChartData {
   readonly metrics: Record<string, readonly SensorChartPoint[]>;
   readonly eventMarkers: readonly SensorEventMarker[];
   readonly animalProfile?: AnimalProfileData;
+  /** smaXtec 원시 데이터 없이 이벤트 기반 추정으로 채운 메트릭 키 목록 */
+  readonly simulatedMetrics?: readonly string[];
 }
 
 export function fetchAnimalSensorChart(
