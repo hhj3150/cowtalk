@@ -297,6 +297,21 @@ AnimalDetail "개체를 찾을 수 없습니다" 버그 수정 완료:
 원인: 서버가 flat 구조 반환하는데 코드가 data.animal (nested) 접근
 수정: const animal = (rawData.animal ?? rawData) 패턴으로 양쪽 대응
 
+## 추가 완료 (2026-03-29)
+
+센서 차트 flat-line 수정 및 현장 UI 최적화:
+- sensor-chart 3단계 폴백: smaXtec live API → sensor_daily_agg → sensor_measurements(hourly avg)
+  - sensor_measurements 밀도 검사: days×4 포인트 미만이면 시뮬레이션 유지
+  - metric_type 매핑: "temperature"→"temp", "activity"→"act"
+- 시뮬레이션 현실화: 일주기 0.8°C + 음수 딥 9회/일(V자 하락, 1~2.8°C)
+- 가짜 Math.random() 센서 데이터 제거 → noData 플래그로 교체 (신뢰성)
+- CollapsibleCard 컴포넌트: 모바일 기본 접힘/데스크톱 항상 펼침
+- TinkerbellAssistant alwaysOpen: 화면 하단 고정 Claude 스타일 바
+- CowProfilePage 현장 최적화: 트래픽라이트 배지, 큰 KPI, 상단 위험 배너
+- vitest: testTimeout 15000, pool:'forks', maxForks:4 (DB 병렬 타임아웃 해결)
+
+⚠️ 알려진 이슈: sensor_measurements 2026-03-22 이후 데이터 급감(파이프라인 중단 추정)
+
 ## 보고 형식 (매 작업 후)
 
 1. 분석한 것
