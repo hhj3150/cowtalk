@@ -12,7 +12,7 @@ import { getDb } from '../../config/database.js';
 import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js';
 import {
   farms, animals, smaxtecEvents, breedingEvents,
-  sensorDailyAgg, eventLabels,
+  sensorDailyAgg, sensorMeasurements, eventLabels,
   pregnancyChecks, calvingEvents,
 } from '../../db/schema.js';
 import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
@@ -1437,6 +1437,56 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
       metrics = metricMap;
     }
 
+    // sensor_measurements 폴백 — sensor_daily_agg 비어있을 때 원시 데이터를 1시간 평균으로 집계
+    // sensor_measurements: metric_type="temperature"→"temp", "activity"→"act"
+    // 6.9M 행 보유 (2026-03-15~), smaXtec 연동 대안으로 가장 중요한 폴백
+    {
+      const SM_KEY_MAP: Record<string, string> = { temperature: 'temp', activity: 'act' };
+      const needsSmFallback = ['temp', 'act'].filter((k) => !metrics[k] || metrics[k]!.length === 0);
+      if (needsSmFallback.length > 0) {
+        const smMetricTypes = needsSmFallback.map((k) => {
+          const entry = Object.entries(SM_KEY_MAP).find(([, v]) => v === k);
+          return entry ? entry[0] : k;
+        });
+        const smRows = await db.select({
+          ts: sql<number>`EXTRACT(EPOCH FROM date_trunc('hour', ${sensorMeasurements.timestamp}))::integer`,
+          metricType: sensorMeasurements.metricType,
+          avg: sql<number>`AVG(${sensorMeasurements.value})`,
+        })
+          .from(sensorMeasurements)
+          .where(and(
+            eq(sensorMeasurements.animalId, animalId),
+            gte(sensorMeasurements.timestamp, new Date(fromDate)),
+            inArray(sensorMeasurements.metricType, smMetricTypes),
+          ))
+          .groupBy(
+            sql`date_trunc('hour', ${sensorMeasurements.timestamp})`,
+            sensorMeasurements.metricType,
+          )
+          .orderBy(sql`date_trunc('hour', ${sensorMeasurements.timestamp})`);
+
+        // metricType 별로 그룹화하여 한 번씩만 할당
+        const smByType = new Map<string, { ts: number; value: number }[]>();
+        for (const row of smRows) {
+          const key = SM_KEY_MAP[row.metricType] ?? row.metricType;
+          if (!smByType.has(key)) smByType.set(key, []);
+          smByType.get(key)!.push({ ts: row.ts, value: row.avg });
+        }
+        // 밀도 검사: 요청 기간의 50% 이상을 커버하는 데이터만 사용
+        // 미달 시 시뮬레이션으로 fallback — 데이터 공백 기간에 선 하나만 보이는 현상 방지
+        const minRequiredPts = Math.max(12, days * 4); // 하루 최소 4포인트 (6시간 간격)
+        for (const [key, pts] of smByType) {
+          if ((!metrics[key] || metrics[key]!.length === 0) && pts.length >= minRequiredPts) {
+            (metrics as Record<string, { ts: number; value: number }[]>)[key] = pts;
+          }
+        }
+        const adoptedKeys = [...smByType.keys()].filter((k) => (metrics[k]?.length ?? 0) > 0);
+        if (adoptedKeys.length > 0) {
+          logger.info({ animalId, days, keys: adoptedKeys, total: smRows.length }, '[sensor-chart] Using sensor_measurements fallback');
+        }
+      }
+    }
+
     // 누락 메트릭이 있으면 → 이벤트 기반 시뮬레이션 데이터로 보충 (데모/개발용)
     // 실제 smaXtec 연동 시 해당 메트릭은 실 데이터가 사용됨
     const requiredMetrics = ['temp', 'act', 'rum', 'dr'];
@@ -1494,12 +1544,25 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
         return { near: false, intensity: 0 };
       };
 
-      // 4개 메트릭 생성 (실제 smaXtec 데이터 범위 기반)
+      // 하루 음수 시간대 결정 — 시드 기반 결정론적 생성 (동물마다 고정 패턴)
+      // 소는 하루 8-12회 음수. 하루를 8구간으로 나눠 각 구간당 1회 배치.
+      const DIPS_PER_DAY = 9;
+      // dayIdx × DIPS_PER_DAY + dipIdx 조합 → 각 음수 이벤트의 구간 내 오프셋
+      const getDipTimes = (dayIdx: number): number[] => {
+        const dayStartTs = startTs + dayIdx * 86400;
+        return Array.from({ length: DIPS_PER_DAY }, (_, d) => {
+          const slotStart = dayStartTs + (d / DIPS_PER_DAY) * 86400;
+          const offset = seededRandom(dayIdx * 97 + d, 13) * (86400 / DIPS_PER_DAY);
+          return slotStart + offset;
+        });
+      };
+
+      // 4개 메트릭 생성 (실제 smaXtec 위내센서 패턴 기반)
       const metricConfigs: readonly { key: string; base: number; noise: number; abnormalDelta: number }[] = [
-        { key: 'temp', base: 38.6, noise: 0.8, abnormalDelta: 1.8 },  // 체온 °C (음수딥 포함 변동성 0.8)
-        { key: 'act', base: 4.0, noise: 2.0, abnormalDelta: -2.5 },   // 활동 (실제 범위 0~9)
-        { key: 'rum', base: 450, noise: 50, abnormalDelta: -200 },     // 반추 분 (rolling 24h)
-        { key: 'dr', base: 3.0, noise: 4.0, abnormalDelta: -2.0 },    // 음수 L/10min (실제 범위 0~20)
+        { key: 'temp', base: 38.6, noise: 0.25, abnormalDelta: 1.8 }, // 체온: 미세노이즈, 음수딥+일주기로 시각적 패턴
+        { key: 'act',  base: 4.0,  noise: 1.5,  abnormalDelta: -2.5 }, // 활동 (0~9 범위, 새벽/저녁 피크)
+        { key: 'rum',  base: 450,  noise: 60,   abnormalDelta: -200 }, // 반추 분 (rolling 24h)
+        { key: 'dr',   base: 3.0,  noise: 3.0,  abnormalDelta: -2.0 }, // 음수 L/10min
       ];
 
       for (const mc of metricConfigs) {
@@ -1510,10 +1573,43 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
         for (let i = 0; i < pointCount; i++) {
           const ts = startTs + i * interval;
           const r = seededRandom(i, mc.key.charCodeAt(0));
+          const hourOfDay = (ts % 86400) / 3600; // 0~24
 
-          // 기본값 + 노이즈 + 일주기 변동
-          const diurnal = Math.sin((i / 24) * Math.PI * 2) * mc.noise * 0.3;
-          let value = mc.base + (r - 0.5) * mc.noise + diurnal;
+          // 일주기 리듬 (메트릭별 실측 패턴)
+          let diurnal: number;
+          if (mc.key === 'temp') {
+            // 체온: 06시 최저(38.2°C) → 14시 최고(39.0°C) — 0.8°C 일교차
+            diurnal = 0.4 * Math.sin((hourOfDay - 6) * Math.PI / 12);
+          } else if (mc.key === 'act') {
+            // 활동: 새벽 06시 + 저녁 18시 피크 (비모달)
+            diurnal = 1.5 * (Math.sin((hourOfDay - 6) * Math.PI / 12) + Math.sin((hourOfDay - 18) * Math.PI / 12)) * 0.5;
+          } else if (mc.key === 'rum') {
+            // 반추: 식후 (09시, 15시, 21시) 증가
+            diurnal = 60 * (Math.sin((hourOfDay - 9) * Math.PI / 6) + Math.sin((hourOfDay - 15) * Math.PI / 6)) * 0.4;
+          } else {
+            diurnal = 0;
+          }
+
+          let value = mc.base + (r - 0.5) * mc.noise * 2 + diurnal;
+
+          // 체온 음수 딥: 하루 9회 급강하-회복 사이클 (smaXtec 위내온도 특징)
+          if (mc.key === 'temp') {
+            const dayIdx = Math.floor((ts - startTs) / 86400);
+            const dipTimes = getDipTimes(dayIdx);
+            for (const dipTs of dipTimes) {
+              const elapsed = ts - dipTs;
+              if (elapsed >= 0 && elapsed < 3600) { // 1시간 이내
+                const progress = elapsed / 3600;
+                const dipDepth = 1.0 + seededRandom(dayIdx * 200 + dipTimes.indexOf(dipTs), 77) * 1.8;
+                // V자 곡선: 15분 낙하 → 45분 회복
+                const dip = progress < 0.25
+                  ? -dipDepth * (progress / 0.25)
+                  : -dipDepth * (1 - (progress - 0.25) / 0.75);
+                value += dip;
+                break;
+              }
+            }
+          }
 
           // 이벤트 근처면 이상치 반영
           const { near, intensity } = isNearEvent(ts, mc.key);
@@ -1522,7 +1618,7 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request
           }
 
           // 값 범위 제한
-          if (mc.key === 'temp') value = Math.max(36.5, Math.min(42.0, value));
+          if (mc.key === 'temp') value = Math.max(35.0, Math.min(42.0, value));
           else value = Math.max(0, value);
 
           points.push({ ts, value: Math.round(value * 10) / 10 });
