@@ -36,10 +36,73 @@ interface CowProfile {
 }
 
 interface SensorLatest {
-  readonly temperature: number | null;
-  readonly rumination: number | null;
+  readonly temperature: number | null;      // 마지막 순간 체온 (보조용)
+  readonly baselineTemp: number | null;     // 정상체온 — 음수 피크 제외 24h 평균 (KPI 표시용)
+  readonly rumination: number | null;       // 마지막 순간 반추
+  readonly rumAvg: number | null;           // 24h 평균 반추시간 (KPI 표시용)
   readonly activity: number | null;
-  readonly drinking: number | null;
+  readonly drinking: number | null;         // 마지막 음수량 (l/24h)
+  readonly drinkingCount: number;           // 24h 음수횟수 — 체온 급강하 피크 카운팅
+}
+
+// ── 센서 분석 헬퍼 ──
+
+/**
+ * 정상체온 = 음수 피크(37.5°C 미만) 제외 후 24h 평균
+ * 소의 위내 체온은 물 섭취 시 급강하했다가 회복됨.
+ * smaXtec 차트의 흰 직선(정상체온 라인)과 동일한 계산.
+ */
+function computeBaselineTemp(pts: readonly { ts: number; value: number }[]): number | null {
+  if (pts.length === 0) return null;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const recent = pts.filter((p) => p.ts >= cutoff);
+  const src = recent.length > 0 ? recent : pts.slice(-12);
+  const valid = src.filter((p) => p.value >= 37.5);
+  if (valid.length === 0) return src[src.length - 1]!.value;
+  return valid.reduce((s, p) => s + p.value, 0) / valid.length;
+}
+
+/**
+ * 24h 음수횟수 = 체온이 정상체온 대비 0.8°C 이상 급강하한 별개 이벤트 수
+ * 소가 물을 마시면 위내 온도가 30°C대로 떨어졌다 회복됨.
+ * 음수횟수 ≈ 사료섭취횟수 (동일한 신체 행동)
+ */
+function computeDrinkingCount(pts: readonly { ts: number; value: number }[]): number {
+  if (pts.length < 3) return 0;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const recent = pts.filter((p) => p.ts >= cutoff);
+  if (recent.length < 3) return 0;
+  const validForBaseline = recent.filter((p) => p.value >= 37.5);
+  if (validForBaseline.length === 0) return 0;
+  const baseline = validForBaseline.reduce((s, p) => s + p.value, 0) / validForBaseline.length;
+  const dipThreshold = baseline - 0.8;
+  const MIN_GAP_MS = 30 * 60 * 1000;
+  let count = 0;
+  let inDip = false;
+  let lastDipEndTs = 0;
+  for (const pt of recent) {
+    if (pt.value < dipThreshold) {
+      if (!inDip && pt.ts - lastDipEndTs >= MIN_GAP_MS) {
+        count++;
+        inDip = true;
+      }
+    } else if (inDip) {
+      lastDipEndTs = pt.ts;
+      inDip = false;
+    }
+  }
+  return count;
+}
+
+/**
+ * 반추 24h 평균 — 마지막 순간 값이 아닌 하루 평균
+ */
+function computeRumAvg(pts: readonly { ts: number; value: number }[]): number | null {
+  if (pts.length === 0) return null;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const recent = pts.filter((p) => p.ts >= cutoff);
+  const src = recent.length > 0 ? recent : pts.slice(-12);
+  return src.reduce((s, p) => s + p.value, 0) / src.length;
 }
 
 interface EventItem {
@@ -143,11 +206,16 @@ export default function CowProfilePage(): React.JSX.Element {
           const pts = sensorData.metrics[key];
           return pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
         };
+        const tempPts = sensorData.metrics['temp'] ?? [];
+        const rumPts = sensorData.metrics['rum'] ?? [];
         setSensor({
           temperature: getLatest('temp'),
+          baselineTemp: computeBaselineTemp(tempPts),
           rumination: getLatest('rum'),
+          rumAvg: computeRumAvg(rumPts),
           activity: getLatest('act'),
           drinking: getLatest('dr'),
+          drinkingCount: computeDrinkingCount(tempPts),
         });
       })
       .catch(() => {});
@@ -224,8 +292,11 @@ export default function CowProfilePage(): React.JSX.Element {
     );
   }
 
-  const tempStatus = sensor?.temperature ? (sensor.temperature >= 40 ? '🔴 발열' : sensor.temperature >= 39.5 ? '🟡 주의' : '🟢 정상') : '—';
-  const rumStatus = sensor?.rumination ? (sensor.rumination < 200 ? '🔴 감소' : sensor.rumination < 300 ? '🟡 주의' : '🟢 정상') : '—';
+  // 정상체온 기준으로 KPI 상태 판단 (음수 피크 제외 후 베이스라인)
+  const displayTemp = sensor?.baselineTemp ?? sensor?.temperature;
+  const tempStatus = displayTemp ? (displayTemp >= 39.8 ? '🔴 발열' : displayTemp >= 39.4 ? '🟡 주의' : '🟢 정상') : '—';
+  const rumDisplay = sensor?.rumAvg ?? sensor?.rumination;
+  const rumStatus = rumDisplay ? (rumDisplay < 200 ? '🔴 감소' : rumDisplay < 300 ? '🟡 주의' : '🟢 정상') : '—';
   const healthScore = healthPred ? (100 - healthPred.riskScore) : aiScore;
   const scoreColor = healthScore !== null ? (healthScore >= 80 ? '#22c55e' : healthScore >= 50 ? '#eab308' : '#ef4444') : '#64748b';
 
@@ -242,7 +313,7 @@ export default function CowProfilePage(): React.JSX.Element {
           onClick={() => {
             // 개체의 모든 데이터를 컨텍스트로 수집
             const sensorCtx = sensor
-              ? `[현재 센서] 체온 ${sensor.temperature?.toFixed(1) ?? '—'}°C, 반추 ${sensor.rumination?.toFixed(0) ?? '—'}분, 활동량 ${sensor.activity?.toFixed(0) ?? '—'}, 음수 ${sensor.drinking?.toFixed(0) ?? '—'}L`
+              ? `[현재 센서] 정상체온 ${sensor.baselineTemp?.toFixed(2) ?? '—'}°C (음수 피크 제외 24h 평균), 반추 ${sensor.rumAvg?.toFixed(0) ?? '—'}분 (24h 평균), 음수 ${sensor.drinking?.toFixed(0) ?? '—'}L (하루), 음수횟수 ${sensor.drinkingCount}회, 활동량 ${sensor.activity?.toFixed(0) ?? '—'}`
               : '[센서 데이터 없음]';
 
             const healthCtx = healthPred
@@ -295,27 +366,85 @@ export default function CowProfilePage(): React.JSX.Element {
 
       {/* ── KPI 바이탈 카드 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
-        {[
-          { label: '체온', value: sensor?.temperature?.toFixed(1) ?? '—', unit: '°C', status: tempStatus, color: sensor?.temperature && sensor.temperature >= 39.5 ? '#ef4444' : '#3b82f6' },
-          { label: '반추', value: sensor?.rumination?.toFixed(0) ?? '—', unit: '분', status: rumStatus, color: '#f97316' },
-          { label: '활동', value: sensor?.activity?.toFixed(0) ?? '—', unit: 'I/24h', status: '', color: '#22c55e' },
-          { label: 'AI 건강', value: String(healthScore ?? '—'), unit: '/100', status: healthPred ? healthPred.riskLevel : 'normal', color: scoreColor },
-        ].map((card) => (
-          <div key={card.label} style={{
-            background: 'var(--ct-card)',
-            border: `1px solid ${card.color}25`,
-            borderRadius: 10,
-            padding: '12px 14px',
-            borderLeft: `3px solid ${card.color}`,
-          }}>
-            <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{card.label}</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
-              <span style={{ fontSize: 22, fontWeight: 800, color: card.color }}>{card.value}</span>
-              <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>{card.unit}</span>
-            </div>
-            {card.status && <div style={{ fontSize: 9, marginTop: 2 }}>{card.status}</div>}
+        {/* 체온 — 정상체온(베이스라인) 표시, 음수 피크 제외 24h 평균 */}
+        <div style={{
+          background: 'var(--ct-card)',
+          border: `1px solid ${displayTemp && displayTemp >= 39.4 ? '#ef444425' : '#4A90D925'}`,
+          borderRadius: 10,
+          padding: '12px 14px',
+          borderLeft: `3px solid ${displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9'}`,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>체온</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: displayTemp && displayTemp >= 39.8 ? '#ef4444' : displayTemp && displayTemp >= 39.4 ? '#f97316' : '#4A90D9' }}>
+              {displayTemp?.toFixed(2) ?? '—'}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>°C</span>
           </div>
-        ))}
+          <div style={{ fontSize: 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+            <span>{tempStatus}</span>
+            {sensor && sensor.drinkingCount > 0 && (
+              <span style={{ color: '#64748b' }}>음수 {sensor.drinkingCount}회</span>
+            )}
+          </div>
+        </div>
+
+        {/* 반추 — 24h 평균 */}
+        <div style={{
+          background: 'var(--ct-card)',
+          border: `1px solid #22c55e25`,
+          borderRadius: 10,
+          padding: '12px 14px',
+          borderLeft: `3px solid ${rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e'}`,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>반추</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: rumDisplay && rumDisplay < 200 ? '#ef4444' : rumDisplay && rumDisplay < 300 ? '#f97316' : '#22c55e' }}>
+              {rumDisplay?.toFixed(0) ?? '—'}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>분</span>
+          </div>
+          <div style={{ fontSize: 9, marginTop: 2 }}>{rumStatus} <span style={{ color: '#64748b' }}>24h 평균</span></div>
+        </div>
+
+        {/* 음수 — 하루 음수량 + 음수횟수 */}
+        <div style={{
+          background: 'var(--ct-card)',
+          border: `1px solid #06b6d425`,
+          borderRadius: 10,
+          padding: '12px 14px',
+          borderLeft: `3px solid #06b6d4`,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>음수</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: '#06b6d4' }}>
+              {sensor?.drinking?.toFixed(0) ?? '—'}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>L</span>
+          </div>
+          <div style={{ fontSize: 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--ct-text-muted)' }}>음수량</span>
+            {sensor && sensor.drinkingCount > 0 && (
+              <span style={{ color: '#06b6d4', fontWeight: 600 }}>{sensor.drinkingCount}회</span>
+            )}
+          </div>
+        </div>
+
+        {/* AI 건강 */}
+        <div style={{
+          background: 'var(--ct-card)',
+          border: `1px solid ${scoreColor}25`,
+          borderRadius: 10,
+          padding: '12px 14px',
+          borderLeft: `3px solid ${scoreColor}`,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>AI 건강</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: scoreColor }}>{String(healthScore ?? '—')}</span>
+            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>/100</span>
+          </div>
+          {healthPred && <div style={{ fontSize: 9, marginTop: 2 }}>{healthPred.riskLevel}</div>}
+        </div>
       </div>
 
       {/* ── 센서 차트 (최상단 — 가장 중요) ── */}
