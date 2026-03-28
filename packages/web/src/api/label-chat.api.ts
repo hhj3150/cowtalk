@@ -45,6 +45,10 @@ export interface AnimalInfo {
   readonly farmId: string;
   readonly farmName: string;
   readonly status: string;
+  readonly parity: number;
+  readonly daysInMilk: number | null;
+  readonly lactationStatus: string;
+  readonly birthDate: string | null;
 }
 
 export function getAnimalInfo(animalId: string): Promise<AnimalInfo> {

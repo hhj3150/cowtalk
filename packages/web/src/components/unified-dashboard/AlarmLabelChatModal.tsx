@@ -1777,6 +1777,60 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             </button>
           </div>
 
+          {/* smaXtec 스타일 개체 메타데이터 바 */}
+          {animalInfo && (
+            <div style={{
+              padding: '8px 18px',
+              borderBottom: '1px solid var(--ct-border)',
+              background: 'rgba(0,0,0,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0,
+              flexWrap: 'nowrap',
+              overflowX: 'auto',
+            }}>
+              {[
+                { label: '관리번호', value: animalInfo.earTag, icon: '🐄' },
+                { label: '산차', value: animalInfo.parity > 0 ? `${animalInfo.parity}산` : '미경산', icon: '🔄' },
+                { label: 'DIM', value: animalInfo.daysInMilk != null ? `${animalInfo.daysInMilk}일` : '—', icon: '📅' },
+                {
+                  label: '비유상태',
+                  value: (
+                    animalInfo.lactationStatus === 'milking' ? '착유중' :
+                    animalInfo.lactationStatus === 'dry' ? '건유' :
+                    animalInfo.lactationStatus === 'pregnant' ? '임신중' :
+                    animalInfo.lactationStatus === 'open' ? '공태' :
+                    animalInfo.lactationStatus === 'heifer' ? '육성우' :
+                    animalInfo.lactationStatus
+                  ),
+                  icon: '🥛',
+                },
+                { label: '품종', value: animalInfo.breed, icon: '🧬' },
+              ].map((item, idx, arr) => (
+                <React.Fragment key={item.label}>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    padding: '0 12px',
+                    minWidth: 60,
+                    flexShrink: 0,
+                  }}>
+                    <span style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginBottom: 1 }}>
+                      {item.label}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ct-text)', whiteSpace: 'nowrap' }}>
+                      {item.icon} {item.value}
+                    </span>
+                  </div>
+                  {idx < arr.length - 1 && (
+                    <span style={{ color: 'var(--ct-border)', fontSize: 14, flexShrink: 0 }}>|</span>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+
           {/* 채팅 영역 */}
           <div style={{
             flex: 1,

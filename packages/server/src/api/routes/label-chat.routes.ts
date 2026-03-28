@@ -529,6 +529,10 @@ labelChatRouter.get('/animal-info/:animalId', async (req: Request, res: Response
       farmId: animals.farmId,
       farmName: farms.name,
       status: animals.status,
+      parity: animals.parity,
+      daysInMilk: animals.daysInMilk,
+      lactationStatus: animals.lactationStatus,
+      birthDate: animals.birthDate,
     })
       .from(animals)
       .leftJoin(farms, eq(animals.farmId, farms.farmId))
