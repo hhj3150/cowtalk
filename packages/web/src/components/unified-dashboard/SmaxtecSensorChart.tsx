@@ -153,7 +153,7 @@ interface TempAxisProps {
 function TempAxisOverlay(props: TempAxisProps): React.JSX.Element {
   const { top = 0, left = 0, height = 300 } = props;
   const ticks = [20, 30, 40, 50, 60];
-  const domainMin = 0, domainMax = 630;
+  const domainMin = 0, domainMax = 900;
   return (
     <g>
       {ticks.map((tc) => {
@@ -413,11 +413,12 @@ export function SmaxtecSensorChart({ data, selectedEventId, height = 380 }: Smax
             }}
           />
 
-          {/* 좌측 Y축 — l/24h (활동/음수 + 체온 스케일) */}
+          {/* 좌측 Y축 — l/24h (활동/음수 + 체온 스케일)
+              domain [0,900]: 체온(38°C×10=380→42%) vs 반추(440분→63%) 시각적 분리 */}
           <YAxis
             yAxisId="lh"
             orientation="left"
-            domain={[0, 630]}
+            domain={[0, 900]}
             ticks={[0, 100, 200, 300, 400, 500, 600]}
             tickFormatter={(v) => `${v}`}
             tick={{ fill: C.muted, fontSize: 9 }}
