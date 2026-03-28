@@ -241,7 +241,14 @@ export default function CowProfilePage(): React.JSX.Element {
           rumination: getLatest('rum'),
           rumAvg: computeRumAvg(rumPts),
           activity: getLatest('act'),
-          drinking: getLatest('dr'),
+          // water_intake는 L/10min 실시간 → 24h 합산이 일일 음수량
+          drinking: (() => {
+            const drPts = sensorData.metrics['dr'] ?? [];
+            if (drPts.length === 0) return null;
+            const cutoff = Date.now() / 1000 - 86400;
+            const sum = drPts.filter(p => p.ts >= cutoff).reduce((acc, p) => acc + p.value, 0);
+            return Math.round(sum * 10) / 10;
+          })(),
           drinkingCount: computeDrinkingCount(tempPts),
         });
       })
