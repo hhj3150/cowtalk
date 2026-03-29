@@ -12,6 +12,9 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  build: {
+    target: ['es2020', 'chrome87', 'safari14', 'firefox78'],
+  },
   server: {
     host: true,
     port: 3000,
