@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { getQuarantineDashboard, getActionQueue, getVaccinationStatus } from '../../services/epidemiology/quarantine-dashboard.service.js';
 import { getEarlyDetectionMetrics } from '../../services/epidemiology/early-detection-metrics.service.js';
-import { getNationalSituation, getProvinceDetail, getProvinceFarms } from '../../services/epidemiology/national-situation.service.js';
+import { getNationalSituation, getProvinceDetail, getProvinceFarms, getAllMapFarms } from '../../services/epidemiology/national-situation.service.js';
 import { logger } from '../../lib/logger.js';
 
 export const quarantineDashboardRouter = Router();
@@ -124,6 +124,19 @@ quarantineDashboardRouter.get('/province-farms/:province', async (req, res, next
       return;
     }
     const data = await getProvinceFarms(province);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// GET /quarantine/map-farms — 전체 농장 지도 마커 데이터
+// ===========================
+
+quarantineDashboardRouter.get('/map-farms', async (_req, res, next) => {
+  try {
+    const data = await getAllMapFarms();
     res.json({ success: true, data });
   } catch (err) {
     next(err);

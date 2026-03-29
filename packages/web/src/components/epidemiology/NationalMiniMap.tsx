@@ -1,9 +1,9 @@
 // 전국 위험지도 미니맵 — 메인 대시보드 & 전국 현황 페이지 공용
-// Leaflet 시도 원 마커 + 시도별 리스트 + 전국 요약
+// 개별 농장 마커 (실제 좌표) + 시도별 리스트 + 전국 요약
 
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MapContainer, TileLayer, Circle as LCircle, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as LTooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { RiskLevelBadge } from './RiskLevelBadge';
 import type { RiskLevel } from './RiskLevelBadge';
@@ -44,12 +44,28 @@ export interface NationalData {
   readonly weeklyFeverTrend: readonly { week: string; feverRate: number }[];
 }
 
+interface MapFarm {
+  readonly farmId: string;
+  readonly farmName: string;
+  readonly province: string;
+  readonly district: string;
+  readonly currentHeadCount: number;
+  readonly feverCount: number;
+  readonly riskLevel: RiskLevel;
+  readonly lat: number;
+  readonly lng: number;
+}
+
 // ===========================
 // API
 // ===========================
 
 async function fetchNational(): Promise<NationalData> {
   return apiGet<NationalData>('/quarantine/national-situation');
+}
+
+async function fetchMapFarms(): Promise<readonly MapFarm[]> {
+  return apiGet<readonly MapFarm[]>('/quarantine/map-farms');
 }
 
 // ===========================
@@ -66,8 +82,9 @@ const RISK_COLOR: Readonly<Record<RiskLevel, string>> = {
 const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-function provinceRadius(farmCount: number): number {
-  return Math.max(8000, Math.min(30000, farmCount * 2000));
+// 농장 마커 크기: 두수 기반 (최소 4, 최대 12)
+function farmMarkerRadius(headCount: number): number {
+  return Math.max(4, Math.min(12, 4 + Math.sqrt(headCount) * 0.5));
 }
 
 // ===========================
@@ -75,13 +92,9 @@ function provinceRadius(farmCount: number): number {
 // ===========================
 
 interface NationalMiniMapProps {
-  /** 시도 클릭 시 콜백 */
   readonly onProvinceSelect: (province: string) => void;
-  /** 지도 높이 (px) */
   readonly mapHeight?: number;
-  /** 전국 요약 카드 표시 여부 */
   readonly showSummary?: boolean;
-  /** 광역 경보 배너 표시 여부 */
   readonly showBroadAlert?: boolean;
 }
 
@@ -101,8 +114,15 @@ export function NationalMiniMap({
     refetchInterval: 120_000,
   });
 
+  const { data: mapFarms } = useQuery({
+    queryKey: ['quarantine', 'map-farms'],
+    queryFn: fetchMapFarms,
+    refetchInterval: 120_000,
+  });
+
   const summary = data?.nationalSummary;
   const provinces = data?.provinces ?? [];
+  const farms = mapFarms ?? [];
 
   if (isLoading) {
     return (
@@ -150,54 +170,71 @@ export function NationalMiniMap({
 
       {/* 지도 + 시도 리스트 그리드 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Leaflet 지도 */}
+        {/* Leaflet 지도 — 개별 농장 마커 */}
         <div
           className="lg:col-span-2 rounded-xl border overflow-hidden"
           style={{ borderColor: 'var(--ct-border)' }}
         >
-          <div className="px-3 py-2" style={{ background: 'var(--ct-card)' }}>
-            <p className="text-xs font-semibold" style={{ color: 'var(--ct-text)' }}>
-              🗺️ 시도별 위험 등급
-            </p>
-            <p className="text-[10px]" style={{ color: 'var(--ct-text-secondary)' }}>
-              원 클릭 시 해당 시도 농장 드릴다운
-            </p>
+          <div className="px-3 py-2 flex items-center justify-between" style={{ background: 'var(--ct-card)' }}>
+            <div>
+              <p className="text-xs font-semibold" style={{ color: 'var(--ct-text)' }}>
+                🗺️ 전국 목장 현황 ({farms.length}개)
+              </p>
+              <p className="text-[10px]" style={{ color: 'var(--ct-text-secondary)' }}>
+                실제 좌표 기반 — 마커 클릭 시 농장 상세
+              </p>
+            </div>
+            {/* 범례 */}
+            <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--ct-text-secondary)' }}>
+              <span><span style={{ color: '#22c55e' }}>●</span> 안전</span>
+              <span><span style={{ color: '#eab308' }}>●</span> 주의</span>
+              <span><span style={{ color: '#f97316' }}>●</span> 경계</span>
+              <span><span style={{ color: '#ef4444' }}>●</span> 심각</span>
+            </div>
           </div>
           <div style={{ height: mapHeight }}>
             <MapContainer
-              center={[36.5, 127.5]}
+              center={[36.2, 127.8]}
               zoom={7}
               style={{ height: '100%', width: '100%' }}
               zoomControl={true}
               attributionControl={false}
             >
-              <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} subdomains="abcd" maxZoom={20} />
-              {provinces.map((p) => {
-                const color = RISK_COLOR[p.riskLevel];
+              <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} subdomains="abcd" maxZoom={18} />
+              {farms.map((farm) => {
+                const color = RISK_COLOR[farm.riskLevel];
+                const hasFever = farm.feverCount > 0;
                 return (
-                  <LCircle
-                    key={p.province}
-                    center={[p.centerLat, p.centerLng]}
-                    radius={provinceRadius(p.farmCount)}
+                  <CircleMarker
+                    key={farm.farmId}
+                    center={[farm.lat, farm.lng]}
+                    radius={farmMarkerRadius(farm.currentHeadCount)}
                     pathOptions={{
                       fillColor: color,
-                      fillOpacity: 0.6,
-                      color,
-                      weight: 2,
-                    }}
-                    eventHandlers={{
-                      click: () => onProvinceSelect(p.province),
+                      fillOpacity: hasFever ? 0.9 : 0.6,
+                      color: hasFever ? '#fff' : color,
+                      weight: hasFever ? 2 : 1,
                     }}
                   >
+                    <LTooltip direction="top" offset={[0, -6]}>
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>{farm.farmName}</span>
+                    </LTooltip>
                     <Popup>
-                      <div style={{ fontSize: 11, lineHeight: 1.5, color: '#1e293b' }}>
-                        <p style={{ fontWeight: 700, margin: '0 0 2px', fontSize: 12 }}>{p.province}</p>
-                        <p style={{ margin: 0 }}>농장 {p.farmCount}개 | {p.totalAnimals.toLocaleString()}두</p>
-                        <p style={{ margin: 0 }}>발열 {p.feverAnimals}두 ({(p.feverRate * 100).toFixed(1)}%)</p>
-                        <p style={{ margin: 0 }}>등급: <strong>{p.riskLevel.toUpperCase()}</strong></p>
+                      <div style={{ fontSize: 11, lineHeight: 1.6, color: '#1e293b', minWidth: 140 }}>
+                        <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 12 }}>{farm.farmName}</p>
+                        <p style={{ margin: 0, color: '#64748b' }}>{farm.province} {farm.district}</p>
+                        <p style={{ margin: '2px 0 0' }}>{farm.currentHeadCount}두</p>
+                        {hasFever && (
+                          <p style={{ margin: '2px 0 0', color: '#ef4444', fontWeight: 600 }}>
+                            발열 {farm.feverCount}두
+                          </p>
+                        )}
+                        <p style={{ margin: '2px 0 0' }}>
+                          등급: <strong style={{ color }}>{farm.riskLevel.toUpperCase()}</strong>
+                        </p>
                       </div>
                     </Popup>
-                  </LCircle>
+                  </CircleMarker>
                 );
               })}
             </MapContainer>

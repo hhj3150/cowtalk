@@ -282,7 +282,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             setSelectedProvince(province);
             setShowFarmPanel(true);
           }}
-          mapHeight={280}
+          mapHeight={420}
           showSummary={false}
           showBroadAlert={true}
         />
