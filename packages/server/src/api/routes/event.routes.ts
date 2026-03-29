@@ -31,23 +31,36 @@ eventRouter.get('/types', async (_req: Request, res: Response, next: NextFunctio
 });
 
 // POST /events — 단건 이벤트 기록
+// 프론트엔드: { animalId, farmId, eventTypeId, data }
+// 레거시:     { farmId, eventType, subType, description, eventDate, metadata }
 eventRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
-    const { farmId, eventType, subType, description, eventDate, metadata } = req.body;
+    const body = req.body as Record<string, unknown>;
+    const farmId = body.farmId as string;
+    const animalId = (body.animalId as string) ?? null;
+    const eventType = (body.eventType as string) ?? (body.eventTypeId as string) ?? 'observation';
+    const subType = (body.subType as string) ?? null;
+    const description = (body.description as string)
+      ?? (body.data && typeof body.data === 'object' && 'notes' in body.data ? String((body.data as Record<string, unknown>).notes) : null)
+      ?? `${eventType}${subType ? `: ${subType}` : ''}`;
+    const severity = (body.severity as string) ?? 'normal';
+    const eventDate = body.eventDate ? new Date(body.eventDate as string) : new Date();
+    const metadata = (body.metadata as Record<string, unknown>) ?? (body.data as Record<string, unknown>) ?? {};
     const recordedBy = req.user!.userId;
 
     const [event] = await db
       .insert(farmEvents)
       .values({
         farmId,
-        description: description ?? `${String(eventType)}: ${String(subType ?? '')}`,
-        eventType: eventType ?? 'observation',
-        subType: subType ?? null,
-        severity: ((req.body as Record<string, unknown>).severity as string) ?? 'normal',
-        eventDate: eventDate ? new Date(eventDate as string) : new Date(),
+        animalId,
+        description,
+        eventType,
+        subType,
+        severity,
+        eventDate,
         recordedBy,
-        metadata: metadata ?? {},
+        metadata,
       })
       .returning();
 
