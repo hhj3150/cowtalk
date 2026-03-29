@@ -194,7 +194,7 @@ export function Sidebar(): React.JSX.Element {
     <nav
       className="flex h-full flex-col border-r py-3"
       style={{
-        width: 56,
+        width: 72,
         background: 'var(--ct-card)',
         borderColor: 'var(--ct-border)',
       }}

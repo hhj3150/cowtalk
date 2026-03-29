@@ -217,45 +217,7 @@ export function TinkerbellAssistant({
   const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly TinkerbellMessage[]>([]);
 
-  // ── 플로팅 팝업 위치/크기 ──
-  const POPUP_KEY = 'ct-tinkerbell-pos';
-  const defaultPos = { x: typeof window !== 'undefined' ? window.innerWidth - 440 : 400, y: typeof window !== 'undefined' ? window.innerHeight - 560 : 200, w: 420, h: 520 };
-  const [popupPos, setPopupPos] = useState(() => {
-    try { const s = localStorage.getItem(POPUP_KEY); if (s) return JSON.parse(s); } catch { /* */ }
-    return defaultPos;
-  });
-  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
-  const resizeRef = useRef<{ sx: number; sy: number; ow: number; oh: number } | null>(null);
-
-  useEffect(() => {
-    try { localStorage.setItem(POPUP_KEY, JSON.stringify(popupPos)); } catch { /* */ }
-  }, [popupPos]);
-
-  const onDragStart = useCallback((e: React.MouseEvent) => {
-    if (isMobile) return;
-    e.preventDefault();
-    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: popupPos.x, oy: popupPos.y };
-    const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return;
-      setPopupPos((p: typeof popupPos) => ({ ...p, x: Math.max(0, Math.min(window.innerWidth - p.w, dragRef.current!.ox + ev.clientX - dragRef.current!.sx)), y: Math.max(0, Math.min(window.innerHeight - 48, dragRef.current!.oy + ev.clientY - dragRef.current!.sy)) }));
-    };
-    const onUp = () => { dragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [isMobile, popupPos.x, popupPos.y]);
-
-  const onResizeStart = useCallback((e: React.MouseEvent) => {
-    if (isMobile) return;
-    e.preventDefault(); e.stopPropagation();
-    resizeRef.current = { sx: e.clientX, sy: e.clientY, ow: popupPos.w, oh: popupPos.h };
-    const onMove = (ev: MouseEvent) => {
-      if (!resizeRef.current) return;
-      setPopupPos((p: typeof popupPos) => ({ ...p, w: Math.max(320, Math.min(800, resizeRef.current!.ow + ev.clientX - resizeRef.current!.sx)), h: Math.max(300, Math.min(900, resizeRef.current!.oh + ev.clientY - resizeRef.current!.sy)) }));
-    };
-    const onUp = () => { resizeRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [isMobile, popupPos.w, popupPos.h]);
+  // (사이드 패널 — 고정 위치, 드래그/리사이즈 불필요)
   const [transcript, setTranscript] = useState('');
   const [inputText, setInputText] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -779,35 +741,33 @@ export function TinkerbellAssistant({
     );
   }
 
-  // ── 열린 상태 (플로팅 팝업) ──
+  // ── 열린 상태 (데스크톱: 우측 사이드패널, 모바일: 하단 팝업) ──
   return (
     <div style={{
       position: 'fixed',
       ...(isMobile
-        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100vh - 120px)' }
-        : { left: popupPos.x, top: popupPos.y, width: popupPos.w, height: isMinimized ? 48 : popupPos.h }),
-      borderRadius: isMobile ? '16px 16px 0 0' : 14,
+        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100vh - 120px)', borderRadius: '16px 16px 0 0' }
+        : { top: 0, right: 0, width: isMinimized ? 48 : 'min(33vw, 420px)', height: '100vh', borderRadius: 0 }),
       background: 'var(--ct-card, #1e293b)',
-      border: '1px solid var(--ct-border, #334155)',
-      boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
+      borderLeft: isMobile ? 'none' : '1px solid var(--ct-border, #334155)',
+      border: isMobile ? '1px solid var(--ct-border, #334155)' : undefined,
+      boxShadow: isMobile ? '0 8px 40px rgba(0,0,0,0.4)' : '-4px 0 20px rgba(0,0,0,0.3)',
       display: 'flex',
-      flexDirection: 'column',
+      flexDirection: isMobile ? 'column' : isMinimized ? 'column' : 'column',
       zIndex: 9999,
       overflow: 'hidden',
-      transition: isMinimized ? 'height 0.2s ease' : undefined,
+      transition: 'width 0.2s ease',
     }}>
-      {/* 헤더 — 드래그 가능 */}
+      {/* 헤더 */}
       <div
-        onMouseDown={onDragStart}
         onDoubleClick={() => !isMobile && setIsMinimized((v) => !v)}
         style={{
-          padding: '10px 14px',
+          padding: isMinimized && !isMobile ? '10px 8px' : '10px 14px',
           borderBottom: isMinimized ? 'none' : '1px solid var(--ct-border, #334155)',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          alignItems: isMinimized && !isMobile ? 'center' : 'center',
+          justifyContent: isMinimized && !isMobile ? 'center' : 'space-between',
           background: `linear-gradient(135deg, ${color}15, transparent)`,
-          cursor: isMobile ? 'default' : 'move',
           userSelect: 'none',
           flexShrink: 0,
         }}
@@ -1089,28 +1049,6 @@ export function TinkerbellAssistant({
           </button>
         )}
       </div>
-      )}
-
-      {/* 리사이즈 핸들 (데스크톱, 펼친 상태에서만) */}
-      {!isMobile && !isMinimized && (
-        <div
-          onMouseDown={onResizeStart}
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: 16,
-            height: 16,
-            cursor: 'nwse-resize',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--ct-text-muted, #64748b)" opacity="0.5">
-            <path d="M9 1L1 9M9 5L5 9M9 9L9 9" stroke="var(--ct-text-muted, #64748b)" strokeWidth="1.5" fill="none" />
-          </svg>
-        </div>
       )}
 
       {/* 애니메이션 */}
