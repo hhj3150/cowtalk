@@ -282,6 +282,19 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             setSelectedProvince(province);
             setShowFarmPanel(true);
           }}
+          onFarmSelect={(farmId, farmName) => {
+            setSelectedFarm({
+              farmId,
+              farmName,
+              feverCount: 0,
+              clusterAlert: false,
+              legalSuspect: false,
+              riskScore: 0,
+              lat: 0,
+              lng: 0,
+            });
+            setFarmTab('animals');
+          }}
           mapHeight={420}
           showSummary={false}
           showBroadAlert={true}

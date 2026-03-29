@@ -93,6 +93,7 @@ function farmMarkerRadius(headCount: number): number {
 
 interface NationalMiniMapProps {
   readonly onProvinceSelect: (province: string) => void;
+  readonly onFarmSelect?: (farmId: string, farmName: string) => void;
   readonly mapHeight?: number;
   readonly showSummary?: boolean;
   readonly showBroadAlert?: boolean;
@@ -104,6 +105,7 @@ interface NationalMiniMapProps {
 
 export function NationalMiniMap({
   onProvinceSelect,
+  onFarmSelect,
   mapHeight = 320,
   showSummary = true,
   showBroadAlert = true,
@@ -232,6 +234,26 @@ export function NationalMiniMap({
                         <p style={{ margin: '2px 0 0' }}>
                           등급: <strong style={{ color }}>{farm.riskLevel.toUpperCase()}</strong>
                         </p>
+                        {onFarmSelect && (
+                          <button
+                            type="button"
+                            onClick={() => onFarmSelect(farm.farmId, farm.farmName)}
+                            style={{
+                              marginTop: 6,
+                              width: '100%',
+                              padding: '4px 8px',
+                              borderRadius: 6,
+                              border: 'none',
+                              background: '#3b82f6',
+                              color: '#fff',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            상세 보기 →
+                          </button>
+                        )}
                       </div>
                     </Popup>
                   </CircleMarker>
