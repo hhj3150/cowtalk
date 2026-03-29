@@ -1,36 +1,21 @@
 // 전국 방역 상황 종합
-// 시도별 위험 등급 지도 + 드릴다운 + 광역 경보 배너
-// 드릴다운: 시도 → 농장 → 개체 → AI
+// NationalMiniMap 공용 컴포넌트 + 시군구 드릴다운 + 주간 추이 차트
+// 드릴다운: 시도 → 시군구 → 농장 → 개체 → AI
 
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MapContainer, TileLayer, Circle as LCircle, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
 import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
+import { NationalMiniMap } from '@web/components/epidemiology/NationalMiniMap';
 import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
 import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { apiGet } from '@web/api/client';
 
 // ===========================
-// 타입
+// 시군구 타입
 // ===========================
-
-interface ProvinceStats {
-  province: string;
-  centerLat: number;
-  centerLng: number;
-  farmCount: number;
-  totalAnimals: number;
-  monitoredAnimals: number;
-  feverAnimals: number;
-  feverRate: number;
-  clusterFarms: number;
-  legalSuspects: number;
-  riskLevel: RiskLevel;
-}
 
 interface DistrictStats {
   district: string;
@@ -42,50 +27,21 @@ interface DistrictStats {
   riskLevel: RiskLevel;
 }
 
-interface NationalData {
-  provinces: ProvinceStats[];
-  nationalSummary: {
-    totalFarms: number;
-    totalAnimals: number;
-    monitoredAnimals: number;
-    feverAnimals: number;
-    nationalFeverRate: number;
-    highRiskProvinces: number;
-    broadAlertActive: boolean;
-    broadAlertMessage: string | null;
-  };
-  weeklyFeverTrend: { week: string; feverRate: number }[];
-}
-
-// ===========================
-// API
-// ===========================
-
-async function fetchNational(): Promise<NationalData> {
-  return apiGet<NationalData>('/quarantine/national-situation');
-}
-
 async function fetchProvince(province: string): Promise<DistrictStats[]> {
   return apiGet<DistrictStats[]>(`/quarantine/national-situation/${encodeURIComponent(province)}`);
 }
 
 // ===========================
-// 위험 등급 → 지도 색상
+// 주간 추이 데이터 (NationalMiniMap 내부 데이터 재활용)
 // ===========================
 
-const RISK_COLOR: Record<RiskLevel, string> = {
-  green: '#22c55e',
-  yellow: '#eab308',
-  orange: '#f97316',
-  red: '#ef4444',
-};
+interface WeeklyTrendData {
+  weeklyFeverTrend: { week: string; feverRate: number }[];
+}
 
-
-const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
-
-function provinceRadius(farmCount: number): number {
-  return Math.max(8000, Math.min(30000, farmCount * 2000));
+async function fetchWeeklyTrend(): Promise<WeeklyTrendData> {
+  const data = await apiGet<{ weeklyFeverTrend: { week: string; feverRate: number }[] }>('/quarantine/national-situation');
+  return { weeklyFeverTrend: data.weeklyFeverTrend };
 }
 
 // ===========================
@@ -102,20 +58,21 @@ export default function NationalSituation(): React.JSX.Element {
   const [drillFarmName, setDrillFarmName] = useState<string>('');
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['quarantine', 'national-situation'],
-    queryFn: fetchNational,
-    refetchInterval: 120_000,
-  });
-
+  // 시군구 상세
   const { data: districtData, isLoading: districtLoading } = useQuery({
     queryKey: ['quarantine', 'national-situation', selectedProvince],
     queryFn: () => fetchProvince(selectedProvince!),
     enabled: !!selectedProvince,
   });
 
-  const summary = data?.nationalSummary;
-  const trendData = (data?.weeklyFeverTrend ?? []).map((d) => ({
+  // 주간 추이
+  const { data: trendRaw } = useQuery({
+    queryKey: ['quarantine', 'weekly-trend'],
+    queryFn: fetchWeeklyTrend,
+    staleTime: 120_000,
+  });
+
+  const trendData = (trendRaw?.weeklyFeverTrend ?? []).map((d) => ({
     ...d,
     rate: (d.feverRate * 100).toFixed(2),
   }));
@@ -150,121 +107,44 @@ export default function NationalSituation(): React.JSX.Element {
         </p>
       </div>
 
-      {/* 광역 경보 배너 */}
-      {summary?.broadAlertActive && (
-        <div className="rounded-xl bg-red-600 p-4 text-white animate-pulse">
-          <p className="font-bold text-sm">광역 방역 경보 발령</p>
-          <p className="text-sm mt-0.5 opacity-90">{summary.broadAlertMessage}</p>
-        </div>
-      )}
+      {/* 전국 지도 + 시도 리스트 (NationalMiniMap 공용 컴포넌트) */}
+      <NationalMiniMap
+        onProvinceSelect={handleProvinceClick}
+        mapHeight={400}
+        showSummary={true}
+        showBroadAlert={true}
+      />
 
-      {/* 전국 요약 카드 4개 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: '감시 농장', value: summary?.totalFarms.toLocaleString() ?? '—' },
-          { label: '감시 두수', value: summary?.totalAnimals.toLocaleString() ?? '—' },
-          { label: '발열 두수', value: summary?.feverAnimals.toLocaleString() ?? '—' },
-          { label: '발열률', value: summary ? `${(summary.nationalFeverRate * 100).toFixed(2)}%` : '—' },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className="rounded-xl border p-4"
-            style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
-          >
-            <p className="text-xl font-bold mt-2" style={{ color: 'var(--ct-text)' }}>{item.value}</p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>{item.label}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 전국 지도 — Google Maps */}
+      {/* 선택 시도 시군구 상세 테이블 */}
+      {selectedProvince && (
         <div
-          className="lg:col-span-2 rounded-xl border overflow-hidden"
-          style={{ borderColor: 'var(--ct-border)' }}
-        >
-          <div className="p-3" style={{ background: 'var(--ct-card)' }}>
-            <p className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
-              시도별 위험 등급 지도
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
-              원 클릭 시 해당 시도 농장 드릴다운
-            </p>
-          </div>
-          <div style={{ height: 400 }}>
-            <MapContainer
-              center={[36.5, 127.5]}
-              zoom={7}
-              style={{ height: '100%', width: '100%' }}
-              zoomControl={true}
-              attributionControl={true}
-            >
-              <TileLayer url={CARTO_DARK} attribution={CARTO_ATTRIBUTION} subdomains="abcd" maxZoom={20} />
-              {(data?.provinces ?? []).map((p) => {
-                const color = RISK_COLOR[p.riskLevel];
-                return (
-                  <LCircle
-                    key={p.province}
-                    center={[p.centerLat, p.centerLng]}
-                    radius={provinceRadius(p.farmCount)}
-                    pathOptions={{
-                      fillColor: color,
-                      fillOpacity: 0.6,
-                      color: color,
-                      weight: 2,
-                    }}
-                    eventHandlers={{
-                      click: () => handleProvinceClick(p.province),
-                    }}
-                  >
-                    <Popup>
-                      <div style={{ fontSize: 12, lineHeight: 1.6, color: '#1e293b' }}>
-                        <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{p.province}</p>
-                        <p style={{ margin: 0 }}>농장 {p.farmCount}개 | {p.totalAnimals.toLocaleString()}두</p>
-                        <p style={{ margin: 0 }}>발열 {p.feverAnimals}두 ({(p.feverRate * 100).toFixed(1)}%)</p>
-                        <p style={{ margin: 0 }}>등급: <strong>{p.riskLevel.toUpperCase()}</strong></p>
-                      </div>
-                    </Popup>
-                  </LCircle>
-                );
-              })}
-            </MapContainer>
-          </div>
-        </div>
-
-        {/* 시도별 통계 테이블 + 시군구 드릴다운 */}
-        <div
-          className="rounded-xl border p-4 flex flex-col"
+          className="rounded-xl border p-4"
           style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
         >
-          <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ct-text)' }}>
-            {selectedProvince ? `${selectedProvince} 시군구 현황` : '시도별 현황'}
-          </h3>
-
-          {selectedProvince && (
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
+              {selectedProvince} 시군구 현황
+            </h3>
             <button
               onClick={() => setSelectedProvince(null)}
-              className="text-xs mb-3 self-start px-2 py-1 rounded border"
+              className="text-xs px-2 py-1 rounded border"
               style={{ borderColor: 'var(--ct-border)', color: 'var(--ct-text-secondary)' }}
             >
               ← 전체 보기
             </button>
-          )}
-
-          {isLoading || districtLoading ? (
-            <div className="space-y-2 flex-1">
-              {[1, 2, 3, 4].map((i) => (
+          </div>
+          {districtLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
                 <div key={i} className="h-10 rounded animate-pulse" style={{ background: 'var(--ct-border)' }} />
               ))}
             </div>
-          ) : selectedProvince && districtData ? (
-            <div className="space-y-1.5 flex-1 overflow-y-auto">
-              {districtData.map((d) => (
-                <button
+          ) : (
+            <div className="space-y-1.5">
+              {(districtData ?? []).map((d) => (
+                <div
                   key={d.district}
-                  type="button"
-                  onClick={() => handleProvinceClick(selectedProvince)}
-                  className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-left"
+                  className="flex items-center justify-between rounded-lg px-3 py-2"
                   style={{ background: 'var(--ct-bg)' }}
                 >
                   <div>
@@ -276,38 +156,13 @@ export default function NationalSituation(): React.JSX.Element {
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <RiskLevelBadge level={d.riskLevel} size="sm" />
-                    <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>›</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-1.5 flex-1 overflow-y-auto">
-              {(data?.provinces ?? []).map((p) => (
-                <button
-                  key={p.province}
-                  onClick={() => handleProvinceClick(p.province)}
-                  className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors"
-                  style={{ background: 'var(--ct-bg)' }}
-                >
-                  <div>
-                    <p className="text-xs font-medium" style={{ color: 'var(--ct-text)' }}>{p.province}</p>
-                    <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
-                      {p.farmCount}농장 · {p.feverAnimals}두 발열
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RiskLevelBadge level={p.riskLevel} size="sm" />
-                    <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>›</span>
-                  </div>
-                </button>
+                  <RiskLevelBadge level={d.riskLevel} size="sm" />
+                </div>
               ))}
             </div>
           )}
         </div>
-      </div>
+      )}
 
       {/* 전국 발열률 주간 추이 */}
       <div
