@@ -33,21 +33,34 @@ export async function handleChatMessage(
 ): Promise<ChatResponse> {
   const { question, role, farmId, animalId, conversationHistory, dashboardContext } = request;
 
-  // 1. 컨텍스트 해결
-  const { context, detectedType } = await resolveContext(
-    question, farmId, animalId, role, dashboardContext,
-  );
+  // 1. 컨텍스트 해결 (실패해도 fallback으로 응답)
+  let context: Awaited<ReturnType<typeof resolveContext>>['context'];
+  let detectedType: 'animal' | 'farm' | 'global' | 'general' = 'general';
+  try {
+    const resolved = await resolveContext(
+      question, farmId, animalId, role, dashboardContext,
+    );
+    context = resolved.context;
+    detectedType = resolved.detectedType;
+  } catch (err) {
+    logger.warn({ err, farmId, animalId }, '[Chat] Context resolution failed — using general context');
+    context = { type: 'general' } as typeof context;
+  }
 
-  // 2. 레이블 컨텍스트 조회 (집단지성)
+  // 2. 레이블 컨텍스트 조회 (집단지성 — 실패 무시)
   let labelContext: string | undefined;
-  if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
-    const primaryEvent = context.profile.activeEvents[0];
-    if (primaryEvent) {
-      const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
-      if (summary) {
-        labelContext = formatLabelContext(summary, primaryEvent.type);
+  try {
+    if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
+      const primaryEvent = context.profile.activeEvents[0];
+      if (primaryEvent) {
+        const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
+        if (summary) {
+          labelContext = formatLabelContext(summary, primaryEvent.type);
+        }
       }
     }
+  } catch {
+    // 레이블 조회 실패는 비치명적
   }
 
   // 3. 프롬프트 빌드
@@ -107,26 +120,33 @@ export async function handleChatStream(
 ): Promise<void> {
   const { question, role, farmId, animalId, conversationHistory, dashboardContext } = request;
 
-  const { context } = await resolveContext(
-    question, farmId, animalId, role, dashboardContext,
-  );
-
-  // 레이블 컨텍스트 조회 — 개체 이벤트 기반 + 농장 단위 학습 데이터
-  let labelContext: string | undefined;
-  if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
-    const primaryEvent = context.profile.activeEvents[0];
-    if (primaryEvent) {
-      const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
-      if (summary) {
-        labelContext = formatLabelContext(summary, primaryEvent.type);
-      }
-    }
+  // 컨텍스트 해결 (실패해도 일반 대화 가능)
+  let context: Awaited<ReturnType<typeof resolveContext>>['context'];
+  try {
+    const resolved = await resolveContext(
+      question, farmId, animalId, role, dashboardContext,
+    );
+    context = resolved.context;
+  } catch (err) {
+    logger.warn({ err, farmId, animalId }, '[Chat] Stream context resolution failed — using general');
+    context = { type: 'general' } as typeof context;
   }
 
-  // 농장 단위 최근 학습 패턴도 항상 주입 (팅커벨 진화 루프)
-  if (!labelContext && farmId) {
-    try {
-      // 최근 가장 많이 발생한 이벤트 타입의 레이블 데이터
+  // 레이블 컨텍스트 조회 (전부 try-catch — 실패해도 대화는 계속)
+  let labelContext: string | undefined;
+  try {
+    if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
+      const primaryEvent = context.profile.activeEvents[0];
+      if (primaryEvent) {
+        const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
+        if (summary) {
+          labelContext = formatLabelContext(summary, primaryEvent.type);
+        }
+      }
+    }
+
+    // 농장 단위 최근 학습 패턴도 항상 주입 (팅커벨 진화 루프)
+    if (!labelContext && farmId) {
       const commonTypes = ['temperature_high', 'rumination_decrease', 'estrus', 'health_general'];
       for (const eventType of commonTypes) {
         const summary = await getLabelContextForEventType(eventType, farmId);
@@ -135,9 +155,9 @@ export async function handleChatStream(
           break;
         }
       }
-    } catch {
-      // 레이블 데이터 없으면 무시 (비치명적)
     }
+  } catch {
+    // 레이블 조회 실패는 비치명적
   }
 
   const prompt = buildConversationPrompt(
