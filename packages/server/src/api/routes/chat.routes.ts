@@ -79,6 +79,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       role: req.user?.role as Role,
       farmId: body.farmId ?? null,
       animalId: body.animalId ?? null,
+      userId: req.user?.userId,
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
       dashboardContext: body.dashboardContext,
     });
@@ -113,6 +114,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     role: req.user?.role as Role,
     farmId: body.farmId ?? null,
     animalId: body.animalId ?? null,
+    userId: req.user?.userId,
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
   };

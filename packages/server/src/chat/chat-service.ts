@@ -12,6 +12,7 @@ import { resolveContext } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext } from '../ai-brain/label-context.js';
+import { saveChatConversation } from './chat-learner.js';
 
 // ===========================
 // 대화 메시지 (JSON 응답)
@@ -22,6 +23,7 @@ export interface ChatMessageRequest {
   readonly role: Role;
   readonly farmId: string | null;
   readonly animalId: string | null;
+  readonly userId?: string;
   readonly conversationHistory: readonly ConversationTurn[];
   readonly dashboardContext?: string;
 }
@@ -62,8 +64,23 @@ export async function handleChatMessage(
 
   if (result) {
     const parsed = result.parsed;
+    const answer = typeof parsed.answer === 'string' ? parsed.answer : '응답을 생성할 수 없습니다.';
+
+    // 대화 저장 + 학습 신호 추출 (비동기, fire-and-forget)
+    if (request.userId) {
+      void saveChatConversation({
+        userId: request.userId,
+        role,
+        animalId,
+        farmId,
+        question,
+        answer,
+        contextType: detectedType,
+      });
+    }
+
     return {
-      answer: typeof parsed.answer === 'string' ? parsed.answer : '응답을 생성할 수 없습니다.',
+      answer,
       dataReferences: Array.isArray(parsed.data_references)
         ? parsed.data_references.filter((v): v is string => typeof v === 'string')
         : [],
@@ -135,7 +152,30 @@ export async function handleChatStream(
   );
   const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.`;
 
-  await callClaudeForChat(systemPrompt, prompt, callbacks);
+  // 스트리밍 답변을 모아서 학습에 활용
+  const wrappedCallbacks: StreamCallbacks = {
+    onText: (text: string) => {
+      callbacks.onText(text);
+    },
+    onDone: (fullText: string) => {
+      callbacks.onDone(fullText);
+      // 대화 저장 + 학습 (비동기, fire-and-forget)
+      if (request.userId) {
+        void saveChatConversation({
+          userId: request.userId,
+          role,
+          animalId,
+          farmId,
+          question,
+          answer: fullText,
+          contextType: context.type,
+        });
+      }
+    },
+    onError: callbacks.onError,
+  };
+
+  await callClaudeForChat(systemPrompt, prompt, wrappedCallbacks);
 }
 
 // ===========================

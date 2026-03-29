@@ -792,6 +792,28 @@ export const eventAttachments = pgTable('event_attachments', {
 ]);
 
 // ======================================================================
+// P-2. 팅커벨 대화 로그 + 학습 신호
+// ======================================================================
+
+export const chatConversations = pgTable('chat_conversations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.userId),
+  role: varchar('role', { length: 30 }).notNull(),
+  animalId: uuid('animal_id').references(() => animals.animalId),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  question: text('question').notNull(),
+  answer: text('answer').notNull(),
+  contextType: varchar('context_type', { length: 20 }),
+  learningSignals: jsonb('learning_signals').notNull().default('[]'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('chat_conversations_user_id_idx').on(table.userId),
+  index('chat_conversations_animal_id_idx').on(table.animalId),
+  index('chat_conversations_farm_id_idx').on(table.farmId),
+  index('chat_conversations_created_at_idx').on(table.createdAt),
+]);
+
+// ======================================================================
 // Q. 경제성
 // ======================================================================
 
