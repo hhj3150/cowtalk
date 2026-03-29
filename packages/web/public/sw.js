@@ -1,6 +1,6 @@
 // CowTalk Service Worker — 오프라인 캐시 + 푸시 알림 + API 캐싱
-const CACHE_NAME = 'cowtalk-v5-cache-v4';
-const API_CACHE_NAME = 'cowtalk-v5-api-cache-v4';
+const CACHE_NAME = 'cowtalk-v5-cache-v5';
+const API_CACHE_NAME = 'cowtalk-v5-api-cache-v5';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
@@ -14,6 +14,8 @@ const BYPASS_DOMAINS = [
     'fonts.gstatic.com',
     'googleapis.com',
     'gstatic.com',
+    'basemaps.cartocdn.com',
+    'tile.openstreetmap.org',
   ];
 
 function isBypassDomain(url) {
@@ -63,12 +65,15 @@ self.addEventListener('fetch', (event) => {
                               return; // 이벤트를 가로채지 않으면 브라우저가 직접 처리
                         }
 
-                        // 캐시 가능한 API: StaleWhileRevalidate
+                        // 캐시 가능한 API: StaleWhileRevalidate (30초 타임아웃 — Railway cold start 대응)
                         if (isCacheableApi(url)) {
                               event.respondWith(
                                       caches.open(API_CACHE_NAME).then(async (cache) => {
                                                 try {
-                                                            const networkResponse = await fetch(event.request);
+                                                            const controller = new AbortController();
+                                                            const timeoutId = setTimeout(() => controller.abort(), 30000);
+                                                            const networkResponse = await fetch(event.request, { signal: controller.signal });
+                                                            clearTimeout(timeoutId);
                                                             if (networkResponse.ok) {
                                                                           cache.put(event.request, networkResponse.clone());
                                                             }
