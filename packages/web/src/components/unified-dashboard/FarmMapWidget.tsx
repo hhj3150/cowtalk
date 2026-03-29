@@ -85,7 +85,7 @@ function MapController({
 
 // ── 메인 컴포넌트 ──
 
-export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 420 }: Props): React.JSX.Element {
+export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 520 }: Props): React.JSX.Element {
   const stats = useMemo(() => {
     const total = markers.length;
     const normal = markers.filter((m) => m.status === 'normal').length;
@@ -178,9 +178,14 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 4
                 }}
               >
                 <Tooltip direction="top" offset={[0, -6]} opacity={0.95} permanent={false}>
-                  <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
+                  <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b', minWidth: 130 }}>
                     <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
                     <p style={{ margin: 0 }}>{m.headCount}두 · 알람 {m.alertCount}건</p>
+                    {m.healthAlarmCount > 0 && (
+                      <p style={{ margin: '2px 0 0', color: '#dc2626', fontWeight: 600, fontSize: 11 }}>
+                        건강알람 {m.healthAlarmCount}건 ({Math.round(m.healthAlarmRate * 100)}%)
+                      </p>
+                    )}
                   </div>
                 </Tooltip>
               </CircleMarker>
