@@ -60,7 +60,7 @@ html, body, #root {
   --ct-ai-border: #1D9E75;
 
   /* Sidebar */
-  --ct-sidebar-w: 72px;
+  --ct-sidebar-w: 200px;
   --ct-sidebar-highlight: #E1F5EE;
 
   /* Font */

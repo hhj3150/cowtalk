@@ -176,6 +176,17 @@ const QUARANTINE_MENU: readonly MenuItem[] = [
   { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
 ];
 
+// ── 축산 소식 (정적 — 향후 API/RSS로 교체) ──
+
+const LIVESTOCK_NEWS: readonly { title: string; source: string; date: string; url: string }[] = [
+  { title: '럼피스킨병 백신 접종률 98% 달성', source: '농림축산식품부', date: '3.28', url: '#' },
+  { title: '올해 한우 송아지 가격 전년 대비 12% 상승', source: '축산신문', date: '3.27', url: '#' },
+  { title: '젖소 유량 신기록 — 홀스타인 평균 35L 돌파', source: 'DCIC', date: '3.26', url: '#' },
+  { title: 'AI 센서 기반 질병 조기감지 시스템 확산', source: '농촌진흥청', date: '3.25', url: '#' },
+  { title: '구제역 청정국 지위 3년 연속 유지', source: 'OIE', date: '3.24', url: '#' },
+  { title: '축산 환경규제 강화 — 2027년까지 적용', source: '환경부', date: '3.23', url: '#' },
+];
+
 const MENU_BY_ROLE: Record<Role, readonly MenuItem[]> = {
   farmer: COMMON_MENU,
   veterinarian: COMMON_MENU,
@@ -194,45 +205,32 @@ export function Sidebar(): React.JSX.Element {
     <nav
       className="flex h-full flex-col border-r py-3"
       style={{
-        width: 72,
+        width: 200,
         background: 'var(--ct-card)',
         borderColor: 'var(--ct-border)',
       }}
     >
       {/* 로고 */}
-      <div className="group relative mb-4 flex items-center justify-center px-3">
+      <div className="mb-4 flex items-center gap-2.5 px-4">
         <div
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
           style={{ background: 'var(--ct-primary)' }}
         >
           CT
         </div>
-        <span
-          className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-lg group-hover:block"
-          style={{
-            background: 'var(--ct-text)',
-            color: 'var(--ct-bg)',
-            zIndex: 100,
-          }}
-        >
-          CowTalk
-          <span
-            className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent"
-            style={{ borderRightColor: 'var(--ct-text)' }}
-          />
-        </span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ct-text)' }}>CowTalk</span>
       </div>
 
       {/* 메뉴 */}
-      <div className="flex flex-1 flex-col gap-1 px-2">
+      <div className="flex flex-col gap-0.5 px-2" style={{ flex: '0 0 auto' }}>
         {items.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             end={item.path === '/'}
             className={({ isActive }) =>
-              `group relative flex h-10 items-center justify-center rounded-lg transition-all ${
-                isActive ? 'font-medium' : ''
+              `flex h-9 items-center gap-2.5 rounded-lg px-2.5 transition-all text-xs ${
+                isActive ? 'font-semibold' : ''
               }`
             }
             style={({ isActive }) =>
@@ -242,47 +240,48 @@ export function Sidebar(): React.JSX.Element {
             }
           >
             {item.icon}
-            <span
-              className="pointer-events-none absolute left-full ml-3 hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium shadow-lg group-hover:block"
-              style={{
-                background: 'var(--ct-text)',
-                color: 'var(--ct-bg)',
-                zIndex: 100,
-              }}
-            >
-              {item.label}
-              <span
-                className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent"
-                style={{ borderRightColor: 'var(--ct-text)' }}
-              />
-            </span>
+            <span className="truncate">{item.label}</span>
           </NavLink>
         ))}
+      </div>
+
+      {/* 뉴스/소식 피드 */}
+      <div className="flex-1 mt-3 px-2 overflow-y-auto" style={{ minHeight: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ct-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, padding: '4px 6px', marginBottom: 4 }}>
+          축산 소식
+        </div>
+        {LIVESTOCK_NEWS.map((news, i) => (
+          <a
+            key={i}
+            href={news.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-lg px-2 py-2 transition-colors"
+            style={{ fontSize: 11, lineHeight: 1.4, color: 'var(--ct-text-secondary)', textDecoration: 'none' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <div style={{ fontWeight: 600, color: 'var(--ct-text)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+              {news.title}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>{news.source} · {news.date}</div>
+          </a>
+        ))}
+        <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', textAlign: 'center', padding: '8px 0', borderTop: '1px solid var(--ct-border)', marginTop: 4 }}>
+          광고 문의: ad@d2o.kr
+        </div>
       </div>
 
       {/* 하단 데모 링크 */}
       <NavLink
         to="/demo"
-        className="group relative mt-2 mx-2 flex h-10 items-center justify-center rounded-lg transition-colors"
+        className="mt-1 mx-2 flex h-8 items-center gap-2 rounded-lg px-2.5 transition-colors text-xs"
         style={{ color: 'var(--ct-text-secondary)' }}
       >
         <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
         </svg>
-        <span
-          className="pointer-events-none absolute left-full ml-3 hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium shadow-lg group-hover:block"
-          style={{
-            background: 'var(--ct-text)',
-            color: 'var(--ct-bg)',
-            zIndex: 100,
-          }}
-        >
-          데모 모드
-          <span
-            className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent"
-            style={{ borderRightColor: 'var(--ct-text)' }}
-          />
-        </span>
+        <span className="truncate">데모 모드</span>
       </NavLink>
     </nav>
   );
