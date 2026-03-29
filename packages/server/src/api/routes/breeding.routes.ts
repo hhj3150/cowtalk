@@ -9,10 +9,33 @@ import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, 
 import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedingFeedback } from '../../services/breeding/breeding-advisor.service.js';
 import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-sync.service.js';
+import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
 
 export const breedingRouter = Router();
 
 breedingRouter.use(authenticate);
+
+// GET /breeding/pipeline — 번식 파이프라인 (전체 또는 farmId 필터)
+breedingRouter.get('/pipeline', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const data = await getBreedingPipeline(farmId || undefined);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/pipeline/:farmId — 농장별 번식 파이프라인
+breedingRouter.get('/pipeline/:farmId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    const data = await getBreedingPipeline(farmId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // GET /breeding/semen — 정액 카탈로그
 breedingRouter.get('/semen', async (req: Request, res: Response, next: NextFunction) => {

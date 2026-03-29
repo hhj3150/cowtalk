@@ -169,3 +169,12 @@ export interface BreedingFeedback {
 export function getBreedingFeedback(animalId: string): Promise<BreedingFeedback> {
   return apiGet<BreedingFeedback>(`/breeding/feedback/${animalId}`);
 }
+
+// ===========================
+// 번식 파이프라인 (칸반 뷰)
+// ===========================
+
+export function getBreedingPipeline(farmId?: string): Promise<import('@cowtalk/shared').BreedingPipelineData> {
+  const url = farmId ? `/breeding/pipeline/${farmId}` : '/breeding/pipeline';
+  return apiGet<import('@cowtalk/shared').BreedingPipelineData>(url);
+}

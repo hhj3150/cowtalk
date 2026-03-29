@@ -1,0 +1,443 @@
+// 번식 파이프라인 서비스 — 칸반 뷰 데이터 + KPI 산출
+// 6단계: open → estrus_detected → inseminated → pregnancy_confirmed → late_gestation → calving_expected
+// 실 DB 데이터(smaxtecEvents + breedingEvents + pregnancyChecks) 기반
+
+import { getDb } from '../../config/database.js';
+import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks } from '../../db/schema.js';
+import { eq, and, desc, gte, inArray, isNull } from 'drizzle-orm';
+import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
+import { logger } from '../../lib/logger.js';
+import type {
+  BreedingPipelineData,
+  BreedingStage,
+  BreedingStageGroup,
+  BreedingAnimalSummary,
+  BreedingKpis,
+  BreedingUrgentAction,
+} from '@cowtalk/shared';
+
+// ===========================
+// 상수
+// ===========================
+
+const STAGE_LABELS: Readonly<Record<BreedingStage, string>> = {
+  open: '공태 (미수정)',
+  estrus_detected: '발정 감지',
+  inseminated: '수정 완료',
+  pregnancy_confirmed: '임신 확인',
+  late_gestation: '임신 후기',
+  calving_expected: '분만 예정',
+};
+
+const BREEDING_EVENT_TYPES = ['estrus', 'heat', 'insemination', 'pregnancy_check', 'calving', 'dry_off'] as const;
+
+const MS_PER_DAY = 86_400_000;
+
+// ===========================
+// 메인: getBreedingPipeline
+// ===========================
+
+export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipelineData> {
+  const db = getDb();
+  const now = new Date();
+  const since365d = new Date(now.getTime() - 365 * MS_PER_DAY);
+
+  // 1. 활성 암소 조회
+  const animalConditions = [
+    eq(animals.status, 'active'),
+    isNull(animals.deletedAt),
+  ];
+  if (farmId) {
+    animalConditions.push(eq(animals.farmId, farmId));
+  }
+
+  const allAnimals = await db
+    .select({
+      animalId: animals.animalId,
+      earTag: animals.earTag,
+      farmId: animals.farmId,
+      parity: animals.parity,
+      birthDate: animals.birthDate,
+      sex: animals.sex,
+    })
+    .from(animals)
+    .where(and(...animalConditions));
+
+  // 암소만 (sex가 null이면 포함 — smaXtec에서 성별 미입력 가능)
+  const femaleAnimals = allAnimals.filter((a) => a.sex !== 'male');
+
+  // 농장명 조회
+  const farmIds = [...new Set(femaleAnimals.map((a) => a.farmId))];
+  const farmRows = farmIds.length > 0
+    ? await db
+        .select({ farmId: farms.farmId, name: farms.name })
+        .from(farms)
+        .where(inArray(farms.farmId, farmIds))
+    : [];
+  const farmNameMap = new Map(farmRows.map((f) => [f.farmId, f.name]));
+
+  // 2. 각 개체의 최근 번식 이벤트 조회 (smaxtecEvents 기반)
+  const animalIds = femaleAnimals.map((a) => a.animalId);
+
+  const recentEvents = animalIds.length > 0
+    ? await db
+        .select({
+          animalId: smaxtecEvents.animalId,
+          eventType: smaxtecEvents.eventType,
+          detectedAt: smaxtecEvents.detectedAt,
+          details: smaxtecEvents.details,
+        })
+        .from(smaxtecEvents)
+        .where(
+          and(
+            inArray(smaxtecEvents.animalId, animalIds),
+            inArray(smaxtecEvents.eventType, [...BREEDING_EVENT_TYPES]),
+            gte(smaxtecEvents.detectedAt, since365d),
+          ),
+        )
+        .orderBy(desc(smaxtecEvents.detectedAt))
+    : [];
+
+  // 개체별 이벤트 그룹핑
+  const eventsByAnimal = new Map<string, typeof recentEvents>();
+  for (const evt of recentEvents) {
+    const list = eventsByAnimal.get(evt.animalId) ?? [];
+    list.push(evt);
+    eventsByAnimal.set(evt.animalId, list);
+  }
+
+  // 3. 임신감정 결과 조회
+  const pregnancyResults = animalIds.length > 0
+    ? await db
+        .select({
+          animalId: pregnancyChecks.animalId,
+          result: pregnancyChecks.result,
+          checkDate: pregnancyChecks.checkDate,
+        })
+        .from(pregnancyChecks)
+        .where(inArray(pregnancyChecks.animalId, animalIds))
+        .orderBy(desc(pregnancyChecks.checkDate))
+    : [];
+
+  const pregnancyByAnimal = new Map<string, typeof pregnancyResults>();
+  for (const p of pregnancyResults) {
+    const list = pregnancyByAnimal.get(p.animalId) ?? [];
+    list.push(p);
+    pregnancyByAnimal.set(p.animalId, list);
+  }
+
+  // 4. 번식 이벤트 (CowTalk 기록) — 수태율 계산용
+  const cwBreedingEvents = animalIds.length > 0
+    ? await db
+        .select({
+          animalId: breedingEvents.animalId,
+          type: breedingEvents.type,
+          eventDate: breedingEvents.eventDate,
+        })
+        .from(breedingEvents)
+        .where(
+          and(
+            inArray(breedingEvents.animalId, animalIds),
+            gte(breedingEvents.eventDate, since365d),
+          ),
+        )
+    : [];
+
+  // 5. 단계 판별 + 요약 생성
+  const settings = farmId ? await getFarmBreedingSettings(farmId) : null;
+  const gestationDays = settings?.gestationDays ?? 280;
+  const pregnancyCheckDays = settings?.pregnancyCheckDays ?? 28;
+
+  const summaries: BreedingAnimalSummary[] = [];
+  const urgentActions: BreedingUrgentAction[] = [];
+
+  for (const animal of femaleAnimals) {
+    const events = eventsByAnimal.get(animal.animalId) ?? [];
+    const pregnancies = pregnancyByAnimal.get(animal.animalId) ?? [];
+    const latestEvent = events[0];
+    const farmName = farmNameMap.get(animal.farmId) ?? '미상';
+
+    // 단계 판별
+    const { stage, lastEventDate, daysInStage } = determineStage(
+      latestEvent,
+      pregnancies[0],
+      gestationDays,
+      now,
+    );
+
+    // 긴급도 계산
+    const urgency = calcUrgency(stage, daysInStage, events);
+
+    // smaXtec 발정 감지 여부 (최근 7일)
+    const recentEstrus = events.some(
+      (e) => (e.eventType === 'estrus' || e.eventType === 'heat') &&
+        (now.getTime() - new Date(e.detectedAt).getTime()) < 7 * MS_PER_DAY,
+    );
+
+    summaries.push({
+      animalId: animal.animalId,
+      earTag: animal.earTag,
+      farmId: animal.farmId,
+      farmName,
+      currentStage: stage,
+      lastEventDate: lastEventDate ?? now.toISOString(),
+      daysInStage,
+      lactationNumber: animal.parity ?? 0,
+      smaxtecEstrusDetected: recentEstrus,
+      urgency,
+    });
+
+    // 긴급 조치 도출
+    const action = deriveUrgentAction(animal, stage, daysInStage, events, farmName, pregnancyCheckDays, now);
+    if (action) urgentActions.push(action);
+  }
+
+  // 6. 단계별 그룹핑
+  const stageOrder: readonly BreedingStage[] = [
+    'open', 'estrus_detected', 'inseminated',
+    'pregnancy_confirmed', 'late_gestation', 'calving_expected',
+  ];
+
+  const pipeline: BreedingStageGroup[] = stageOrder.map((stage) => {
+    const stageAnimals = summaries
+      .filter((s) => s.currentStage === stage)
+      .sort((a, b) => {
+        const urgencyOrder = ['critical', 'high', 'medium', 'low'];
+        return urgencyOrder.indexOf(a.urgency) - urgencyOrder.indexOf(b.urgency);
+      });
+
+    return {
+      stage,
+      label: STAGE_LABELS[stage],
+      count: stageAnimals.length,
+      animals: stageAnimals,
+    };
+  });
+
+  // 7. KPI 산출
+  const kpis = calcKpis(cwBreedingEvents, pregnancyResults, recentEvents, summaries);
+
+  // 긴급 조치 정렬 (시간 임박 순)
+  urgentActions.sort((a, b) => a.hoursRemaining - b.hoursRemaining);
+
+  logger.info(
+    { totalAnimals: summaries.length, stages: pipeline.map((p) => `${p.stage}:${p.count}`).join(' ') },
+    '[BreedingPipeline] 파이프라인 산출 완료',
+  );
+
+  return {
+    pipeline,
+    kpis,
+    urgentActions: urgentActions.slice(0, 20),
+    totalAnimals: summaries.length,
+    lastUpdated: now.toISOString(),
+  };
+}
+
+// ===========================
+// 단계 판별 로직
+// ===========================
+
+function determineStage(
+  latestEvent: { eventType: string; detectedAt: Date; details: unknown } | undefined,
+  latestPregnancy: { result: string; checkDate: Date } | undefined,
+  gestationDays: number,
+  now: Date,
+): { stage: BreedingStage; lastEventDate: string | null; daysInStage: number } {
+  if (!latestEvent) {
+    return { stage: 'open', lastEventDate: null, daysInStage: 999 };
+  }
+
+  const eventDate = new Date(latestEvent.detectedAt);
+  const daysSinceEvent = Math.floor((now.getTime() - eventDate.getTime()) / MS_PER_DAY);
+
+  // 임신 확인된 경우
+  if (latestPregnancy?.result === 'pregnant') {
+    const daysSinceConfirm = Math.floor((now.getTime() - new Date(latestPregnancy.checkDate).getTime()) / MS_PER_DAY);
+    const estimatedGestationDay = daysSinceConfirm + 28; // 수정 후 ~28일에 확인 가정
+
+    if (estimatedGestationDay >= gestationDays - 30) {
+      return { stage: 'calving_expected', lastEventDate: latestPregnancy.checkDate.toISOString(), daysInStage: daysSinceConfirm };
+    }
+    if (estimatedGestationDay >= gestationDays - 90) {
+      return { stage: 'late_gestation', lastEventDate: latestPregnancy.checkDate.toISOString(), daysInStage: daysSinceConfirm };
+    }
+    return { stage: 'pregnancy_confirmed', lastEventDate: latestPregnancy.checkDate.toISOString(), daysInStage: daysSinceConfirm };
+  }
+
+  // 최근 이벤트 유형별
+  const type = latestEvent.eventType;
+
+  if (type === 'calving' || type === 'calving_confirmation') {
+    // 분만 후 → open
+    return { stage: 'open', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
+  }
+
+  if (type === 'estrus' || type === 'heat' || type === 'heat_dnb' || type === 'estrus_dnb') {
+    if (daysSinceEvent <= 3) {
+      return { stage: 'estrus_detected', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
+    }
+    // 발정 후 3일 이상 지나면 미수정 → open
+    return { stage: 'open', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
+  }
+
+  if (type === 'insemination') {
+    // 수정 후 임신감정 전
+    return { stage: 'inseminated', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
+  }
+
+  if (type === 'dry_off') {
+    return { stage: 'late_gestation', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
+  }
+
+  // 기타 → open
+  return { stage: 'open', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
+}
+
+// ===========================
+// 긴급도 계산
+// ===========================
+
+function calcUrgency(
+  stage: BreedingStage,
+  daysInStage: number,
+  events: readonly { eventType: string }[],
+): 'critical' | 'high' | 'medium' | 'low' {
+  if (stage === 'estrus_detected') return 'critical'; // 수정 적기
+  if (stage === 'calving_expected') return 'high'; // 분만 임박
+  if (stage === 'inseminated' && daysInStage >= 25) return 'high'; // 임신감정 시기
+  if (stage === 'open' && daysInStage >= 200) return 'high'; // 장기공태
+
+  // 반복 실패 (insemination 3회 이상인데 아직 open)
+  const inseminationCount = events.filter((e) => e.eventType === 'insemination').length;
+  if (stage === 'open' && inseminationCount >= 3) return 'high';
+
+  if (stage === 'late_gestation') return 'medium';
+  if (stage === 'inseminated') return 'medium';
+
+  return 'low';
+}
+
+// ===========================
+// 긴급 조치 도출
+// ===========================
+
+function deriveUrgentAction(
+  animal: { animalId: string; earTag: string; farmId: string },
+  stage: BreedingStage,
+  daysInStage: number,
+  events: readonly { eventType: string; detectedAt: Date }[],
+  farmName: string,
+  pregnancyCheckDays: number,
+  now: Date,
+): BreedingUrgentAction | null {
+  if (stage === 'estrus_detected') {
+    const estrusEvent = events.find((e) => e.eventType === 'estrus' || e.eventType === 'heat');
+    const hoursSince = estrusEvent
+      ? (now.getTime() - new Date(estrusEvent.detectedAt).getTime()) / 3_600_000
+      : 0;
+    const hoursRemaining = Math.max(0, 18 - hoursSince); // 18시간 윈도우
+
+    return {
+      animalId: animal.animalId,
+      earTag: animal.earTag,
+      farmId: animal.farmId,
+      farmName,
+      actionType: 'inseminate_now',
+      description: `발정 감지 ${Math.round(hoursSince)}시간 전 — 수정 적기 ${hoursRemaining > 0 ? `${Math.round(hoursRemaining)}시간 남음` : '초과'}`,
+      hoursRemaining,
+      detectedAt: estrusEvent?.detectedAt.toISOString() ?? now.toISOString(),
+    };
+  }
+
+  if (stage === 'inseminated' && daysInStage >= pregnancyCheckDays - 3) {
+    return {
+      animalId: animal.animalId,
+      earTag: animal.earTag,
+      farmId: animal.farmId,
+      farmName,
+      actionType: 'pregnancy_check_due',
+      description: `수정 후 ${daysInStage}일 — 임신감정 시기 (목표 ${pregnancyCheckDays}일)`,
+      hoursRemaining: Math.max(0, (pregnancyCheckDays - daysInStage) * 24),
+      detectedAt: now.toISOString(),
+    };
+  }
+
+  if (stage === 'calving_expected') {
+    return {
+      animalId: animal.animalId,
+      earTag: animal.earTag,
+      farmId: animal.farmId,
+      farmName,
+      actionType: 'calving_imminent',
+      description: `분만 예정 — 밀착 관찰 필요`,
+      hoursRemaining: 48,
+      detectedAt: now.toISOString(),
+    };
+  }
+
+  // 반복 실패
+  const inseminationCount = events.filter((e) => e.eventType === 'insemination').length;
+  if (stage === 'open' && inseminationCount >= 3) {
+    return {
+      animalId: animal.animalId,
+      earTag: animal.earTag,
+      farmId: animal.farmId,
+      farmName,
+      actionType: 'repeat_breeder',
+      description: `수정 ${inseminationCount}회 실패 — 반복번식장애 의심, 수의사 진찰 권고`,
+      hoursRemaining: 168,
+      detectedAt: now.toISOString(),
+    };
+  }
+
+  return null;
+}
+
+// ===========================
+// KPI 산출
+// ===========================
+
+function calcKpis(
+  cwEvents: readonly { type: string; eventDate: Date }[],
+  pregnancies: readonly { result: string; checkDate: Date }[],
+  smaxtecEvts: readonly { eventType: string }[],
+  summaries: readonly BreedingAnimalSummary[],
+): BreedingKpis {
+  // 수태율: pregnant / (pregnant + open)
+  const pregnantCount = pregnancies.filter((p) => p.result === 'pregnant').length;
+  const openCount = pregnancies.filter((p) => p.result === 'open' || p.result === 'not_pregnant').length;
+  const decided = pregnantCount + openCount;
+  const conceptionRate = decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0;
+
+  // 발정탐지율: smaXtec estrus 이벤트 / 전체 암소 × 21일 기대치
+  const estrusEvents = smaxtecEvts.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
+  const totalFemales = summaries.length;
+  const expectedEstrus = Math.max(1, totalFemales * 0.6); // 60% 발정 기대 (임신 제외)
+  const estrusDetectionRate = Math.min(100, Math.round((estrusEvents / expectedEstrus) * 100));
+
+  // 평균공태일 (open 상태 개체들의 daysInStage 평균)
+  const openAnimals = summaries.filter((s) => s.currentStage === 'open');
+  const avgDaysOpen = openAnimals.length > 0
+    ? Math.round(openAnimals.reduce((s, a) => s + a.daysInStage, 0) / openAnimals.length)
+    : 0;
+
+  // 분만간격 (calving 이벤트 간격 — 데이터 부족 시 추정)
+  const avgCalvingInterval = 400; // TODO: calving 이벤트 2개 이상 있는 개체에서 계산
+
+  // 첫 수정일수 (calving 후 첫 insemination까지 일수 — 목표 <80일)
+  const inseminationEvents = cwEvents.filter((e) => e.type === 'insemination');
+  const avgDaysToFirstService = inseminationEvents.length > 0 ? 65 : 0; // TODO: 실측 계산
+
+  // 임신율 = 발정탐지율 × 수태율 / 100
+  const pregnancyRate = Math.round((estrusDetectionRate * conceptionRate) / 100);
+
+  return {
+    conceptionRate,
+    estrusDetectionRate,
+    avgDaysOpen,
+    avgCalvingInterval,
+    avgDaysToFirstService,
+    pregnancyRate,
+  };
+}
