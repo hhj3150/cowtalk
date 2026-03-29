@@ -171,6 +171,7 @@ export const sensorMeasurements = pgTable('sensor_measurements', {
 }, (table) => [
   index('sensor_measurements_animal_id_idx').on(table.animalId),
   index('sensor_measurements_metric_type_idx').on(table.metricType),
+  uniqueIndex('sensor_measurements_unique_idx').on(table.animalId, table.timestamp, table.metricType),
 ]);
 
 export const sensorHourlyAgg = pgTable('sensor_hourly_agg', {

@@ -200,7 +200,11 @@ export class PipelineOrchestrator {
   private sensorOffset = 0;
 
   private async collectSensorBatch(): Promise<void> {
-    if (this.smaxtec.getStatus() !== 'connected') return;
+    const status = this.smaxtec.getStatus();
+    if (status !== 'connected') {
+      logger.warn({ status }, '[Pipeline] Sensor batch skipped — connector not connected');
+      return;
+    }
 
     const db = getDb();
     const BATCH_SIZE = 30;
@@ -220,9 +224,15 @@ export class PipelineOrchestrator {
     this.sensorOffset += BATCH_SIZE;
 
     const now = new Date();
-    const from = new Date(now.getTime() - 30 * 60 * 1000); // 최근 30분
-    const fromStr = from.toISOString().split('T')[0]!;
-    const toStr = now.toISOString().split('T')[0]!;
+    // 6시간 윈도우: 30마리 배치가 7000마리를 ~20시간에 순환하므로
+    // 넉넉한 범위로 수집하고 unique index가 중복 방지
+    const from = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+    // smaXtec API: from_date < to_date 필수 (같으면 422)
+    // UTC 날짜 기반이라 어제~내일 범위로 요청
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const fromStr = yesterday.toISOString().split('T')[0]!;
+    const toStr = tomorrow.toISOString().split('T')[0]!;
 
     let totalStored = 0;
 
@@ -244,7 +254,7 @@ export class PipelineOrchestrator {
           const metricData = data.metrics[metric];
           if (!metricData || metricData.length === 0) continue;
 
-          // 최근 30분 데이터만 필터
+          // 최근 6시간 데이터만 필터
           const recentData = metricData.filter((d) => d.ts * 1000 > from.getTime());
           if (recentData.length === 0) continue;
 
@@ -256,11 +266,11 @@ export class PipelineOrchestrator {
             qualityFlag: 'good' as const,
           }));
 
-          await db.insert(sensorMeasurements).values(values);
+          await db.insert(sensorMeasurements).values(values).onConflictDoNothing();
           totalStored += values.length;
         }
-      } catch {
-        // 개별 동물 실패 무시
+      } catch (err) {
+        logger.warn({ err, animalId: animal.animalId }, '[Pipeline] Sensor fetch failed for animal');
       }
     }
 
