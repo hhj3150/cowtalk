@@ -260,6 +260,64 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         </div>
       </div>
 
+      {/* 전국 위험지도 — 3단계 드릴다운 (전국→시도→농장→개체) */}
+      <div
+        className="rounded-xl border p-4"
+        style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
+            🗺️ 전국 방역 현황
+          </h3>
+          <Link
+            to="/epidemiology/national"
+            className="text-xs px-2 py-1 rounded"
+            style={{ background: 'var(--ct-border)', color: 'var(--ct-text-secondary)' }}
+          >
+            상세 보기 →
+          </Link>
+        </div>
+        <NationalMiniMap
+          onProvinceSelect={(province) => {
+            setSelectedProvince(province);
+            setShowFarmPanel(true);
+          }}
+          mapHeight={280}
+          showSummary={false}
+          showBroadAlert={true}
+        />
+      </div>
+
+      {/* 시도 농장 목록 패널 (슬라이드인) */}
+      {showFarmPanel && selectedProvince && (
+        <ProvinceFarmListPanel
+          province={selectedProvince}
+          onClose={() => { setShowFarmPanel(false); setSelectedProvince(null); }}
+          onAnimalSelect={(animalId, farmId, farmName) => {
+            setDrillAnimalId(animalId);
+            setDrillFarmId(farmId);
+            setDrillFarmName(farmName);
+          }}
+        />
+      )}
+
+      {/* 개체 상세 패널 (지도 드릴다운용) */}
+      {drillAnimalId != null && drillFarmId != null && !selectedFarm && (
+        <AnimalDrilldownPanel
+          animalId={drillAnimalId}
+          farmId={drillFarmId}
+          farmName={drillFarmName}
+          onClose={() => { setDrillAnimalId(null); setDrillFarmId(null); }}
+          onAiRequest={(triggerText) => {
+            setDrillAnimalId(null);
+            setDrillFarmId(null);
+            setShowFarmPanel(false);
+            setSelectedProvince(null);
+            setTinkerbellTriggerOverride(triggerText);
+          }}
+        />
+      )}
+
       {/* 역학 현황판 */}
       <SituationBoard
         top5RiskFarms={dashboard?.top5RiskFarms ?? []}
@@ -384,64 +442,6 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             const updatedTrigger = triggerText;
             // useMemo 우회: 직접 ref 업데이트 대신 state 사용
             setTinkerbellTriggerOverride(updatedTrigger);
-          }}
-        />
-      )}
-
-      {/* 전국 위험지도 — 3단계 드릴다운 (전국→시도→농장→개체) */}
-      <div
-        className="rounded-xl border p-4"
-        style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
-            🗺️ 전국 방역 현황
-          </h3>
-          <Link
-            to="/epidemiology/national"
-            className="text-xs px-2 py-1 rounded"
-            style={{ background: 'var(--ct-border)', color: 'var(--ct-text-secondary)' }}
-          >
-            상세 보기 →
-          </Link>
-        </div>
-        <NationalMiniMap
-          onProvinceSelect={(province) => {
-            setSelectedProvince(province);
-            setShowFarmPanel(true);
-          }}
-          mapHeight={280}
-          showSummary={false}
-          showBroadAlert={true}
-        />
-      </div>
-
-      {/* 시도 농장 목록 패널 (슬라이드인) */}
-      {showFarmPanel && selectedProvince && (
-        <ProvinceFarmListPanel
-          province={selectedProvince}
-          onClose={() => { setShowFarmPanel(false); setSelectedProvince(null); }}
-          onAnimalSelect={(animalId, farmId, farmName) => {
-            setDrillAnimalId(animalId);
-            setDrillFarmId(farmId);
-            setDrillFarmName(farmName);
-          }}
-        />
-      )}
-
-      {/* 개체 상세 패널 (지도 드릴다운용) */}
-      {drillAnimalId != null && drillFarmId != null && !selectedFarm && (
-        <AnimalDrilldownPanel
-          animalId={drillAnimalId}
-          farmId={drillFarmId}
-          farmName={drillFarmName}
-          onClose={() => { setDrillAnimalId(null); setDrillFarmId(null); }}
-          onAiRequest={(triggerText) => {
-            setDrillAnimalId(null);
-            setDrillFarmId(null);
-            setShowFarmPanel(false);
-            setSelectedProvince(null);
-            setTinkerbellTriggerOverride(triggerText);
           }}
         />
       )}
