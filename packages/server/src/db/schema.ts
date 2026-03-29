@@ -185,6 +185,7 @@ export const sensorHourlyAgg = pgTable('sensor_hourly_agg', {
   count: integer('count').notNull().default(0),
 }, (table) => [
   index('sensor_hourly_agg_animal_id_idx').on(table.animalId),
+  uniqueIndex('sensor_hourly_agg_unique_idx').on(table.animalId, table.hour, table.metricType),
 ]);
 
 export const sensorDailyAgg = pgTable('sensor_daily_agg', {
@@ -198,6 +199,7 @@ export const sensorDailyAgg = pgTable('sensor_daily_agg', {
   count: integer('count').notNull().default(0),
 }, (table) => [
   index('sensor_daily_agg_animal_id_idx').on(table.animalId),
+  uniqueIndex('sensor_daily_agg_unique_idx').on(table.animalId, table.date, table.metricType),
 ]);
 
 // ======================================================================

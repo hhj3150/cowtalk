@@ -5,8 +5,8 @@
 
 import { logger } from '../lib/logger.js';
 import { getDb } from '../config/database.js';
-import { animals, sensorMeasurements } from '../db/schema.js';
-import { eq, and, isNotNull } from 'drizzle-orm';
+import { animals, sensorMeasurements, sensorHourlyAgg, sensorDailyAgg } from '../db/schema.js';
+import { eq, and, isNotNull, sql } from 'drizzle-orm';
 import { SmaxtecConnector } from './connectors/smaxtec.connector.js';
 import {
   TraceabilityConnector,
@@ -109,6 +109,11 @@ export class PipelineOrchestrator {
 
     // 즉시 첫 실행
     void this.runRealtimeCycle();
+
+    // 센서 집계도 즉시 실행 (서버 재시작 시 갭 방지)
+    void this.runSensorAggregation().catch((err) => {
+      logger.error({ err }, '[Pipeline] Initial sensor aggregation failed');
+    });
 
     logger.info('[Pipeline] Started — realtime: 5min, batch: 24h, intelligence: 24h');
   }
@@ -314,7 +319,80 @@ export class PipelineOrchestrator {
       }
     });
 
+    // 센서 집계 (sensor_measurements → hourly/daily agg)
+    void this.runSensorAggregation().catch((err) => {
+      logger.error({ err }, '[Pipeline] Sensor aggregation failed');
+    });
+
     this.state = { ...this.state, lastBatchRun: new Date() };
+  }
+
+  // ===========================
+  // 센서 집계 (hourly + daily)
+  // ===========================
+
+  private async runSensorAggregation(): Promise<void> {
+    const db = getDb();
+    logger.info('[Pipeline] Running sensor aggregation');
+
+    // sensor_measurements 기반 hourly/daily 집계를 SQL로 실행
+    // ON CONFLICT: 이미 집계된 시간대는 최신 값으로 갱신
+    const now = new Date();
+    const d3ago = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const sinceDate = d3ago.toISOString();
+
+    // 1. Hourly aggregation
+    const hourlyResult = await db.execute(sql`
+      INSERT INTO sensor_hourly_agg (animal_id, hour, metric_type, avg, min, max, stddev, count)
+      SELECT
+        animal_id,
+        date_trunc('hour', timestamp) AS hour,
+        metric_type,
+        avg(value),
+        min(value),
+        max(value),
+        coalesce(stddev_pop(value), 0),
+        count(*)::int
+      FROM sensor_measurements
+      WHERE timestamp >= ${sinceDate}::timestamptz
+      GROUP BY animal_id, date_trunc('hour', timestamp), metric_type
+      ON CONFLICT (animal_id, hour, metric_type)
+      DO UPDATE SET
+        avg = EXCLUDED.avg,
+        min = EXCLUDED.min,
+        max = EXCLUDED.max,
+        stddev = EXCLUDED.stddev,
+        count = EXCLUDED.count
+    `);
+
+    // 2. Daily aggregation
+    const dailyResult = await db.execute(sql`
+      INSERT INTO sensor_daily_agg (animal_id, date, metric_type, avg, min, max, stddev, count)
+      SELECT
+        animal_id,
+        date_trunc('day', timestamp)::date AS date,
+        metric_type,
+        avg(value),
+        min(value),
+        max(value),
+        coalesce(stddev_pop(value), 0),
+        count(*)::int
+      FROM sensor_measurements
+      WHERE timestamp >= ${sinceDate}::timestamptz
+      GROUP BY animal_id, date_trunc('day', timestamp)::date, metric_type
+      ON CONFLICT (animal_id, date, metric_type)
+      DO UPDATE SET
+        avg = EXCLUDED.avg,
+        min = EXCLUDED.min,
+        max = EXCLUDED.max,
+        stddev = EXCLUDED.stddev,
+        count = EXCLUDED.count
+    `);
+
+    logger.info(
+      { hourlyRows: hourlyResult.length, dailyRows: dailyResult.length },
+      '[Pipeline] Sensor aggregation complete',
+    );
   }
 
   // ===========================
