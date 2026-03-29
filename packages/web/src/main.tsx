@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { initErrorReporter } from '@web/lib/error-reporter';
+import 'leaflet/dist/leaflet.css';
 import './index.css';
 
 // 전역 에러 핸들러 등록 (window.onerror + unhandledrejection)
