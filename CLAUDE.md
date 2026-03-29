@@ -310,7 +310,16 @@ AnimalDetail "개체를 찾을 수 없습니다" 버그 수정 완료:
 - CowProfilePage 현장 최적화: 트래픽라이트 배지, 큰 KPI, 상단 위험 배너
 - vitest: testTimeout 15000, pool:'forks', maxForks:4 (DB 병렬 타임아웃 해결)
 
-⚠️ 알려진 이슈: sensor_measurements 2026-03-22 이후 데이터 급감(파이프라인 중단 추정)
+✅ 해결: sensor_measurements 2026-03-22 이후 데이터 급감 원인 및 수정 (766d80d)
+  - 근본 원인: smaXtec API from_date == to_date 시 422 반환 + 30분 필터가 20h 순환과 불일치
+  - 수정: 어제~내일 날짜 범위 + 6시간 시간 필터 + unique index + onConflictDoNothing
+  - 검증: 첫 사이클에서 1,616건 × 28마리 수집 확인 (수정 전 0건)
+
+센서 파이프라인 구조 (collectSensorBatch):
+  - 5분 주기, 30마리 배치, offset 순환 (7000마리 전체 ~20시간)
+  - smaXtec Data API: /api/v2/data/animals/{id}.json?metrics=temp&from_date=...&to_date=...
+  - 수집 메트릭: temperature, activity (rumination/water_intake/ph는 smaXtec API 미지원)
+  - unique index: (animal_id, timestamp, metric_type) — 중복 삽입 방지
 
 ## 보고 형식 (매 작업 후)
 
