@@ -2,20 +2,20 @@
 
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
-import { config } from './config/index.js';
+import { config, getDatabaseUrl } from './config/index.js';
 import { logger } from './lib/logger.js';
-import { closeDb, getDb } from './config/database.js';
+import { closeDb } from './config/database.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
 import { createSocketServer } from './realtime/socket-server.js';
-import { sql } from 'drizzle-orm';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import postgres from 'postgres';
 
-// 서버 시작 전 마이그레이션 자동 실행
+// 서버 시작 전 마이그레이션 자동 실행 (postgres 드라이버 직접 사용)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 async function ensureMigrations(): Promise<void> {
-  const db = getDb();
+  const pgSql = postgres(getDatabaseUrl());
   const migrationsDir = resolve(__dirname, 'db', 'migrations');
   try {
     const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
@@ -23,11 +23,13 @@ async function ensureMigrations(): Promise<void> {
       const migration = readFileSync(resolve(migrationsDir, file), 'utf-8')
         .replace(/CREATE EXTENSION IF NOT EXISTS "timescaledb";/g, '-- skip')
         .replace(/SELECT create_hypertable\([^)]+\);/g, '-- skip');
-      await db.execute(sql.raw(migration));
+      await pgSql.unsafe(migration);
     }
     logger.info({ count: files.length }, '[Migrations] Auto-migration complete');
   } catch (err) {
-    logger.warn({ err }, '[Migrations] Auto-migration failed — tables may already exist');
+    logger.warn({ err }, '[Migrations] Auto-migration warning — some tables may already exist');
+  } finally {
+    await pgSql.end();
   }
 }
 
