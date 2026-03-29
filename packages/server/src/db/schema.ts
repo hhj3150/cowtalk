@@ -1363,6 +1363,113 @@ export const weightMeasurementsRelations = relations(weightMeasurements, ({ one 
 // K-2. 소버린 AI 알람 레이블 (강화학습 피드백 루프)
 // ======================================================================
 
+// ======================================================================
+// O. 방역 시스템 — 역학조사, 가축이동, 방역조치, KAHIS 보고
+// ======================================================================
+
+export const investigations = pgTable('investigations', {
+  investigationId: uuid('investigation_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  initiatedBy: uuid('initiated_by').references(() => users.userId),
+  status: varchar('status', { length: 30 }).notNull().default('draft'),
+  // 6항목 자동수집 데이터 (JSONB)
+  feverAnimals: jsonb('fever_animals').notNull().default([]),
+  radiusSummary: jsonb('radius_summary').notNull().default('{}'),
+  contactNetwork: jsonb('contact_network').notNull().default('{}'),
+  weather: jsonb('weather').notNull().default('{}'),
+  nearbyAbnormalFarms: integer('nearby_abnormal_farms').notNull().default(0),
+  fieldObservations: text('field_observations').notNull().default(''),
+  // 연관 클러스터 (선택)
+  clusterId: uuid('cluster_id').references(() => diseaseClusters.clusterId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('investigations_farm_id_idx').on(table.farmId),
+  index('investigations_status_idx').on(table.status),
+  index('investigations_created_at_idx').on(table.createdAt),
+]);
+
+export const investigationsRelations = relations(investigations, ({ one }) => ({
+  farm: one(farms, { fields: [investigations.farmId], references: [farms.farmId] }),
+  initiator: one(users, { fields: [investigations.initiatedBy], references: [users.userId] }),
+  cluster: one(diseaseClusters, { fields: [investigations.clusterId], references: [diseaseClusters.clusterId] }),
+}));
+
+export const animalTransfers = pgTable('animal_transfers', {
+  transferId: uuid('transfer_id').primaryKey().defaultRandom(),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  sourceFarmId: uuid('source_farm_id').notNull().references(() => farms.farmId),
+  destinationFarmId: uuid('destination_farm_id').notNull().references(() => farms.farmId),
+  transferDate: timestamp('transfer_date', { withTimezone: true }).notNull(),
+  headCount: integer('head_count').notNull().default(1),
+  reason: varchar('reason', { length: 30 }).notNull().default('other'),
+  traceNo: varchar('trace_no', { length: 50 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('animal_transfers_animal_id_idx').on(table.animalId),
+  index('animal_transfers_source_farm_id_idx').on(table.sourceFarmId),
+  index('animal_transfers_dest_farm_id_idx').on(table.destinationFarmId),
+  index('animal_transfers_transfer_date_idx').on(table.transferDate),
+]);
+
+export const animalTransfersRelations = relations(animalTransfers, ({ one }) => ({
+  animal: one(animals, { fields: [animalTransfers.animalId], references: [animals.animalId] }),
+  sourceFarm: one(farms, { fields: [animalTransfers.sourceFarmId], references: [farms.farmId] }),
+  destinationFarm: one(farms, { fields: [animalTransfers.destinationFarmId], references: [farms.farmId] }),
+}));
+
+export const quarantineActions = pgTable('quarantine_actions', {
+  actionId: uuid('action_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  investigationId: uuid('investigation_id').references(() => investigations.investigationId),
+  clusterId: uuid('cluster_id').references(() => diseaseClusters.clusterId),
+  actionType: varchar('action_type', { length: 30 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  description: text('description').notNull().default(''),
+  assignedTo: uuid('assigned_to').references(() => users.userId),
+  dueDate: timestamp('due_date', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  notes: text('notes').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('quarantine_actions_farm_id_idx').on(table.farmId),
+  index('quarantine_actions_status_idx').on(table.status),
+  index('quarantine_actions_action_type_idx').on(table.actionType),
+  index('quarantine_actions_investigation_id_idx').on(table.investigationId),
+]);
+
+export const quarantineActionsRelations = relations(quarantineActions, ({ one }) => ({
+  farm: one(farms, { fields: [quarantineActions.farmId], references: [farms.farmId] }),
+  investigation: one(investigations, { fields: [quarantineActions.investigationId], references: [investigations.investigationId] }),
+  cluster: one(diseaseClusters, { fields: [quarantineActions.clusterId], references: [diseaseClusters.clusterId] }),
+  assignee: one(users, { fields: [quarantineActions.assignedTo], references: [users.userId] }),
+}));
+
+export const kahisReports = pgTable('kahis_reports', {
+  reportId: uuid('report_id').primaryKey().defaultRandom(),
+  investigationId: uuid('investigation_id').notNull().references(() => investigations.investigationId),
+  reportType: varchar('report_type', { length: 20 }).notNull(),
+  diseaseCode: varchar('disease_code', { length: 10 }).notNull(),
+  diseaseName: varchar('disease_name', { length: 100 }).notNull(),
+  status: varchar('status', { length: 30 }).notNull().default('draft'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  responseAt: timestamp('response_at', { withTimezone: true }),
+  reportData: jsonb('report_data').notNull().default('{}'),
+  submittedBy: uuid('submitted_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('kahis_reports_investigation_id_idx').on(table.investigationId),
+  index('kahis_reports_status_idx').on(table.status),
+  index('kahis_reports_disease_code_idx').on(table.diseaseCode),
+]);
+
+export const kahisReportsRelations = relations(kahisReports, ({ one }) => ({
+  investigation: one(investigations, { fields: [kahisReports.investigationId], references: [investigations.investigationId] }),
+  submitter: one(users, { fields: [kahisReports.submittedBy], references: [users.userId] }),
+}));
+
 export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   labelId:           uuid('label_id').primaryKey().defaultRandom(),
   alarmSignature:    varchar('alarm_signature', { length: 200 }).notNull().unique(), // animalId:type:YYYY-MM-DD

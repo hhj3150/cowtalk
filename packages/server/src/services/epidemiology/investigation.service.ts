@@ -1,5 +1,5 @@
 // 역학 조사 지원 서비스
-// 6항목 자동 수집 → 보고서 양식 자동 완성
+// 6항목 자동 수집 → DB 영속화 → 보고서 양식 자동 완성
 // 기존 radius-analyzer, contact-tracer, weather 재활용
 
 import { getDb } from '../../config/database.js';
@@ -7,65 +7,55 @@ import { farms, animals, sensorMeasurements } from '../../db/schema.js';
 import { eq, and, gte } from 'drizzle-orm';
 import { analyzeRadius } from './radius-analyzer.js';
 import { buildContactNetwork } from './contact-tracer.js';
+import {
+  insertInvestigation,
+  getInvestigationById,
+  getInvestigationsByFarm,
+  listInvestigations as listInvestigationsRepo,
+  updateInvestigation as updateInvestigationRepo,
+} from '../../db/repositories/investigation.repository.js';
+import type { InvestigationRow, InvestigationSummaryRow } from '../../db/repositories/investigation.repository.js';
 import { logger } from '../../lib/logger.js';
+import type {
+  InvestigationStatus,
+  InvestigationData,
+  FeverAnimalDetail,
+  InvestigationPatch,
+} from '@cowtalk/shared';
+
+// re-export 타입 (기존 import 호환)
+export type { InvestigationStatus, InvestigationData, FeverAnimalDetail };
 
 // ===========================
-// 타입
+// DB row → API 응답 변환
 // ===========================
 
-export type InvestigationStatus =
-  | 'draft'
-  | 'pending_submit'
-  | 'kahis_submitted';
-
-export interface FeverAnimalDetail {
-  readonly animalId: string;
-  readonly earTag: string;
-  readonly name: string | null;
-  readonly currentTemp: number | null;
-  readonly feverStartAt: string | null;   // ISO
-  readonly dsiScore: number;
-  readonly tempHistory: readonly { ts: string; value: number }[];
+function rowToInvestigationData(row: InvestigationRow): InvestigationData {
+  return {
+    investigationId: row.investigationId,
+    farmId: row.farmId,
+    initiatedBy: row.initiatedBy,
+    clusterId: row.clusterId,
+    farm: {
+      name: row.farmName,
+      address: row.farmAddress,
+      ownerName: row.farmOwnerName,
+      phone: row.farmPhone,
+      lat: row.farmLat,
+      lng: row.farmLng,
+      currentHeadCount: row.farmHeadCount,
+    },
+    feverAnimals: row.feverAnimals as readonly FeverAnimalDetail[],
+    radiusSummary: row.radiusSummary as InvestigationData['radiusSummary'],
+    contactNetwork: row.contactNetwork as InvestigationData['contactNetwork'],
+    weather: row.weather as InvestigationData['weather'],
+    nearbyAbnormalFarms: row.nearbyAbnormalFarms,
+    status: row.status as InvestigationStatus,
+    fieldObservations: row.fieldObservations,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
-
-export interface InvestigationData {
-  readonly investigationId: string;
-  readonly farmId: string;
-  readonly farm: {
-    readonly name: string;
-    readonly address: string;
-    readonly ownerName: string | null;
-    readonly phone: string | null;
-    readonly lat: number;
-    readonly lng: number;
-    readonly currentHeadCount: number;
-  };
-  readonly feverAnimals: readonly FeverAnimalDetail[];
-  readonly radiusSummary: {
-    readonly zone500m: { farmCount: number; headCount: number };
-    readonly zone1km: { farmCount: number; headCount: number };
-    readonly zone3km: { farmCount: number; headCount: number };
-  };
-  readonly contactNetwork: {
-    readonly nodeCount: number;
-    readonly edgeCount: number;
-    readonly directContacts: number;   // 1-hop 농장 수
-  };
-  readonly weather: {
-    readonly temperature: number | null;
-    readonly windDeg: number | null;
-    readonly windSpeed: number | null;
-    readonly description: string;
-  };
-  readonly nearbyAbnormalFarms: number;  // 주변 발열 이상 농장 수
-  readonly status: InvestigationStatus;
-  readonly fieldObservations: string;    // 방역관 현장 소견
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
-
-// 인메모리 저장소 (데모용 — 프로덕션은 investigations 테이블 필요)
-const investigationStore = new Map<string, InvestigationData>();
 
 // ===========================
 // 발열 개체 상세 조회
@@ -103,10 +93,7 @@ async function fetchFeverAnimals(farmId: string): Promise<readonly FeverAnimalDe
     const isFever = latestTemp !== null && latestTemp >= FEVER_THRESHOLD;
     if (!isFever) continue;
 
-    // 발열 시작 시점: 처음으로 threshold 초과한 시점
     const feverStart = tempRows.find((r) => r.value >= FEVER_THRESHOLD);
-
-    // DSI 추정 (간단화: 체온 기반)
     const dsiScore = Math.min(Math.round((latestTemp - 38.5) * 20), 100);
 
     feverAnimals.push({
@@ -146,8 +133,6 @@ export async function startInvestigation(farmId: string): Promise<InvestigationD
     throw new Error(`Farm not found: ${farmId}`);
   }
 
-  const farm = farmRows[0]!;
-
   // 2~6. 병렬 수집
   const [feverAnimals, radiusResult, contactResult] = await Promise.all([
     fetchFeverAnimals(farmId),
@@ -166,7 +151,6 @@ export async function startInvestigation(farmId: string): Promise<InvestigationD
     zone3km: { farmCount: zone3km?.farmCount ?? 0, headCount: zone3km?.totalHeadCount ?? 0 },
   };
 
-  // 접촉 네트워크 요약
   const directContacts = contactResult.nodes.filter(
     (n) => n.distanceFromSource === 1,
   ).length;
@@ -185,66 +169,74 @@ export async function startInvestigation(farmId: string): Promise<InvestigationD
     description: '맑음, 남서풍 3.5m/s',
   };
 
-  // 주변 이상 농장 수 (3km 내 발열 농장)
   const nearbyAbnormalFarms = zone3km?.feverFarmCount ?? 0;
 
-  const investigationId = crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  const investigation: InvestigationData = {
-    investigationId,
+  // DB INSERT
+  const investigationId = await insertInvestigation(db, {
     farmId,
-    farm: {
-      name: farm.name,
-      address: farm.address,
-      ownerName: farm.ownerName,
-      phone: farm.phone,
-      lat: farm.lat,
-      lng: farm.lng,
-      currentHeadCount: farm.currentHeadCount,
-    },
     feverAnimals,
     radiusSummary,
     contactNetwork,
     weather,
     nearbyAbnormalFarms,
-    status: 'draft',
-    fieldObservations: '',
-    createdAt: now,
-    updatedAt: now,
-  };
+  });
 
-  investigationStore.set(investigationId, investigation);
+  logger.info({ investigationId, farmId }, '[Investigation] DB 저장 완료');
 
-  return investigation;
+  // DB에서 farm JOIN 포함 재조회
+  const row = await getInvestigationById(db, investigationId);
+  if (!row) {
+    throw new Error(`Investigation insert succeeded but read failed: ${investigationId}`);
+  }
+
+  return rowToInvestigationData(row);
 }
 
 // ===========================
 // 조사 조회
 // ===========================
 
-export function getInvestigation(id: string): InvestigationData | null {
-  return investigationStore.get(id) ?? null;
+export async function getInvestigation(id: string): Promise<InvestigationData | null> {
+  const db = getDb();
+  const row = await getInvestigationById(db, id);
+  return row ? rowToInvestigationData(row) : null;
+}
+
+// ===========================
+// 농장별 조사 이력
+// ===========================
+
+export async function listFarmInvestigations(farmId: string): Promise<readonly InvestigationSummaryRow[]> {
+  const db = getDb();
+  return getInvestigationsByFarm(db, farmId);
+}
+
+// ===========================
+// 전체 조사 목록 (필터)
+// ===========================
+
+export async function listInvestigations(filters?: {
+  readonly status?: string;
+  readonly since?: string;
+  readonly limit?: number;
+}): Promise<readonly InvestigationSummaryRow[]> {
+  const db = getDb();
+  return listInvestigationsRepo(db, {
+    status: filters?.status,
+    since: filters?.since ? new Date(filters.since) : undefined,
+    limit: filters?.limit,
+  });
 }
 
 // ===========================
 // 현장 소견 저장 + 상태 변경
 // ===========================
 
-export function updateInvestigation(
+export async function updateInvestigation(
   id: string,
-  patch: { fieldObservations?: string; status?: InvestigationStatus },
-): InvestigationData | null {
-  const existing = investigationStore.get(id);
-  if (!existing) return null;
-
-  const updated: InvestigationData = {
-    ...existing,
-    fieldObservations: patch.fieldObservations ?? existing.fieldObservations,
-    status: patch.status ?? existing.status,
-    updatedAt: new Date().toISOString(),
-  };
-
-  investigationStore.set(id, updated);
-  return updated;
+  patch: InvestigationPatch,
+): Promise<InvestigationData | null> {
+  const db = getDb();
+  const row = await updateInvestigationRepo(db, id, patch);
+  return row ? rowToInvestigationData(row) : null;
 }

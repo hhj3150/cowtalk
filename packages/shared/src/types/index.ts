@@ -23,3 +23,4 @@ export * from './insemination-route.js';
 export * from './label-chat.js';
 export * from './conversation-record.js';
 export * from './weight.js';
+export * from './quarantine.js';
