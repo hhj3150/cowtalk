@@ -3,7 +3,7 @@
 // 실 DB 데이터(smaxtecEvents + breedingEvents + pregnancyChecks) 기반
 
 import { getDb } from '../../config/database.js';
-import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks } from '../../db/schema.js';
+import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents } from '../../db/schema.js';
 import { eq, and, desc, gte, inArray, isNull } from 'drizzle-orm';
 import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
 import { logger } from '../../lib/logger.js';
@@ -126,7 +126,26 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
     pregnancyByAnimal.set(p.animalId, list);
   }
 
-  // 4. 번식 이벤트 (CowTalk 기록) — 수태율 계산용
+  // 4. 분만 이력 조회 — 분만간격 + 첫수정일수 계산용
+  const calvingResults = animalIds.length > 0
+    ? await db
+        .select({
+          animalId: calvingEvents.animalId,
+          calvingDate: calvingEvents.calvingDate,
+        })
+        .from(calvingEvents)
+        .where(inArray(calvingEvents.animalId, animalIds))
+        .orderBy(desc(calvingEvents.calvingDate))
+    : [];
+
+  const calvingByAnimal = new Map<string, Date[]>();
+  for (const c of calvingResults) {
+    if (!c.calvingDate) continue;
+    const list = calvingByAnimal.get(c.animalId) ?? [];
+    calvingByAnimal.set(c.animalId, [...list, c.calvingDate]);
+  }
+
+  // 5. 번식 이벤트 (CowTalk 기록) — 수태율 계산용
   const cwBreedingEvents = animalIds.length > 0
     ? await db
         .select({
@@ -143,7 +162,15 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
         )
     : [];
 
-  // 5. 단계 판별 + 요약 생성
+  // 개체별 수정 이벤트 Map (첫수정일수 계산용)
+  const inseminationsByAnimal = new Map<string, Date[]>();
+  for (const e of cwBreedingEvents) {
+    if (e.type !== 'insemination' || !e.eventDate) continue;
+    const list = inseminationsByAnimal.get(e.animalId) ?? [];
+    inseminationsByAnimal.set(e.animalId, [...list, e.eventDate]);
+  }
+
+  // 6. 단계 판별 + 요약 생성
   const settings = farmId ? await getFarmBreedingSettings(farmId) : null;
   const gestationDays = settings?.gestationDays ?? 280;
   const pregnancyCheckDays = settings?.pregnancyCheckDays ?? 28;
@@ -215,7 +242,7 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
   });
 
   // 7. KPI 산출
-  const kpis = calcKpis(cwBreedingEvents, pregnancyResults, recentEvents, summaries);
+  const kpis = calcKpis(cwBreedingEvents, pregnancyResults, recentEvents, summaries, calvingByAnimal, inseminationsByAnimal);
 
   // 긴급 조치 정렬 (시간 임박 순)
   urgentActions.sort((a, b) => a.hoursRemaining - b.hoursRemaining);
@@ -399,10 +426,12 @@ function deriveUrgentAction(
 // ===========================
 
 function calcKpis(
-  cwEvents: readonly { type: string; eventDate: Date }[],
+  _cwEvents: readonly { type: string; eventDate: Date }[],
   pregnancies: readonly { result: string; checkDate: Date }[],
   smaxtecEvts: readonly { eventType: string }[],
   summaries: readonly BreedingAnimalSummary[],
+  calvingByAnimal: ReadonlyMap<string, readonly Date[]>,
+  inseminationsByAnimal: ReadonlyMap<string, readonly Date[]>,
 ): BreedingKpis {
   // 수태율: pregnant / (pregnant + open)
   const pregnantCount = pregnancies.filter((p) => p.result === 'pregnant').length;
@@ -422,12 +451,40 @@ function calcKpis(
     ? Math.round(openAnimals.reduce((s, a) => s + a.daysInStage, 0) / openAnimals.length)
     : 0;
 
-  // 분만간격 (calving 이벤트 간격 — 데이터 부족 시 추정)
-  const avgCalvingInterval = 400; // TODO: calving 이벤트 2개 이상 있는 개체에서 계산
+  // 분만간격 — 개체별 연속 분만일 간격의 전체 평균
+  const calvingIntervals: number[] = [];
+  for (const [, calvings] of calvingByAnimal) {
+    const sorted = [...calvings].sort((a, b) => a.getTime() - b.getTime());
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const curr = sorted[i];
+      if (prev && curr) {
+        calvingIntervals.push(Math.floor((curr.getTime() - prev.getTime()) / MS_PER_DAY));
+      }
+    }
+  }
+  const avgCalvingInterval = calvingIntervals.length > 0
+    ? Math.round(calvingIntervals.reduce((s, v) => s + v, 0) / calvingIntervals.length)
+    : 0;
 
-  // 첫 수정일수 (calving 후 첫 insemination까지 일수 — 목표 <80일)
-  const inseminationEvents = cwEvents.filter((e) => e.type === 'insemination');
-  const avgDaysToFirstService = inseminationEvents.length > 0 ? 65 : 0; // TODO: 실측 계산
+  // 첫 수정일수 — 개체별 분만 후 첫 수정까지 일수의 전체 평균
+  const daysToFirstServiceValues: number[] = [];
+  for (const [animalId, calvings] of calvingByAnimal) {
+    const insemDates = (inseminationsByAnimal.get(animalId) ?? [])
+      .map((d) => d.getTime())
+      .sort((a, b) => a - b);
+
+    for (const calvDate of calvings) {
+      const calvTime = calvDate.getTime();
+      const firstInsAfterCalv = insemDates.find((t) => t > calvTime);
+      if (firstInsAfterCalv) {
+        daysToFirstServiceValues.push(Math.floor((firstInsAfterCalv - calvTime) / MS_PER_DAY));
+      }
+    }
+  }
+  const avgDaysToFirstService = daysToFirstServiceValues.length > 0
+    ? Math.round(daysToFirstServiceValues.reduce((s, v) => s + v, 0) / daysToFirstServiceValues.length)
+    : 0;
 
   // 임신율 = 발정탐지율 × 수태율 / 100
   const pregnancyRate = Math.round((estrusDetectionRate * conceptionRate) / 100);
