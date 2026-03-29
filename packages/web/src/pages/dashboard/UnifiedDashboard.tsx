@@ -732,7 +732,16 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── KPI 카드 ── */}
           <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} role={user?.role} />
 
-          {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널 — KPI 바로 아래) ── */}
+          {/* ── 농장 지도 (최상단 — 전국 현황 한눈에) ── */}
+          {isVisible('farm_map') && (
+          <FarmMapWidget
+            markers={farmMapMarkers}
+            selectedFarmId={selectedFarmId}
+            onFarmClick={(fid) => { selectFarm(fid); setDrawerFarmId(fid); setDrawerOpen(true); }}
+          />
+          )}
+
+          {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널) ── */}
           {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
             {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
@@ -945,15 +954,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
           </>)}
 
-          {/* ── 농장 지도 ── */}
-          {isVisible('farm_map') && (<>
-          <SectionLabel>농장 지도</SectionLabel>
-          <FarmMapWidget
-            markers={farmMapMarkers}
-            selectedFarmId={selectedFarmId}
-            onFarmClick={(fid) => { selectFarm(fid); setDrawerFarmId(fid); setDrawerOpen(true); }}
-          />
-          </>)}
+          {/* 농장 지도는 KPI 카드 바로 아래로 이동됨 */}
 
           {/* ── 농장 순위 + 역학 지도 ── */}
           {(isVisible('farm_ranking') || isVisible('epidemic_map')) && (
