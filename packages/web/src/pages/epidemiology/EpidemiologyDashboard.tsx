@@ -609,14 +609,15 @@ interface FarmAnimalListProps {
 }
 
 function FarmAnimalList({ farmId, onSelect }: FarmAnimalListProps): React.JSX.Element {
-  const { data, isLoading } = useQuery({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['farm-animals', farmId],
-    queryFn: () => listAnimals({ farmId, limit: 100, status: 'active' }) as unknown as Promise<AnimalSummary[]>,
+    queryFn: () => listAnimals({ farmId, limit: 100, status: 'active' }),
     staleTime: 30_000,
   });
 
-  const animals: readonly AnimalSummary[] = (data as unknown as AnimalSummary[]) ?? [];
-  const feverAnimals = animals.filter((a: AnimalSummary) => (a.latestTemperature ?? 0) >= 38.5);
+  // PaginatedResult → data 배열 추출 (또는 직접 배열인 경우 대응)
+  const animals: readonly AnimalSummary[] = Array.isArray(rawData) ? rawData : (rawData?.data ?? []);
+  const feverAnimals = animals.filter((a) => (a.latestTemperature ?? 0) >= 38.5);
   const display: readonly AnimalSummary[] = feverAnimals.length > 0 ? feverAnimals : animals.slice(0, 20);
 
   if (isLoading) {
