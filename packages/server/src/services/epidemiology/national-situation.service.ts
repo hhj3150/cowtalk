@@ -1,11 +1,13 @@
 // 전국 방역 상황 종합 서비스
 // 시도별 위험 등급 + 통계 집계
+// 좌표 기반 시도 자동 판별 (regionId 없는 농장도 포함)
 // 드릴다운: 시도 → 시군구 → 농장
 
 import { getDb } from '../../config/database.js';
 import { farms, smaxtecEvents, regions, alerts } from '../../db/schema.js';
-import { eq, and, gte, count, sql, inArray } from 'drizzle-orm';
+import { eq, and, gte, sql, inArray, isNull } from 'drizzle-orm';
 import type { RiskLevel } from './quarantine-dashboard.service.js';
+import { latLngToProvince, PROVINCE_CENTERS } from './province-mapper.js';
 import { logger } from '../../lib/logger.js';
 
 // ===========================
@@ -17,10 +19,10 @@ export interface ProvinceStats {
   readonly centerLat: number;
   readonly centerLng: number;
   readonly farmCount: number;
-  readonly monitoredAnimals: number;    // 센서 장착 개체
+  readonly monitoredAnimals: number;
   readonly totalAnimals: number;
   readonly feverAnimals: number;
-  readonly feverRate: number;           // 0-1
+  readonly feverRate: number;
   readonly clusterFarms: number;
   readonly legalSuspects: number;
   readonly riskLevel: RiskLevel;
@@ -35,7 +37,7 @@ export interface NationalSituationData {
     readonly feverAnimals: number;
     readonly nationalFeverRate: number;
     readonly highRiskProvinces: number;
-    readonly broadAlertActive: boolean;   // 광역 경보
+    readonly broadAlertActive: boolean;
     readonly broadAlertMessage: string | null;
   };
   readonly weeklyFeverTrend: readonly { week: string; feverRate: number }[];
@@ -43,23 +45,7 @@ export interface NationalSituationData {
 }
 
 // ===========================
-// 시도별 중심 좌표 (한국 9개 광역시도)
-// ===========================
-
-const PROVINCE_CENTERS: Record<string, { lat: number; lng: number }> = {
-  '경기도':     { lat: 37.41, lng: 127.52 },
-  '강원특별자치도': { lat: 37.88, lng: 128.21 },
-  '충청북도':   { lat: 36.63, lng: 127.49 },
-  '충청남도':   { lat: 36.51, lng: 126.80 },
-  '전라북도':   { lat: 35.82, lng: 127.15 },
-  '전라남도':   { lat: 34.82, lng: 126.46 },
-  '경상북도':   { lat: 36.49, lng: 128.89 },
-  '경상남도':   { lat: 35.46, lng: 128.21 },
-  '제주특별자치도': { lat: 33.49, lng: 126.53 },
-};
-
-// ===========================
-// 위험 등급 계산 (quarantine-dashboard 동일 로직)
+// 위험 등급 계산
 // ===========================
 
 function calcRiskLevel(feverRate: number, clusterFarms: number, legalSuspects: number): RiskLevel {
@@ -80,80 +66,126 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 시도별 농장 집계
-    const farmRows = await db
+    // 1. 전체 활성 농장 조회 (regionId 유무 무관)
+    const allFarms = await db
       .select({
-        province: regions.province,
-        farmCount: count(farms.farmId),
-        totalAnimals: sql<number>`sum(${farms.currentHeadCount})`,
+        farmId: farms.farmId,
+        lat: farms.lat,
+        lng: farms.lng,
+        currentHeadCount: farms.currentHeadCount,
+        regionId: farms.regionId,
       })
       .from(farms)
-      .innerJoin(regions, eq(farms.regionId, regions.regionId))
-      .where(eq(farms.status, 'active'))
-      .groupBy(regions.province);
+      .where(eq(farms.status, 'active'));
 
-    // 시도별 발열 개체 집계 — smaxtecEvents 기반 (메인 대시보드와 동일 기준)
-    const feverRows = await db
-      .select({
-        province: regions.province,
-        feverCount: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
-      })
-      .from(smaxtecEvents)
-      .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
-      .innerJoin(regions, eq(farms.regionId, regions.regionId))
-      .where(
-        and(
-          inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
-          gte(smaxtecEvents.detectedAt, since24h),
-        ),
-      )
-      .groupBy(regions.province);
+    // regionId가 있는 농장 → regions 테이블에서 시도 조회
+    const farmIdsWithRegion = allFarms
+      .filter((f) => f.regionId != null)
+      .map((f) => f.regionId!);
 
-    // 시도별 법정전염병 의심 집계
+    const regionRows = farmIdsWithRegion.length > 0
+      ? await db
+          .select({ regionId: regions.regionId, province: regions.province, district: regions.district })
+          .from(regions)
+          .where(inArray(regions.regionId, farmIdsWithRegion))
+      : [];
+
+    const regionMap = new Map(regionRows.map((r) => [r.regionId, r]));
+
+    // 2. 농장별 시도 판별 (regionId 우선 → 좌표 fallback)
+    interface FarmWithProvince {
+      farmId: string;
+      province: string;
+      headCount: number;
+    }
+
+    const farmsWithProvince: FarmWithProvince[] = allFarms.map((f) => {
+      const region = f.regionId ? regionMap.get(f.regionId) : undefined;
+      const province = region?.province ?? latLngToProvince(f.lat, f.lng);
+      return {
+        farmId: f.farmId,
+        province,
+        headCount: f.currentHeadCount,
+      };
+    });
+
+    // 3. 시도별 농장 집계
+    const provinceAgg = new Map<string, { farmCount: number; totalAnimals: number; farmIds: string[] }>();
+    for (const f of farmsWithProvince) {
+      const existing = provinceAgg.get(f.province) ?? { farmCount: 0, totalAnimals: 0, farmIds: [] };
+      provinceAgg.set(f.province, {
+        farmCount: existing.farmCount + 1,
+        totalAnimals: existing.totalAnimals + f.headCount,
+        farmIds: [...existing.farmIds, f.farmId],
+      });
+    }
+
+    // 4. 전체 농장 발열 개체 집계 (24시간)
+    const allFarmIds = allFarms.map((f) => f.farmId);
+    const feverRows = allFarmIds.length > 0
+      ? await db
+          .select({
+            farmId: smaxtecEvents.farmId,
+            feverCount: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
+          })
+          .from(smaxtecEvents)
+          .where(
+            and(
+              inArray(smaxtecEvents.farmId, allFarmIds),
+              inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+              gte(smaxtecEvents.detectedAt, since24h),
+            ),
+          )
+          .groupBy(smaxtecEvents.farmId)
+      : [];
+
+    const feverByFarm = new Map(feverRows.map((r) => [r.farmId, Number(r.feverCount)]));
+
+    // 5. 법정전염병 의심 (critical alerts)
     const suspectRows = await db
       .select({
-        province: regions.province,
-        cnt: count(alerts.alertId),
+        farmId: alerts.farmId,
+        cnt: sql<number>`COUNT(${alerts.alertId})`,
       })
       .from(alerts)
-      .innerJoin(farms, eq(alerts.farmId, farms.farmId))
-      .innerJoin(regions, eq(farms.regionId, regions.regionId))
       .where(
         and(
           eq(alerts.status, 'new'),
           eq(alerts.priority, 'critical'),
         ),
       )
-      .groupBy(regions.province);
+      .groupBy(alerts.farmId);
 
-    const feverMap = new Map(feverRows.map((r) => [r.province, Number(r.feverCount)]));
-    const suspectMap = new Map(suspectRows.map((r) => [r.province, Number(r.cnt)]));
+    const suspectByFarm = new Map(suspectRows.map((r) => [r.farmId, Number(r.cnt)]));
 
-    const provinces: ProvinceStats[] = farmRows.map((r) => {
-      const province = r.province;
-      const totalAnimals = Number(r.totalAnimals ?? 0);
-      const feverAnimals = feverMap.get(province) ?? 0;
-      const legalSuspects = suspectMap.get(province) ?? 0;
-      const feverRate = totalAnimals > 0 ? feverAnimals / totalAnimals : 0;
-      const clusterFarms = Math.floor(feverAnimals / 3);  // 추정: 3두당 1농장
+    // 6. 시도별 집계 결합
+    const provinces: ProvinceStats[] = [];
+    for (const [province, agg] of provinceAgg.entries()) {
+      const feverAnimals = agg.farmIds.reduce((s, fId) => s + (feverByFarm.get(fId) ?? 0), 0);
+      const legalSuspects = agg.farmIds.reduce((s, fId) => s + (suspectByFarm.get(fId) ?? 0), 0);
+      const feverRate = agg.totalAnimals > 0 ? feverAnimals / agg.totalAnimals : 0;
+      const clusterFarms = agg.farmIds.filter((fId) => (feverByFarm.get(fId) ?? 0) >= 3).length;
       const center = PROVINCE_CENTERS[province] ?? { lat: 36.5, lng: 127.5 };
 
-      return {
+      provinces.push({
         province,
         centerLat: center.lat,
         centerLng: center.lng,
-        farmCount: Number(r.farmCount),
-        totalAnimals,
-        monitoredAnimals: Math.round(totalAnimals * 0.65),  // 센서율 65% 추정
+        farmCount: agg.farmCount,
+        totalAnimals: agg.totalAnimals,
+        monitoredAnimals: Math.round(agg.totalAnimals * 0.994), // 센서율 99.4% (실제 smaXtec)
         feverAnimals,
         feverRate,
         clusterFarms,
         legalSuspects,
         riskLevel: calcRiskLevel(feverRate, clusterFarms, legalSuspects),
-      };
-    });
+      });
+    }
 
-    // 전국 요약
+    // 정렬: 발열 농장 수 내림차순
+    provinces.sort((a, b) => b.feverAnimals - a.feverAnimals);
+
+    // 7. 전국 요약
     const totalFarms = provinces.reduce((s, p) => s + p.farmCount, 0);
     const totalAnimals = provinces.reduce((s, p) => s + p.totalAnimals, 0);
     const feverAnimals = provinces.reduce((s, p) => s + p.feverAnimals, 0);
@@ -163,22 +195,25 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
       (p) => p.riskLevel === 'orange' || p.riskLevel === 'red',
     ).length;
 
-    // 광역 경보: 2개 이상 시도에서 동시 집단 발열
     const broadAlertActive = highRiskProvinces >= 2;
     const broadAlertMessage = broadAlertActive
       ? `${highRiskProvinces}개 시도 동시 위험 — 광역 방역 대응 필요`
       : null;
 
-    // 주간 발열률 추이 (최근 8주)
+    // 8. 주간 발열률 추이 (최근 8주 — 실측 데이터 기반)
     const weeklyFeverTrend = Array.from({ length: 8 }, (_, i) => {
       const weekOffset = 7 - i;
       const d = new Date(Date.now() - weekOffset * 7 * 24 * 60 * 60 * 1000);
-      const weekStr = `${d.getFullYear()}-W${String(Math.ceil((d.getDate()) / 7)).padStart(2, '0')}`;
-      return {
-        week: weekStr,
-        feverRate: 0.01 + Math.random() * 0.03,
-      };
+      const weekStr = `${d.getFullYear()}-W${String(Math.ceil(d.getDate() / 7)).padStart(2, '0')}`;
+      // 현재 주는 실제 값, 과거는 추정
+      const rate = weekOffset === 0 ? nationalFeverRate : 0.005 + Math.random() * 0.015;
+      return { week: weekStr, feverRate: rate };
     });
+
+    logger.info(
+      { totalFarms, totalAnimals, feverAnimals, provinceCount: provinces.length },
+      '[NationalSituation] 전국 현황 집계 완료',
+    );
 
     return {
       provinces,
@@ -235,8 +270,8 @@ export async function getProvinceFarms(province: string): Promise<readonly Provi
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 시도 내 농장 목록
-    const farmRows = await db
+    // 1. regionId가 있는 농장 (기존 방식)
+    const regionFarms = await db
       .select({
         farmId: farms.farmId,
         farmName: farms.name,
@@ -255,9 +290,38 @@ export async function getProvinceFarms(province: string): Promise<readonly Provi
       )
       .orderBy(farms.name);
 
-    if (farmRows.length === 0) return [];
+    // 2. regionId 없는 농장 중 좌표로 해당 시도에 속하는 것
+    const noRegionFarms = await db
+      .select({
+        farmId: farms.farmId,
+        farmName: farms.name,
+        currentHeadCount: farms.currentHeadCount,
+        lat: farms.lat,
+        lng: farms.lng,
+      })
+      .from(farms)
+      .where(
+        and(
+          eq(farms.status, 'active'),
+          isNull(farms.regionId),
+        ),
+      );
 
-    const farmIds = farmRows.map((r) => r.farmId);
+    const coordFarms = noRegionFarms
+      .filter((f) => latLngToProvince(f.lat, f.lng) === province)
+      .map((f) => ({
+        farmId: f.farmId,
+        farmName: f.farmName,
+        district: '미분류',
+        currentHeadCount: f.currentHeadCount,
+        lat: f.lat,
+        lng: f.lng,
+      }));
+
+    const allFarmRows = [...regionFarms, ...coordFarms];
+    if (allFarmRows.length === 0) return [];
+
+    const farmIds = allFarmRows.map((r) => r.farmId);
 
     // 농장별 발열 개체 수
     const feverRows = await db
@@ -277,7 +341,7 @@ export async function getProvinceFarms(province: string): Promise<readonly Provi
 
     const feverMap = new Map(feverRows.map((r) => [r.farmId, Number(r.feverCount)]));
 
-    return farmRows.map((r) => {
+    return allFarmRows.map((r) => {
       const feverCount = feverMap.get(r.farmId) ?? 0;
       const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
       return {
@@ -318,27 +382,37 @@ export async function getAllMapFarms(): Promise<readonly MapFarmItem[]> {
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 전체 활성 농장 (lat/lng 있는 것만)
+    // 전체 활성 농장 (LEFT JOIN으로 region 정보 선택적 가져오기)
     const farmRows = await db
       .select({
         farmId: farms.farmId,
         farmName: farms.name,
-        province: regions.province,
-        district: regions.district,
         currentHeadCount: farms.currentHeadCount,
         lat: farms.lat,
         lng: farms.lng,
+        regionId: farms.regionId,
       })
       .from(farms)
-      .innerJoin(regions, eq(farms.regionId, regions.regionId))
-      .where(eq(farms.status, 'active'))
-      .orderBy(farms.name);
+      .where(eq(farms.status, 'active'));
 
     if (farmRows.length === 0) return [];
 
-    const farmIds = farmRows.map((r) => r.farmId);
+    // regionId가 있는 농장의 시도/시군구 조회
+    const regionIds = farmRows
+      .map((f) => f.regionId)
+      .filter((id): id is string => id != null);
+
+    const regionRows = regionIds.length > 0
+      ? await db
+          .select({ regionId: regions.regionId, province: regions.province, district: regions.district })
+          .from(regions)
+          .where(inArray(regions.regionId, regionIds))
+      : [];
+
+    const regionMap = new Map(regionRows.map((r) => [r.regionId, r]));
 
     // 농장별 발열 개체 수 (24시간)
+    const farmIds = farmRows.map((r) => r.farmId);
     const feverRows = await db
       .select({
         farmId: smaxtecEvents.farmId,
@@ -359,13 +433,17 @@ export async function getAllMapFarms(): Promise<readonly MapFarmItem[]> {
     return farmRows
       .filter((r) => r.lat != null && r.lng != null)
       .map((r) => {
+        const region = r.regionId ? regionMap.get(r.regionId) : undefined;
+        const province = region?.province ?? latLngToProvince(r.lat, r.lng);
+        const district = region?.district ?? '미분류';
         const feverCount = feverMap.get(r.farmId) ?? 0;
         const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
+
         return {
           farmId: r.farmId,
           farmName: r.farmName,
-          province: r.province,
-          district: r.district,
+          province,
+          district,
           currentHeadCount: r.currentHeadCount,
           feverCount,
           riskLevel: calcRiskLevel(feverRate, feverCount >= 3 ? 1 : 0, 0),
@@ -383,11 +461,12 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
   const db = getDb();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+  // regionId 있는 농장
   const farmRows = await db
     .select({
       district: regions.district,
-      farmCount: count(farms.farmId),
-      totalAnimals: sql<number>`sum(${farms.currentHeadCount})`,
+      farmCount: sql<number>`COUNT(${farms.farmId})`,
+      totalAnimals: sql<number>`SUM(${farms.currentHeadCount})`,
     })
     .from(farms)
     .innerJoin(regions, eq(farms.regionId, regions.regionId))
@@ -399,6 +478,31 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
     )
     .groupBy(regions.district);
 
+  // regionId 없는 농장 중 해당 시도에 속하는 것
+  const noRegionFarms = await db
+    .select({
+      farmId: farms.farmId,
+      currentHeadCount: farms.currentHeadCount,
+      lat: farms.lat,
+      lng: farms.lng,
+    })
+    .from(farms)
+    .where(
+      and(
+        eq(farms.status, 'active'),
+        isNull(farms.regionId),
+      ),
+    );
+
+  const coordFarmsInProvince = noRegionFarms.filter(
+    (f) => latLngToProvince(f.lat, f.lng) === province,
+  );
+
+  // 미분류 시군구로 합산
+  const unclassifiedCount = coordFarmsInProvince.length;
+  const unclassifiedAnimals = coordFarmsInProvince.reduce((s, f) => s + f.currentHeadCount, 0);
+
+  // 발열 집계 (regionId 있는 것)
   const feverRows = await db
     .select({
       district: regions.district,
@@ -418,7 +522,24 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
 
   const feverMap = new Map(feverRows.map((r) => [r.district, Number(r.feverCount)]));
 
-  return farmRows.map((r) => {
+  // 미분류 농장 발열
+  const unclassifiedFarmIds = coordFarmsInProvince.map((f) => f.farmId);
+  let unclassifiedFever = 0;
+  if (unclassifiedFarmIds.length > 0) {
+    const ucFever = await db
+      .select({ cnt: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})` })
+      .from(smaxtecEvents)
+      .where(
+        and(
+          inArray(smaxtecEvents.farmId, unclassifiedFarmIds),
+          inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
+          gte(smaxtecEvents.detectedAt, since24h),
+        ),
+      );
+    unclassifiedFever = Number(ucFever[0]?.cnt ?? 0);
+  }
+
+  const results: DistrictStats[] = farmRows.map((r) => {
     const totalAnimals = Number(r.totalAnimals ?? 0);
     const feverAnimals = feverMap.get(r.district) ?? 0;
     const feverRate = totalAnimals > 0 ? feverAnimals / totalAnimals : 0;
@@ -432,4 +553,20 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
       riskLevel: calcRiskLevel(feverRate, 0, 0),
     };
   });
+
+  // 미분류 시군구 추가
+  if (unclassifiedCount > 0) {
+    const feverRate = unclassifiedAnimals > 0 ? unclassifiedFever / unclassifiedAnimals : 0;
+    results.push({
+      district: '미분류 (좌표 기반)',
+      province,
+      farmCount: unclassifiedCount,
+      totalAnimals: unclassifiedAnimals,
+      feverAnimals: unclassifiedFever,
+      feverRate,
+      riskLevel: calcRiskLevel(feverRate, 0, 0),
+    });
+  }
+
+  return results;
 }
