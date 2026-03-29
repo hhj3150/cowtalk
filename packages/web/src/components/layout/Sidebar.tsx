@@ -297,22 +297,35 @@ export function Sidebar(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 목장 바로가기 */}
-      <a
-        href="https://www.a2jerseymilk.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mx-2 mb-1 flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors"
-        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ct-border)', textDecoration: 'none' }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
-      >
-        <span style={{ fontSize: 14 }}>🐄</span>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ct-text)' }}>A2 Jersey Milk</div>
-          <div style={{ fontSize: 8, color: 'var(--ct-text-muted)' }}>갈전리 목장 홈페이지</div>
+      {/* 바로가기 */}
+      <div className="px-2 pb-1" style={{ flexShrink: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ct-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, padding: '4px 6px', marginBottom: 3 }}>
+          바로가기
         </div>
-      </a>
+        {[
+          { icon: '🐂', label: 'A2 Jersey Milk', sub: '갈전리 목장', url: 'https://www.a2jerseymilk.com' },
+          { icon: '🏛️', label: '농림축산식품부', sub: 'MAFRA', url: 'https://www.mafra.go.kr' },
+          { icon: '🌾', label: '농촌진흥청', sub: 'RDA', url: 'https://www.rda.go.kr' },
+          { icon: '🔬', label: '축산과학원', sub: 'NIAS', url: 'https://www.nias.go.kr' },
+          { icon: '🥛', label: '젖소개량사업소', sub: 'DCIC', url: 'https://www.dcic.co.kr' },
+          { icon: '🥩', label: '축산물품질평가원', sub: 'EKAPE', url: 'https://www.ekape.or.kr' },
+          { icon: '🧬', label: '종축개량협회', sub: 'KAIA', url: 'https://www.aiak.or.kr' },
+        ].map((link) => (
+          <a
+            key={link.url}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors"
+            style={{ textDecoration: 'none', fontSize: 10, color: 'var(--ct-text-secondary)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <span style={{ fontSize: 11, flexShrink: 0 }}>{link.icon}</span>
+            <span className="truncate" style={{ fontWeight: 600, color: 'var(--ct-text)' }}>{link.label}</span>
+          </a>
+        ))}
+      </div>
 
       {/* 하단 데모 링크 */}
       <NavLink
