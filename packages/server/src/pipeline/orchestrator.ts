@@ -5,7 +5,7 @@
 
 import { logger } from '../lib/logger.js';
 import { getDb } from '../config/database.js';
-import { animals, sensorMeasurements, sensorHourlyAgg, sensorDailyAgg } from '../db/schema.js';
+import { animals, sensorMeasurements } from '../db/schema.js';
 import { eq, and, isNotNull, sql } from 'drizzle-orm';
 import { SmaxtecConnector } from './connectors/smaxtec.connector.js';
 import {
