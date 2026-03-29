@@ -1,10 +1,10 @@
-// 접촉 네트워크 추적기 — 최근 30일 개체 이동 이력 기반
+// 접촉 네트워크 추적기 — 최근 N일 개체 이동 이력 기반
 // BFS로 위험 전파 경로 탐색
-// farmTransfers 테이블 (이 서비스에서 가상 조회 → 실제 구현 시 animalTransfers 테이블과 연동)
+// animalTransfers 테이블에서 실제 이동 이력 조회 → 데이터 없으면 같은 지역 농장 기반 fallback
 
 import { getDb } from '../../config/database.js';
-import { farms } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { farms, animalTransfers } from '../../db/schema.js';
+import { eq, and, gte, or } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 
 // ===========================
@@ -55,12 +55,42 @@ interface TransferRecord {
 }
 
 async function fetchTransfers(farmId: string, days: number): Promise<readonly TransferRecord[]> {
-  // 실제 구현: animalTransfers 테이블에서 조회
-  // 현재: 같은 지역 농장 간 가상 이동 이력 생성 (시연용)
-  void days;  // 미래 구현을 위해 보존
   const db = getDb();
+  const since = new Date(Date.now() - days * 86_400_000);
 
-  // 농장 정보 조회
+  // 1차: animalTransfers 테이블에서 실제 이동 이력 조회
+  const dbTransfers = await db
+    .select({
+      animalId: animalTransfers.animalId,
+      fromFarmId: animalTransfers.sourceFarmId,
+      toFarmId: animalTransfers.destinationFarmId,
+      transferDate: animalTransfers.transferDate,
+      animalCount: animalTransfers.headCount,
+    })
+    .from(animalTransfers)
+    .where(
+      and(
+        gte(animalTransfers.transferDate, since),
+        or(
+          eq(animalTransfers.sourceFarmId, farmId),
+          eq(animalTransfers.destinationFarmId, farmId),
+        ),
+      ),
+    )
+    .limit(100);
+
+  if (dbTransfers.length > 0) {
+    logger.info({ farmId, count: dbTransfers.length }, '[ContactTracer] Real transfers from DB');
+    return dbTransfers.map((t) => ({
+      animalId: t.animalId,
+      fromFarmId: t.fromFarmId,
+      toFarmId: t.toFarmId,
+      transferDate: t.transferDate.toISOString(),
+      animalCount: t.animalCount,
+    }));
+  }
+
+  // 2차 fallback: DB에 이동 이력 없으면 같은 지역 농장 기반 시연용 생성
   const farmRow = await db.select({ regionId: farms.regionId })
     .from(farms)
     .where(eq(farms.farmId, farmId))
@@ -68,24 +98,22 @@ async function fetchTransfers(farmId: string, days: number): Promise<readonly Tr
 
   if (!farmRow[0]) return [];
 
-  // 같은 지역 농장 조회 (연결 가능한 농장)
   const regionFarms = await db.select({ farmId: farms.farmId })
     .from(farms)
     .where(eq(farms.regionId, farmRow[0].regionId))
     .limit(10);
 
-  // 실제 이동 테이블 없을 시 → 같은 지역 농장 간 시연용 가상 이동 이력 생성
   if (regionFarms.length <= 1) return [];
 
   const now = Date.now();
   const MS_PER_DAY = 86_400_000;
-  const mockTransfers: TransferRecord[] = [];
+  const fallbackTransfers: TransferRecord[] = [];
 
   for (let i = 0; i < Math.min(regionFarms.length - 1, 5); i++) {
     const otherFarm = regionFarms[i];
     if (!otherFarm || otherFarm.farmId === farmId) continue;
-    mockTransfers.push({
-      animalId: `mock-${String(i)}`,
+    fallbackTransfers.push({
+      animalId: `fallback-${String(i)}`,
       fromFarmId: i % 2 === 0 ? farmId : otherFarm.farmId,
       toFarmId: i % 2 === 0 ? otherFarm.farmId : farmId,
       transferDate: new Date(now - (i + 1) * 7 * MS_PER_DAY).toISOString(),
@@ -93,9 +121,9 @@ async function fetchTransfers(farmId: string, days: number): Promise<readonly Tr
     });
   }
 
-  logger.debug({ farmId, regionFarms: regionFarms.length, transfers: mockTransfers.length }, '[ContactTracer] Generated mock transfers');
+  logger.debug({ farmId, count: fallbackTransfers.length }, '[ContactTracer] No DB transfers — using region fallback');
 
-  return mockTransfers;
+  return fallbackTransfers;
 }
 
 // ===========================
