@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiPatch } from '@web/api/client';
 
 export type ActionType = 'legal_disease' | 'cluster_fever' | 'individual_fever' | 'scheduled';
 export type ActionStatus = 'pending' | 'dispatched' | 'phone_confirmed' | 'monitoring' | 'completed';
@@ -43,12 +44,7 @@ const STATUS_LABEL: Record<ActionStatus, string> = {
 };
 
 async function patchActionStatus(actionId: string, status: ActionStatus): Promise<void> {
-  const res = await fetch(`/api/quarantine/action/${actionId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) throw new Error('업무 상태 변경 실패');
+  await apiPatch(`/quarantine/action/${actionId}`, { status });
 }
 
 interface Props {

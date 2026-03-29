@@ -42,6 +42,7 @@ import { epidemiologyRouter } from './routes/epidemiology.routes.js';
 import { quarantineDashboardRouter } from './routes/quarantine-dashboard.routes.js';
 import { investigationRouter } from './routes/investigation.routes.js';
 import { quarantineActionRouter } from './routes/quarantine-action.routes.js';
+import { kahisReportRouter } from './routes/kahis-report.routes.js';
 import { smaxtecNotesRouter } from './routes/smaxtec-notes.routes.js';
 import { adminRouter } from './routes/admin.routes.js';
 import { earTagScanRouter } from './routes/ear-tag-scan.routes.js';
@@ -95,6 +96,7 @@ export function createApiRouter(): Router {
   api.use('/quarantine', quarantineDashboardRouter);
   api.use('/investigation', investigationRouter);
   api.use('/quarantine-action', quarantineActionRouter);
+  api.use('/kahis-report', kahisReportRouter);
   api.use('/smaxtec-notes', smaxtecNotesRouter);
   api.use('/admin', adminRouter);
   api.use('/ear-tag-scan', earTagScanRouter);

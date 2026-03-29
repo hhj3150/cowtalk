@@ -20,6 +20,7 @@ import {
   useFertilityManagement,
   useSovereignAiStats,
   useSovereignAlarms,
+  useBreedingPipeline,
 } from '@web/hooks/useUnifiedDashboard';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -43,6 +44,7 @@ import {
   SovereignAiWidget,
   AssistantAlertPanel,
   SovereignAlarmFeed,
+  BreedingPipelineWidget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -540,6 +542,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const { data: sovereignAlarmData, isLoading: sovereignLoading } = useSovereignAlarms(selectedFarmId);
+  const { data: breedingPipelineData } = useBreedingPipeline();
   const queryClient = useQueryClient();
   const handleSovereignLabelChange = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['sovereign-alarms', selectedFarmId] });
@@ -817,6 +820,11 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 <BreedingPerformanceCard farmId={selectedFarmId} />
               )}
             </>
+          )}
+
+          {/* ── 번식성적 커맨드센터 ── */}
+          {isVisible('breeding_pipeline') && breedingPipelineData && (
+            <BreedingPipelineWidget data={breedingPipelineData} />
           )}
 
           {/* ── 건강 알림 + 번식 관리 (수정사/사료회사 제외) ── */}

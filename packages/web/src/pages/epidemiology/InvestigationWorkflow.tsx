@@ -15,6 +15,24 @@ import { TinkerbellAssistant } from '@web/components/unified-dashboard/Tinkerbel
 
 type InvestigationStatus = 'draft' | 'pending_submit' | 'kahis_submitted';
 
+type KahisReportType = 'initial' | 'followup' | 'final' | 'negative';
+type KahisReportStatus = 'draft' | 'submitted' | 'accepted' | 'rejected' | 'revision_required';
+
+interface KahisReportData {
+  reportId: string;
+  investigationId: string;
+  reportType: KahisReportType;
+  diseaseCode: string;
+  diseaseName: string;
+  status: KahisReportStatus;
+  submittedAt: string | null;
+  responseAt: string | null;
+  reportData: Record<string, unknown>;
+  submittedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface FeverAnimalDetail {
   animalId: string;
   earTag: string;
@@ -68,6 +86,23 @@ async function updateInvestigation(id: string, patch: { fieldObservations?: stri
   return apiPatch<InvestigationData>(`/investigation/${id}`, patch);
 }
 
+async function fetchKahisReports(investigationId: string): Promise<KahisReportData[]> {
+  return apiGet<KahisReportData[]>(`/kahis-report/investigation/${investigationId}`);
+}
+
+async function createKahisReport(input: {
+  investigationId: string;
+  reportType: KahisReportType;
+  diseaseCode: string;
+  diseaseName: string;
+}): Promise<KahisReportData> {
+  return apiPost<KahisReportData>('/kahis-report', input);
+}
+
+async function patchKahisReport(id: string, patch: { status?: KahisReportStatus }): Promise<KahisReportData> {
+  return apiPatch<KahisReportData>(`/kahis-report/${id}`, patch);
+}
+
 // ===========================
 // 상태 배지
 // ===========================
@@ -77,6 +112,34 @@ const STATUS_CONFIG: Record<InvestigationStatus, { label: string; color: string 
   pending_submit: { label: '제출 대기', color: 'bg-yellow-100 text-yellow-700' },
   kahis_submitted: { label: 'KAHIS 제출 완료', color: 'bg-green-100 text-green-700' },
 };
+
+const KAHIS_STATUS_CONFIG: Record<KahisReportStatus, { label: string; color: string }> = {
+  draft: { label: '초안', color: 'bg-slate-100 text-slate-700' },
+  submitted: { label: '제출됨', color: 'bg-blue-100 text-blue-700' },
+  accepted: { label: '수리', color: 'bg-green-100 text-green-700' },
+  rejected: { label: '반려', color: 'bg-red-100 text-red-700' },
+  revision_required: { label: '보완요청', color: 'bg-orange-100 text-orange-700' },
+};
+
+const REPORT_TYPE_LABELS: Record<KahisReportType, string> = {
+  initial: '최초 보고',
+  followup: '중간 보고',
+  final: '최종 보고',
+  negative: '음성 보고',
+};
+
+const COMMON_DISEASES = [
+  { code: 'FMD', name: '구제역' },
+  { code: 'AI', name: '고병원성 조류인플루엔자' },
+  { code: 'LSD', name: '럼피스킨병' },
+  { code: 'BRU', name: '브루셀라병' },
+  { code: 'TB', name: '결핵병' },
+  { code: 'ANT', name: '탄저' },
+  { code: 'BSE', name: '소해면상뇌증(광우병)' },
+  { code: 'BVD', name: '소바이러스성설사' },
+  { code: 'IBR', name: '소전염성비기관염' },
+  { code: 'OTHER', name: '기타' },
+] as const;
 
 // ===========================
 // 농장 선택 화면 (farmId 없이 접근 시)
@@ -175,12 +238,39 @@ export default function InvestigationWorkflow(): React.JSX.Element {
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [newReportType, setNewReportType] = useState<KahisReportType>('initial');
+  const [newDiseaseIdx, setNewDiseaseIdx] = useState(0);
 
   // 기존 조사 조회
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['investigation', investigationId],
     queryFn: () => fetchInvestigation(investigationId),
     enabled: !!investigationId,
+  });
+
+  // KAHIS 보고서 조회
+  const { data: kahisReports, refetch: refetchReports } = useQuery({
+    queryKey: ['kahis-reports', investigationId],
+    queryFn: () => fetchKahisReports(investigationId),
+    enabled: !!investigationId,
+  });
+
+  // KAHIS 보고서 생성
+  const createReportMutation = useMutation({
+    mutationFn: (input: { investigationId: string; reportType: KahisReportType; diseaseCode: string; diseaseName: string }) =>
+      createKahisReport(input),
+    onSuccess: () => {
+      void refetchReports();
+      setShowReportForm(false);
+    },
+  });
+
+  // KAHIS 보고서 상태 변경
+  const patchReportMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: KahisReportStatus }) =>
+      patchKahisReport(id, { status }),
+    onSuccess: () => void refetchReports(),
   });
 
   // 조사 저장 mutation
@@ -471,6 +561,144 @@ export default function InvestigationWorkflow(): React.JSX.Element {
           value={fieldObservations || data.fieldObservations}
           onChange={(e) => setFieldObservations(e.target.value)}
         />
+      </div>
+
+      {/* KAHIS 보고서 섹션 */}
+      <div
+        className="rounded-xl border p-4"
+        style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
+            🏛️ KAHIS 보고서
+          </h3>
+          <button
+            type="button"
+            onClick={() => setShowReportForm(!showReportForm)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
+            style={{ background: 'var(--ct-primary)' }}
+          >
+            {showReportForm ? '취소' : '+ 새 보고서'}
+          </button>
+        </div>
+
+        {/* 보고서 생성 폼 */}
+        {showReportForm && (
+          <div
+            className="rounded-lg border p-3 mb-3 space-y-3"
+            style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)' }}
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--ct-text-secondary)' }}>
+                  보고 유형
+                </label>
+                <select
+                  value={newReportType}
+                  onChange={(e) => setNewReportType(e.target.value as KahisReportType)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                >
+                  {(Object.entries(REPORT_TYPE_LABELS) as [KahisReportType, string][]).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--ct-text-secondary)' }}>
+                  질병
+                </label>
+                <select
+                  value={newDiseaseIdx}
+                  onChange={(e) => setNewDiseaseIdx(Number(e.target.value))}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                >
+                  {COMMON_DISEASES.map((d, i) => (
+                    <option key={d.code} value={i}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  const disease = COMMON_DISEASES[newDiseaseIdx];
+                  createReportMutation.mutate({
+                    investigationId,
+                    reportType: newReportType,
+                    diseaseCode: disease?.code ?? 'OTHER',
+                    diseaseName: disease?.name ?? '기타',
+                  });
+                }}
+                disabled={createReportMutation.isPending}
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-white"
+                style={{ background: 'var(--ct-primary)' }}
+              >
+                {createReportMutation.isPending ? '생성 중...' : '보고서 생성'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 보고서 목록 */}
+        <div className="space-y-2">
+          {(kahisReports ?? []).length === 0 && !showReportForm && (
+            <p className="text-xs py-4 text-center" style={{ color: 'var(--ct-text-secondary)' }}>
+              등록된 KAHIS 보고서가 없습니다
+            </p>
+          )}
+          {(kahisReports ?? []).map((report) => {
+            const sCfg = KAHIS_STATUS_CONFIG[report.status];
+            return (
+              <div
+                key={report.reportId}
+                className="flex items-center justify-between rounded-lg border px-3 py-2.5"
+                style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)' }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sCfg.color}`}>
+                    {sCfg.label}
+                  </span>
+                  <span className="text-xs font-medium" style={{ color: 'var(--ct-text)' }}>
+                    {REPORT_TYPE_LABELS[report.reportType]}
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                    {report.diseaseName} ({report.diseaseCode})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+                    {new Date(report.createdAt).toLocaleDateString('ko')}
+                  </span>
+                  {report.status === 'draft' && (
+                    <button
+                      type="button"
+                      onClick={() => patchReportMutation.mutate({ id: report.reportId, status: 'submitted' })}
+                      disabled={patchReportMutation.isPending}
+                      className="rounded px-2 py-1 text-xs font-semibold text-white"
+                      style={{ background: '#3b82f6' }}
+                    >
+                      제출
+                    </button>
+                  )}
+                  {report.status === 'revision_required' && (
+                    <button
+                      type="button"
+                      onClick={() => patchReportMutation.mutate({ id: report.reportId, status: 'submitted' })}
+                      disabled={patchReportMutation.isPending}
+                      className="rounded px-2 py-1 text-xs font-semibold text-white"
+                      style={{ background: '#f97316' }}
+                    >
+                      재제출
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* 버튼 */}
