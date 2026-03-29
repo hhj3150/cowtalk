@@ -239,13 +239,14 @@ export class PipelineOrchestrator {
     const metricTypeMap: Readonly<Record<string, string>> = {
       temp: 'temperature',
       act: 'activity',
+      rum_index: 'rumination',
     };
 
     for (const animal of activeAnimals) {
       if (!animal.externalId) continue;
 
       try {
-        for (const metric of ['temp', 'act']) {
+        for (const metric of ['temp', 'act', 'rum_index']) {
           const data = await this.smaxtec.fetchSensorData(
             animal.externalId, metric, fromStr, toStr,
           );
@@ -262,7 +263,8 @@ export class PipelineOrchestrator {
             animalId: animal.animalId,
             timestamp: new Date(d.ts * 1000),
             metricType: metricTypeMap[metric] ?? metric,
-            value: d.value,
+            // rum_index: smaXtec 초 단위 → DB 분 단위 변환
+            value: metric === 'rum_index' ? Math.round(d.value / 60) : d.value,
             qualityFlag: 'good' as const,
           }));
 
