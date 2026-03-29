@@ -522,6 +522,85 @@ export default function CowProfilePage(): React.JSX.Element {
         </div>
       </div>
 
+      {/* ── 번식 KPI 카드 — 수의사 필수 진료 항목 ── */}
+      {(() => {
+        const lastCalving = breeding.find((e) => e.eventType === 'calving');
+        const lastInsem = breeding.find((e) => e.eventType === 'insemination');
+        const lastPregCheck = breeding.filter((e) => e.eventType === 'pregnancy_check');
+        const pregResult = lastPregCheck.length > 0 ? (lastPregCheck[0]!.notes?.includes('positive') || lastPregCheck[0]!.notes?.includes('pregnant') ? 'pregnant' : 'open') : null;
+
+        // 임신 상태 판별: pregnancy_check 결과 > 수정 후 일수 기반 추정
+        let pregLabel = '미확인';
+        let pregColor = '#94a3b8';
+        if (lastInsem) {
+          const daysSinceInsem = Math.floor((Date.now() - new Date(lastInsem.eventDate).getTime()) / 86_400_000);
+          if (pregResult === 'pregnant') {
+            pregLabel = `임신 확인 (${daysSinceInsem}일)`;
+            pregColor = '#22c55e';
+          } else if (pregResult === 'open') {
+            pregLabel = '공태 (미임신)';
+            pregColor = '#f97316';
+          } else if (daysSinceInsem < 30) {
+            pregLabel = `수정 ${daysSinceInsem}일 (감정 대기)`;
+            pregColor = '#3b82f6';
+          } else {
+            pregLabel = `수정 ${daysSinceInsem}일 (감정 필요)`;
+            pregColor = '#eab308';
+          }
+        } else if (!lastCalving && !lastInsem) {
+          pregLabel = '번식 이력 없음';
+        }
+
+        const formatDate = (d: string | undefined): string => {
+          if (!d) return '—';
+          return new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+        };
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+            {/* 산차 */}
+            <div style={{ background: 'var(--ct-card)', border: '1px solid #a855f725', borderRadius: 10, padding: isMobile ? '10px 12px' : '12px 14px', borderLeft: '3px solid #a855f7' }}>
+              <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>산차</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
+                <span style={{ fontSize: isMobile ? 32 : 22, fontWeight: 800, color: '#a855f7' }}>{profile.parity}</span>
+                <span style={{ fontSize: isMobile ? 12 : 10, color: 'var(--ct-text-muted)' }}>산</span>
+              </div>
+              <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2, color: 'var(--ct-text-muted)' }}>{profile.lactationStatus ?? '—'}</div>
+            </div>
+
+            {/* 최근 분만일 */}
+            <div style={{ background: 'var(--ct-card)', border: '1px solid #ef444425', borderRadius: 10, padding: isMobile ? '10px 12px' : '12px 14px', borderLeft: '3px solid #ef4444' }}>
+              <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>최근 분만</div>
+              <div style={{ fontSize: isMobile ? 18 : 15, fontWeight: 800, color: '#ef4444', marginTop: 4 }}>
+                {formatDate(lastCalving?.eventDate)}
+              </div>
+              <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2, color: 'var(--ct-text-muted)' }}>
+                {lastCalving ? `${Math.floor((Date.now() - new Date(lastCalving.eventDate).getTime()) / 86_400_000)}일 전` : '기록 없음'}
+              </div>
+            </div>
+
+            {/* 최근 수정일 */}
+            <div style={{ background: 'var(--ct-card)', border: '1px solid #3b82f625', borderRadius: 10, padding: isMobile ? '10px 12px' : '12px 14px', borderLeft: '3px solid #3b82f6' }}>
+              <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>최근 수정</div>
+              <div style={{ fontSize: isMobile ? 18 : 15, fontWeight: 800, color: '#3b82f6', marginTop: 4 }}>
+                {formatDate(lastInsem?.eventDate)}
+              </div>
+              <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2, color: 'var(--ct-text-muted)' }}>
+                {lastInsem ? `${Math.floor((Date.now() - new Date(lastInsem.eventDate).getTime()) / 86_400_000)}일 전` : '기록 없음'}
+              </div>
+            </div>
+
+            {/* 임신 상태 */}
+            <div style={{ background: 'var(--ct-card)', border: `1px solid ${pregColor}25`, borderRadius: 10, padding: isMobile ? '10px 12px' : '12px 14px', borderLeft: `3px solid ${pregColor}` }}>
+              <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>임신 상태</div>
+              <div style={{ fontSize: isMobile ? 14 : 12, fontWeight: 800, color: pregColor, marginTop: 6, lineHeight: 1.3 }}>
+                {pregLabel}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── 센서 차트 (최상단 — 가장 중요) ── */}
       <div style={{ marginBottom: 16 }}>
         <SectionErrorBoundary label="센서 데이터">
