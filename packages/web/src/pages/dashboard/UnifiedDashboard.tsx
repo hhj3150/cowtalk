@@ -656,8 +656,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
       background: 'var(--ct-bg)',
       color: 'var(--ct-text)',
       minHeight: '100vh',
-      padding: isMobile ? '12px 10px 80px' : '20px 24px 40px',
-      maxWidth: '100vw',
+      padding: isMobile ? '12px 10px 80px' : '16px 20px 32px',
+      maxWidth: isMobile ? '100vw' : 1280,
+      margin: '0 auto',
       overflowX: 'hidden',
       boxSizing: 'border-box',
     }}>
@@ -668,8 +669,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
         alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'space-between',
         gap: isMobile ? 8 : 0,
-        marginBottom: isMobile ? 12 : 24,
-        paddingBottom: isMobile ? 10 : 16,
+        marginBottom: isMobile ? 10 : 16,
+        paddingBottom: isMobile ? 8 : 12,
         borderBottom: '1px solid var(--ct-border)',
       }}>
         {isMobile ? (
@@ -725,7 +726,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
       {isLoading ? (
         <div style={{ padding: 24 }}><LoadingSkeleton lines={8} /></div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14 }}>
           {/* ── 전염병 배너 ── */}
           <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
 
@@ -746,7 +747,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널) ── */}
           {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
             {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
             {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => navigate(`/animals/${aid}`)} />}
           </div>
@@ -829,7 +830,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 건강 알림 + 번식 관리 (수정사/사료회사 제외) ── */}
           {!isVisible('insemination_route') && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
             {healthAlertsData && (
               <HealthAlertsWidget
                 items={healthAlertsData}
@@ -854,7 +855,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 소버린 AI 어시스턴트 — 지식 강화 루프 ── */}
           <>
           <SectionLabel>AI 어시스턴트</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : ((data?.assistantAlerts && data.assistantAlerts.length > 0) ? '1fr 1fr' : '1fr'), gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : ((data?.assistantAlerts && data.assistantAlerts.length > 0) ? '1fr 1fr' : '1fr'), gap: isMobile ? 10 : 12, alignItems: 'start' }}>
             {data?.assistantAlerts && data.assistantAlerts.length > 0 && (
               <AssistantAlertPanel
                 alerts={data.assistantAlerts}
@@ -899,7 +900,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* 알림 트렌드: 전체 뷰에서도 의미 있음 (전국 발생 추이) */}
           {isVisible('alert_trend_chart') && (<>
           <SectionLabel>분석 차트</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: isMobile ? 12 : 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: isMobile ? 10 : 12 }}>
             {isVisible('alert_trend_chart') && (
             <ChartCard title="알림 트렌드 (14일)" icon="📊" delay={100}>
               {alertTrendData && alertTrendData.length > 0
@@ -940,7 +941,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           )}
 
           {(isVisible('temperature_scatter') || isVisible('event_timeline_chart')) && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (isVisible('temperature_scatter') && isVisible('event_timeline_chart') ? '1fr 1fr' : '1fr'), gap: isMobile ? 12 : 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (isVisible('temperature_scatter') && isVisible('event_timeline_chart') ? '1fr 1fr' : '1fr'), gap: isMobile ? 10 : 12 }}>
             {isVisible('temperature_scatter') && (
             <ChartCard title="위내센서 체온 (24시간)" icon="🌡️" delay={200}>
               {tempDistData && tempDistData.timeline && tempDistData.timeline.length > 0
@@ -966,7 +967,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
           {/* ── 농장 순위 + 역학 지도 ── */}
           {(isVisible('farm_ranking') || isVisible('epidemic_map')) && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
             {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => selectFarm(fid)} />}
             {isVisible('epidemic_map') && <EpidemicMapWidget onClusterClick={(id) => setEpidemicClusterId(id)} />}
           </div>

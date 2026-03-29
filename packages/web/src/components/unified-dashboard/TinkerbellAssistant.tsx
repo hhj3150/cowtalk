@@ -213,8 +213,49 @@ export function TinkerbellAssistant({
   const [state, setState] = useState<TinkerbellState>('idle');
   const [isOpen, setIsOpen] = useState(alwaysOpen);
   const [isExpanded, setIsExpanded] = useState(false); // alwaysOpen 모드: 메시지 영역 펼침
+  const [isMinimized, setIsMinimized] = useState(false);
   const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly TinkerbellMessage[]>([]);
+
+  // ── 플로팅 팝업 위치/크기 ──
+  const POPUP_KEY = 'ct-tinkerbell-pos';
+  const defaultPos = { x: typeof window !== 'undefined' ? window.innerWidth - 440 : 400, y: typeof window !== 'undefined' ? window.innerHeight - 560 : 200, w: 420, h: 520 };
+  const [popupPos, setPopupPos] = useState(() => {
+    try { const s = localStorage.getItem(POPUP_KEY); if (s) return JSON.parse(s); } catch { /* */ }
+    return defaultPos;
+  });
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const resizeRef = useRef<{ sx: number; sy: number; ow: number; oh: number } | null>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(POPUP_KEY, JSON.stringify(popupPos)); } catch { /* */ }
+  }, [popupPos]);
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    if (isMobile) return;
+    e.preventDefault();
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: popupPos.x, oy: popupPos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      setPopupPos((p: typeof popupPos) => ({ ...p, x: Math.max(0, Math.min(window.innerWidth - p.w, dragRef.current!.ox + ev.clientX - dragRef.current!.sx)), y: Math.max(0, Math.min(window.innerHeight - 48, dragRef.current!.oy + ev.clientY - dragRef.current!.sy)) }));
+    };
+    const onUp = () => { dragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [isMobile, popupPos.x, popupPos.y]);
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    if (isMobile) return;
+    e.preventDefault(); e.stopPropagation();
+    resizeRef.current = { sx: e.clientX, sy: e.clientY, ow: popupPos.w, oh: popupPos.h };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      setPopupPos((p: typeof popupPos) => ({ ...p, w: Math.max(320, Math.min(800, resizeRef.current!.ow + ev.clientX - resizeRef.current!.sx)), h: Math.max(300, Math.min(900, resizeRef.current!.oh + ev.clientY - resizeRef.current!.sy)) }));
+    };
+    const onUp = () => { resizeRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [isMobile, popupPos.w, popupPos.h]);
   const [transcript, setTranscript] = useState('');
   const [inputText, setInputText] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -738,16 +779,14 @@ export function TinkerbellAssistant({
     );
   }
 
-  // ── 열린 상태 (채팅 패널) ──
+  // ── 열린 상태 (플로팅 팝업) ──
   return (
     <div style={{
       position: 'fixed',
-      bottom: isMobile ? 60 : 24,
-      right: isMobile ? 0 : 24,
-      left: isMobile ? 0 : undefined,
-      width: isMobile ? '100%' : 400,
-      maxHeight: isMobile ? 'calc(100vh - 120px)' : '70vh',
-      borderRadius: isMobile ? '16px 16px 0 0' : 16,
+      ...(isMobile
+        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100vh - 120px)' }
+        : { left: popupPos.x, top: popupPos.y, width: popupPos.w, height: isMinimized ? 48 : popupPos.h }),
+      borderRadius: isMobile ? '16px 16px 0 0' : 14,
       background: 'var(--ct-card, #1e293b)',
       border: '1px solid var(--ct-border, #334155)',
       boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
@@ -755,16 +794,24 @@ export function TinkerbellAssistant({
       flexDirection: 'column',
       zIndex: 9999,
       overflow: 'hidden',
+      transition: isMinimized ? 'height 0.2s ease' : undefined,
     }}>
-      {/* 헤더 */}
-      <div style={{
-        padding: '14px 16px',
-        borderBottom: '1px solid var(--ct-border, #334155)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: `linear-gradient(135deg, ${color}15, transparent)`,
-      }}>
+      {/* 헤더 — 드래그 가능 */}
+      <div
+        onMouseDown={onDragStart}
+        onDoubleClick={() => !isMobile && setIsMinimized((v) => !v)}
+        style={{
+          padding: '10px 14px',
+          borderBottom: isMinimized ? 'none' : '1px solid var(--ct-border, #334155)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: `linear-gradient(135deg, ${color}15, transparent)`,
+          cursor: isMobile ? 'default' : 'move',
+          userSelect: 'none',
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32,
@@ -790,31 +837,34 @@ export function TinkerbellAssistant({
             </div>
           </div>
         </div>
-        <button
-          onClick={() => { stopSpeaking(); setIsOpen(false); setAnimalContext(null); setAnimalIdForChat(null); setFarmIdForChat(null); }}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--ct-text-muted, #94a3b8)',
-            cursor: 'pointer',
-            fontSize: 18,
-            padding: 4,
-          }}
-        >
-          ✕
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {!isMobile && (
+            <button
+              onClick={() => setIsMinimized((v) => !v)}
+              style={{ background: 'none', border: 'none', color: 'var(--ct-text-muted, #94a3b8)', cursor: 'pointer', fontSize: 16, padding: 4 }}
+              title={isMinimized ? '펼치기' : '최소화'}
+            >
+              {isMinimized ? '□' : '—'}
+            </button>
+          )}
+          <button
+            onClick={() => { stopSpeaking(); setIsOpen(false); setIsMinimized(false); setAnimalContext(null); setAnimalIdForChat(null); setFarmIdForChat(null); }}
+            style={{ background: 'none', border: 'none', color: 'var(--ct-text-muted, #94a3b8)', cursor: 'pointer', fontSize: 18, padding: 4 }}
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* 메시지 영역 */}
-      <div style={{
+      {!isMinimized && <div style={{
         flex: 1,
         overflowY: 'auto',
         padding: '12px 16px',
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
-        minHeight: 200,
-        maxHeight: '45vh',
+        minHeight: 100,
       }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
@@ -923,9 +973,10 @@ export function TinkerbellAssistant({
         )}
 
         <div ref={messagesEndRef} />
-      </div>
+      </div>}
 
       {/* 입력 영역 */}
+      {!isMinimized && (
       <div style={{
         padding: '12px 16px',
         borderTop: '1px solid var(--ct-border, #334155)',
@@ -1038,6 +1089,29 @@ export function TinkerbellAssistant({
           </button>
         )}
       </div>
+      )}
+
+      {/* 리사이즈 핸들 (데스크톱, 펼친 상태에서만) */}
+      {!isMobile && !isMinimized && (
+        <div
+          onMouseDown={onResizeStart}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 16,
+            height: 16,
+            cursor: 'nwse-resize',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--ct-text-muted, #64748b)" opacity="0.5">
+            <path d="M9 1L1 9M9 5L5 9M9 9L9 9" stroke="var(--ct-text-muted, #64748b)" strokeWidth="1.5" fill="none" />
+          </svg>
+        </div>
+      )}
 
       {/* 애니메이션 */}
       <style>{`
