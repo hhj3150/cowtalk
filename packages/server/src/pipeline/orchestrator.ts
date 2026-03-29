@@ -335,6 +335,16 @@ export class PipelineOrchestrator {
     const db = getDb();
     logger.info('[Pipeline] Running sensor aggregation');
 
+    // unique index 보장 (Railway 등 원격 DB에 아직 없을 수 있음)
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS sensor_hourly_agg_unique_idx
+      ON sensor_hourly_agg (animal_id, hour, metric_type)
+    `);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS sensor_daily_agg_unique_idx
+      ON sensor_daily_agg (animal_id, date, metric_type)
+    `);
+
     // sensor_measurements 기반 hourly/daily 집계를 SQL로 실행
     // ON CONFLICT: 이미 집계된 시간대는 최신 값으로 갱신
     const now = new Date();
