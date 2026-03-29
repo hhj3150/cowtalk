@@ -321,6 +321,39 @@ AnimalDetail "개체를 찾을 수 없습니다" 버그 수정 완료:
   - 수집 메트릭: temperature, activity (rumination/water_intake/ph는 smaXtec API 미지원)
   - unique index: (animal_id, timestamp, metric_type) — 중복 삽입 방지
 
+## 방역 시스템 강화 (2026-03-29 오후)
+
+DB 영속화:
+- 4개 테이블 추가: investigations, animal_transfers, quarantine_actions, kahis_reports
+- investigation 서비스 인메모리 Map→PostgreSQL 전환
+- contact-tracer mock→animalTransfers 테이블 기반 (DB 우선, 없으면 지역 fallback)
+- 방역조치 CRUD: quarantine-action.repository + service + routes (6유형 × 4상태)
+
+팅커벨 방역 모드:
+- quarantine_officer 역할 + 방역 키워드 → 방역 전용 컨텍스트 자동 활성화
+- context-builder: 40+ 방역 키워드 감지, 시도/시군구 지역명 자동 추출
+- conversation-prompt: KPI 6개 + TOP5 위험농장 + 시도별 현황 + 24시간 추이 주입
+- UI: 🛡️ 방역모드 뱃지 + 전용 suggestions 4개 + 오렌지 테마
+
+3단계 드릴다운 대시보드:
+- NationalMiniMap 공용 컴포넌트 (Leaflet 지도 + 시도 리스트)
+- 메인 대시보드에 전국 지도 통합 (KPI 바로 아래, 상황실 크기 420px)
+- 드릴다운: 전국→시도→농장→개체→AI 한 화면 완결
+- 146개 농장 실좌표 CircleMarker (두수 비례 크기, 위험등급 색상)
+
+좌표 기반 시도 매핑:
+- province-mapper.ts: lat/lng→한국 9개 시도 자동 판별 (경계 박스 + 최근접 fallback)
+- regionId 없는 농장(smaXtec 동기화)도 좌표로 시도 분류
+- "전국" 가짜 시도명 → 좌표 fallback 자동 전환
+- 결과: 경기52, 충남27, 충북24, 경북14, 전북10, 전남8, 제주4, 강원3, 경남3, 해외1
+
+번식 파이프라인 서비스:
+- breeding-pipeline.service.ts: 6단계 칸반 (open→발정→수정→임신→후기→분만)
+- 실 DB 데이터 기반 단계 판별 (smaxtecEvents + breedingEvents + pregnancyChecks)
+- KPI 5개: 수태율, 발정탐지율, 평균공태일, 분만간격, 첫수정일수
+- 긴급 조치: inseminate_now, pregnancy_check_due, calving_imminent, repeat_breeder
+- GET /breeding/pipeline, GET /breeding/pipeline/:farmId
+
 ## 보고 형식 (매 작업 후)
 
 1. 분석한 것
