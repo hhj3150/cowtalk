@@ -101,7 +101,10 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
 
     const farmsWithProvince: FarmWithProvince[] = allFarms.map((f) => {
       const region = f.regionId ? regionMap.get(f.regionId) : undefined;
-      const province = region?.province ?? latLngToProvince(f.lat, f.lng);
+      const dbProvince = region?.province;
+      // "전국", "smaXtec 연동" 등 유효하지 않은 시도명이면 좌표 fallback
+      const isValidProvince = dbProvince && dbProvince !== '전국' && PROVINCE_CENTERS[dbProvince];
+      const province = isValidProvince ? dbProvince : latLngToProvince(f.lat, f.lng);
       return {
         farmId: f.farmId,
         province,
@@ -434,8 +437,10 @@ export async function getAllMapFarms(): Promise<readonly MapFarmItem[]> {
       .filter((r) => r.lat != null && r.lng != null)
       .map((r) => {
         const region = r.regionId ? regionMap.get(r.regionId) : undefined;
-        const province = region?.province ?? latLngToProvince(r.lat, r.lng);
-        const district = region?.district ?? '미분류';
+        const dbProvince = region?.province;
+        const isValidProvince = dbProvince && dbProvince !== '전국' && PROVINCE_CENTERS[dbProvince];
+        const province = isValidProvince ? dbProvince : latLngToProvince(r.lat, r.lng);
+        const district = (isValidProvince && region?.district) ? region.district : '미분류';
         const feverCount = feverMap.get(r.farmId) ?? 0;
         const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
 
