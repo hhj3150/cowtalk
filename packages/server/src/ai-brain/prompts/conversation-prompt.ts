@@ -6,10 +6,64 @@ import type { AnimalProfile, FarmProfile, Role } from '@cowtalk/shared';
 import type { GlobalContext } from '../../pipeline/profile-builder.js';
 import { ROLE_CONTEXT } from './system-prompt.js';
 
+export interface QuarantineContextData {
+  readonly kpi: {
+    readonly totalAnimals: number;
+    readonly sensorRate: number;
+    readonly feverAnimals: number;
+    readonly clusterFarms: number;
+    readonly legalDiseaseSuspects: number;
+    readonly riskLevel: string;
+    readonly feverRate: number;
+  };
+  readonly top5RiskFarms: readonly {
+    readonly farmName: string;
+    readonly feverCount: number;
+    readonly riskScore: number;
+    readonly clusterAlert: boolean;
+    readonly legalSuspect: boolean;
+  }[];
+  readonly hourlyFever24h: readonly { readonly hour: string; readonly count: number }[];
+  readonly activeAlerts: readonly {
+    readonly farmName: string;
+    readonly alertType: string;
+    readonly priority: string;
+    readonly title: string;
+    readonly createdAt: string;
+  }[];
+  readonly nationalSummary: {
+    readonly totalFarms: number;
+    readonly totalAnimals: number;
+    readonly feverAnimals: number;
+    readonly nationalFeverRate: number;
+    readonly highRiskProvinces: number;
+    readonly broadAlertActive: boolean;
+    readonly broadAlertMessage: string | null;
+  };
+  readonly provinces: readonly {
+    readonly province: string;
+    readonly farmCount: number;
+    readonly feverAnimals: number;
+    readonly feverRate: number;
+    readonly riskLevel: string;
+  }[];
+  readonly weeklyFeverTrend: readonly { readonly week: string; readonly feverRate: number }[];
+  readonly actionQueue: readonly {
+    readonly farmName: string;
+    readonly type: string;
+    readonly priority: string;
+    readonly title: string;
+    readonly status: string;
+  }[];
+  readonly targetProvince?: string;
+  readonly provinceDetail?: readonly unknown[];
+}
+
 export type ChatContext =
   | { readonly type: 'animal'; readonly profile: AnimalProfile }
   | { readonly type: 'farm'; readonly profile: FarmProfile }
   | { readonly type: 'global'; readonly globalContext: GlobalContext; readonly dashboardSummary?: string }
+  | { readonly type: 'quarantine'; readonly quarantineData: QuarantineContextData }
   | { readonly type: 'general'; readonly dashboardSummary?: string };
 
 export function buildConversationPrompt(
@@ -30,6 +84,8 @@ export function buildConversationPrompt(
     sections.push(buildAnimalContext(context.profile));
   } else if (context.type === 'farm') {
     sections.push(buildFarmContext(context.profile));
+  } else if (context.type === 'quarantine') {
+    sections.push(buildQuarantineContextPrompt(context.quarantineData));
   } else if (context.type === 'global') {
     sections.push(buildGlobalContextPrompt(context.globalContext));
     if (context.dashboardSummary) {
@@ -107,6 +163,117 @@ ${question}`);
 export interface ConversationTurn {
   readonly role: 'user' | 'assistant';
   readonly content: string;
+}
+
+function buildQuarantineContextPrompt(data: QuarantineContextData): string {
+  const RISK_EMOJI: Readonly<Record<string, string>> = {
+    green: '🟢', yellow: '🟡', orange: '🟠', red: '🔴',
+  };
+  const riskEmoji = RISK_EMOJI[data.kpi.riskLevel] ?? '⚪';
+
+  const lines: string[] = [
+    `## 맥락: 방역 모니터링 (전국 ${String(data.nationalSummary.totalFarms)}개 농장, ${String(data.nationalSummary.totalAnimals)}두)`,
+    '',
+    `### 방역 KPI (실시간)`,
+    `- 위험 등급: ${riskEmoji} **${data.kpi.riskLevel.toUpperCase()}**`,
+    `- 감시 두수: **${String(data.kpi.totalAnimals)}두** (센서 장착률 ${String(Math.round(data.kpi.sensorRate * 100))}%)`,
+    `- 발열 두수: **${String(data.kpi.feverAnimals)}두** (발열률 ${String((data.kpi.feverRate * 100).toFixed(1))}%)`,
+    `- 집단발열 농장: **${String(data.kpi.clusterFarms)}개**`,
+    `- 법정전염병 의심: **${String(data.kpi.legalDiseaseSuspects)}건**`,
+  ];
+
+  // 광역 경보
+  if (data.nationalSummary.broadAlertActive && data.nationalSummary.broadAlertMessage) {
+    lines.push('');
+    lines.push(`### 🚨 광역 경보`);
+    lines.push(`${data.nationalSummary.broadAlertMessage}`);
+  }
+
+  // TOP 5 위험 농장
+  if (data.top5RiskFarms.length > 0) {
+    lines.push('');
+    lines.push(`### 위험 농장 TOP ${String(data.top5RiskFarms.length)}`);
+    for (const farm of data.top5RiskFarms) {
+      const tags: string[] = [];
+      if (farm.clusterAlert) tags.push('집단발열');
+      if (farm.legalSuspect) tags.push('법정전염병의심');
+      const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+      lines.push(`- **${farm.farmName}** — 발열 ${String(farm.feverCount)}두, 위험점수 ${String(farm.riskScore)}${tagStr}`);
+    }
+  }
+
+  // 시도별 현황
+  const riskyProvinces = data.provinces.filter((p) => p.feverAnimals > 0);
+  if (riskyProvinces.length > 0) {
+    lines.push('');
+    lines.push(`### 시도별 현황`);
+    for (const p of riskyProvinces) {
+      const pEmoji = RISK_EMOJI[p.riskLevel] ?? '⚪';
+      lines.push(`- ${pEmoji} **${p.province}**: ${String(p.farmCount)}농장, 발열 ${String(p.feverAnimals)}두 (${String((p.feverRate * 100).toFixed(1))}%)`);
+    }
+  }
+
+  // 특정 지역 상세 (사용자가 지역명 언급 시)
+  if (data.targetProvince && data.provinceDetail && Array.isArray(data.provinceDetail) && data.provinceDetail.length > 0) {
+    lines.push('');
+    lines.push(`### 📍 ${data.targetProvince} 상세`);
+    for (const d of data.provinceDetail as Array<{ district: string; farmCount: number; feverAnimals: number; feverRate: number; riskLevel: string }>) {
+      const dEmoji = RISK_EMOJI[d.riskLevel] ?? '⚪';
+      lines.push(`- ${dEmoji} ${d.district}: ${String(d.farmCount)}농장, 발열 ${String(d.feverAnimals)}두 (${String((d.feverRate * 100).toFixed(1))}%)`);
+    }
+  }
+
+  // 24시간 발열 추이
+  if (data.hourlyFever24h.length > 0) {
+    const recentHours = data.hourlyFever24h.slice(-6);
+    const trend = recentHours.map((h) => String(h.count)).join('→');
+    lines.push('');
+    lines.push(`### 24시간 발열 추이 (최근 6시간)`);
+    lines.push(`${trend} 두`);
+  }
+
+  // 주간 추이
+  if (data.weeklyFeverTrend.length > 0) {
+    const latestWeek = data.weeklyFeverTrend[data.weeklyFeverTrend.length - 1];
+    const prevWeek = data.weeklyFeverTrend.length >= 2 ? data.weeklyFeverTrend[data.weeklyFeverTrend.length - 2] : null;
+    if (latestWeek) {
+      const trendDir = prevWeek
+        ? latestWeek.feverRate > prevWeek.feverRate ? '상승' : latestWeek.feverRate < prevWeek.feverRate ? '하락' : '유지'
+        : '—';
+      lines.push(`- 주간 발열률: ${String((latestWeek.feverRate * 100).toFixed(1))}% (전주 대비 ${trendDir})`);
+    }
+  }
+
+  // 대기 중인 방역 조치
+  const pendingActions = data.actionQueue.filter((a) => a.status === 'pending' || a.status === 'dispatched');
+  if (pendingActions.length > 0) {
+    lines.push('');
+    lines.push(`### 대기 방역 조치 (${String(pendingActions.length)}건)`);
+    for (const a of pendingActions.slice(0, 5)) {
+      lines.push(`- [${a.priority}] ${a.farmName}: ${a.title}`);
+    }
+  }
+
+  // 활성 알림
+  if (data.activeAlerts.length > 0) {
+    lines.push('');
+    lines.push(`### 활성 알림 (${String(data.activeAlerts.length)}건)`);
+    for (const a of data.activeAlerts.slice(0, 8)) {
+      lines.push(`- [${a.priority}] ${a.farmName}: ${a.title}`);
+    }
+  }
+
+  // 방역관 응답 지침
+  lines.push('');
+  lines.push(`### 응답 지침 (방역 모드)
+- 위 역학 데이터를 기반으로 **현재 위험 수준, 원인 분석, 즉각 조치**를 답변하��요
+- 법정전염병 의심 시: KAHIS 보고 기준(유사도 80%↑) 언급, 격리·PCR 검사 권고
+- 집단발열 시: 접��� 추적, 이동제한, 소독 프로토콜 안내
+- 지역별 질문 시: 해당 시도/시군구 데이터를 중심으로 답변
+- 추이 분석 시: 24시간/7일 추이를 근거로 확산 속도 판단
+- "현�� CowTalk 방역 모니터링 데이터 기준" 명시`);
+
+  return lines.join('\n');
 }
 
 function buildAnimalContext(profile: AnimalProfile): string {

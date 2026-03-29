@@ -163,7 +163,7 @@ export interface ChatResponse {
   readonly dataReferences: readonly string[];
   readonly followUpSuggestions: readonly string[];
   readonly role: Role;
-  readonly context: 'animal' | 'farm' | 'global' | 'region' | 'general';
+  readonly context: 'animal' | 'farm' | 'global' | 'region' | 'quarantine' | 'general';
   readonly isFallback?: boolean;
 }
 

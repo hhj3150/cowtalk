@@ -8,7 +8,7 @@ import {
   buildConversationPrompt,
   type ConversationTurn,
 } from '../ai-brain/prompts/conversation-prompt.js';
-import { resolveContext } from './context-builder.js';
+import { resolveContext, type DetectedType } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext } from '../ai-brain/label-context.js';
@@ -35,7 +35,7 @@ export async function handleChatMessage(
 
   // 1. 컨텍스트 해결 (실패해도 fallback으로 응답)
   let context: Awaited<ReturnType<typeof resolveContext>>['context'];
-  let detectedType: 'animal' | 'farm' | 'global' | 'general' = 'general';
+  let detectedType: DetectedType = 'general';
   try {
     const resolved = await resolveContext(
       question, farmId, animalId, role, dashboardContext,
@@ -232,7 +232,7 @@ const FALLBACK_HINTS: Readonly<Record<string, readonly string[]>> = {
 function buildFallbackResponse(
   _question: string,
   role: Role,
-  detectedType: 'animal' | 'farm' | 'global' | 'general',
+  detectedType: DetectedType,
 ): ChatResponse {
   const hints = FALLBACK_HINTS[role] ?? [];
   const hintText = hints.length > 0
@@ -262,7 +262,17 @@ export function buildStreamFallback(
 ): string {
   const lines: string[] = [];
 
-  if (context.type === 'global' && context.globalContext) {
+  if (context.type === 'quarantine' && context.quarantineData) {
+    const q = context.quarantineData;
+    lines.push(`🛡️ **방역 모니터링 현황** (AI 엔진 오프라인 — 데이터 직접 제공)`);
+    lines.push(`\n• 위험 등급: **${q.kpi.riskLevel.toUpperCase()}** | 발열: **${String(q.kpi.feverAnimals)}두** | 집단발열 농장: **${String(q.kpi.clusterFarms)}개**`);
+    if (q.top5RiskFarms.length > 0) {
+      lines.push(`\n**위험 농장:**`);
+      for (const f of q.top5RiskFarms.slice(0, 5)) {
+        lines.push(`• ${f.farmName}: 발열 ${String(f.feverCount)}두, 위험점수 ${String(f.riskScore)}`);
+      }
+    }
+  } else if (context.type === 'global' && context.globalContext) {
     const ctx = context.globalContext;
     lines.push(`📊 **CowTalk 실시간 현황** (AI 엔진 오프라인 — 데이터 직접 제공)`);
     lines.push(`\n• 관리 농장: **${String(ctx.totalFarms)}개** | 관리 두수: **${String(ctx.totalAnimals)}두**`);

@@ -163,7 +163,17 @@ interface DashboardContext {
   readonly animalCount: number;
 }
 
-function getContextualSuggestions(ctx?: DashboardContext): readonly string[] {
+function getContextualSuggestions(ctx?: DashboardContext, role?: string): readonly string[] {
+  // 방역관 전용 suggestions
+  if (role === 'quarantine_officer') {
+    return [
+      '전국 발열 현황 알려줘',
+      '위험 농장 TOP 5',
+      '오늘 방역 조치 대기 건수',
+      '클러스터 발생 현황',
+    ];
+  }
+
   const base: string[] = [];
 
   if (ctx) {
@@ -221,9 +231,10 @@ export function TinkerbellAssistant({
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
+  const isQuarantineMode = user?.role === 'quarantine_officer';
   const suggestions = animalContext
     ? ['이 소 지금 수정해도 돼?', '체온이 왜 높아?', '다음에 뭘 해야 해?', '이 소 번식 이력 분석해줘']
-    : getContextualSuggestions(dashboardContext);
+    : getContextualSuggestions(dashboardContext, user?.role);
 
   // 음성 인식 지원 여부
   const hasSpeechRecognition = typeof window !== 'undefined' &&
@@ -623,6 +634,7 @@ export function TinkerbellAssistant({
               placeholder={
                 state === 'listening' ? '듣는 중...' :
                 state === 'thinking' ? '답변 생성 중...' :
+                isQuarantineMode ? '방역 현황을 질문하세요...' :
                 animalContext ? '이 개체에 대해 질문하세요...' : '팅커벨에게 물어보세요...'
               }
               disabled={state === 'thinking' || state === 'listening'}
@@ -771,10 +783,10 @@ export function TinkerbellAssistant({
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ct-text, #f1f5f9)' }}>
-              {animalContext ? '🧚 팅커벨 AI' : '🧚 팅커벨 AI'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
+              {isQuarantineMode ? '🛡️ 팅커벨 방역' : '🧚 팅커벨 AI'} <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
             </div>
-            <div style={{ fontSize: 10, color: animalContext ? '#a78bfa' : 'var(--ct-text-muted, #94a3b8)' }}>
-              {animalContext ? '이 개체 전담 요정 모드' : '목장 전담 AI 요정'}
+            <div style={{ fontSize: 10, color: isQuarantineMode ? '#f97316' : animalContext ? '#a78bfa' : 'var(--ct-text-muted, #94a3b8)' }}>
+              {isQuarantineMode ? '방역 모니터링 모드' : animalContext ? '이 개체 전담 요정 모드' : '목장 전담 AI 요정'}
             </div>
           </div>
         </div>
@@ -806,11 +818,13 @@ export function TinkerbellAssistant({
       }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🧚</div>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>{isQuarantineMode ? '🛡️' : '🧚'}</div>
             <div style={{ fontSize: 13, color: 'var(--ct-text-muted, #94a3b8)', marginBottom: 16 }}>
-              {animalContext
-                ? <>이 개체의 <strong style={{ color: '#a78bfa' }}>팅커벨 AI</strong> 전담 요정입니다.<br />센서·알람·번식이력 기반으로 답변합니다.</>
-                : <>안녕하세요! <strong style={{ color: '#a78bfa' }}>팅커벨</strong>이에요.<br />목장 데이터로 무엇이든 답변합니다.</>
+              {isQuarantineMode
+                ? <><strong style={{ color: '#f97316' }}>팅커벨 방역</strong> 모드입니다.<br />전국 역학 데이터 기반으로 답변합니다.</>
+                : animalContext
+                  ? <>이 개체의 <strong style={{ color: '#a78bfa' }}>팅커벨 AI</strong> 전담 요정입니다.<br />센서·알람·번식이력 기반으로 답변합니다.</>
+                  : <>안녕하세요! <strong style={{ color: '#a78bfa' }}>팅커벨</strong>이에요.<br />목장 데이터로 무엇이든 답변합니다.</>
               }
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>

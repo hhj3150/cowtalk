@@ -1,6 +1,7 @@
 // 대화 컨텍스트 빌더
 // 사용자 질문에서 관련 프로파일 데이터를 수집하여 프롬프트에 포함
 // 특정 개체/농장이 아니면 → 전체 농장 글로벌 컨텍스트 제공
+// quarantine_officer + 방역 키워드 → 방역 전용 컨텍스트
 
 import type { Role } from '@cowtalk/shared';
 import { eq, and, isNull, ilike, or } from 'drizzle-orm';
@@ -9,10 +10,14 @@ import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
 import { getDb } from '../config/database.js';
 import { animals, farms } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
+import { getQuarantineDashboard, getActionQueue } from '../services/epidemiology/quarantine-dashboard.service.js';
+import { getNationalSituation, getProvinceDetail } from '../services/epidemiology/national-situation.service.js';
+
+export type DetectedType = 'animal' | 'farm' | 'global' | 'quarantine' | 'general';
 
 export interface ResolvedContext {
   readonly context: ChatContext;
-  readonly detectedType: 'animal' | 'farm' | 'global' | 'general';
+  readonly detectedType: DetectedType;
 }
 
 // 질문에서 맥락 유형 감지 + 관련 데이터 로드
@@ -83,6 +88,16 @@ export async function resolveContext(
     const profile = await buildFarmProfile(currentFarmId);
     if (profile) {
       return { context: { type: 'farm', profile }, detectedType: 'farm' };
+    }
+  }
+
+  // 3.5. 방역관 + 방역 키워드 → 방역 전용 컨텍스트
+  if (isQuarantineQuery(_role, question)) {
+    try {
+      const quarantineCtx = await buildQuarantineContext(question);
+      return { context: quarantineCtx, detectedType: 'quarantine' };
+    } catch (error) {
+      logger.error({ error }, 'Failed to build quarantine context — falling through to global');
     }
   }
 
@@ -201,4 +216,100 @@ async function findAnimalByEarTag(
     logger.error({ error, earTag }, 'Failed to search animal by ear tag');
     return null;
   }
+}
+
+// ===========================
+// 방역 컨텍스트 감지 + 구축
+// ===========================
+
+const QUARANTINE_KEYWORDS = [
+  '방역', '발열', '클러스터', '전국', '역학', '격리', '전염병', '법정전염병',
+  '확산', '감염', '의심', '위험 농장', '발생', '소독', '이동제한',
+  '구제역', '브루셀라', '결핵', '유행열', '럼피스킨', '탄저',
+  'KAHIS', 'kahis', '가축방역', '긴급방역', '살처분', '매몰',
+  '시도별', '지역별', '전국 현황', '위험 등급', 'DSI',
+  'quarantine', 'epidemic', 'outbreak', 'fever',
+] as const;
+
+const PROVINCE_MAP: Readonly<Record<string, string>> = {
+  경기: '경기도', 경기도: '경기도',
+  강원: '강원도', 강원도: '강원도',
+  충북: '충청북도', 충청북도: '충청북도', 충북도: '충청북도',
+  충남: '충청남도', 충청남도: '충청남도', 충남도: '충청남도',
+  전북: '전라북도', 전라북도: '전라북도', 전북도: '전라북도',
+  전남: '전라남도', 전라남도: '전라남도', 전남도: '전라남도',
+  경북: '경상북도', 경상북도: '경상북도', 경북도: '경상북도',
+  경남: '경상남도', 경상남도: '경상남도', 경남도: '경상남도',
+  제주: '제주특별자치도', 제주도: '제주특별자치도',
+  서울: '서울특별시', 부산: '부산광역시', 대구: '대구광역시',
+  인천: '인천광역시', 광주: '광주광역시', 대전: '대전광역시', 울산: '울산광역시',
+  세종: '세종특별자치시',
+  // 시군구 → 시도 매핑 (주요 축산 지역)
+  포천: '경기도', 연천: '경기도', 안성: '경기도', 이천: '경기도', 여주: '경기도',
+  횡성: '강원도', 홍천: '강원도', 평창: '강원도',
+  음성: '충청북도', 충주: '충청북도', 제천: '충청북도',
+  홍성: '충청남도', 예산: '충청남도', 서산: '충청남도',
+  김제: '전라북도', 정읍: '전라북도',
+  장흥: '전라남도', 해남: '전라남도',
+  의성: '경상북도', 안동: '경상북도', 영주: '경상북도',
+  합천: '경상남도', 함양: '경상남도',
+};
+
+function isQuarantineQuery(role: Role, question: string): boolean {
+  // 방역관은 방역 키워드 1개만 있어도 활성화
+  if (role === 'quarantine_officer') {
+    return QUARANTINE_KEYWORDS.some((kw) => question.includes(kw));
+  }
+  // 다른 역할은 명시적 방역 키워드 2개 이상
+  let matchCount = 0;
+  for (const kw of QUARANTINE_KEYWORDS) {
+    if (question.includes(kw)) {
+      matchCount++;
+      if (matchCount >= 2) return true;
+    }
+  }
+  return false;
+}
+
+function detectProvince(question: string): string | null {
+  for (const [keyword, province] of Object.entries(PROVINCE_MAP)) {
+    if (question.includes(keyword)) return province;
+  }
+  return null;
+}
+
+async function buildQuarantineContext(question: string): Promise<ChatContext> {
+  // 병렬로 방역 대시보드 + 전국 현황 + 액션 큐 조회
+  const [dashboard, nationalSituation, actionQueue] = await Promise.all([
+    getQuarantineDashboard(),
+    getNationalSituation(),
+    getActionQueue(),
+  ]);
+
+  // 특정 지역 언급 시 시도 상세 조회
+  const targetProvince = detectProvince(question);
+  let provinceDetail: readonly unknown[] | undefined;
+  if (targetProvince) {
+    try {
+      provinceDetail = await getProvinceDetail(targetProvince);
+    } catch {
+      // 시도 상세 실패는 비치명적
+    }
+  }
+
+  return {
+    type: 'quarantine',
+    quarantineData: {
+      kpi: dashboard.kpi,
+      top5RiskFarms: dashboard.top5RiskFarms,
+      hourlyFever24h: dashboard.hourlyFever24h,
+      activeAlerts: dashboard.activeAlerts,
+      nationalSummary: nationalSituation.nationalSummary,
+      provinces: nationalSituation.provinces,
+      weeklyFeverTrend: nationalSituation.weeklyFeverTrend,
+      actionQueue: actionQueue.slice(0, 10),
+      targetProvince: targetProvince ?? undefined,
+      provinceDetail: provinceDetail ?? undefined,
+    },
+  };
 }
