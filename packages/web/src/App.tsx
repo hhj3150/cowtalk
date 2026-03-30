@@ -8,6 +8,7 @@ import { useAuthStore } from '@web/stores/auth.store';
 import { AppShell } from '@web/components/layout/AppShell';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { ErrorBoundary } from '@web/components/common/ErrorBoundary';
+import { ServerWarmupGate } from '@web/components/common/ServerWarmupGate';
 import type { Role } from '@cowtalk/shared';
 
 // Lazy-loaded 페이지
@@ -77,6 +78,7 @@ function RoleAwareHome(): React.JSX.Element {
 export function App(): React.JSX.Element {
   return (
     <ErrorBoundary>
+    <ServerWarmupGate>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Suspense fallback={<LoadingSkeleton />}>
@@ -135,6 +137,7 @@ export function App(): React.JSX.Element {
         </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
+    </ServerWarmupGate>
     </ErrorBoundary>
   );
 }

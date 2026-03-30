@@ -6,6 +6,7 @@ import { config, getDatabaseUrl } from './config/index.js';
 import { logger } from './lib/logger.js';
 import { closeDb } from './config/database.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
+import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
 import { createSocketServer } from './realtime/socket-server.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -44,6 +45,9 @@ createSocketServer(httpServer);
 const server = httpServer.listen(config.PORT, () => {
   logger.info({ port: config.PORT, env: config.NODE_ENV }, `CowTalk v5.0 server listening (HTTP + WebSocket)`);
 
+  // Railway cold start 방지 — self-ping
+  startKeepAlive(config.PORT);
+
   // 파이프라인 자동 시작 (smaXtec 크레덴셜이 있을 때만)
   if (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD) {
     const pipeline = getPipelineOrchestrator();
@@ -63,6 +67,7 @@ function shutdown(signal: string): void {
   server.close(async () => {
     logger.info('HTTP server closed');
     try {
+      stopKeepAlive();
       // 파이프라인 정지
       const pipeline = getPipelineOrchestrator();
       await pipeline.stop();
