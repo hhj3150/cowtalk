@@ -94,11 +94,12 @@ export function ChatDrawer({ isOpen, onClose }: Props): React.JSX.Element | null
 
       {/* 드로어 패널 */}
       <div
-        className="fixed bottom-0 right-0 top-0 z-50 flex w-full flex-col shadow-2xl sm:w-[400px]"
+        className="fixed inset-0 z-50 flex flex-col shadow-2xl sm:inset-auto sm:bottom-0 sm:right-0 sm:top-0 sm:w-[400px]"
         style={{
           background: 'var(--ct-bg)',
           borderLeft: '1px solid var(--ct-border)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          maxHeight: '100dvh',
         }}
       >
         {/* 헤더 */}

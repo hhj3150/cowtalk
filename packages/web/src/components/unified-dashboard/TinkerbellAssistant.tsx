@@ -511,7 +511,7 @@ export function TinkerbellAssistant({
           {/* 메시지 영역 — 펼쳐졌을 때만 표시 */}
           {isExpanded && (
             <div style={{
-              maxHeight: isMobile ? '40vh' : '45vh',
+              maxHeight: isMobile ? '40dvh' : '45vh',
               overflowY: 'auto',
               padding: '12px 16px 4px',
               display: 'flex',
@@ -746,8 +746,8 @@ export function TinkerbellAssistant({
     <div style={{
       position: 'fixed',
       ...(isMobile
-        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100vh - 120px)', borderRadius: '16px 16px 0 0' }
-        : { top: 0, right: 0, width: isMinimized ? 48 : 'min(33vw, 420px)', height: '100vh', borderRadius: 0 }),
+        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100dvh - 120px)', borderRadius: '16px 16px 0 0' }
+        : { top: 0, right: 0, width: isMinimized ? 48 : 'min(33vw, 420px)', height: '100dvh', borderRadius: 0 }),
       background: 'var(--ct-card, #1e293b)',
       borderLeft: isMobile ? 'none' : '1px solid var(--ct-border, #334155)',
       border: isMobile ? '1px solid var(--ct-border, #334155)' : undefined,
