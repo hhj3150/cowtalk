@@ -2,7 +2,7 @@
 // 사용자 질문 + 관련 데이터 → Claude 프롬프트
 // global 타입: 전체 농장 횡단 데이터 기반 응답
 
-import type { AnimalProfile, FarmProfile, Role } from '@cowtalk/shared';
+import type { AnimalProfile, FarmProfile, Role, BreedingPipelineData } from '@cowtalk/shared';
 import type { GlobalContext } from '../../pipeline/profile-builder.js';
 import { ROLE_CONTEXT } from './system-prompt.js';
 
@@ -62,7 +62,7 @@ export interface QuarantineContextData {
 export type ChatContext =
   | { readonly type: 'animal'; readonly profile: AnimalProfile }
   | { readonly type: 'farm'; readonly profile: FarmProfile }
-  | { readonly type: 'global'; readonly globalContext: GlobalContext; readonly dashboardSummary?: string }
+  | { readonly type: 'global'; readonly globalContext: GlobalContext; readonly dashboardSummary?: string; readonly breedingPipeline?: BreedingPipelineData }
   | { readonly type: 'quarantine'; readonly quarantineData: QuarantineContextData }
   | { readonly type: 'general'; readonly dashboardSummary?: string };
 
@@ -88,6 +88,9 @@ export function buildConversationPrompt(
     sections.push(buildQuarantineContextPrompt(context.quarantineData));
   } else if (context.type === 'global') {
     sections.push(buildGlobalContextPrompt(context.globalContext));
+    if (context.breedingPipeline) {
+      sections.push(buildBreedingPipelinePrompt(context.breedingPipeline));
+    }
     if (context.dashboardSummary) {
       sections.push(`## 대시보드 요약\n${context.dashboardSummary}`);
     }
@@ -478,6 +481,69 @@ const ALARM_DISPLAY_ORDER = [
   'drinking_warning',
   'feeding_warning',
 ] as const;
+
+// 번식 파이프라인 데이터를 AI 컨텍스트로 변환
+function buildBreedingPipelinePrompt(data: BreedingPipelineData): string {
+  const lines: string[] = [
+    `## 번식 파이프라인 현황 (실시간)`,
+    `- 관리 두수: **${String(data.totalAnimals)}두**`,
+    '',
+  ];
+
+  // KPI
+  const k = data.kpis;
+  lines.push(`### 번식 핵심 KPI`);
+  lines.push(`- 임신율(PR): **${String(k.pregnancyRate.toFixed(1))}%** ${k.pregnancyRate >= 25 ? '🟢' : k.pregnancyRate >= 15 ? '🟡' : '🔴'}`);
+  lines.push(`- 수태율(CR): **${String(k.conceptionRate.toFixed(1))}%** ${k.conceptionRate >= 50 ? '🟢' : k.conceptionRate >= 35 ? '🟡' : '🔴'}`);
+  lines.push(`- 발정탐지율: **${String(k.estrusDetectionRate.toFixed(1))}%** ${k.estrusDetectionRate >= 70 ? '🟢' : k.estrusDetectionRate >= 50 ? '🟡' : '🔴'}`);
+  lines.push(`- 평균공태일: **${String(k.avgDaysOpen)}일** ${k.avgDaysOpen < 130 ? '🟢' : k.avgDaysOpen < 160 ? '🟡' : '🔴'}`);
+  lines.push(`- 첫수정일수: **${String(k.avgDaysToFirstService)}일** ${k.avgDaysToFirstService < 80 ? '🟢' : k.avgDaysToFirstService < 100 ? '🟡' : '🔴'}`);
+  lines.push(`- 분만간격: **${String(k.avgCalvingInterval)}일** ${k.avgCalvingInterval < 400 ? '🟢' : k.avgCalvingInterval < 420 ? '🟡' : '🔴'}`);
+  lines.push('');
+
+  // 파이프라인 단계별 현황
+  if (data.pipeline.length > 0) {
+    lines.push(`### 번식 단계별 현황`);
+    const STAGE_LABELS_KO: Readonly<Record<string, string>> = {
+      open: '공태', estrus_detected: '발정 감지', inseminated: '수정 완료',
+      pregnancy_confirmed: '임신 확인', late_gestation: '임신 후기', calving_expected: '분만 예정',
+    };
+    for (const stage of data.pipeline) {
+      const label = STAGE_LABELS_KO[stage.stage] ?? stage.label;
+      const pct = data.totalAnimals > 0 ? ((stage.count / data.totalAnimals) * 100).toFixed(1) : '0';
+      lines.push(`- ${label}: **${String(stage.count)}두** (${pct}%)`);
+      // 발정/수정 단계는 개체 상세 표시 (최대 5두)
+      if ((stage.stage === 'estrus_detected' || stage.stage === 'inseminated') && stage.animals.length > 0) {
+        for (const a of stage.animals.slice(0, 5)) {
+          lines.push(`  → #${a.earTag} (${a.farmName}) — ${String(a.daysInStage)}일째`);
+        }
+      }
+    }
+    lines.push('');
+  }
+
+  // 긴급 조치 목록 (핵심!)
+  if (data.urgentActions.length > 0) {
+    lines.push(`### ⚠️ 긴급 번식 조치 필요 (${String(data.urgentActions.length)}건)`);
+    const ACTION_LABELS: Readonly<Record<string, string>> = {
+      inseminate_now: '🔴 수정 필요',
+      pregnancy_check_due: '🔍 임신감정 필요',
+      calving_imminent: '🐣 분만 임박',
+      repeat_breeder: '⚠️ 반복수정우',
+    };
+    for (const action of data.urgentActions.slice(0, 10)) {
+      const label = ACTION_LABELS[action.actionType] ?? action.actionType;
+      const time = action.hoursRemaining > 0 ? `${String(action.hoursRemaining)}시간 내` : '즉시';
+      lines.push(`- ${label} — **${action.farmName}** #${action.earTag} (${time}): ${action.description}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(`→ 번식 관련 질문에는 위 파이프라인 데이터를 근거로 구체적 개체번호·농장명·기한을 포함하여 답변하세요.`);
+  lines.push(`→ "수정 대상" = 발정 감지 단계 개체 + inseminate_now 긴급 조치, "오늘 할 일" = 긴급 조치 전체 목록.`);
+
+  return lines.join('\n');
+}
 
 function buildGlobalContextPrompt(ctx: GlobalContext): string {
   const lines: string[] = [

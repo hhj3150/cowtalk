@@ -3,7 +3,7 @@
 // 특정 개체/농장이 아니면 → 전체 농장 글로벌 컨텍스트 제공
 // quarantine_officer + 방역 키워드 → 방역 전용 컨텍스트
 
-import type { Role } from '@cowtalk/shared';
+import type { Role, BreedingPipelineData } from '@cowtalk/shared';
 import { eq, and, isNull, ilike, or } from 'drizzle-orm';
 import { buildAnimalProfile, buildFarmProfile, buildGlobalContext } from '../pipeline/profile-builder.js';
 import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
@@ -12,6 +12,7 @@ import { animals, farms } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { getQuarantineDashboard, getActionQueue } from '../services/epidemiology/quarantine-dashboard.service.js';
 import { getNationalSituation, getProvinceDetail } from '../services/epidemiology/national-situation.service.js';
+import { getBreedingPipeline } from '../services/breeding/breeding-pipeline.service.js';
 
 export type DetectedType = 'animal' | 'farm' | 'global' | 'quarantine' | 'general';
 
@@ -104,12 +105,18 @@ export async function resolveContext(
   // 4. 전체 농장 글로벌 컨텍스트 (핵심 강화)
   // 특정 개체/농장이 아닌 모든 질문 → 전체 데이터 기반 응답
   try {
-    const globalCtx = await buildGlobalContext();
+    // 번식 관련 질문이면 번식 파이프라인 데이터도 함께 로드
+    const isBreeding = isBreedingQuery(question);
+    const [globalCtx, breedingData] = await Promise.all([
+      buildGlobalContext(),
+      isBreeding ? loadBreedingPipeline() : Promise.resolve(undefined),
+    ]);
     return {
       context: {
         type: 'global',
         globalContext: globalCtx,
         dashboardSummary: dashboardContext ?? undefined,
+        breedingPipeline: breedingData,
       },
       detectedType: 'global',
     };
@@ -276,6 +283,31 @@ function detectProvince(question: string): string | null {
     if (question.includes(keyword)) return province;
   }
   return null;
+}
+
+// ===========================
+// 번식 키워드 감지 + 파이프라인 로드
+// ===========================
+
+const BREEDING_KEYWORDS = [
+  '번식', '발정', '수정', '임신', '분만', '건유', '공태',
+  '수태율', '임신율', '발정탐지', '수정 적기', '정액', '종모우',
+  '수정사', '교배', '재발정', '임신감정', '수정 대상',
+  'breeding', 'insemination', 'heat', 'estrus', 'pregnant', 'calving',
+  '할 일', '오늘', '긴급', '급한', 'today', 'urgent', 'todo',
+] as const;
+
+function isBreedingQuery(question: string): boolean {
+  return BREEDING_KEYWORDS.some((kw) => question.includes(kw));
+}
+
+async function loadBreedingPipeline(): Promise<BreedingPipelineData | undefined> {
+  try {
+    return await getBreedingPipeline();
+  } catch (error) {
+    logger.warn({ error }, 'Failed to load breeding pipeline for chat context');
+    return undefined;
+  }
 }
 
 async function buildQuarantineContext(question: string): Promise<ChatContext> {

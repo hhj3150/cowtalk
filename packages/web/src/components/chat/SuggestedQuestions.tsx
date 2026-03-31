@@ -1,4 +1,5 @@
-// 역할별 질문 예시
+// 역할별 인사 + 추천 질문
+// 시연용: 역할에 맞는 첫 인사와 핵심 질문으로 AI 역량 시연
 
 import React from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
@@ -8,72 +9,131 @@ interface Props {
   readonly onSelect: (question: string) => void;
 }
 
-const SUGGESTIONS: Record<Role, readonly string[]> = {
-  farmer: [
-    '오늘 할 일 요약해 줘',
-    '건강이상 소 있어?',
-    '발정 후보 알려줘',
-    '117번 소 상태 어때?',
-  ],
-  veterinarian: [
-    '오늘 긴급 진료 대상은?',
-    '이번 주 주의 농장 알려줘',
-    '312번 체온 추이 분석해 줘',
-    '유방염 의심 케이스 있어?',
-  ],
-  inseminator: [
-    '오늘 수정할 소 목록',
-    '발정적기 소 있어?',
-    '임신 재검 대상 알려줘',
-    '117번 정액 추천해 줘',
-  ],
-  government_admin: [
-    '관할 지역 현황 요약',
-    '주의 농장 순위 보여줘',
-    '국가 지표 비교 분석',
-    '이번 달 보고서 요약',
-  ],
-  quarantine_officer: [
-    '체온이상 농장 현황',
-    '집단감염 의심 신호 있어?',
-    '질병 클러스터 분석',
-    '방역 조치 우선순위',
-  ],
-  feed_company: [
-    '반추이상 동물 현황',
-    '사료 효율 분석',
-    '농장별 사양 리스크',
-    'pH 이상 동물 확인',
-  ],
+interface RoleConfig {
+  readonly greeting: string;
+  readonly subtitle: string;
+  readonly icon: string;
+  readonly questions: readonly string[];
+}
+
+const ROLE_CONFIGS: Record<Role, RoleConfig> = {
+  farmer: {
+    greeting: '안녕하세요, 목장주님! 🐄',
+    subtitle: '오늘 목장 현황을 요약해 드릴게요',
+    icon: '🏡',
+    questions: [
+      '오늘 급한 거 뭐 있어?',
+      '발정 감지된 소 알려줘',
+      '아픈 소 있어?',
+      '번식 성적 어때?',
+    ],
+  },
+  veterinarian: {
+    greeting: '선생님, 진료 브리핑 드릴게요 🩺',
+    subtitle: '담당 농장 건강 현황과 긴급 케이스입니다',
+    icon: '🩺',
+    questions: [
+      '오늘 긴급 진료 대상은?',
+      '이번 주 주의 농장 알려줘',
+      '유방염 의심 케이스 있어?',
+      '체온이상 소 추이 분석해 줘',
+    ],
+  },
+  inseminator: {
+    greeting: '수정사님, 오늘 번식 현황이에요 💉',
+    subtitle: '발정 감지부터 수정 스케줄까지 알려드릴게요',
+    icon: '💉',
+    questions: [
+      '오늘 수정할 소 목록',
+      '발정 감지된 소 수정 적기는?',
+      '임신감정 대상 알려줘',
+      '번식 성적 요약해 줘',
+    ],
+  },
+  government_admin: {
+    greeting: '행정관님, 축산 현황 보고입니다 📊',
+    subtitle: '관할 지역 핵심 지표와 현황을 안내합니다',
+    icon: '📊',
+    questions: [
+      '관할 지역 현황 요약',
+      '주의 농장 순위 보여줘',
+      '국가 축산 지표 분석',
+      '이번 달 보고서 요약',
+    ],
+  },
+  quarantine_officer: {
+    greeting: '방역관님, 역학 상황 브리핑입니다 🛡️',
+    subtitle: '전국 발열 현황과 위험 농장을 실시간 모니터링 중입니다',
+    icon: '🛡️',
+    questions: [
+      '전국 발열 현황 보고',
+      '집단감염 의심 농장 있어?',
+      '시도별 위험도 분석',
+      '긴급 방역 조치 우선순위',
+    ],
+  },
+  feed_company: {
+    greeting: '사양 관리 현황을 정리했습니다 🌾',
+    subtitle: '반추/음수 패턴과 사료 효율 데이터입니다',
+    icon: '🌾',
+    questions: [
+      '반추이상 동물 현황',
+      '사료 효율 분석',
+      '농장별 사양 리스크',
+      'pH 이상 동물 확인',
+    ],
+  },
 };
 
 export function SuggestedQuestions({ onSelect }: Props): React.JSX.Element {
   const role = useAuthStore((s) => s.user?.role) ?? 'farmer';
-  const questions = SUGGESTIONS[role];
+  const config = ROLE_CONFIGS[role];
 
   return (
     <div className="space-y-4">
-      {/* 환영 메시지 */}
+      {/* 역할별 인사 */}
       <div className="text-center">
         <div
-          className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full"
+          className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full text-xl"
           style={{ background: 'var(--ct-ai-bg)' }}
         >
-          <svg className="h-5 w-5" style={{ color: 'var(--ct-primary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-          </svg>
+          {config.icon}
         </div>
-        <p className="text-xs font-medium" style={{ color: 'var(--ct-text)' }}>
-          CowTalk AI에게 질문하세요
+        <p className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>
+          {config.greeting}
         </p>
-        <p className="mt-0.5 text-[10px]" style={{ color: 'var(--ct-text-secondary)' }}>
-          대시보드 데이터 기반으로 답변합니다
+        <p className="mt-1 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+          {config.subtitle}
         </p>
       </div>
 
+      {/* 자동 브리핑 버튼 */}
+      <button
+        type="button"
+        onClick={() => onSelect('오늘 전체 브리핑 해줘')}
+        className="w-full rounded-lg px-4 py-3 text-left text-sm font-medium transition-all"
+        style={{
+          background: 'rgba(59,130,246,0.08)',
+          color: 'var(--ct-primary)',
+          border: '1px solid rgba(59,130,246,0.2)',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.15)';
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.08)';
+        }}
+      >
+        <span className="mr-2">✨</span>
+        오늘 전체 브리핑 받기
+        <span className="ml-1 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+          — 긴급 현황 + 할 일 요약
+        </span>
+      </button>
+
       {/* 추천 질문 */}
       <div className="grid gap-2">
-        {questions.map((q) => (
+        {config.questions.map((q) => (
           <button
             key={q}
             type="button"

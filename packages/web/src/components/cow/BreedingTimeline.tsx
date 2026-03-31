@@ -83,7 +83,7 @@ export function BreedingTimeline({ animalId }: Props): React.JSX.Element {
       </h3>
 
       {/* 진행 바 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, padding: '0 8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, padding: '0 4px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {STAGE_CONFIG.map((stage, idx) => {
           const isCompleted = idx < currentStageIdx;
           const isCurrent = idx === currentStageIdx;

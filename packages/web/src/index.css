@@ -458,11 +458,45 @@ body {
     box-shadow: none;
   }
 
+  /* KPI 카드 터치 피드백 */
+  .ct-kpi-card:active {
+    transform: scale(0.97);
+    transition: transform 0.1s;
+  }
+
   /* 스크롤바 숨기기 (모바일) */
   ::-webkit-scrollbar {
     display: none;
   }
   * {
     scrollbar-width: none;
+  }
+}
+
+/* ── 모바일 KPI 카드 강화 ── */
+@media (max-width: 768px) {
+  .ct-kpi-card {
+    padding: 14px 14px 12px !important;
+    min-height: 100px;
+  }
+
+  /* KPI 숫자 모바일 확대 */
+  .ct-kpi-value {
+    font-size: 32px !important;
+    line-height: 1.1 !important;
+  }
+
+  /* 번식 칸반 가로 스크롤 */
+  .ct-breeding-kanban {
+    display: flex !important;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+    padding-bottom: 8px;
+  }
+  .ct-breeding-kanban > * {
+    flex: 0 0 140px;
+    scroll-snap-align: start;
   }
 }

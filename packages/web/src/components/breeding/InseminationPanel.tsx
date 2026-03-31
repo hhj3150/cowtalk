@@ -53,8 +53,7 @@ export function InseminationPanel({ animalId, onClose }: Props): React.JSX.Eleme
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['breeding-advice', animalId] });
-      setShowRecord(false);
-      setSelectedSemen(null);
+      queryClient.invalidateQueries({ queryKey: ['breeding-pipeline'] });
     },
   });
 
@@ -134,7 +133,8 @@ export function InseminationPanel({ animalId, onClose }: Props): React.JSX.Eleme
           placeholder="수정사 이름 (선택)"
           value={technicianName}
           onChange={(e) => setTechnicianName(e.target.value)}
-          className="w-full rounded-lg border px-3 py-2 text-xs"
+          autoComplete="off"
+          className="w-full rounded-lg border px-3 py-3 text-sm sm:py-2 sm:text-xs"
           style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
         />
         <input
@@ -142,20 +142,59 @@ export function InseminationPanel({ animalId, onClose }: Props): React.JSX.Eleme
           placeholder="메모 (선택)"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          className="w-full rounded-lg border px-3 py-2 text-xs"
+          autoComplete="off"
+          className="w-full rounded-lg border px-3 py-3 text-sm sm:py-2 sm:text-xs"
           style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
         />
 
         {/* 수정 완료 버튼 */}
-        <button
-          type="button"
-          onClick={() => mutation.mutate()}
-          disabled={!selectedSemen || mutation.isPending}
-          className="w-full rounded-lg py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-          style={{ background: selectedSemen ? '#3b82f6' : '#9ca3af' }}
-        >
-          {mutation.isPending ? '기록 중...' : mutation.isSuccess ? '✅ 기록 완료' : '💉 수정 완료 기록'}
-        </button>
+        {!mutation.isSuccess ? (
+          <button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={!selectedSemen || mutation.isPending}
+            className="w-full rounded-lg py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+            style={{ background: selectedSemen ? '#3b82f6' : '#9ca3af' }}
+          >
+            {mutation.isPending ? '기록 중...' : '💉 수정 완료 기록'}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <div
+              className="rounded-lg p-3 text-center"
+              style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)' }}
+            >
+              <p className="text-sm font-bold" style={{ color: '#16a34a' }}>✅ 수정 기록 완료!</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--ct-text-secondary)' }}>
+                {selectedSemen?.bullName} 정액 사용 기록됨
+              </p>
+            </div>
+            <div
+              className="rounded-lg p-3"
+              style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)' }}
+            >
+              <p className="text-xs font-semibold" style={{ color: '#3b82f6' }}>📋 다음 단계</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--ct-text-secondary)', lineHeight: 1.6 }}>
+                <strong>임신감정:</strong> {advice?.farmSettings?.pregnancyCheckDays ?? 28}일 후 ({
+                  (() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + (advice?.farmSettings?.pregnancyCheckDays ?? 28));
+                    return `${d.getMonth() + 1}/${d.getDate()}`;
+                  })()
+                })<br />
+                재발정 주의: {advice?.farmSettings?.estrusRecurrenceDays ?? 21}일 후 센서 모니터링
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-lg py-2.5 text-sm font-medium"
+              style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', border: '1px solid var(--ct-border)' }}
+            >
+              닫기
+            </button>
+          </div>
+        )}
 
         {mutation.isError && (
           <p className="text-xs text-center text-red-500">기록 실패 — 다시 시도해주세요</p>

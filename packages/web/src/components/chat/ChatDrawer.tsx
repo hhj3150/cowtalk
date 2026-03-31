@@ -98,6 +98,7 @@ export function ChatDrawer({ isOpen, onClose }: Props): React.JSX.Element | null
         style={{
           background: 'var(--ct-bg)',
           borderLeft: '1px solid var(--ct-border)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
         {/* 헤더 */}
@@ -208,7 +209,9 @@ export function ChatDrawer({ isOpen, onClose }: Props): React.JSX.Element | null
               onChange={(e) => setInput(e.target.value)}
               placeholder="질문을 입력하세요..."
               disabled={isStreaming}
-              className="flex-1 rounded-lg px-3 py-2.5 text-sm transition-colors"
+              enterKeyHint="send"
+              autoComplete="off"
+              className="flex-1 rounded-lg px-3 py-3 text-base sm:text-sm sm:py-2.5 transition-colors"
               style={{
                 background: 'var(--ct-bg)',
                 color: 'var(--ct-text)',

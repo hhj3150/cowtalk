@@ -730,6 +730,62 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 전염병 배너 ── */}
           <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
 
+          {/* ── 발정 긴급 배너 — 수정 적기 개체 원클릭 진입 ── */}
+          {breedingPipelineData?.urgentActions && breedingPipelineData.urgentActions
+            .filter((a) => a.actionType === 'inseminate_now')
+            .slice(0, 3)
+            .length > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              overflowX: 'auto',
+              paddingBottom: 2,
+            }}>
+              {breedingPipelineData.urgentActions
+                .filter((a) => a.actionType === 'inseminate_now')
+                .slice(0, 3)
+                .map((action) => (
+                  <button
+                    key={action.animalId}
+                    type="button"
+                    onClick={() => setInseminationAnimalId(action.animalId)}
+                    className="ct-kpi-card"
+                    style={{
+                      flex: '1 1 0',
+                      minWidth: 160,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '12px 14px',
+                      background: 'linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(239,68,68,0.04) 100%)',
+                      border: '1px solid rgba(239,68,68,0.3)',
+                      borderRadius: 12,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 24,
+                      animation: 'ct-breeding-pulse 1.5s ease-in-out infinite',
+                    }}>
+                      🔴
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>
+                        #{action.earTag} 수정 적기
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ct-text-secondary)', marginTop: 2 }}>
+                        {action.farmName} · {action.hoursRemaining > 0 ? `${action.hoursRemaining}시간 남음` : '지금 수정'}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, flexShrink: 0 }}>
+                      진입 →
+                    </span>
+                  </button>
+                ))}
+            </div>
+          )}
+
           {/* ── AI 브리핑 ── */}
           <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
 

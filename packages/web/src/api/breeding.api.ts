@@ -82,6 +82,10 @@ export interface BreedingAdvice {
   readonly optimalTimeLabel: string;
   readonly warnings: readonly string[];
   readonly recommendations: readonly SemenRecommendationItem[];
+  readonly farmSettings?: {
+    readonly pregnancyCheckDays?: number;
+    readonly estrusRecurrenceDays?: number;
+  };
 }
 
 export function getBreedingAdvice(animalId: string): Promise<BreedingAdvice> {

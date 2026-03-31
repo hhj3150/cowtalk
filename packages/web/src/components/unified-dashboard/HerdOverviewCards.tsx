@@ -357,7 +357,7 @@ export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, 
             {/* 숫자 + 스파크라인 */}
             <div className="flex items-end justify-between relative z-10">
               <span
-                className="font-bold tabular-nums"
+                className="font-bold tabular-nums ct-kpi-value"
                 style={{
                   fontSize: '28px',
                   lineHeight: '1.1',

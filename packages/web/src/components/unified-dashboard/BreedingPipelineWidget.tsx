@@ -268,7 +268,7 @@ function PipelineKanban({
       }}>
         번식 파이프라인
       </div>
-      <div style={{
+      <div className="ct-breeding-kanban" style={{
         display: 'flex',
         alignItems: 'center',
         gap: 0,

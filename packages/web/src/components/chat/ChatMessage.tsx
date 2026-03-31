@@ -1,6 +1,7 @@
-// 채팅 메시지 — 마크다운 렌더링 + 데이터 근거 표시
+// 채팅 메시지 — 마크다운 렌더링 + 데이터 근거 표시 + 개체번호 클릭 링크
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ChatMessage as ChatMessageType } from '@web/hooks/useChat';
 
 interface Props {
@@ -9,7 +10,7 @@ interface Props {
 }
 
 // 간이 마크다운 → JSX 변환 (외부 라이브러리 없이)
-function renderMarkdown(text: string): React.JSX.Element {
+function renderMarkdown(text: string, navigate?: (path: string) => void): React.JSX.Element {
   const lines = text.split('\n');
   const elements: React.JSX.Element[] = [];
 
@@ -34,7 +35,7 @@ function renderMarkdown(text: string): React.JSX.Element {
           className={level === 2 ? 'font-bold text-sm mt-1' : 'font-semibold text-[13px] mt-0.5'}
           style={{ color: 'var(--ct-text)' }}
         >
-          {renderInline(headingText)}
+          {renderInline(headingText, navigate)}
         </p>,
       );
       continue;
@@ -45,7 +46,7 @@ function renderMarkdown(text: string): React.JSX.Element {
       elements.push(
         <div key={key} className="flex gap-1.5 pl-1">
           <span className="flex-shrink-0" style={{ color: 'var(--ct-primary)' }}>•</span>
-          <span>{renderInline(line.replace(/^[-•]\s/, ''))}</span>
+          <span>{renderInline(line.replace(/^[-•]\s/, ''), navigate)}</span>
         </div>,
       );
       continue;
@@ -57,21 +58,21 @@ function renderMarkdown(text: string): React.JSX.Element {
       elements.push(
         <div key={key} className="flex gap-1.5 pl-1">
           <span className="flex-shrink-0 font-medium" style={{ color: 'var(--ct-primary)' }}>{num}.</span>
-          <span>{renderInline(line.replace(/^\d+[.)]\s/, ''))}</span>
+          <span>{renderInline(line.replace(/^\d+[.)]\s/, ''), navigate)}</span>
         </div>,
       );
       continue;
     }
 
     // 일반 텍스트
-    elements.push(<p key={key}>{renderInline(line)}</p>);
+    elements.push(<p key={key}>{renderInline(line, navigate)}</p>);
   }
 
   return <>{elements}</>;
 }
 
-// 인라인 마크다운: **bold**, *italic*, `code`
-function renderInline(text: string): React.ReactNode {
+// 인라인 마크다운: **bold**, `code`, #123/123번 → 개체 링크
+function renderInline(text: string, navigate?: (path: string) => void): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let remaining = text;
   let idx = 0;
@@ -81,10 +82,13 @@ function renderInline(text: string): React.ReactNode {
     const boldMatch = /\*\*(.+?)\*\*/.exec(remaining);
     // `code`
     const codeMatch = /`([^`]+)`/.exec(remaining);
+    // 귀표번호 패턴: #423, #1234, 423번
+    const earTagMatch = /(?:#(\d{1,6})\b|(\d{1,6})번)/.exec(remaining);
 
     const matches = [
       boldMatch ? { match: boldMatch, type: 'bold' as const } : null,
       codeMatch ? { match: codeMatch, type: 'code' as const } : null,
+      earTagMatch ? { match: earTagMatch, type: 'earTag' as const } : null,
     ]
       .filter((m): m is NonNullable<typeof m> => m !== null)
       .sort((a, b) => (a.match.index ?? 0) - (b.match.index ?? 0));
@@ -111,6 +115,19 @@ function renderInline(text: string): React.ReactNode {
           {first.match[1]}
         </strong>,
       );
+    } else if (first.type === 'earTag') {
+      const earTag = first.match[1] ?? first.match[2] ?? '';
+      parts.push(
+        <button
+          key={`et-${idx}`}
+          type="button"
+          onClick={() => navigate?.(`/cow/${earTag}`)}
+          className="inline font-semibold underline decoration-dotted underline-offset-2"
+          style={{ color: 'var(--ct-primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'inherit' }}
+        >
+          {first.match[0]}
+        </button>,
+      );
     } else {
       parts.push(
         <code
@@ -131,6 +148,7 @@ function renderInline(text: string): React.ReactNode {
 }
 
 export function ChatMessage({ message, onFollowUp }: Props): React.JSX.Element {
+  const navigate = useNavigate();
   const isUser = message.role === 'user';
   const refs = message.dataReferences ?? [];
   const followUps = message.followUpSuggestions ?? [];
@@ -145,9 +163,9 @@ export function ChatMessage({ message, onFollowUp }: Props): React.JSX.Element {
             : { background: 'var(--ct-ai-bg)', color: 'var(--ct-text)', border: '1px solid var(--ct-border)' }
         }
       >
-        {/* 메시지 본문 (마크다운) */}
+        {/* 메시지 본문 (마크다운 + 개체번호 링크) */}
         <div className="whitespace-pre-wrap leading-relaxed">
-          {isUser ? message.content : renderMarkdown(message.content)}
+          {isUser ? message.content : renderMarkdown(message.content, navigate)}
         </div>
 
         {/* 스트리밍 표시 */}
