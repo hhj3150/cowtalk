@@ -23,7 +23,7 @@ interface EstrusByFarmResponse {
   readonly farmGroups: readonly EstrusFarmGroup[];
 }
 
-export function EstrusFarmListLevel(): React.JSX.Element {
+export function EstrusFarmListLevel({ compact: _compact }: { readonly compact?: boolean } = {}): React.JSX.Element {
   const [search, setSearch] = useState('');
   const { navigateToFarm } = useDrilldown();
 
