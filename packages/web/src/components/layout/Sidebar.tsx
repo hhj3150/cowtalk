@@ -1,8 +1,10 @@
 // 사이드바 — 아이콘 전용 56px, hover 시 200px 확장 + 메뉴명 표시
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '@web/stores/auth.store';
+import { fetchNews } from '@web/api/news.api';
+import type { NewsItem, NewsCategory } from '@web/api/news.api';
 import type { Role } from '@cowtalk/shared';
 
 interface MenuItem {
@@ -176,9 +178,7 @@ const QUARANTINE_MENU: readonly MenuItem[] = [
   { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
 ];
 
-// ── 축산 소식 (정적 — 향후 API/RSS로 교체) ──
-
-type NewsCategory = 'policy' | 'latest' | 'global' | 'disease' | 'notice';
+// ── 축산 소식 (API/RSS 연동, 장애 시 정적 폴백) ──
 
 const CATEGORY_LABELS: Record<NewsCategory, { label: string; color: string }> = {
   policy: { label: '정책', color: '#3b82f6' },
@@ -188,18 +188,32 @@ const CATEGORY_LABELS: Record<NewsCategory, { label: string; color: string }> = 
   notice: { label: '공지', color: '#f97316' },
 };
 
-const LIVESTOCK_NEWS: readonly { title: string; source: string; date: string; url: string; category: NewsCategory }[] = [
-  { title: '럼피스킨병 백신 접종률 98% 달성', source: '농림축산식품부', date: '3.28', url: '#', category: 'disease' },
-  { title: '2026년 축산 직불금 확대 시행', source: '농림축산식품부', date: '3.28', url: '#', category: 'policy' },
-  { title: '올해 한우 송아지 가격 전년 대비 12% 상승', source: '축산신문', date: '3.27', url: '#', category: 'latest' },
-  { title: 'EU, 항생제 사용 50% 감축 로드맵 발표', source: 'EMA', date: '3.27', url: '#', category: 'global' },
-  { title: '젖소 유량 신기록 — 홀스타인 평균 35L 돌파', source: 'DCIC', date: '3.26', url: '#', category: 'latest' },
-  { title: '호주 구제역 의심 사례 발생 — 한국 수입 검역 강화', source: 'OIE', date: '3.26', url: '#', category: 'disease' },
-  { title: 'AI 센서 기반 질병 조기감지 시스템 확산', source: '농촌진흥청', date: '3.25', url: '#', category: 'latest' },
-  { title: '구제역 청정국 지위 3년 연속 유지', source: 'OIE', date: '3.24', url: '#', category: 'global' },
-  { title: '축산 환경규제 강화 — 2027년까지 적용', source: '환경부', date: '3.23', url: '#', category: 'policy' },
-  { title: 'CowTalk v5.0 업데이트 — 번식 AI 루프 추가', source: 'D2O Corp', date: '3.23', url: '#', category: 'notice' },
+const FALLBACK_NEWS: readonly NewsItem[] = [
+  { title: '럼피스킨병 백신 접종률 98% 달성', source: '농림축산식품부', date: '3.28', url: '#', category: 'disease', pubDate: '' },
+  { title: '2026년 축산 직불금 확대 시행', source: '농림축산식품부', date: '3.28', url: '#', category: 'policy', pubDate: '' },
+  { title: '올해 한우 송아지 가격 전년 대비 12% 상승', source: '축산신문', date: '3.27', url: '#', category: 'latest', pubDate: '' },
+  { title: 'EU, 항생제 사용 50% 감축 로드맵 발표', source: 'EMA', date: '3.27', url: '#', category: 'global', pubDate: '' },
+  { title: '젖소 유량 신기록 — 홀스타인 평균 35L 돌파', source: 'DCIC', date: '3.26', url: '#', category: 'latest', pubDate: '' },
+  { title: '호주 구제역 의심 사례 발생 — 한국 수입 검역 강화', source: 'OIE', date: '3.26', url: '#', category: 'disease', pubDate: '' },
+  { title: 'AI 센서 기반 질병 조기감지 시스템 확산', source: '농촌진흥청', date: '3.25', url: '#', category: 'latest', pubDate: '' },
+  { title: '구제역 청정국 지위 3년 연속 유지', source: 'OIE', date: '3.24', url: '#', category: 'global', pubDate: '' },
+  { title: '축산 환경규제 강화 — 2027년까지 적용', source: '환경부', date: '3.23', url: '#', category: 'policy', pubDate: '' },
+  { title: 'CowTalk v5.0 업데이트 — 번식 AI 루프 추가', source: 'D2O Corp', date: '3.23', url: '#', category: 'notice', pubDate: '' },
 ];
+
+function useNewsItems(): readonly NewsItem[] {
+  const [items, setItems] = useState<readonly NewsItem[]>(FALLBACK_NEWS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchNews()
+      .then((data) => { if (!cancelled && data.length > 0) setItems(data); })
+      .catch(() => { /* 폴백 유지 */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  return items;
+}
 
 const MENU_BY_ROLE: Record<Role, readonly MenuItem[]> = {
   farmer: COMMON_MENU,
@@ -214,6 +228,7 @@ export function Sidebar(): React.JSX.Element {
   const user = useAuthStore((s) => s.user);
   const role = user?.role ?? 'farmer';
   const items = MENU_BY_ROLE[role];
+  const newsItems = useNewsItems();
 
   return (
     <nav
@@ -264,7 +279,7 @@ export function Sidebar(): React.JSX.Element {
         <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ct-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, padding: '4px 6px', marginBottom: 4 }}>
           축산 소식
         </div>
-        {LIVESTOCK_NEWS.map((news, i) => {
+        {newsItems.map((news, i) => {
           const cat = CATEGORY_LABELS[news.category];
           return (
             <a
