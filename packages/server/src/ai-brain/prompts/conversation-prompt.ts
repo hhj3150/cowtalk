@@ -389,44 +389,95 @@ function buildAnimalContext(profile: AnimalProfile): string {
     }
   }
 
-  // ── 7일 센서 추세 — 상세 ──
+  // ── 7일 센서 추세 ──
   if (profile.sensorHistory7d.length > 0) {
     lines.push(`\n### 📈 7일 센서 추세`);
-    const temps = profile.sensorHistory7d.map((h) => h.temperature).filter((v): v is number => v !== null);
-    const rums = profile.sensorHistory7d.map((h) => h.rumination).filter((v): v is number => v !== null);
-    const acts = profile.sensorHistory7d.map((h) => h.activity).filter((v): v is number => v !== null);
+    const temps7 = profile.sensorHistory7d.map((h) => h.temperature).filter((v): v is number => v !== null);
+    const rums7 = profile.sensorHistory7d.map((h) => h.rumination).filter((v): v is number => v !== null);
+    const acts7 = profile.sensorHistory7d.map((h) => h.activity).filter((v): v is number => v !== null);
 
-    if (temps.length >= 2) {
-      const avg = temps.reduce((a, b) => a + b, 0) / temps.length;
-      const recent3Avg = temps.slice(-3).reduce((a, b) => a + b, 0) / Math.min(temps.length, 3);
-      const earlyAvg = temps.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(temps.length, 3);
+    if (temps7.length >= 2) {
+      const avg = temps7.reduce((a, b) => a + b, 0) / temps7.length;
+      const recent3Avg = temps7.slice(-3).reduce((a, b) => a + b, 0) / Math.min(temps7.length, 3);
+      const earlyAvg = temps7.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(temps7.length, 3);
       const trendDir = recent3Avg - earlyAvg > 0.3 ? '↗ 상승' : recent3Avg - earlyAvg < -0.3 ? '↘ 하강' : '→ 안정';
-      lines.push(`- 체온 7일: 최저 ${String(Math.min(...temps))}°C / 최고 ${String(Math.max(...temps))}°C / 평균 ${avg.toFixed(2)}°C / 추세 ${trendDir}`);
-      if (Math.max(...temps) - Math.min(...temps) > 1.0) {
-        lines.push(`  → ⚠️ 7일 체온 변동폭 ${(Math.max(...temps) - Math.min(...temps)).toFixed(1)}°C 이상 — 간헐적 감염·발정·내분비 이상 감별 필요`);
+      lines.push(`- 체온 7일: 최저 ${String(Math.min(...temps7))}°C / 최고 ${String(Math.max(...temps7))}°C / 평균 ${avg.toFixed(2)}°C / 추세 ${trendDir}`);
+      if (Math.max(...temps7) - Math.min(...temps7) > 1.0) {
+        lines.push(`  → ⚠️ 7일 체온 변동폭 ${(Math.max(...temps7) - Math.min(...temps7)).toFixed(1)}°C — 간헐적 감염·발정·내분비 이상 감별`);
       }
     }
-
-    if (rums.length >= 2) {
-      const avg = rums.reduce((a, b) => a + b, 0) / rums.length;
-      const recent3Avg = rums.slice(-3).reduce((a, b) => a + b, 0) / Math.min(rums.length, 3);
-      const earlyAvg = rums.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(rums.length, 3);
+    if (rums7.length >= 2) {
+      const avg = rums7.reduce((a, b) => a + b, 0) / rums7.length;
+      const recent3Avg = rums7.slice(-3).reduce((a, b) => a + b, 0) / Math.min(rums7.length, 3);
+      const earlyAvg = rums7.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(rums7.length, 3);
       const trendDir = recent3Avg - earlyAvg > 30 ? '↗ 회복' : recent3Avg - earlyAvg < -30 ? '↘ 악화' : '→ 안정';
-      lines.push(`- 반추 7일: 최저 ${String(Math.min(...rums))} / 최고 ${String(Math.max(...rums))} / 평균 ${avg.toFixed(0)}분/일 / 추세 ${trendDir}`);
+      lines.push(`- 반추 7일: 최저 ${String(Math.min(...rums7))} / 최고 ${String(Math.max(...rums7))} / 평균 ${avg.toFixed(0)}분/일 / 추세 ${trendDir}`);
       if (avg < 250) {
-        lines.push(`  → ⚠️ 7일 평균 반추 ${avg.toFixed(0)}분으로 심각하게 낮음 — 만성 반추위 산증·케토시스·제4위 변위 가능성 높음`);
+        lines.push(`  → ⚠️ 7일 평균 반추 ${avg.toFixed(0)}분 — 만성 반추위 산증·케토시스·제4위 변위 가능성 높음`);
+      }
+    }
+    if (acts7.length >= 2) {
+      const avg = acts7.reduce((a, b) => a + b, 0) / acts7.length;
+      const maxAct = Math.max(...acts7);
+      lines.push(`- 활동량 7일: 평균 ${avg.toFixed(0)} (최저 ${String(Math.min(...acts7))}, 최고 ${String(maxAct)})`);
+      if (maxAct > 100 && maxAct > avg * 2) {
+        lines.push(`  → 💡 활동 피크 평균의 2배 이상 — 발정 행동 또는 통증성 행동 감별`);
+      }
+    }
+  }
+
+  // ── 30일 장기 추세 — 만성 패턴·회복·악화 판단 ──
+  if ((profile.sensorHistory30d ?? []).length >= 7) {
+    lines.push(`\n### 📊 30일 장기 추세 (만성 패턴 분석)`);
+    const hist30 = profile.sensorHistory30d ?? [];
+    const temps30 = hist30.map((h) => h.temperature).filter((v): v is number => v !== null);
+    const rums30 = hist30.map((h) => h.rumination).filter((v): v is number => v !== null);
+    const acts30 = hist30.map((h) => h.activity).filter((v): v is number => v !== null);
+
+    if (temps30.length >= 7) {
+      const avg30 = temps30.reduce((a, b) => a + b, 0) / temps30.length;
+      const firstWeekAvg = temps30.slice(0, 7).reduce((a, b) => a + b, 0) / 7;
+      const lastWeekAvg = temps30.slice(-7).reduce((a, b) => a + b, 0) / 7;
+      const monthTrend = lastWeekAvg - firstWeekAvg > 0.3 ? '↗ 월간 상승' : lastWeekAvg - firstWeekAvg < -0.3 ? '↘ 월간 하강' : '→ 안정';
+      // 발열 빈도 (39.8°C 이상 일수)
+      const feverDays = temps30.filter((t) => t >= 39.8).length;
+      lines.push(`- 체온 30일: 평균 ${avg30.toFixed(2)}°C / ${monthTrend} / 발열(≥39.8°C) ${String(feverDays)}건`);
+      if (feverDays >= 5) {
+        lines.push(`  → ⚠️ 30일간 발열 ${String(feverDays)}회 — 만성 감염(자궁내막염·유방염·폐농양) 또는 면역 저하 검토`);
+      }
+      if (feverDays >= 3 && feverDays < 5) {
+        lines.push(`  → 💡 간헐적 발열 — 사료·환경 스트레스·아급성 감염 가능성`);
       }
     }
 
-    if (acts.length >= 2) {
-      const avg = acts.reduce((a, b) => a + b, 0) / acts.length;
-      lines.push(`- 활동량 7일: 평균 ${avg.toFixed(0)} (최저 ${String(Math.min(...acts))}, 최고 ${String(Math.max(...acts))})`);
-      // 발정 관련 활동 급증 패턴 감지
-      const maxAct = Math.max(...acts);
-      if (maxAct > 100 && maxAct > avg * 2) {
-        lines.push(`  → 💡 최대 활동량이 평균의 2배 이상 — 발정 피크 또는 통증성 행동 감별 (번식 기록 확인 권장)`);
+    if (rums30.length >= 7) {
+      const avg30 = rums30.reduce((a, b) => a + b, 0) / rums30.length;
+      const firstWeekAvg = rums30.slice(0, 7).reduce((a, b) => a + b, 0) / 7;
+      const lastWeekAvg = rums30.slice(-7).reduce((a, b) => a + b, 0) / 7;
+      const monthTrend = lastWeekAvg - firstWeekAvg > 40 ? '↗ 회복 추세' : lastWeekAvg - firstWeekAvg < -40 ? '↘ 악화 추세' : '→ 안정';
+      // 저반추 일수 (200분 미만)
+      const lowRumDays = rums30.filter((r) => r < 200).length;
+      lines.push(`- 반추 30일: 평균 ${avg30.toFixed(0)}분/일 / ${monthTrend} / 저반추(<200분) ${String(lowRumDays)}건`);
+      if (lowRumDays >= 7) {
+        lines.push(`  → ⚠️ 30일 중 ${String(lowRumDays)}일 저반추 — 만성 SARA·케토시스·영양 불균형. TMR 배합비 즉시 분석 권고`);
+      }
+      if (avg30 >= 400 && lastWeekAvg < firstWeekAvg - 60) {
+        lines.push(`  → 💡 최근 1주 반추 급감 — 급성 요인 발생(사료 변환·질병 초기) 면밀 관찰`);
       }
     }
+
+    if (acts30.length >= 7) {
+      const avg30 = acts30.reduce((a, b) => a + b, 0) / acts30.length;
+      // 21일 주기로 활동 피크가 있는지 확인 (발정 규칙성)
+      const highActDays = acts30.map((a, i) => ({ act: a, day: i })).filter((d) => d.act > avg30 * 1.8);
+      const hasRegularCycle = highActDays.length >= 1 && highActDays.length <= 2;
+      lines.push(`- 활동량 30일: 평균 ${avg30.toFixed(0)} / 발정 활동 피크 ${String(highActDays.length)}회 감지`);
+      if (hasRegularCycle) {
+        lines.push(`  → 💡 30일 중 발정 피크 ${String(highActDays.length)}회 — 발정 주기 21일 정상 순환 가능성 (번식 기록과 대조 확인)`);
+      }
+    }
+
+    lines.push(`→ 위 30일 데이터를 기반으로 "급성(최근 7일 변화)" vs "만성(30일 평균 대비)" 구분하여 진단하세요.`);
   }
 
   // ── 번식 이력 ──

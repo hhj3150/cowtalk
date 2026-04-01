@@ -33,6 +33,7 @@ const mockAnimalProfile: AnimalProfile = {
   },
   sensorHistory24h: [],
   sensorHistory7d: [],
+  sensorHistory30d: [],
   activeEvents: [{
     eventId: 'e1',
     type: 'estrus',

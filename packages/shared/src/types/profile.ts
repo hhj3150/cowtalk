@@ -103,6 +103,7 @@ export interface AnimalProfile {
   // smaXtec 센서 히스토리
   readonly sensorHistory24h: readonly SensorSnapshot[];
   readonly sensorHistory7d: readonly SensorSnapshot[];
+  readonly sensorHistory30d: readonly SensorSnapshot[];
 
   // smaXtec 활성 이벤트 (신뢰 — 재판단 안 함)
   readonly activeEvents: readonly SmaxtecEvent[];

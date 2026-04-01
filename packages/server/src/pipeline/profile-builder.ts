@@ -52,14 +52,17 @@ export async function buildAnimalProfile(animalId: string): Promise<AnimalProfil
   const now = new Date();
   const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const d7ago = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const d30ago = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  const [latestSensors, sensorHistory24h, sensorHistory7d, activeEvents, breedingRecords, healthRecords, pregStatus, feedbackRaw] = await Promise.all([
+  const [latestSensors, sensorHistory24h, sensorHistory7d, sensorHistory30d, activeEvents, breedingRecords, healthRecords, pregStatus, feedbackRaw] = await Promise.all([
     // 최신 센서값 (각 메트릭별 최신 1건)
     getLatestSensorReadings(db, animalId),
     // 24시간 센서 히스토리
     getSensorHistory(db, animalId, h24ago),
     // 7일 센서 히스토리
     getSensorHistory(db, animalId, d7ago),
+    // 30일 센서 히스토리 (장기 추세·만성 패턴 분석)
+    getSensorHistory(db, animalId, d30ago),
     // 활성 smaXtec 이벤트
     getActiveSmaxtecEvents(db, animalId),
     // 번식 이력
@@ -92,6 +95,7 @@ export async function buildAnimalProfile(animalId: string): Promise<AnimalProfil
     latestSensor: latestSensors,
     sensorHistory24h,
     sensorHistory7d,
+    sensorHistory30d,
     activeEvents,
     breedingHistory: breedingRecords,
     pregnancyStatus: pregStatus.status as AnimalProfile['pregnancyStatus'],
