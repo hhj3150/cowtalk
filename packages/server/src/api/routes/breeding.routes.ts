@@ -10,6 +10,7 @@ import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedingFeedback } from '../../services/breeding/breeding-advisor.service.js';
 import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-sync.service.js';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
+import { seedSemenCatalog, syncHanwooSemenFromPublicApi } from '../../services/breeding/semen-seed.service.js';
 
 export const breedingRouter = Router();
 
@@ -315,6 +316,26 @@ breedingRouter.get('/farm/:farmId/settings', async (req: Request, res: Response,
     const farmId = req.params.farmId as string;
     const settings = await getFarmBreedingSettings(farmId);
     res.json({ success: true, data: settings });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /breeding/semen/seed — 씨수소 카탈로그 수동 시딩 (어드민/시연용)
+breedingRouter.post('/semen/seed', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await seedSemenCatalog();
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /breeding/semen/sync-hanwoo — 한우 씨수소 공공API 즉시 동기화 (어드민/시연용)
+breedingRouter.post('/semen/sync-hanwoo', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await syncHanwooSemenFromPublicApi();
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

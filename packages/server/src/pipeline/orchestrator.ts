@@ -4,6 +4,7 @@
 // 각 커넥터 독립 실행 (하나 실패해도 나머지 정상)
 
 import { logger } from '../lib/logger.js';
+import { syncHanwooSemenFromPublicApi } from '../services/breeding/semen-seed.service.js';
 import { getDb } from '../config/database.js';
 import { animals, sensorMeasurements } from '../db/schema.js';
 import { eq, and, isNotNull, sql } from 'drizzle-orm';
@@ -54,6 +55,9 @@ export class PipelineOrchestrator {
   private realtimeTimer: ReturnType<typeof setInterval> | null = null;
   private batchTimer: ReturnType<typeof setInterval> | null = null;
   private intelligenceTimer: ReturnType<typeof setInterval> | null = null;
+
+  // 씨수소 공공API 동기화: 배치 주기(24h) × 7 = 주 1회
+  private semenSyncBatchCount = 0;
 
   // ===========================
   // 시작/종료
@@ -323,6 +327,14 @@ export class PipelineOrchestrator {
     void this.runSensorAggregation().catch((err) => {
       logger.error({ err }, '[Pipeline] Sensor aggregation failed');
     });
+
+    // 씨수소 공공API 동기화 — 주 1회 (7번째 배치 실행마다)
+    this.semenSyncBatchCount++;
+    if (this.semenSyncBatchCount % 7 === 0) {
+      syncHanwooSemenFromPublicApi()
+        .then((r) => logger.info(r, '[Pipeline] 한우 씨수소 주간 동기화 완료'))
+        .catch((err) => logger.error({ err }, '[Pipeline] 한우 씨수소 동기화 실패'));
+    }
 
     this.state = { ...this.state, lastBatchRun: new Date() };
   }
