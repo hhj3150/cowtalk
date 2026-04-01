@@ -249,12 +249,24 @@ export default function CowProfilePage(): React.JSX.Element {
           rumination: getLatest('rum'),
           rumAvg: computeRumAvg(rumPts),
           activity: getLatest('act'),
-          // water_intake는 L/10min 실시간 → 24h 합산이 일일 음수량
+          // 음수량은 smaXtec이 하루 뒤에 집계하므로 전날(어제) 데이터 사용
           drinking: (() => {
             const drPts = sensorData.metrics['dr'] ?? [];
             if (drPts.length === 0) return null;
-            const cutoff = Date.now() / 1000 - 86400;
-            const sum = drPts.filter(p => p.ts >= cutoff).reduce((acc, p) => acc + p.value, 0);
+            // 어제 자정 기준 (로컬 타임존)
+            const todayMidnight = new Date();
+            todayMidnight.setHours(0, 0, 0, 0);
+            const yesterdayStart = (todayMidnight.getTime() - 86400 * 1000) / 1000;
+            const yesterdayEnd = todayMidnight.getTime() / 1000;
+            const sum = drPts
+              .filter(p => p.ts >= yesterdayStart && p.ts < yesterdayEnd)
+              .reduce((acc, p) => acc + p.value, 0);
+            // 어제 데이터가 없으면 최근 24h로 폴백 (데이터 유무 확인)
+            if (sum === 0) {
+              const cutoff = Date.now() / 1000 - 86400;
+              const recent = drPts.filter(p => p.ts >= cutoff).reduce((acc, p) => acc + p.value, 0);
+              return Math.round(recent * 10) / 10;
+            }
             return Math.round(sum * 10) / 10;
           })(),
           drinkingCount: computeDrinkingCount(tempPts),
@@ -490,7 +502,7 @@ export default function CowProfilePage(): React.JSX.Element {
           padding: isMobile ? '10px 12px' : '12px 14px',
           borderLeft: `3px solid #06b6d4`,
         }}>
-          <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>음수</div>
+          <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>음수 (어제)</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 2 }}>
             <span style={{ fontSize: isMobile ? 32 : 22, fontWeight: 800, color: '#06b6d4' }}>
               {sensor?.drinking?.toFixed(0) ?? '—'}
@@ -498,7 +510,7 @@ export default function CowProfilePage(): React.JSX.Element {
             <span style={{ fontSize: isMobile ? 12 : 10, color: 'var(--ct-text-muted)' }}>L</span>
           </div>
           <div style={{ fontSize: isMobile ? 12 : 9, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--ct-text-muted)' }}>음수량</span>
+            <span style={{ color: 'var(--ct-text-muted)' }}>전날 음수량</span>
             {sensor && (
               <span style={{ color: '#06b6d4', fontWeight: 600 }}>{sensor.drinkingCount}회</span>
             )}

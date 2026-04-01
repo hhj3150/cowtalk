@@ -294,98 +294,257 @@ function buildQuarantineContextPrompt(data: QuarantineContextData): string {
 }
 
 function buildAnimalContext(profile: AnimalProfile): string {
+  const now = new Date();
+  const parity = profile.parity ?? 0;
+  const dim = profile.birthDate
+    ? Math.floor((now.getTime() - new Date(profile.birthDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
   const lines: string[] = [
     `## 맥락: 개체 ${profile.earTag} (${profile.farmName})`,
     `- 축종: ${profile.breedType === 'dairy' ? '젖소' : '한우/비육우'} (${profile.breed})`,
-    `- 산차: ${String(profile.parity)}`,
+    `- 산차: ${String(parity)}산${dim !== null ? ` / 연령: ${String(Math.floor(dim / 30))}개월` : ''}`,
   ];
 
-  // ── 센서 데이터 (실시간) ──
-  const s = profile.latestSensor;
-  const sensorLines: string[] = [];
-  if (s.temperature !== null) {
-    const tempStatus = s.temperature >= 40.0 ? '🔴 발열' : s.temperature >= 39.5 ? '🟡 주의' : '🟢 정상';
-    sensorLines.push(`체온 ${String(s.temperature)}°C (${tempStatus})`);
+  // ── 번식 상태 ──
+  if (profile.pregnancyStatus) {
+    lines.push(`- 번식 상태: ${profile.pregnancyStatus}${profile.daysSinceInsemination ? ` (수정 후 ${String(profile.daysSinceInsemination)}일)` : ''}`);
   }
-  if (s.rumination !== null) {
-    const rumStatus = s.rumination < 200 ? '🔴 심각 감소' : s.rumination < 300 ? '🟡 감소' : '🟢 정상';
-    sensorLines.push(`반추 ${String(s.rumination)}분/일 (${rumStatus})`);
-  }
-  if (s.activity !== null) sensorLines.push(`활동 ${String(s.activity)}`);
-  if (sensorLines.length > 0) lines.push(`- 실시간 센서: ${sensorLines.join(', ')}`);
 
-  // ── 활성 이벤트 (알람) — 가장 중요 ──
+  // ── 유량 ──
+  if (profile.breedType === 'dairy' && profile.production?.milkYield !== null && profile.production?.milkYield !== undefined) {
+    lines.push(`- 유량: ${String(profile.production.milkYield)}kg/일`);
+  }
+
+  // ========================================
+  // 센서 데이터 — 임상 해석 포함
+  // ========================================
+  const s = profile.latestSensor;
+  const sensorInterpLines: string[] = [];
+
+  if (s.temperature !== null) {
+    let tempInterp: string;
+    if (s.temperature < 37.5) tempInterp = '🔵 저체온 (37.5°C 미만) — 저칼슘혈증·쇼크·분만 직전 가능성';
+    else if (s.temperature < 38.0) tempInterp = '🟡 경미한 저체온 (38.0°C 미만) — 스트레스·음수 직후';
+    else if (s.temperature <= 38.5) tempInterp = '🟢 정상 하한 (38.0~38.5°C)';
+    else if (s.temperature <= 39.3) tempInterp = '🟢 정상 (38.5~39.3°C)';
+    else if (s.temperature <= 39.7) tempInterp = '🟡 미열 (39.4~39.7°C) — 경증 감염·발정·분만 임박 가능';
+    else if (s.temperature <= 40.5) tempInterp = '🟠 발열 (39.8~40.5°C) — 유방염·자궁염·폐렴 감별진단 필요';
+    else tempInterp = '🔴 고열 (40.5°C 초과) — 패혈증·중증 유방염·열사병 응급';
+    sensorInterpLines.push(`체온 **${String(s.temperature)}°C** → ${tempInterp}`);
+  }
+
+  if (s.rumination !== null) {
+    let rumInterp: string;
+    if (s.rumination < 100) rumInterp = '🔴 매우 심각 (<100분) — 제4위 변위·복막염·중증 케토시스 즉각 진찰';
+    else if (s.rumination < 200) rumInterp = '🔴 심각 (<200분) — 반추위 산증·케토시스·유방염 동반 의심';
+    else if (s.rumination < 300) rumInterp = '🟡 감소 (<300분) — 발정 행동·사료 변환·경도 산증·통증 반응';
+    else if (s.rumination < 400) rumInterp = '🟡 약간 감소 (300~400분) — 정상 하한, 추세 모니터링 필요';
+    else if (s.rumination <= 600) rumInterp = '🟢 정상 (400~600분/일)';
+    else rumInterp = '🟡 과다 반추 (>600분) — 고섬유사료·스트레스·발정 후 반동';
+    sensorInterpLines.push(`반추 **${String(s.rumination)}분/일** → ${rumInterp}`);
+  }
+
+  if (s.activity !== null) {
+    // 활동량은 품종·DIM·시간대에 따라 다름; 일반적 임계
+    let actInterp: string;
+    if (s.activity > 120) actInterp = '🟠 고활동 — 발정(발정 전·중 활동 2~3배 증가), 불안·통증 감별';
+    else if (s.activity < 20) actInterp = '🟡 저활동 — 통증·질병·분만 임박·고열 시 활동 감소';
+    else actInterp = '🟢 정상 범위';
+    sensorInterpLines.push(`활동량 **${String(s.activity)}** → ${actInterp}`);
+  }
+
+  if (s.waterIntake !== null) {
+    sensorInterpLines.push(`음수량 **${String(s.waterIntake)}L** (젖소 정상: 체중 10% + 유량 4~5배 L/일)`);
+  }
+
+  if (s.ph !== null) {
+    let phInterp: string;
+    if (s.ph < 5.8) phInterp = '🔴 심각한 반추위 산증 (<5.8) — SARA 이상, 즉시 완충제 투여';
+    else if (s.ph < 6.0) phInterp = '🟠 반추위 산증 경계 (5.8~6.0) — 사료 배합 점검, 완충제 추가';
+    else if (s.ph < 6.2) phInterp = '🟡 SARA 위험 (6.0~6.2) — 정밀성 사양관리, TMR 분석';
+    else if (s.ph <= 6.8) phInterp = '🟢 정상 (6.2~6.8)';
+    else phInterp = '🟡 알칼리 경향 (>6.8) — 단백 과다·요소 독성 가능성';
+    sensorInterpLines.push(`반추위 pH **${String(s.ph)}** → ${phInterp}`);
+  }
+
+  if (sensorInterpLines.length > 0) {
+    lines.push(`\n### 📡 실시간 smaXtec 센서 (임상 해석 포함)`);
+    for (const l of sensorInterpLines) lines.push(`- ${l}`);
+  }
+
+  // ── 활성 알람 ──
   if (profile.activeEvents.length > 0) {
-    lines.push(`\n### ⚠️ 현재 활성 알람`);
-    // 긴급도순 정렬
+    lines.push(`\n### ⚠️ 현재 활성 smaXtec 알람`);
     const sorted = [...profile.activeEvents].sort((a, b) => {
       const order = ['critical', 'high', 'medium', 'low'];
       return order.indexOf(a.severity) - order.indexOf(b.severity);
     });
     for (const e of sorted) {
       const label = ALARM_LABELS[e.type] ?? e.type;
-      const time = e.detectedAt ? ` (${new Date(e.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})` : '';
+      const time = e.detectedAt
+        ? ` (${new Date(e.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})`
+        : '';
       lines.push(`- **${label}** [${e.severity}]${time}`);
     }
-    lines.push(`\n→ 위 알람에 대해 원인 분석, 감별진단, 즉시 조치, 경과 관찰 포인트를 포함하여 답변하세요.`);
   }
 
-  // ── 생산 데이터 ──
-  if (profile.breedType === 'dairy' && profile.production?.milkYield !== null) {
-    lines.push(`- 유량: ${String(profile.production?.milkYield)}kg`);
-  }
-
-  // ── 번식 상태 ──
-  if (profile.pregnancyStatus) {
-    lines.push(`- 임신 상태: ${profile.pregnancyStatus}`);
-  }
-
-  // ── 7일 센서 히스토리 (추세 판단) ──
+  // ── 7일 센서 추세 — 상세 ──
   if (profile.sensorHistory7d.length > 0) {
-    const temps = profile.sensorHistory7d
-      .map((h) => h.temperature)
-      .filter((v): v is number => v !== null);
-    const rums = profile.sensorHistory7d
-      .map((h) => h.rumination)
-      .filter((v): v is number => v !== null);
-    if (temps.length > 0) {
-      const recent3 = temps.slice(-3);
-      const trend = recent3.length >= 2 && recent3[recent3.length - 1]! > recent3[0]! ? '상승 추세' : '안정';
-      lines.push(`- 7일 체온: ${String(Math.min(...temps))}~${String(Math.max(...temps))}°C (${trend}, ${String(temps.length)}건)`);
+    lines.push(`\n### 📈 7일 센서 추세`);
+    const temps = profile.sensorHistory7d.map((h) => h.temperature).filter((v): v is number => v !== null);
+    const rums = profile.sensorHistory7d.map((h) => h.rumination).filter((v): v is number => v !== null);
+    const acts = profile.sensorHistory7d.map((h) => h.activity).filter((v): v is number => v !== null);
+
+    if (temps.length >= 2) {
+      const avg = temps.reduce((a, b) => a + b, 0) / temps.length;
+      const recent3Avg = temps.slice(-3).reduce((a, b) => a + b, 0) / Math.min(temps.length, 3);
+      const earlyAvg = temps.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(temps.length, 3);
+      const trendDir = recent3Avg - earlyAvg > 0.3 ? '↗ 상승' : recent3Avg - earlyAvg < -0.3 ? '↘ 하강' : '→ 안정';
+      lines.push(`- 체온 7일: 최저 ${String(Math.min(...temps))}°C / 최고 ${String(Math.max(...temps))}°C / 평균 ${avg.toFixed(2)}°C / 추세 ${trendDir}`);
+      if (Math.max(...temps) - Math.min(...temps) > 1.0) {
+        lines.push(`  → ⚠️ 7일 체온 변동폭 ${(Math.max(...temps) - Math.min(...temps)).toFixed(1)}°C 이상 — 간헐적 감염·발정·내분비 이상 감별 필요`);
+      }
     }
-    if (rums.length > 0) {
-      lines.push(`- 7일 반추: ${String(Math.min(...rums))}~${String(Math.max(...rums))}분/일`);
+
+    if (rums.length >= 2) {
+      const avg = rums.reduce((a, b) => a + b, 0) / rums.length;
+      const recent3Avg = rums.slice(-3).reduce((a, b) => a + b, 0) / Math.min(rums.length, 3);
+      const earlyAvg = rums.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(rums.length, 3);
+      const trendDir = recent3Avg - earlyAvg > 30 ? '↗ 회복' : recent3Avg - earlyAvg < -30 ? '↘ 악화' : '→ 안정';
+      lines.push(`- 반추 7일: 최저 ${String(Math.min(...rums))} / 최고 ${String(Math.max(...rums))} / 평균 ${avg.toFixed(0)}분/일 / 추세 ${trendDir}`);
+      if (avg < 250) {
+        lines.push(`  → ⚠️ 7일 평균 반추 ${avg.toFixed(0)}분으로 심각하게 낮음 — 만성 반추위 산증·케토시스·제4위 변위 가능성 높음`);
+      }
+    }
+
+    if (acts.length >= 2) {
+      const avg = acts.reduce((a, b) => a + b, 0) / acts.length;
+      lines.push(`- 활동량 7일: 평균 ${avg.toFixed(0)} (최저 ${String(Math.min(...acts))}, 최고 ${String(Math.max(...acts))})`);
+      // 발정 관련 활동 급증 패턴 감지
+      const maxAct = Math.max(...acts);
+      if (maxAct > 100 && maxAct > avg * 2) {
+        lines.push(`  → 💡 최대 활동량이 평균의 2배 이상 — 발정 피크 또는 통증성 행동 감별 (번식 기록 확인 권장)`);
+      }
     }
   }
 
   // ── 번식 이력 ──
   if (profile.breedingHistory.length > 0) {
-    lines.push(`\n### 번식 이력 (최근 ${String(Math.min(profile.breedingHistory.length, 5))}건)`);
+    lines.push(`\n### 🐄 번식 이력 (최근 ${String(Math.min(profile.breedingHistory.length, 5))}건)`);
     for (const b of profile.breedingHistory.slice(0, 5)) {
       const date = b.date ? new Date(b.date).toLocaleDateString('ko-KR') : '';
-      const semen = b.semenType ? ` 정액: ${b.semenType}` : '';
+      const semen = b.semenType ? ` / 정액: ${b.semenType}` : '';
       lines.push(`- ${date}: 수정${semen} → ${b.result}`);
     }
+    // 반복 수정 패턴 분석
+    const failCount = profile.breedingHistory.filter((b) => b.result === 'fail').length;
+    if (failCount >= 2) {
+      lines.push(`  → ⚠️ 수정 실패 ${String(failCount)}회 — 반복 수정 소(Repeat Breeder) 가능성: 자궁염·황체부전·위내 산증·영양 불균형 감별 필요`);
+    }
+  }
+
+  // ── 번식 피드백 ──
+  if (profile.breedingFeedback) {
+    const fb = profile.breedingFeedback;
+    lines.push(`- 이 개체 수태율: ${String(fb.conceptionRate.toFixed(1))}% (수정 ${String(fb.totalInseminations)}회, 임신 ${String(fb.pregnantCount)}회)`);
   }
 
   // ── 건강 이력 ──
   if (profile.healthHistory.length > 0) {
-    lines.push(`\n### 건강 이력 (최근 ${String(Math.min(profile.healthHistory.length, 5))}건)`);
+    lines.push(`\n### 🏥 건강 이력 (최근 ${String(Math.min(profile.healthHistory.length, 5))}건)`);
     for (const h of profile.healthHistory.slice(0, 5)) {
       const date = h.date ? new Date(h.date).toLocaleDateString('ko-KR') : '';
       lines.push(`- ${date}: ${h.diagnosis}${h.treatment ? ` — 치료: ${h.treatment}` : ''}`);
     }
+    // 유방염 반복 패턴
+    const mastitisCount = profile.healthHistory.filter((h) =>
+      h.diagnosis?.includes('유방') || h.diagnosis?.includes('mastitis'),
+    ).length;
+    if (mastitisCount >= 2) {
+      lines.push(`  → ⚠️ 유방염 반복 (${String(mastitisCount)}회) — 도태 검토, 미생물 감수성 검사, 건유 요법 재설계 필요`);
+    }
   }
 
-  // ── AI 주치의 지침 ──
-  lines.push(`\n### 답변 지침 (주치의 모드)
-- 이 소의 현재 상태에 대해 **구체적인 조치**를 알려주세요
-- "수의사를 부르세요"만으로는 부족합니다. 어떤 검사를 해야 하고, 의심 질환이 뭔지, 응급 처치는 뭔지 설명하세요
-- 새로 설치한 농가의 목장주가 질문한다고 가정하세요 — 경험이 적을 수 있습니다
-- 데이터 추세(7일)를 참고하여 급성인지 만성인지 판단하세요
-- **자연어 대화체 필수**: 표, 막대그래프(★★★★★, ████), ASCII 차트, 기호 나열을 사용하지 마세요. 클로드처럼 자연스러운 문장으로 설명하세요
-- 데이터를 나열("체온: 38.7°C / 반추: 350분")하지 말고 문장("현재 체온은 38.7°C로 정상이며, 반추도 350분으로 양호합니다")으로 쓰세요
-- 이 개체에 대한 질문이면 이 개체 데이터 기준으로 답하고, 일반적인 축산/수의학 질문이면 전문 지식으로 자유롭게 답하세요`);
+  // ========================================
+  // AI 주치의 종합 지침 — 최고 수준 수의학·영양학·생리학·행동학
+  // ========================================
+  lines.push(`
+### 🧠 팅커벨 AI 주치의 모드 — 종합 임상 판단 지침
+
+당신(Claude)은 **대한민국 최고 수준의 소 임상 전문 수의사**이자 **영양학·사양관리·생리학·행동학 전문가**입니다.
+위 smaXtec 센서 데이터 + 이력을 바탕으로 **주치의처럼** 구체적으로 진단하고 조치하세요.
+
+#### 임상 판단 프레임워크
+
+**[체온 해석]**
+- 정상: 38.5~39.3°C (분만 전 24시간은 0.3°C 상승 허용)
+- 발정기: 최대 +0.5°C 상승 가능 (활동량 동반 증가 시 발정 가능성)
+- 분만 24~48시간 전: 0.3~0.5°C 하강 후 반등 (분만 예측 지표)
+- 39.8°C↑ 지속: 폐렴, 급성 유방염(대장균·황색포도구균), 자궁내막염, 복막염 순으로 감별
+- 40.5°C↑: 패혈성 쇼크 가능, BCS·심박수·무릎 반사 즉시 확인
+- 저체온(<37.5°C): 유열(저칼슘혈증)·내독소혈증·분만 직전 소, 즉각 칼슘 주사
+
+**[반추 해석]**
+- 정상: 400~600분/일 (분만 전후 2~3일은 200~350분까지 허용)
+- 200~400분: 발정 행동(일시적), 사료 변환 적응기, 경도 통증, 경증 케토시스
+- <200분: SARA(아급성 반추위 산증) or 케토시스 고위험 — 혈중 BHB 측정 강력 권고
+- <100분: 제4위 변위, 외상성 망위염, 복막염 — 청진 즉시(제4위 변위: 오른쪽 핑 음)
+- 7일 연속 저반추: 만성 산증 또는 케토시스 — 사료 배합비 TMR 분석 의뢰
+- 반추 후 활동 급증: 발정 행동 패턴 (반추↓ + 활동↑ = 발정 복합 신호)
+
+**[활동량 해석]**
+- 발정 탐지: 발정 전 6~18시간 동안 평소의 2~3배 증가. 체온 동반 상승(+0.3~0.5°C)이면 발정 확정
+- 발정 후 활동 감소: 정상 (최대 48시간)
+- 통증성 질환: 활동↓ + 체온↑ + 반추↓ 삼중 감소 = 심각한 전신 질환
+- 분만 임박: 활동 증가(안절부절) → 눕기 반복 → 분만. smaXtec 분만 알람과 연동 확인
+
+**[pH 해석]**
+- ≥6.2 정상; 5.8~6.2 SARA; <5.8 급성 반추위 산증
+- SARA 대응: 완충제(중탄산나트륨 200g/일), 농후사료 비율 ↓, 조사료 입자장 확보(NDF ≥28%)
+- 전환기 소(분만 전후 3주): pH 모니터링 강화, DCAD 프로그램 적용
+
+**[음수량 해석]**
+- 정상 음수량 = 체중(kg) × 0.08~0.12L + 유량 × 4~5배 (젖소 기준 60~120L/일)
+- 음수 감소: 수온 하강(10°C↓ 음수량 20% 감소), 설사·반추위 산증, 수질 불량(경도·염소 농도)
+- 음수 급감(전일 대비 30%↓): 급성 질병 징후 — 체온·반추 동반 확인
+
+**[산차·생리주기별 위험 패턴]**
+- 1산: 초임우 분만 위험 높음, 유두 개존 확인, 초유 품질 관리
+- 2~3산: 비유 피크 케토시스·유방염 고위험 — 분만 후 14일 이내 케토시스 스크리닝
+- 4산 이상: 유열(저칼슘혈증) 위험 급증 — 분만 전 음이온염 프로그램, 분만 후 칼슘 예방 투여
+
+**[전환기(Transition Period) 3주 관리 — 최고 위험 구간]**
+- 분만 전 3주: 건물섭취량(DMI) 30% 감소 → 에너지 부족 → 지방동원 시작 → 케토시스
+- 분만 후 3주: BHB >1.2mmol/L = 임상 케토시스, >1.4mmol/L = 즉각 치료(포도당 500mL IV)
+- 분만 전 체온 모니터링: 분만 4일 전부터 하루 2회 측정. 39.0°C↑ = 분만 전 염증(SCK 위험 3배↑)
+- NEB(에너지 음성 균형) 최소화: 양질 조사료 자유 채식 + 과비 방지(건유기 BCS 3.25~3.75)
+
+**[알람별 즉시 대응 프로토콜]**
+- 🌡️ 체온 알람(>39.8°C): 직장체온 재확인 → 유방 4분방 검사(CMT) → 자궁 초음파 → 혈액검사(WBC, 피브리노겐)
+- 🔄 반추 감소(<250분): 케톤 검사(유즙 or 혈중 BHB) → 반추위 청진 → 제4위 검사 → TMR 배합비 확인
+- ⚡ 발정 알람: 발정 시작 시각 + 수정 적기(12~18시간 후) 계산 → 정액 선정 → 수정사 연락
+- 🐄 분만 알람: 분만실 준비 → 초유 품질 확인(당도계 22°Brix↑) → 송아지 3~4L 초유 급여
+- ❤️‍🔥 건강 경고: 위 체온·반추·활동 종합 판단 → 감별진단 순서로 진행
+
+**[영양학적 평가]**
+- 체형(BCS): 분만 시 3.5 목표, 건유 말 3.25~3.75, 비유 중기 최저 2.75 이상 유지
+- 유량 감소(전일 대비 20%↓): 유방염·케토시스·스트레스·사료 변환 감별
+- 단백질 과부족: 반추위 pH와 연관. 과잉 → 암모니아 독성·생식독성, 부족 → 유단백 감소
+
+**[행동학적 신호]**
+- 기립 거부(기립 곤란): 유열·파행·근육통·척추 손상 → 기립 보조기 사용, 원인 감별
+- 무리에서 이탈: 통증·사회적 스트레스·분만 임박 — 개별 격리 후 관찰
+- 반복 기침: 폐렴(소 호흡기 증후군, BRD) — BRD 스코어링(1~4단계), 항생제 선택
+- 이갈이·침 흘림: 구제역·구내염·반추위 산증·이물질 — 즉각 격리·신고 검토
+
+**[응답 지침]**
+1. 단답형이면 한 줄로. 분석 요청이면 위 프레임워크를 적용해 풍부하게.
+2. 7일 추세를 반드시 참고하여 "급성(acute) vs 만성(chronic)" 구분하여 설명.
+3. 현장 농부가 즉시 실행할 수 있는 구체적 조치 순서를 제시.
+4. 수의사 호출이 필요한 경우 "왜, 어떤 검사를, 얼마나 긴급하게"를 명시.
+5. 절대 "데이터가 없습니다" 거부 금지. 알람 + 7일 추세 + 이력으로 최선의 판단 제공.
+6. 자연스러운 문장체 필수. 표·ASCII 차트·기호 나열 절대 금지.`);
 
   return lines.join('\n');
 }
