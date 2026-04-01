@@ -60,6 +60,8 @@ import { TinkerbellAssistant } from '@web/components/unified-dashboard/Tinkerbel
 import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
 import { VetDashboard } from '@web/components/unified-dashboard/VetDashboard';
 import { QuarantineDashboard } from '@web/components/unified-dashboard/QuarantineDashboard';
+import { FeedCompanyDashboard } from '@web/components/unified-dashboard/FeedCompanyDashboard';
+import { GovAdminDashboard } from '@web/components/unified-dashboard/GovAdminDashboard';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { BreedingPerformanceCard } from '@web/components/breeding/BreedingPerformanceCard';
 import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSelector';
@@ -786,20 +788,14 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <VetDashboard onFarmClick={(fid) => selectFarm(fid)} />
           )}
 
-          {/* ── 사료회사 전용 섹션 ── */}
+          {/* ── 사료회사 전용 대시보드 ── */}
           {user?.role === 'feed_company' && (
-            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: '16px 18px' }}>
-              <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 12px' }}>🌾 사료 효율 모니터링</h2>
-              <div style={{ fontSize: 12, color: 'var(--ct-text-secondary)', lineHeight: 1.8 }}>
-                <p>• 반추 감소 두수 → 사료 변경 후 적응 부진 or 소화기 질환</p>
-                <p>• 활동 감소 → 에너지 부족, BCS 확인 필요</p>
-                <p>• 센서 분석 차트에서 반추 트렌드 모니터링</p>
-                <p>• AI에게 "이 농장 반추 데이터 분석해줘" 질문 가능</p>
-              </div>
-              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(234,179,8,0.1)', fontSize: 11, color: '#eab308' }}>
-                📊 TMR 배합 변경 시 반추 데이터를 7일간 모니터링하세요. pH &lt; 5.8 지속 시 SARA 의심.
-              </div>
-            </div>
+            <FeedCompanyDashboard onFarmClick={(fid) => selectFarm(fid)} />
+          )}
+
+          {/* ── 정부 행정관 전용 대시보드 ── */}
+          {user?.role === 'government_admin' && (
+            <GovAdminDashboard onFarmClick={(fid) => selectFarm(fid)} />
           )}
 
           {/* ── 수정사 전용 대시보드 ── */}
