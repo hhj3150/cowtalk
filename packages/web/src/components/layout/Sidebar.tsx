@@ -146,10 +146,20 @@ function IconCow(): React.JSX.Element {
   );
 }
 
+function IconBreeding(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15m-6.3-11.896A24.01 24.01 0 0112 3.75c-.18 0-.358.004-.534.013M12 3.75c-.251.023-.501.05-.75.082M3 14.5l.62.827A.75.75 0 004.24 16h15.52a.75.75 0 00.62-1.173L19.8 15" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v4m-3 0h6" />
+    </svg>
+  );
+}
+
 // 공통 메뉴 — 모든 역할 동일 (simple is best)
 const COMMON_MENU: readonly MenuItem[] = [
   { label: '대시보드', path: '/', icon: <IconDashboard /> },
   { label: '내 소', path: '/my-cattle', icon: <IconCow /> },
+  { label: '번식 커맨드', path: '/breeding', icon: <IconBreeding /> },
   { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
   { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
 ];
