@@ -51,6 +51,7 @@ import { sovereignAlarmRouter } from './routes/sovereign-alarm.routes.js';
 import { animalEventsRouter } from './routes/animal-events.routes.js';
 import { newsRouter } from './routes/news.routes.js';
 import { reportGenerateRouter } from './routes/report-generate.routes.js';
+import { xaiRouter } from './routes/xai.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -107,6 +108,7 @@ export function createApiRouter(): Router {
   api.use('/animal-events', animalEventsRouter);
   api.use('/news', newsRouter);
   api.use('/report-generate', reportGenerateRouter);
+  api.use('/xai', xaiRouter);
 
   return api;
 }
