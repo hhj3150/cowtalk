@@ -1470,6 +1470,65 @@ export const kahisReportsRelations = relations(kahisReports, ({ one }) => ({
   submitter: one(users, { fields: [kahisReports.submittedBy], references: [users.userId] }),
 }));
 
+// ===========================
+// 구독 결제 (토스페이먼츠)
+// ===========================
+
+export const subscriptions = pgTable('subscriptions', {
+  subscriptionId: uuid('subscription_id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.userId),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  plan: varchar('plan', { length: 20 }).notNull(), // 'basic' | 'pro' | 'enterprise'
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending | active | cancelled | past_due
+  billingKey: varchar('billing_key', { length: 200 }), // 토스페이먼츠 빌링키
+  customerKey: varchar('customer_key', { length: 200 }).notNull(), // 구매자 키
+  priceMonthly: integer('price_monthly').notNull(), // 원화 (KRW)
+  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
+  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
+  metadata: jsonb('metadata').notNull().default('{}'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('subscriptions_user_id_idx').on(table.userId),
+  index('subscriptions_status_idx').on(table.status),
+  index('subscriptions_farm_id_idx').on(table.farmId),
+]);
+
+export const subscriptionsRelations = relations(subscriptions, ({ one, many }) => ({
+  user: one(users, { fields: [subscriptions.userId], references: [users.userId] }),
+  farm: one(farms, { fields: [subscriptions.farmId], references: [farms.farmId] }),
+  paymentHistory: many(paymentHistory),
+}));
+
+export const paymentHistory = pgTable('payment_history', {
+  paymentId: uuid('payment_id').primaryKey().defaultRandom(),
+  subscriptionId: uuid('subscription_id').notNull().references(() => subscriptions.subscriptionId),
+  userId: uuid('user_id').notNull().references(() => users.userId),
+  tossOrderId: varchar('toss_order_id', { length: 100 }).notNull().unique(), // 주문번호
+  tossPaymentKey: varchar('toss_payment_key', { length: 200 }), // 토스 결제키
+  amount: integer('amount').notNull(), // 결제 금액 (KRW)
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending | done | failed | cancelled
+  failureCode: varchar('failure_code', { length: 50 }),
+  failureMessage: text('failure_message'),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  periodStart: timestamp('period_start', { withTimezone: true }),
+  periodEnd: timestamp('period_end', { withTimezone: true }),
+  receiptUrl: text('receipt_url'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('payment_history_subscription_id_idx').on(table.subscriptionId),
+  index('payment_history_user_id_idx').on(table.userId),
+  index('payment_history_status_idx').on(table.status),
+  index('payment_history_paid_at_idx').on(table.paidAt),
+]);
+
+export const paymentHistoryRelations = relations(paymentHistory, ({ one }) => ({
+  subscription: one(subscriptions, { fields: [paymentHistory.subscriptionId], references: [subscriptions.subscriptionId] }),
+  user: one(users, { fields: [paymentHistory.userId], references: [users.userId] }),
+}));
+
 export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   labelId:           uuid('label_id').primaryKey().defaultRandom(),
   alarmSignature:    varchar('alarm_signature', { length: 200 }).notNull().unique(), // animalId:type:YYYY-MM-DD

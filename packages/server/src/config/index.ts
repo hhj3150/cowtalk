@@ -63,6 +63,11 @@ const envSchema = z.object({
   KAKAO_ALIMTALK_PFID: z.string().optional(),       // 카카오 플러스친구 채널 ID
   KAKAO_ALIMTALK_FROM: z.string().optional(),        // 발신번호 (Solapi 등록 번호)
   KAKAO_ALIMTALK_TEST_MODE: z.coerce.boolean().default(true), // true=로그만, false=실발송
+
+  // 토스페이먼츠 구독 결제
+  // https://console.tosspayments.com 에서 발급
+  TOSS_PAYMENTS_SECRET_KEY: z.string().optional(),   // sk_test_... 또는 sk_live_...
+  TOSS_PAYMENTS_CLIENT_KEY: z.string().optional(),   // ck_test_... 또는 ck_live_...
 });
 
 const parsed = envSchema.safeParse(process.env);

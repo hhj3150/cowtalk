@@ -42,6 +42,7 @@ const SystemStatusPage = lazy(() => import('@web/pages/admin/SystemStatusPage'))
 const AiPerformancePage = lazy(() => import('@web/pages/intelligence/AiPerformancePage'));
 const BreedingCommandPage = lazy(() => import('@web/pages/intelligence/BreedingCommandPage'));
 const BreedingKpiPage = lazy(() => import('@web/pages/intelligence/BreedingKpiPage'));
+const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -104,6 +105,7 @@ export function App(): React.JSX.Element {
               <Route path="/report/farm/:farmId/monthly" element={<MonthlyReportPage />} />
               <Route path="/scan" element={<EarTagScanPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
+              <Route path="/subscription" element={<SubscriptionPage />} />
               <Route path="/epidemiology/radius" element={<RadiusAnalysisPage />} />
               <Route path="/epidemiology/simulation" element={<SpreadSimulationPage />} />
               <Route path="/epidemiology/contact-network" element={<ContactNetworkPage />} />
