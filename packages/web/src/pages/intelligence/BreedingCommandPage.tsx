@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { getBreedingPipeline } from '@web/api/breeding.api';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
@@ -291,6 +292,7 @@ function InseminationSlideOver({ animalId, onClose }: SlideOverProps): React.JSX
 
 export default function BreedingCommandPage(): React.JSX.Element {
   const { selectedFarmId } = useFarmStore();
+  const navigate = useNavigate();
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery<BreedingPipelineData>({
@@ -354,14 +356,24 @@ export default function BreedingCommandPage(): React.JSX.Element {
             전체 {data.totalAnimals}두 · 최종 업데이트 {new Date(data.lastUpdated).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          className="text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-70"
-          style={{ background: 'var(--ct-surface)', color: 'var(--ct-text-secondary)', border: '1px solid var(--ct-border)' }}
-        >
-          새로고침
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/breeding/performance')}
+            className="text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-70 font-medium"
+            style={{ background: 'rgba(37,99,235,0.1)', color: '#2563eb', border: '1px solid rgba(37,99,235,0.2)' }}
+          >
+            📊 성과 분석
+          </button>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-70"
+            style={{ background: 'var(--ct-surface)', color: 'var(--ct-text-secondary)', border: '1px solid var(--ct-border)' }}
+          >
+            새로고침
+          </button>
+        </div>
       </div>
 
       {/* ── KPI 바 */}

@@ -40,6 +40,7 @@ const UserManagementPage = lazy(() => import('@web/pages/admin/UserManagementPag
 const SystemStatusPage = lazy(() => import('@web/pages/admin/SystemStatusPage'));
 const AiPerformancePage = lazy(() => import('@web/pages/intelligence/AiPerformancePage'));
 const BreedingCommandPage = lazy(() => import('@web/pages/intelligence/BreedingCommandPage'));
+const BreedingKpiPage = lazy(() => import('@web/pages/intelligence/BreedingKpiPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -131,6 +132,7 @@ export function App(): React.JSX.Element {
                 element={<RequireRole roles={['government_admin', 'veterinarian']}><AiPerformancePage /></RequireRole>}
               />
               <Route path="/breeding" element={<BreedingCommandPage />} />
+              <Route path="/breeding/performance" element={<BreedingKpiPage />} />
             </Route>
 
             {/* 404 → 홈으로 */}
