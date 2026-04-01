@@ -106,8 +106,8 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
     eventsByAnimal.set(evt.animalId, list);
   }
 
-  // 3. 임신감정 결과 조회
-  const pregnancyResults = animalIds.length > 0
+  // 3. 임신감정 결과 — smaXtec 이벤트(pregnancy_check) 우선, 수동 입력(pregnancyChecks) 보완
+  const manualPregnancies = animalIds.length > 0
     ? await db
         .select({
           animalId: pregnancyChecks.animalId,
@@ -119,6 +119,25 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
         .orderBy(desc(pregnancyChecks.checkDate))
     : [];
 
+  // smaXtec pregnancy_check 이벤트에서 임신 여부 추출 (details.pregnant = true/false)
+  const pregnancyResults: { animalId: string; result: string; checkDate: Date }[] = [];
+  for (const evt of recentEvents) {
+    if (evt.eventType !== 'pregnancy_check') continue;
+    const details = evt.details as Record<string, unknown> | null;
+    const pregnant = details?.pregnant;
+    if (pregnant === true) {
+      pregnancyResults.push({ animalId: evt.animalId, result: 'pregnant', checkDate: new Date(evt.detectedAt) });
+    } else if (pregnant === false) {
+      pregnancyResults.push({ animalId: evt.animalId, result: 'open', checkDate: new Date(evt.detectedAt) });
+    }
+  }
+  // 수동 입력 보완 (중복 없이 추가)
+  for (const p of manualPregnancies) {
+    pregnancyResults.push({ animalId: p.animalId, result: p.result, checkDate: new Date(p.checkDate) });
+  }
+
+  // 최신 순 정렬 후 개체별 Map 구성
+  pregnancyResults.sort((a, b) => b.checkDate.getTime() - a.checkDate.getTime());
   const pregnancyByAnimal = new Map<string, typeof pregnancyResults>();
   for (const p of pregnancyResults) {
     const list = pregnancyByAnimal.get(p.animalId) ?? [];
@@ -126,44 +145,47 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
     pregnancyByAnimal.set(p.animalId, list);
   }
 
-  // 4. 분만 이력 조회 — 분만간격 + 첫수정일수 계산용
-  const calvingResults = animalIds.length > 0
-    ? await db
-        .select({
-          animalId: calvingEvents.animalId,
-          calvingDate: calvingEvents.calvingDate,
-        })
-        .from(calvingEvents)
-        .where(inArray(calvingEvents.animalId, animalIds))
-        .orderBy(desc(calvingEvents.calvingDate))
-    : [];
-
+  // 4. 분만 이력 — smaXtec 'calving'/'calving_confirmation' 이벤트 + calvingEvents 테이블 병합
   const calvingByAnimal = new Map<string, Date[]>();
-  for (const c of calvingResults) {
-    if (!c.calvingDate) continue;
-    const list = calvingByAnimal.get(c.animalId) ?? [];
-    calvingByAnimal.set(c.animalId, [...list, c.calvingDate]);
+
+  // smaXtec 이벤트에서 분만 날짜 추출 (가장 데이터 풍부)
+  for (const evt of recentEvents) {
+    if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation') continue;
+    const list = calvingByAnimal.get(evt.animalId) ?? [];
+    calvingByAnimal.set(evt.animalId, [...list, new Date(evt.detectedAt)]);
   }
 
-  // 5. 번식 이벤트 (CowTalk 기록) — 수태율 계산용
+  // calvingEvents 테이블 보완 (수동 기록)
+  if (animalIds.length > 0) {
+    const manualCalvings = await db
+      .select({ animalId: calvingEvents.animalId, calvingDate: calvingEvents.calvingDate })
+      .from(calvingEvents)
+      .where(inArray(calvingEvents.animalId, animalIds))
+      .orderBy(desc(calvingEvents.calvingDate));
+    for (const c of manualCalvings) {
+      if (!c.calvingDate) continue;
+      const list = calvingByAnimal.get(c.animalId) ?? [];
+      calvingByAnimal.set(c.animalId, [...list, c.calvingDate]);
+    }
+  }
+
+  // 5. 수정 이벤트 — smaXtec 'insemination' 이벤트 + breedingEvents 테이블 병합
+  const inseminationsByAnimal = new Map<string, Date[]>();
+
+  // smaXtec 이벤트에서 수정 날짜 추출
+  for (const evt of recentEvents) {
+    if (evt.eventType !== 'insemination') continue;
+    const list = inseminationsByAnimal.get(evt.animalId) ?? [];
+    inseminationsByAnimal.set(evt.animalId, [...list, new Date(evt.detectedAt)]);
+  }
+
+  // breedingEvents 테이블 보완 (CowTalk 수동 기록)
   const cwBreedingEvents = animalIds.length > 0
     ? await db
-        .select({
-          animalId: breedingEvents.animalId,
-          type: breedingEvents.type,
-          eventDate: breedingEvents.eventDate,
-        })
+        .select({ animalId: breedingEvents.animalId, type: breedingEvents.type, eventDate: breedingEvents.eventDate })
         .from(breedingEvents)
-        .where(
-          and(
-            inArray(breedingEvents.animalId, animalIds),
-            gte(breedingEvents.eventDate, since365d),
-          ),
-        )
+        .where(and(inArray(breedingEvents.animalId, animalIds), gte(breedingEvents.eventDate, since365d)))
     : [];
-
-  // 개체별 수정 이벤트 Map (첫수정일수 계산용)
-  const inseminationsByAnimal = new Map<string, Date[]>();
   for (const e of cwBreedingEvents) {
     if (e.type !== 'insemination' || !e.eventDate) continue;
     const list = inseminationsByAnimal.get(e.animalId) ?? [];
