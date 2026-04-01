@@ -398,6 +398,24 @@ export default function LoginPage(): React.JSX.Element {
         >
           데모 모드 &mdash; 로그인 없이 둘러보기
         </button>
+        <button
+          type="button"
+          onClick={() => navigate('/onboarding')}
+          style={{
+            width: '100%',
+            padding: '10px',
+            fontSize: 13,
+            color: 'var(--ct-primary)',
+            background: 'rgba(59,130,246,0.08)',
+            border: '1px solid rgba(59,130,246,0.2)',
+            borderRadius: 10,
+            cursor: 'pointer',
+            marginTop: 4,
+            fontWeight: 600,
+          }}
+        >
+          🐄 CowTalk 시작하기 — 3분 무료 가입
+        </button>
         {/* 모바일: 역할 선택 버튼 */}
         {isMobile && (
           <div style={{ marginTop: 20 }}>

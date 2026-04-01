@@ -13,6 +13,7 @@ import type { Role } from '@cowtalk/shared';
 
 // Lazy-loaded 페이지
 const LoginPage = lazy(() => import('@web/pages/auth/LoginPage'));
+const OnboardingPage = lazy(() => import('@web/pages/auth/OnboardingPage'));
 const UnifiedDashboard = lazy(() => import('@web/pages/dashboard/UnifiedDashboard'));
 const DemoModePage = lazy(() => import('@web/pages/demo/DemoModePage'));
 const RegionalMapPage = lazy(() => import('@web/pages/regional/RegionalMapPage'));
@@ -87,6 +88,7 @@ export function App(): React.JSX.Element {
           <Routes>
             {/* 공개 */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/demo" element={<DemoModePage />} />
 
             {/* 인증 필요 */}

@@ -3,6 +3,8 @@
 import type { Request, Response } from 'express';
 import crypto from 'node:crypto';
 import type { LoginInput, RegisterInput, Role } from '@cowtalk/shared';
+import { getDb } from '../../config/database.js';
+import { farms, regions } from '../../db/schema.js';
 import {
   hashPassword,
   verifyPassword,
@@ -290,6 +292,94 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
         email: user.email,
         role: newRole,
       },
+    },
+  });
+}
+
+// ===========================
+// POST /auth/onboarding — 신규 농장주 원스텝 가입
+// 계정 생성 + 농장 등록 + JWT 자동 발급 (3분 온보딩 완결)
+// ===========================
+
+interface OnboardingInput {
+  name: string;
+  email: string;
+  password: string;
+  role: Role;
+  farm?: {
+    name: string;
+    address?: string;
+    ownerName?: string;
+    phone?: string;
+    capacity?: number;
+  };
+}
+
+export async function onboarding(req: Request, res: Response): Promise<void> {
+  const input = req.body as OnboardingInput;
+
+  // 1. 중복 이메일 확인
+  const existing = await findUserByEmail(input.email);
+  if (existing) {
+    throw new ConflictError('이미 사용 중인 이메일입니다');
+  }
+
+  // 2. 계정 생성
+  const passwordHash = await hashPassword(input.password);
+  const user = await createUser({
+    name: input.name,
+    email: input.email,
+    passwordHash,
+    role: input.role,
+    status: 'active',
+  });
+
+  // 3. 농장 생성 (farm 정보가 제공된 경우)
+  let farmId: string | undefined;
+  if (input.farm?.name) {
+    const db = getDb();
+    const [defaultRegion] = await db
+      .select({ regionId: regions.regionId })
+      .from(regions)
+      .limit(1);
+
+    if (defaultRegion) {
+      const [created] = await db
+        .insert(farms)
+        .values({
+          name: input.farm.name,
+          address: input.farm.address ?? '',
+          lat: 36.0,
+          lng: 127.5,
+          capacity: input.farm.capacity ?? 0,
+          currentHeadCount: 0,
+          ownerName: input.farm.ownerName ?? input.name,
+          phone: input.farm.phone ?? null,
+          regionId: defaultRegion.regionId,
+          status: 'active',
+        })
+        .returning({ farmId: farms.farmId });
+
+      farmId = created?.farmId;
+      if (farmId) await addUserFarmAccess(user.userId, [farmId]);
+    }
+  }
+
+  // 4. 자동 로그인 토큰 발급
+  const farmIds = farmId ? [farmId] : [];
+  const accessToken = signAccessToken({ userId: user.userId, role: user.role as Role, farmIds });
+  const refreshToken = signRefreshToken({ userId: user.userId });
+  const refreshTokenHash = hashToken(refreshToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await saveRefreshToken(user.userId, refreshTokenHash, expiresAt);
+
+  res.status(201).json({
+    success: true,
+    data: {
+      accessToken,
+      refreshToken,
+      user: { userId: user.userId, name: user.name, email: user.email, role: user.role },
+      farmId: farmId ?? null,
     },
   });
 }
