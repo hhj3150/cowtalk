@@ -58,6 +58,8 @@ import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
 import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
+import { VetDashboard } from '@web/components/unified-dashboard/VetDashboard';
+import { QuarantineDashboard } from '@web/components/unified-dashboard/QuarantineDashboard';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { BreedingPerformanceCard } from '@web/components/breeding/BreedingPerformanceCard';
 import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSelector';
@@ -730,62 +732,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 전염병 배너 ── */}
           <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
 
-          {/* ── 발정 긴급 배너 — 수정 적기 개체 원클릭 진입 ── */}
-          {breedingPipelineData?.urgentActions && breedingPipelineData.urgentActions
-            .filter((a) => a.actionType === 'inseminate_now')
-            .slice(0, 3)
-            .length > 0 && (
-            <div style={{
-              display: 'flex',
-              gap: 8,
-              overflowX: 'auto',
-              paddingBottom: 2,
-            }}>
-              {breedingPipelineData.urgentActions
-                .filter((a) => a.actionType === 'inseminate_now')
-                .slice(0, 3)
-                .map((action) => (
-                  <button
-                    key={action.animalId}
-                    type="button"
-                    onClick={() => setInseminationAnimalId(action.animalId)}
-                    className="ct-kpi-card"
-                    style={{
-                      flex: '1 1 0',
-                      minWidth: 160,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '12px 14px',
-                      background: 'linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(239,68,68,0.04) 100%)',
-                      border: '1px solid rgba(239,68,68,0.3)',
-                      borderRadius: 12,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 24,
-                      animation: 'ct-breeding-pulse 1.5s ease-in-out infinite',
-                    }}>
-                      🔴
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>
-                        #{action.earTag} 수정 적기
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--ct-text-secondary)', marginTop: 2 }}>
-                        {action.farmName} · {action.hoursRemaining > 0 ? `${action.hoursRemaining}시간 남음` : '지금 수정'}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, flexShrink: 0 }}>
-                      진입 →
-                    </span>
-                  </button>
-                ))}
-            </div>
-          )}
-
           {/* ── AI 브리핑 ── */}
           <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
 
@@ -835,20 +781,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
             </div>
           )}
 
-          {/* ── 수의사 전용 섹션 ── */}
+          {/* ── 수의사 전용 대시보드 ── */}
           {user?.role === 'veterinarian' && (
-            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: '16px 18px' }}>
-              <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 12px' }}>🩺 오늘 진료 대상</h2>
-              <div style={{ fontSize: 12, color: 'var(--ct-text-secondary)', lineHeight: 1.8 }}>
-                <p>• 발열 개체 → 할일 목록의 "발열 — 격리·진료" 클릭</p>
-                <p>• 질병 의심 → "질병 의심 — 수의 진료" 클릭 → AI 감별진단</p>
-                <p>• 개체 클릭 → <strong>/cow/ID</strong> 디지털 트윈 페이지에서 센서 데이터 + 진단 기록 확인</p>
-                <p>• AI에게 "이 소 왜 체온이 올랐지?" 질문 → 감별진단 + 확인검사 권장</p>
-              </div>
-              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(99,102,241,0.1)', fontSize: 11, color: '#8b5cf6' }}>
-                💡 진료 후 "진단 레이블"을 입력하면 AI가 학습합니다. 레이블이 쌓일수록 감별진단 정확도가 향상됩니다.
-              </div>
-            </div>
+            <VetDashboard onFarmClick={(fid) => selectFarm(fid)} />
           )}
 
           {/* ── 사료회사 전용 섹션 ── */}
@@ -942,6 +877,11 @@ export default function UnifiedDashboard(): React.JSX.Element {
             )}
           </div>
           </>
+
+          {/* ── 방역관 전용 대시보드 ── */}
+          {user?.role === 'quarantine_officer' && (
+            <QuarantineDashboard onFarmClick={(fid) => selectFarm(fid)} />
+          )}
 
           {/* ── 역학 감시 ── */}
           {(isVisible('epidemic_command_center') || isVisible('farm_health_score')) && (<>

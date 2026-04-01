@@ -1,4 +1,4 @@
-// 수정사 전용 대시보드 위젯 — 오늘 수정할 소 + AM/PM 경로 + 번식 통계
+// 수정사 전용 대시보드 위젯 — 오늘 수정할 소 + AM/PM 경로 + 번식 통계 + 7일 트렌드
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
@@ -18,6 +18,13 @@ interface InseminatorStats {
   readonly todayPregnancyCheck: number;
   readonly todayNoInsemination: number;
   readonly farmBreakdown: readonly FarmEstrus[];
+}
+
+interface DayTrend {
+  readonly date: string; // 'MM/DD'
+  readonly estrus: number;
+  readonly inseminated: number;
+  readonly conceptionRate: number; // 0~100
 }
 
 interface Props {
@@ -60,8 +67,32 @@ function isMorningFarm(farm: FarmEstrus): boolean {
   return earliest.getHours() < 12;
 }
 
+/** 날짜별 이벤트 집계 → 7일 트렌드 */
+function buildTrend(
+  estrusItems: readonly { detectedAt: string }[],
+  insemItems: readonly { detectedAt: string }[],
+  pregItems: readonly { detectedAt: string; details?: Record<string, unknown> | null }[],
+): readonly DayTrend[] {
+  const days: DayTrend[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    const dayStr = d.toISOString().slice(0, 10);
+    const estrus = estrusItems.filter((e) => e.detectedAt.startsWith(dayStr)).length;
+    const inseminated = insemItems.filter((e) => e.detectedAt.startsWith(dayStr)).length;
+    // 수태율: 해당일 임신감정 결과 중 임신 비율
+    const dayPreg = pregItems.filter((e) => e.detectedAt.startsWith(dayStr));
+    const pregnant = dayPreg.filter((e) => e.details?.pregnant === true).length;
+    const conceptionRate = dayPreg.length > 0 ? Math.round((pregnant / dayPreg.length) * 100) : 0;
+    days.push({ date: label, estrus, inseminated, conceptionRate });
+  }
+  return days;
+}
+
 export function InseminatorDashboard({ onFarmClick }: Props): React.JSX.Element {
   const [data, setData] = useState<InseminatorStats | null>(null);
+  const [trend, setTrend] = useState<readonly DayTrend[]>([]);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
@@ -70,14 +101,16 @@ export function InseminatorDashboard({ onFarmClick }: Props): React.JSX.Element 
   useEffect(() => {
     Promise.all([
       apiGet<{ items: readonly { eventId: string; farmId: string; farmName: string; animalId: string; earTag: string; eventType: string; detectedAt: string; severity: string }[]; total: number }>(
-        `/unified-dashboard/drilldown?eventType=estrus${farmIdsParam}`
+        `/unified-dashboard/drilldown?eventType=estrus&days=7${farmIdsParam}`
       ),
-      apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=insemination${farmIdsParam}`),
-      apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=pregnancy_check${farmIdsParam}`),
+      apiGet<{ items: readonly { detectedAt: string }[]; total: number }>(`/unified-dashboard/drilldown?eventType=insemination&days=7${farmIdsParam}`),
+      apiGet<{ items: readonly { detectedAt: string; details?: Record<string, unknown> | null }[]; total: number }>(`/unified-dashboard/drilldown?eventType=pregnancy_check&days=7${farmIdsParam}`),
       apiGet<{ total: number }>(`/unified-dashboard/drilldown?eventType=no_insemination${farmIdsParam}`),
     ]).then(([estrusRes, insemRes, pregRes, noInsemRes]) => {
       const farmMap = new Map<string, FarmEstrus>();
-      for (const a of estrusRes.items) {
+      // 오늘 발정만 경로에 표시
+      const todayStr = new Date().toISOString().slice(0, 10);
+      for (const a of estrusRes.items.filter((e) => e.detectedAt.startsWith(todayStr))) {
         const existing = farmMap.get(a.farmId);
         if (existing) {
           farmMap.set(a.farmId, {
@@ -96,11 +129,13 @@ export function InseminatorDashboard({ onFarmClick }: Props): React.JSX.Element 
       }
 
       const farmBreakdown = Array.from(farmMap.values()).sort((a, b) => b.estrusCount - a.estrusCount);
+      const todayEstrus = estrusRes.items.filter((e) => e.detectedAt.startsWith(todayStr)).length;
 
+      setTrend(buildTrend(estrusRes.items, insemRes.items, pregRes.items));
       setData({
-        todayEstrus: estrusRes.total,
-        todayInseminated: insemRes.total,
-        todayPregnancyCheck: pregRes.total,
+        todayEstrus,
+        todayInseminated: insemRes.items.filter((e) => e.detectedAt.startsWith(todayStr)).length,
+        todayPregnancyCheck: pregRes.items.filter((e) => e.detectedAt.startsWith(todayStr)).length,
         todayNoInsemination: noInsemRes.total,
         farmBreakdown,
       });
@@ -153,6 +188,67 @@ export function InseminatorDashboard({ onFarmClick }: Props): React.JSX.Element 
           ))}
         </div>
       </div>
+
+      {/* 7일 트렌드 차트 */}
+      {trend.length > 0 && (
+        <div style={{
+          background: 'var(--ct-card)',
+          border: '1px solid var(--ct-border)',
+          borderRadius: 12,
+          padding: '16px 18px',
+        }}>
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 14px' }}>
+            📈 최근 7일 번식 트렌드
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
+            {trend.map((day) => {
+              const maxVal = Math.max(...trend.map((d) => Math.max(d.estrus, d.inseminated, 1)));
+              const estrusH = Math.round((day.estrus / maxVal) * 80);
+              const insemH = Math.round((day.inseminated / maxVal) * 80);
+              return (
+                <div key={day.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  {/* 수태율 표시 */}
+                  {day.conceptionRate > 0 && (
+                    <div style={{ fontSize: 9, color: '#22c55e', fontWeight: 700 }}>
+                      {day.conceptionRate}%
+                    </div>
+                  )}
+                  {/* 막대 */}
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 80 }}>
+                    <div style={{
+                      width: isMobile ? 12 : 14,
+                      height: Math.max(estrusH, 2),
+                      background: '#ef4444',
+                      borderRadius: '2px 2px 0 0',
+                      opacity: 0.85,
+                    }} title={`발정 ${day.estrus}두`} />
+                    <div style={{
+                      width: isMobile ? 12 : 14,
+                      height: Math.max(insemH, 2),
+                      background: '#3b82f6',
+                      borderRadius: '2px 2px 0 0',
+                      opacity: 0.85,
+                    }} title={`수정 ${day.inseminated}두`} />
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', textAlign: 'center' }}>{day.date}</div>
+                </div>
+              );
+            })}
+          </div>
+          {/* 범례 */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 8, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--ct-text-muted)' }}>
+              <div style={{ width: 10, height: 10, background: '#ef4444', borderRadius: 2 }} />발정
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--ct-text-muted)' }}>
+              <div style={{ width: 10, height: 10, background: '#3b82f6', borderRadius: 2 }} />수정
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#22c55e' }}>
+              <span style={{ fontWeight: 700 }}>%</span> = 임신감정 수태율
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AM/PM 수정 경로 */}
       <div style={{
