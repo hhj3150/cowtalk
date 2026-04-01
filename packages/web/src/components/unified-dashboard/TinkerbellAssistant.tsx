@@ -8,14 +8,129 @@ import { useFarmStore } from '@web/stores/farm.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
-import axios from 'axios';
-
 // ── 타입 ──
 
 interface TinkerbellMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
   readonly timestamp: Date;
+}
+
+// ── 경량 Markdown 렌더러 ──
+// 외부 라이브러리 없이 핵심 패턴만 지원
+function MarkdownText({ text }: { text: string }): React.JSX.Element {
+  // 코드블록 보호: ```...``` → 플레이스홀더로 치환 후 처리
+  const codeBlocks: string[] = [];
+  const protected1 = text.replace(/```[\s\S]*?```/g, (match) => {
+    codeBlocks.push(match.slice(3, -3).replace(/^\w*\n/, ''));
+    return `\x00CODE${codeBlocks.length - 1}\x00`;
+  });
+
+  // 단락 분리: 연속 줄바꿈 → 단락
+  const paragraphs = protected1.split(/\n{2,}/);
+
+  const renderInline = (s: string): React.ReactNode => {
+    // **bold** → <strong>
+    // *italic* → <em>
+    // `code` → <code>
+    const parts = s.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\x00CODE\d+\x00)/);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return <em key={i}>{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return (
+          <code key={i} style={{
+            background: 'rgba(255,255,255,0.1)',
+            padding: '1px 5px',
+            borderRadius: 3,
+            fontSize: '0.9em',
+            fontFamily: 'monospace',
+          }}>
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      // 코드블록 플레이스홀더 복원
+      const codeMatch = /\x00CODE(\d+)\x00/.exec(part);
+      if (codeMatch) {
+        const code = codeBlocks[Number(codeMatch[1])] ?? '';
+        return (
+          <pre key={i} style={{
+            background: 'rgba(0,0,0,0.3)',
+            padding: '8px 10px',
+            borderRadius: 6,
+            fontSize: '0.85em',
+            fontFamily: 'monospace',
+            overflowX: 'auto',
+            margin: '4px 0',
+            whiteSpace: 'pre-wrap',
+          }}>
+            {code}
+          </pre>
+        );
+      }
+      return part;
+    });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {paragraphs.map((para, pIdx) => {
+        const trimmed = para.trim();
+        if (!trimmed) return null;
+
+        // 제목: # , ## , ###
+        const headingMatch = /^(#{1,3})\s+(.+)/.exec(trimmed);
+        if (headingMatch) {
+          const level = headingMatch[1]!.length;
+          const headingText = headingMatch[2] ?? '';
+          const sz = level === 1 ? 15 : level === 2 ? 13 : 12;
+          return (
+            <div key={pIdx} style={{ fontSize: sz, fontWeight: 800, color: 'var(--ct-text, #f1f5f9)', marginTop: 4 }}>
+              {renderInline(headingText)}
+            </div>
+          );
+        }
+
+        // 목록: - item 또는 • item 또는 1. item
+        const lines = trimmed.split('\n');
+        const isList = lines.some((l) => /^[-•*]\s/.test(l) || /^\d+\.\s/.test(l));
+        if (isList) {
+          return (
+            <ul key={pIdx} style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {lines.map((line, lIdx) => {
+                const bulletMatch = /^[-•*]\s+(.+)/.exec(line);
+                const numMatch = /^\d+\.\s+(.+)/.exec(line);
+                const content = bulletMatch?.[1] ?? numMatch?.[1];
+                if (!content) return null;
+                return (
+                  <li key={lIdx} style={{ fontSize: 13, color: 'var(--ct-text, #f1f5f9)', lineHeight: 1.55 }}>
+                    {renderInline(content)}
+                  </li>
+                );
+              })}
+            </ul>
+          );
+        }
+
+        // 일반 단락 (줄바꿈 보존)
+        return (
+          <p key={pIdx} style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--ct-text, #f1f5f9)' }}>
+            {lines.map((line, lIdx) => (
+              <React.Fragment key={lIdx}>
+                {renderInline(line)}
+                {lIdx < lines.length - 1 && <br />}
+              </React.Fragment>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 type TinkerbellState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -216,6 +331,7 @@ export function TinkerbellAssistant({
   const [isMinimized, setIsMinimized] = useState(false);
   const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly TinkerbellMessage[]>([]);
+  const [streamText, setStreamText] = useState(''); // 실시간 스트리밍 중인 텍스트
 
   // (사이드 패널 — 고정 위치, 드래그/리사이즈 불필요)
   const [transcript, setTranscript] = useState('');
@@ -268,11 +384,12 @@ export function TinkerbellAssistant({
       .catch(() => { /* 통계 로드 실패는 무시 */ });
   }, [isOpen]);
 
-  // AI에 질문 전송
+  // AI에 질문 전송 (fetch ReadableStream 실시간 스트리밍)
   const askTinkerbell = useCallback(async (question: string) => {
     const userMsg: TinkerbellMessage = { role: 'user', content: question, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
     setState('thinking');
+    setStreamText('');
 
     // 학습 현황 질문 감지 → 소버린 통계 컨텍스트 주입
     const isLearningQuery = /학습|배웠|소버린|정확도|오탐|레이블|지식.*강화/i.test(question);
@@ -282,68 +399,83 @@ export function TinkerbellAssistant({
 
     try {
       const token = useAuthStore.getState().accessToken;
-      const response = await axios.post<string>(
-        '/api/chat/stream',
-        {
-          question: animalContext
-            ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n중요 응답 규칙:\n- 클로드처럼 자연스러운 대화체로 답하세요. 표, 막대그래프(★★★), ASCII 차트 등 시각적 형식을 절대 사용하지 마세요.\n- "체온: 38.7°C" 같은 나열이 아니라 "현재 체온은 38.7°C로 정상 범위입니다" 처럼 문장으로 설명하세요.\n- 이 개체에 대해 질문하면 이 개체 데이터 기준으로 답하고, 일반적인 축산 질문이면 전문 지식으로 자유롭게 답하세요.\n- 간결하되 전문적으로, 필요하면 구체적 행동 지시를 포함하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
-            : `[음성 대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다. 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요. 표나 그래프 형식 없이 자연어 문장으로만 답하세요.${sovereignContext}\n\n질문: ${question}`,
-          role: user?.role ?? 'farm_owner',
-          farmId: farmIdForChat ?? selectedFarmId ?? undefined,
-          animalId: animalIdForChat ?? undefined,
-          dashboardContext: animalContext
-            ? `${animalContext}`
-            : dashboardContext
-              ? `현재 대시보드: 총 알람 ${dashboardContext.totalAlarms}건, 긴급 ${dashboardContext.criticalCount}건, 건강이상 ${dashboardContext.healthIssues}두, ${dashboardContext.farmCount}개 농장, ${dashboardContext.animalCount}두 관리 중`
-              : undefined,
-          conversationHistory: messages.slice(-6).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          responseType: 'text',
-        },
-      );
+      const payload = {
+        question: animalContext
+          ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
+          : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}\n\n질문: ${question}`,
+        role: user?.role ?? 'farm_owner',
+        farmId: farmIdForChat ?? selectedFarmId ?? undefined,
+        animalId: animalIdForChat ?? undefined,
+        dashboardContext: animalContext
+          ? `${animalContext}`
+          : dashboardContext
+            ? `현재 대시보드: 총 알람 ${dashboardContext.totalAlarms}건, 긴급 ${dashboardContext.criticalCount}건, 건강이상 ${dashboardContext.healthIssues}두, ${dashboardContext.farmCount}개 농장, ${dashboardContext.animalCount}두 관리 중`
+            : undefined,
+        conversationHistory: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+      };
 
-      const raw = typeof response.data === 'string' ? response.data : '';
-      const lines = raw.split('\n');
+      const res = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token ?? ''}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
       let fullText = '';
-
       let errorText = '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const parsed = JSON.parse(line.slice(6)) as StreamChunk;
-          if (parsed.type === 'done') {
-            fullText = parsed.content;
-            break;
+      const startedAt = new Date();
+      let firstChunk = true;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed = JSON.parse(line.slice(6)) as StreamChunk;
+            if (parsed.type === 'done') {
+              if (parsed.content) fullText = parsed.content;
+              break;
+            }
+            if (parsed.type === 'text') {
+              fullText += parsed.content;
+              setStreamText(fullText);
+              if (firstChunk) { setState('speaking'); firstChunk = false; }
+            }
+            if (parsed.type === 'error') {
+              errorText = parsed.content;
+            }
+          } catch {
+            // skip malformed SSE line
           }
-          if (parsed.type === 'text') {
-            fullText += parsed.content;
-          }
-          if (parsed.type === 'error') {
-            errorText = parsed.content;
-          }
-        } catch {
-          // skip
         }
       }
 
       const answer = fullText || (errorText ? `⚠️ AI 오류: ${errorText}` : '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
-      const assistantMsg: TinkerbellMessage = { role: 'assistant', content: answer, timestamp: new Date() };
-      setMessages((prev) => [...prev, assistantMsg]);
-
+      setStreamText('');
+      setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
       setState('speaking');
       speak(answer, () => setState('idle'));
     } catch (err) {
-      // 네트워크 에러 vs 서버 에러 구분
-      const axiosErr = err as { response?: { status?: number }; code?: string };
-      const isNetworkError = !axiosErr.response || axiosErr.code === 'ERR_NETWORK';
+      setStreamText('');
+      const fetchErr = err as { message?: string };
+      const isNetworkError = fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError');
       const errorContent = isNetworkError
         ? '인터넷 연결을 확인해 주세요. 네트워크 오류가 발생했습니다.'
-        : `서버 오류가 발생했습니다 (${String(axiosErr.response?.status ?? '')}). 잠시 후 다시 시도해 주세요.`;
+        : `서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.`;
 
       const errorMsg: TinkerbellMessage = {
         role: 'assistant',
@@ -536,24 +668,38 @@ export function TinkerbellAssistant({
                       ? `linear-gradient(135deg, ${color}, ${color}cc)`
                       : 'rgba(255,255,255,0.07)',
                     color: msg.role === 'user' ? 'white' : 'var(--ct-text, #f1f5f9)',
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                   }}>
-                    {msg.content}
+                    {msg.role === 'assistant'
+                      ? <MarkdownText text={msg.content} />
+                      : <span style={{ fontSize: 13, lineHeight: 1.55 }}>{msg.content}</span>
+                    }
                   </div>
                   <div style={{ fontSize: 9, color: 'var(--ct-text-muted, #64748b)', marginTop: 2, textAlign: msg.role === 'user' ? 'right' : 'left' }}>
                     {msg.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               ))}
+              {/* 실시간 스트리밍 버블 */}
+              {streamText && (
+                <div style={{ alignSelf: 'flex-start', maxWidth: '88%' }}>
+                  <div style={{
+                    padding: '9px 13px',
+                    borderRadius: '14px 14px 14px 4px',
+                    background: 'rgba(255,255,255,0.07)',
+                    wordBreak: 'break-word',
+                  }}>
+                    <MarkdownText text={streamText} />
+                    <span style={{ display: 'inline-block', width: 6, height: 13, background: color, borderRadius: 1, marginLeft: 2, animation: 'tinkerbell-dot 0.8s infinite' }} />
+                  </div>
+                </div>
+              )}
               {state === 'listening' && transcript && (
                 <div style={{ alignSelf: 'flex-end', padding: '9px 13px', borderRadius: '14px 14px 4px 14px', background: `${color}30`, color: 'var(--ct-text, #f1f5f9)', fontSize: 13, fontStyle: 'italic', border: `1px dashed ${color}` }}>
                   {transcript}...
                 </div>
               )}
-              {state === 'thinking' && (
+              {state === 'thinking' && !streamText && (
                 <div style={{ alignSelf: 'flex-start', padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.06)', display: 'flex', gap: 4 }}>
                   <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0s', color }}>✦</span>
                   <span style={{ animation: 'tinkerbell-dot 1.4s infinite', animationDelay: '0.2s', color }}>✦</span>
@@ -882,13 +1028,12 @@ export function TinkerbellAssistant({
               background: msg.role === 'user'
                 ? `linear-gradient(135deg, ${color}, ${color}cc)`
                 : 'rgba(255,255,255,0.06)',
-              color: msg.role === 'user' ? 'white' : 'var(--ct-text, #f1f5f9)',
-              fontSize: 13,
-              lineHeight: 1.5,
-              whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
             }}>
-              {msg.content}
+              {msg.role === 'assistant'
+                ? <MarkdownText text={msg.content} />
+                : <span style={{ fontSize: 13, lineHeight: 1.5, color: 'white' }}>{msg.content}</span>
+              }
             </div>
             <div style={{
               fontSize: 9,
@@ -900,6 +1045,26 @@ export function TinkerbellAssistant({
             </div>
           </div>
         ))}
+
+        {/* 실시간 스트리밍 버블 */}
+        {streamText && (
+          <div style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: '14px 14px 14px 4px',
+              background: 'rgba(255,255,255,0.06)',
+              wordBreak: 'break-word',
+            }}>
+              <MarkdownText text={streamText} />
+              <span style={{
+                display: 'inline-block', width: 7, height: 14,
+                background: color, borderRadius: 1, marginLeft: 2,
+                animation: 'tinkerbell-dot 0.8s infinite',
+                verticalAlign: 'middle',
+              }} />
+            </div>
+          </div>
+        )}
 
         {state === 'listening' && transcript && (
           <div style={{
@@ -917,7 +1082,7 @@ export function TinkerbellAssistant({
           </div>
         )}
 
-        {state === 'thinking' && (
+        {state === 'thinking' && !streamText && (
           <div style={{
             alignSelf: 'flex-start',
             padding: '10px 14px',
