@@ -194,3 +194,120 @@ notificationRouter.post('/push-test', async (_req: Request, res: Response, next:
     next(error);
   }
 });
+
+// ===========================
+// 카카오 알림톡 API
+// ===========================
+
+import {
+  sendAlimtalk,
+  notifyEstrus,
+  notifyCalvingImminent,
+  notifyDiseaseSuspected,
+  type AlimtalkTemplateId,
+} from '../../lib/kakao-alimtalk.js';
+
+// POST /notifications/alimtalk/test — 알림톡 테스트 발송
+notificationRouter.post('/alimtalk/test', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { phone, templateId, variables } = req.body as {
+      phone: string;
+      templateId: AlimtalkTemplateId;
+      variables: Record<string, string>;
+    };
+
+    if (!phone || !templateId) {
+      res.status(400).json({ success: false, error: 'phone, templateId 필수' });
+      return;
+    }
+
+    const result = await sendAlimtalk({ to: phone, templateId, variables: variables ?? {} });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /notifications/alimtalk/estrus — 발정 알림 발송 (수정사·농장주)
+notificationRouter.post('/alimtalk/estrus', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { phone, farmName, earTag, detectedAt, optimalTime } = req.body as {
+      phone: string;
+      farmName: string;
+      earTag: string;
+      detectedAt: string;
+      optimalTime: string;
+    };
+
+    if (!phone || !farmName || !earTag) {
+      res.status(400).json({ success: false, error: 'phone, farmName, earTag 필수' });
+      return;
+    }
+
+    const result = await notifyEstrus({ phone, farmName, earTag, detectedAt, optimalTime });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /notifications/alimtalk/calving — 분만 임박 알림
+notificationRouter.post('/alimtalk/calving', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { phone, farmName, earTag, parity, calvingDate } = req.body as {
+      phone: string;
+      farmName: string;
+      earTag: string;
+      parity: number;
+      calvingDate: string;
+    };
+
+    const result = await notifyCalvingImminent({ phone, farmName, earTag, parity: parity ?? 1, calvingDate });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /notifications/alimtalk/disease — 질병 의심 알림
+notificationRouter.post('/alimtalk/disease', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { phone, farmName, earTag, symptom, confidence } = req.body as {
+      phone: string;
+      farmName: string;
+      earTag: string;
+      symptom: string;
+      confidence: number;
+    };
+
+    const result = await notifyDiseaseSuspected({
+      phone, farmName, earTag, symptom, confidence: confidence ?? 80,
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /notifications/alimtalk/status — 알림톡 연동 상태 조회
+notificationRouter.get('/alimtalk/status', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { config: cfg } = await import('../../config/index.js');
+    res.json({
+      success: true,
+      data: {
+        testMode: cfg.KAKAO_ALIMTALK_TEST_MODE,
+        configured: !!(cfg.KAKAO_ALIMTALK_API_KEY && cfg.KAKAO_ALIMTALK_PFID),
+        templates: [
+          'ESTRUS_ALERT', 'INSEMINATION_TIMING', 'PREGNANCY_CHECK_DUE',
+          'CALVING_IMMINENT', 'DISEASE_SUSPECTED', 'QUARANTINE_ALERT',
+        ],
+        provider: 'Solapi (솔라피)',
+        channelName: 'CowTalk 공식채널',
+        approvalStatus: cfg.KAKAO_ALIMTALK_PFID ? 'ready' : 'pending_registration',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});

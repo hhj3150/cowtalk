@@ -55,6 +55,14 @@ const envSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_EMAIL: z.string().default('mailto:ha@d2o.kr'),
+
+  // 카카오 알림톡 (Solapi)
+  // 카카오채널 등록 후 https://console.solapi.com에서 발급
+  KAKAO_ALIMTALK_API_KEY: z.string().optional(),
+  KAKAO_ALIMTALK_API_SECRET: z.string().optional(),
+  KAKAO_ALIMTALK_PFID: z.string().optional(),       // 카카오 플러스친구 채널 ID
+  KAKAO_ALIMTALK_FROM: z.string().optional(),        // 발신번호 (Solapi 등록 번호)
+  KAKAO_ALIMTALK_TEST_MODE: z.coerce.boolean().default(true), // true=로그만, false=실발송
 });
 
 const parsed = envSchema.safeParse(process.env);
