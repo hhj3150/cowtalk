@@ -13,6 +13,17 @@ import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext } from '../ai-brain/label-context.js';
 import { saveChatConversation } from './chat-learner.js';
+import { detectReportIntent } from '../services/report/intentDetector.js';
+import { collectReportData } from '../services/report/dataCollector.js';
+import { generateReportContent } from '../services/report/aiContentGenerator.js';
+import { generateDocx } from '../services/report/generators/docxGenerator.js';
+import { generateXlsx } from '../services/report/generators/xlsxGenerator.js';
+import { generatePptx } from '../services/report/generators/pptxGenerator.js';
+import { generatePdf } from '../services/report/generators/pdfGenerator.js';
+import { REPORT_CONFIG } from '../services/report/config.js';
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import fs from 'fs';
 
 // ===========================
 // 대화 메시지 (JSON 응답)
@@ -119,6 +130,56 @@ export async function handleChatStream(
   callbacks: StreamCallbacks,
 ): Promise<void> {
   const { question, role, farmId, animalId, conversationHistory, dashboardContext } = request;
+
+  // ── 보고서 인텐트 감지 — 파일 생성 후 다운로드 링크 반환 ──
+  const reportIntent = detectReportIntent(question);
+  if (reportIntent.isReport) {
+    try {
+      const reportParams: Record<string, string | number | undefined> = {};
+      if (reportIntent.traceNo) reportParams['traceNo'] = reportIntent.traceNo;
+      if (farmId) reportParams['farmId'] = farmId;
+
+      callbacks.onText('📄 보고서를 생성하고 있습니다...\n\n');
+
+      const dbData = await collectReportData(
+        reportIntent.reportType ?? 'custom',
+        reportParams,
+      );
+
+      const reportContent = await generateReportContent({
+        reportType: (reportIntent.reportType ?? 'custom') as Parameters<typeof generateReportContent>[0]['reportType'],
+        outputFormat: reportIntent.format ?? 'docx',
+        userPrompt: reportIntent.cleanPrompt ?? question,
+        dbData: dbData as Parameters<typeof generateReportContent>[0]['dbData'],
+      });
+
+      if (!fs.existsSync(REPORT_CONFIG.OUTPUT_DIR)) {
+        fs.mkdirSync(REPORT_CONFIG.OUTPUT_DIR, { recursive: true });
+      }
+
+      const fileId = uuidv4();
+      const dateStr = new Date().toISOString().split('T')[0]!.replace(/-/g, '');
+      const safeType = (reportIntent.reportType ?? 'custom').replace(/[^a-zA-Z0-9_]/g, '');
+      const fmt = reportIntent.format ?? 'docx';
+      const fileName = `cowtalk_${safeType}_${dateStr}.${fmt}`;
+      const outputPath = path.join(REPORT_CONFIG.OUTPUT_DIR, `${fileId}_${fileName}`);
+
+      const generators: Readonly<Record<string, (c: Record<string, unknown>, p: string) => Promise<void>>> = {
+        docx: generateDocx, xlsx: generateXlsx, pptx: generatePptx, pdf: generatePdf,
+      };
+      const gen = generators[fmt];
+      if (gen) await gen(reportContent, outputPath);
+
+      const title = String(reportContent['title'] ?? fileName);
+      const downloadUrl = `/api/report-generate/download/${fileId}`;
+      const resultMsg = `✅ **"${title}"** 보고서가 생성되었습니다.\n\n📁 파일: ${fileName}\n🔗 [다운로드](${downloadUrl})\n⏰ 48시간 후 자동 삭제됩니다.`;
+      callbacks.onDone(resultMsg);
+      return;
+    } catch (err) {
+      logger.warn({ err }, '[Chat→Report] Report generation failed, falling back to chat');
+      // 실패 시 일반 채팅으로 폴백
+    }
+  }
 
   // 컨텍스트 해결 (실패해도 일반 대화 가능)
   let context: Awaited<ReturnType<typeof resolveContext>>['context'];

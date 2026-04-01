@@ -349,7 +349,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const topAlertColor = topAlert?.severity === 'critical' ? '#ef4444' : '#f97316';
 
   return (
-    <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px' : '20px 24px', overflowX: 'hidden' }}>
+    <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px 80px' : '20px 24px', overflowX: 'hidden' }}>
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* 헤더 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -797,9 +797,9 @@ export default function CowProfilePage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 팅커벨 AI */}
+      {/* 팅커벨 AI — 우측 하단 플로팅 버튼 */}
       <SectionErrorBoundary label="AI 어시스턴트">
-        <TinkerbellAssistant openTrigger={tinkerbellTrigger} alwaysOpen />
+        <TinkerbellAssistant openTrigger={tinkerbellTrigger} />
       </SectionErrorBoundary>
 
       {/* 임신감정 모달 */}

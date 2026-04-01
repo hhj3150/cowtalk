@@ -286,8 +286,8 @@ export function TinkerbellAssistant({
         '/api/chat/stream',
         {
           question: animalContext
-            ? `[팅커벨 AI — 개체 대화 모드] 당신은 축산 전문 AI 요정 "팅커벨"입니다. 이 개체의 DB 데이터(센서, 알람, 번식이력, 건강이력)를 기반으로 답하세요. 사용자가 무엇을 물어보든 이 개체 기준으로 답하세요. 간결하되 전문적으로, 구체적 행동 지시를 포함하세요. 데이터에 없는 내용은 추측하지 말고 "데이터 없음"으로 명시하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
-            : `[음성 대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다. 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요.${sovereignContext}\n\n질문: ${question}`,
+            ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n중요 응답 규칙:\n- 클로드처럼 자연스러운 대화체로 답하세요. 표, 막대그래프(★★★), ASCII 차트 등 시각적 형식을 절대 사용하지 마세요.\n- "체온: 38.7°C" 같은 나열이 아니라 "현재 체온은 38.7°C로 정상 범위입니다" 처럼 문장으로 설명하세요.\n- 이 개체에 대해 질문하면 이 개체 데이터 기준으로 답하고, 일반적인 축산 질문이면 전문 지식으로 자유롭게 답하세요.\n- 간결하되 전문적으로, 필요하면 구체적 행동 지시를 포함하세요.\n\n${animalContext}\n\n사용자 질문: ${question}`
+            : `[음성 대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다. 물어본 것에만 간결하게 3문장 이내로 답변해주세요. 불필요한 부연설명 없이 핵심만 말해주세요. 표나 그래프 형식 없이 자연어 문장으로만 답하세요.${sovereignContext}\n\n질문: ${question}`,
           role: user?.role ?? 'farm_owner',
           farmId: farmIdForChat ?? selectedFarmId ?? undefined,
           animalId: animalIdForChat ?? undefined,
@@ -746,7 +746,7 @@ export function TinkerbellAssistant({
     <div style={{
       position: 'fixed',
       ...(isMobile
-        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100dvh - 120px)', borderRadius: '16px 16px 0 0' }
+        ? { bottom: 60, left: 0, right: 0, width: '100%', maxHeight: 'calc(100dvh - 80px)', borderRadius: '16px 16px 0 0' }
         : { top: 0, right: 0, width: isMinimized ? 48 : 'min(33vw, 420px)', height: '100dvh', borderRadius: 0 }),
       background: 'var(--ct-card, #1e293b)',
       borderLeft: isMobile ? 'none' : '1px solid var(--ct-border, #334155)',

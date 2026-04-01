@@ -7,6 +7,7 @@ import { logger } from './lib/logger.js';
 import { closeDb } from './config/database.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
 import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
+import { startReportCleanup, stopReportCleanup } from './services/report/cleanup.js';
 import { createSocketServer } from './realtime/socket-server.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -48,6 +49,9 @@ const server = httpServer.listen(config.PORT, () => {
   // Railway cold start 방지 — self-ping
   startKeepAlive(config.PORT);
 
+  // 만료 보고서 자동 정리 (매 시간)
+  startReportCleanup();
+
   // 파이프라인 자동 시작 (smaXtec 크레덴셜이 있을 때만)
   if (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD) {
     const pipeline = getPipelineOrchestrator();
@@ -68,6 +72,7 @@ function shutdown(signal: string): void {
     logger.info('HTTP server closed');
     try {
       stopKeepAlive();
+      stopReportCleanup();
       // 파이프라인 정지
       const pipeline = getPipelineOrchestrator();
       await pipeline.stop();

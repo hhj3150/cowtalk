@@ -50,6 +50,7 @@ import { weightRouter } from './routes/weight.routes.js';
 import { sovereignAlarmRouter } from './routes/sovereign-alarm.routes.js';
 import { animalEventsRouter } from './routes/animal-events.routes.js';
 import { newsRouter } from './routes/news.routes.js';
+import { reportGenerateRouter } from './routes/report-generate.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -105,6 +106,7 @@ export function createApiRouter(): Router {
   api.use('/sovereign-alarms', sovereignAlarmRouter);
   api.use('/animal-events', animalEventsRouter);
   api.use('/news', newsRouter);
+  api.use('/report-generate', reportGenerateRouter);
 
   return api;
 }
