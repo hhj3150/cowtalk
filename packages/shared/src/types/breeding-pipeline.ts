@@ -55,3 +55,39 @@ export interface BreedingPipelineData {
   readonly totalAnimals: number;
   readonly lastUpdated: string;
 }
+
+// ===========================
+// 성과 분석 타입
+// ===========================
+
+/** 월별 KPI 추이 */
+export interface MonthlyKpiTrend {
+  readonly month: string;        // "2026-01"
+  readonly conceptionRate: number;
+  readonly estrusDetectionRate: number;
+  readonly avgDaysOpen: number;
+  readonly avgCalvingInterval: number;
+  readonly sampleSize: number;   // 해당 월 이벤트 수 (신뢰도)
+}
+
+/** 농장별 KPI 비교 */
+export interface FarmKpiComparison {
+  readonly farmId: string;
+  readonly farmName: string;
+  readonly animalCount: number;
+  readonly conceptionRate: number;
+  readonly estrusDetectionRate: number;
+  readonly avgDaysOpen: number;
+  readonly avgCalvingInterval: number;
+}
+
+/** 산차별 KPI */
+export interface ParityKpiGroup {
+  readonly parityLabel: string;  // "1산", "2산", "3산", "4산+"
+  readonly parityRange: readonly [number, number];
+  readonly animalCount: number;
+  readonly conceptionRate: number;
+  readonly estrusDetectionRate: number;
+  readonly avgDaysOpen: number;
+  readonly avgCalvingInterval: number;
+}

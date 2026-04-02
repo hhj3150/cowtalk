@@ -14,6 +14,7 @@ import { seedSemenCatalog, syncHanwooSemenFromPublicApi } from '../../services/b
 import { PedigreeConnector } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { getBreedingInsights } from '../../services/breeding/breeding-insights.service.js';
 import { getTransitionRisk } from '../../services/breeding/transition-risk.service.js';
+import { getMonthlyTrends, getFarmComparison, getParityAnalysis } from '../../services/breeding/breeding-performance.service.js';
 
 export const breedingRouter = Router();
 
@@ -371,6 +372,44 @@ breedingRouter.get('/transition-risk/:farmId', async (req: Request, res: Respons
   try {
     const farmId = req.params.farmId as string;
     const data = await getTransitionRisk(farmId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===========================
+// 성과 분석 (Performance Analysis)
+// ===========================
+
+// GET /breeding/performance/trends — 월별 KPI 추이
+breedingRouter.get('/performance/trends', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const months = req.query.months ? parseInt(req.query.months as string, 10) : 6;
+    const data = await getMonthlyTrends(farmId || undefined, months);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/performance/farm-comparison — 농장별 KPI 비교
+breedingRouter.get('/performance/farm-comparison', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+    const data = await getFarmComparison(limit);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/performance/by-parity — 산차별 KPI 분석
+breedingRouter.get('/performance/by-parity', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const data = await getParityAnalysis(farmId || undefined);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

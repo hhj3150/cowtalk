@@ -179,6 +179,38 @@ export function getBreedingFeedback(animalId: string): Promise<BreedingFeedback>
 }
 
 // ===========================
+// 성과 분석 (Performance Analysis)
+// ===========================
+
+export function getBreedingTrends(
+  farmId?: string,
+  months?: number,
+): Promise<readonly import('@cowtalk/shared').MonthlyKpiTrend[]> {
+  return apiGet<readonly import('@cowtalk/shared').MonthlyKpiTrend[]>(
+    '/breeding/performance/trends',
+    { farmId, months },
+  );
+}
+
+export function getFarmComparisonData(
+  limit?: number,
+): Promise<readonly import('@cowtalk/shared').FarmKpiComparison[]> {
+  return apiGet<readonly import('@cowtalk/shared').FarmKpiComparison[]>(
+    '/breeding/performance/farm-comparison',
+    { limit },
+  );
+}
+
+export function getParityAnalysisData(
+  farmId?: string,
+): Promise<readonly import('@cowtalk/shared').ParityKpiGroup[]> {
+  return apiGet<readonly import('@cowtalk/shared').ParityKpiGroup[]>(
+    '/breeding/performance/by-parity',
+    { farmId },
+  );
+}
+
+// ===========================
 // 번식 파이프라인 (칸반 뷰)
 // ===========================
 

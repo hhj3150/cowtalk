@@ -1,12 +1,16 @@
 // 번식 성과 KPI 대시보드 — 수태율·공태일·경제 효과 한눈에
 // 공모사업 심사 포인트: "도입 전후 얼마나 좋아졌냐" 30초 안에 증명
 
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getBreedingPipeline } from '@web/api/breeding.api';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import type { BreedingKpis, BreedingPipelineData } from '@cowtalk/shared';
 import { useFarmStore } from '@web/stores/farm.store';
+
+const BreedingTrendCharts = lazy(() => import('@web/components/breeding/BreedingTrendCharts'));
+const FarmComparisonChart = lazy(() => import('@web/components/breeding/FarmComparisonChart'));
+const ParityAnalysisChart = lazy(() => import('@web/components/breeding/ParityAnalysisChart'));
 
 // ===========================
 // 전국 평균 벤치마크 (2024 축산물품질평가원 기준)
@@ -290,7 +294,7 @@ function PerformanceBadge({ kpis }: { kpis: BreedingKpis }): React.JSX.Element {
 // 메인 페이지
 // ===========================
 
-type ViewTab = 'kpi' | 'economic';
+type ViewTab = 'kpi' | 'economic' | 'trends' | 'comparison' | 'parity';
 
 export default function BreedingKpiPage(): React.JSX.Element {
   const { selectedFarmId } = useFarmStore();
@@ -336,10 +340,13 @@ export default function BreedingKpiPage(): React.JSX.Element {
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-1 border-b" style={{ borderColor: 'var(--ct-border)' }}>
+      <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: 'var(--ct-border)' }}>
         {([
-          { key: 'kpi' as ViewTab,      label: '📊 성과 지표' },
-          { key: 'economic' as ViewTab, label: '💰 경제 효과' },
+          { key: 'kpi' as ViewTab,        label: '📊 성과 지표' },
+          { key: 'economic' as ViewTab,   label: '💰 경제 효과' },
+          { key: 'trends' as ViewTab,     label: '📈 추이 분석' },
+          { key: 'comparison' as ViewTab, label: '🏢 농장 비교' },
+          { key: 'parity' as ViewTab,     label: '🐄 산차별' },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -463,6 +470,24 @@ export default function BreedingKpiPage(): React.JSX.Element {
             </ul>
           </div>
         </div>
+      )}
+
+      {tab === 'trends' && (
+        <Suspense fallback={<LoadingSkeleton lines={4} />}>
+          <BreedingTrendCharts />
+        </Suspense>
+      )}
+
+      {tab === 'comparison' && (
+        <Suspense fallback={<LoadingSkeleton lines={5} />}>
+          <FarmComparisonChart />
+        </Suspense>
+      )}
+
+      {tab === 'parity' && (
+        <Suspense fallback={<LoadingSkeleton lines={4} />}>
+          <ParityAnalysisChart />
+        </Suspense>
       )}
     </div>
   );
