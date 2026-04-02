@@ -7,7 +7,7 @@ import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
-import { executeToolWithGateway, TOOL_DOMAIN_MAP, type ToolCallContext } from './tools/tool-gateway.js';
+import { executeToolWithGateway, TOOL_DOMAIN_MAP, ROLE_TOOL_ACCESS, type ToolCallContext } from './tools/tool-gateway.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -202,6 +202,15 @@ export async function callClaudeForChatWithTools(
   let fullText = '';
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
 
+  // 역할별 도구 필터링 — Claude에 허용된 도구만 전달 (토큰 절약 + 보안)
+  const role = toolContext?.role ?? 'farmer';
+  const allowedToolNames = ROLE_TOOL_ACCESS[role];
+  const filteredTools = allowedToolNames
+    ? TINKERBELL_TOOLS.filter((t) => allowedToolNames.includes(t.name))
+    : [...TINKERBELL_TOOLS];
+
+  logger.info({ role, toolCount: filteredTools.length, total: TINKERBELL_TOOLS.length }, '[ToolUse] 역할별 도구 필터링');
+
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
       const response = await anthropic.messages.create({
@@ -210,7 +219,7 @@ export async function callClaudeForChatWithTools(
         temperature: 0.7,
         system: systemPrompt,
         messages,
-        tools: [...TINKERBELL_TOOLS],
+        tools: [...filteredTools],
       });
 
       // 응답 content blocks 처리

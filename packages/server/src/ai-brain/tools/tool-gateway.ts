@@ -34,7 +34,7 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
 // 역할별 tool 접근 권한
 // ===========================
 
-const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
+export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   farmer: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_traceability',
