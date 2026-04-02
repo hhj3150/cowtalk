@@ -330,8 +330,22 @@ export function TinkerbellAssistant({
   const [isExpanded, setIsExpanded] = useState(false); // alwaysOpen 모드: 메시지 영역 펼침
   const [isMinimized, setIsMinimized] = useState(false);
   const isMobile = useIsMobile();
-  const [messages, setMessages] = useState<readonly TinkerbellMessage[]>([]);
+  const [messages, setMessages] = useState<readonly TinkerbellMessage[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('tinkerbell-messages');
+      if (!saved) return [];
+      const parsed = JSON.parse(saved) as Array<{ role: string; content: string; timestamp: string }>;
+      return parsed.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+      }));
+    } catch {
+      return [];
+    }
+  });
   const [streamText, setStreamText] = useState(''); // 실시간 스트리밍 중인 텍스트
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   // (사이드 패널 — 고정 위치, 드래그/리사이즈 불필요)
   const [transcript, setTranscript] = useState('');
@@ -375,6 +389,19 @@ export function TinkerbellAssistant({
       };
     }
   }, []);
+
+  // messages → sessionStorage 동기화 (대화 지속성)
+  useEffect(() => {
+    try {
+      if (messages.length === 0) {
+        sessionStorage.removeItem('tinkerbell-messages');
+      } else {
+        sessionStorage.setItem('tinkerbell-messages', JSON.stringify(
+          messages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp.toISOString() }))
+        ));
+      }
+    } catch { /* sessionStorage 비활성화 시 무시 */ }
+  }, [messages]);
 
   // 패널 열릴 때 소버린 통계 로드
   useEffect(() => {
@@ -675,8 +702,17 @@ export function TinkerbellAssistant({
                       : <span style={{ fontSize: 13, lineHeight: 1.55 }}>{msg.content}</span>
                     }
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--ct-text-muted, #64748b)', marginTop: 2, textAlign: msg.role === 'user' ? 'right' : 'left' }}>
-                    {msg.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                  <div style={{ fontSize: 9, color: 'var(--ct-text-muted, #64748b)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <span>{msg.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    {msg.role === 'assistant' && (
+                      <button type="button"
+                        onClick={() => { void navigator.clipboard.writeText(msg.content); setCopiedIdx(idx); setTimeout(() => setCopiedIdx(null), 2000); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: copiedIdx === idx ? '#34d399' : 'var(--ct-text-muted, #64748b)', fontSize: 10, lineHeight: 1 }}
+                        title="복사"
+                      >
+                        {copiedIdx === idx ? '✓' : '⎘'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -944,6 +980,16 @@ export function TinkerbellAssistant({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setMessages([]); setAnimalContext(null); setAnimalIdForChat(null); setFarmIdForChat(null); }}
+              style={{ background: 'none', border: 'none', color: 'var(--ct-text-muted, #94a3b8)', cursor: 'pointer', fontSize: 13, padding: 4, lineHeight: 1 }}
+              title="대화 초기화"
+            >
+              ↺
+            </button>
+          )}
           {!isMobile && (
             <button
               onClick={() => setIsMinimized((v) => !v)}
@@ -1039,9 +1085,22 @@ export function TinkerbellAssistant({
               fontSize: 9,
               color: 'var(--ct-text-muted, #64748b)',
               marginTop: 3,
-              textAlign: msg.role === 'user' ? 'right' : 'left',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
             }}>
-              {msg.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+              <span>{msg.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+              {msg.role === 'assistant' && (
+                <button
+                  type="button"
+                  onClick={() => { void navigator.clipboard.writeText(msg.content); setCopiedIdx(idx); setTimeout(() => setCopiedIdx(null), 2000); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: copiedIdx === idx ? '#34d399' : 'var(--ct-text-muted, #64748b)', fontSize: 10, lineHeight: 1 }}
+                  title="복사"
+                >
+                  {copiedIdx === idx ? '✓' : '⎘'}
+                </button>
+              )}
             </div>
           </div>
         ))}
