@@ -11,6 +11,7 @@ import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedin
 import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-sync.service.js';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
 import { seedSemenCatalog, syncHanwooSemenFromPublicApi } from '../../services/breeding/semen-seed.service.js';
+import { PedigreeConnector } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 
 export const breedingRouter = Router();
 
@@ -197,7 +198,16 @@ breedingRouter.get('/pedigree/:animalId', async (req: Request, res: Response, ne
       return;
     }
 
-    res.json({ success: true, data: { animal, pedigree: null } });
+    // 이력제번호로 ekape 혈통 조회 (traceId 있을 때만)
+    let pedigree = null;
+    if (animal.traceId) {
+      const connector = new PedigreeConnector();
+      await connector.connect();
+      pedigree = await connector.fetchPedigree(animal.traceId);
+      await connector.disconnect();
+    }
+
+    res.json({ success: true, data: { animal, pedigree } });
   } catch (error) {
     next(error);
   }

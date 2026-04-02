@@ -1,10 +1,23 @@
-// Railway cold start 방지 — 서버 자체 ping으로 슬립 방지
-// 5분 간격으로 자신의 health 엔드포인트를 호출하여 Railway가 서버를 잠들게 하지 않음
+// Railway cold start 방지 — 외부 URL ping으로 슬립 방지
+// Railway는 외부 HTTP 트래픽이 없을 때 슬립하므로 localhost ping은 효과 없음
+// RAILWAY_PUBLIC_DOMAIN 환경변수로 외부 URL 구성하여 실제 외부 요청 발생
 
 import { logger } from './logger.js';
 
 const PING_INTERVAL_MS = 4 * 60 * 1000; // 4분
 let intervalId: ReturnType<typeof setInterval> | null = null;
+
+/** Railway 공개 URL 조합 (여러 env var 패턴 지원) */
+function buildPingUrl(port: number): string {
+  const domain = process.env.RAILWAY_PUBLIC_DOMAIN
+    ?? process.env.RAILWAY_STATIC_URL?.replace(/^https?:\/\//, '')
+    ?? process.env.RAILWAY_SERVICE_URL?.replace(/^https?:\/\//, '');
+  if (domain) {
+    return `https://${domain}/api/health`;
+  }
+  // fallback: localhost (개발 환경)
+  return `http://localhost:${port}/api/health`;
+}
 
 export function startKeepAlive(port: number): void {
   if (process.env.NODE_ENV !== 'production') {
@@ -16,9 +29,12 @@ export function startKeepAlive(port: number): void {
     return;
   }
 
+  const pingUrl = buildPingUrl(port);
+  logger.info({ pingUrl, intervalMs: PING_INTERVAL_MS }, '[KeepAlive] Starting — external ping mode');
+
   intervalId = setInterval(async () => {
     try {
-      const res = await fetch(`http://localhost:${port}/api/health`, {
+      const res = await fetch(pingUrl, {
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
@@ -31,10 +47,7 @@ export function startKeepAlive(port: number): void {
     }
   }, PING_INTERVAL_MS);
 
-  // 프로세스 종료 시 정리
-  intervalId.unref();
-
-  logger.info({ intervalMs: PING_INTERVAL_MS }, '[KeepAlive] Self-ping started');
+  intervalId.unref(); // 프로세스 종료 차단하지 않음
 }
 
 export function stopKeepAlive(): void {
