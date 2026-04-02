@@ -22,6 +22,104 @@ function formatTime(iso: string): string {
   return `${month}/${day} ${hours}:${minutes}`;
 }
 
+/** 수정 윈도우 타임라인 — 발정 감지부터 윈도우 종료까지 진행 바 */
+function InseminationWindowBar({ advice }: { readonly advice: BreedingAdvice }): React.JSX.Element {
+  const now = Date.now();
+  const heatMs = new Date(advice.heatDetectedAt).getTime();
+  const startMs = new Date(advice.windowStartTime).getTime();
+  const endMs = new Date(advice.windowEndTime).getTime();
+  const optMs = new Date(advice.optimalInseminationTime).getTime();
+  const totalRange = endMs - heatMs;
+
+  // 현재 윈도우 내 위치 (0~100%)
+  const nowPct = Math.min(100, Math.max(0, ((now - heatMs) / totalRange) * 100));
+  const startPct = ((startMs - heatMs) / totalRange) * 100;
+  const optPct = ((optMs - heatMs) / totalRange) * 100;
+
+  const isBeforeWindow = now < startMs;
+  const isInWindow = now >= startMs && now <= endMs;
+  const isAfterWindow = now > endMs;
+
+  // 남은 시간 계산
+  const minsRemaining = Math.max(0, Math.round((endMs - now) / 60_000));
+  const hoursRemaining = Math.floor(minsRemaining / 60);
+  const minsOnly = minsRemaining % 60;
+  const timeStr = isAfterWindow
+    ? '⚠️ 수정 윈도우 종료'
+    : isBeforeWindow
+      ? `윈도우 시작까지 ${Math.round((startMs - now) / 3_600_000)}시간`
+      : `윈도우 종료까지 ${hoursRemaining}시간 ${minsOnly}분`;
+
+  const barColor = isAfterWindow ? '#ef4444' : isInWindow ? '#22c55e' : '#3b82f6';
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--ct-text-muted)', marginBottom: 3 }}>
+        <span>발정 감지</span>
+        <span>최적 수정</span>
+        <span>윈도우 종료</span>
+      </div>
+      {/* 바 */}
+      <div style={{ position: 'relative', height: 10, background: 'var(--ct-bg)', borderRadius: 5, overflow: 'visible' }}>
+        {/* 윈도우 구간 하이라이트 */}
+        <div style={{
+          position: 'absolute',
+          left: `${startPct}%`,
+          width: `${100 - startPct}%`,
+          height: '100%',
+          background: isAfterWindow ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.18)',
+          borderRadius: '0 5px 5px 0',
+        }} />
+        {/* 진행 바 */}
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          width: `${nowPct}%`,
+          height: '100%',
+          background: barColor,
+          borderRadius: 5,
+          transition: 'width 1s',
+          opacity: 0.85,
+        }} />
+        {/* 최적 수정 마커 */}
+        <div style={{
+          position: 'absolute',
+          left: `${optPct}%`,
+          top: -3,
+          width: 3,
+          height: 16,
+          background: '#f97316',
+          borderRadius: 2,
+          transform: 'translateX(-50%)',
+        }} title="최적 수정 시각" />
+        {/* 현재 시각 마커 */}
+        {nowPct > 0 && nowPct < 100 && (
+          <div style={{
+            position: 'absolute',
+            left: `${nowPct}%`,
+            top: -4,
+            width: 4,
+            height: 18,
+            background: '#fff',
+            borderRadius: 2,
+            border: '1.5px solid #64748b',
+            transform: 'translateX(-50%)',
+          }} title="현재 시각" />
+        )}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--ct-text-muted)', marginTop: 3 }}>
+        <span>{formatTime(advice.heatDetectedAt)}</span>
+        <span style={{ color: '#f97316', fontWeight: 700 }}>{formatTime(advice.optimalInseminationTime)}</span>
+        <span>{formatTime(advice.windowEndTime)}</span>
+      </div>
+      {/* 상태 텍스트 */}
+      <div style={{ marginTop: 5, fontSize: 11, fontWeight: 600, color: barColor, textAlign: 'center' }}>
+        {timeStr}
+      </div>
+    </div>
+  );
+}
+
 const RISK_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   low: { bg: 'rgba(34,197,94,0.1)', text: '#16a34a', label: '안전' },
   medium: { bg: 'rgba(234,179,8,0.1)', text: '#ca8a04', label: '주의' },
@@ -216,14 +314,14 @@ export function InseminationPanel({ animalId, onClose }: Props): React.JSX.Eleme
         )}
       </div>
 
-      {/* 수정 적기 */}
+      {/* 수정 적기 + 윈도우 타임라인 */}
       <div
         className="rounded-lg p-3"
         style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
       >
-        <p className="text-xs font-semibold" style={{ color: '#3b82f6' }}>⏰ 수정 적기</p>
+        <p className="text-xs font-semibold" style={{ color: '#3b82f6' }}>⏰ 수정 윈도우</p>
         <p className="text-lg font-bold mt-0.5" style={{ color: '#1d4ed8' }}>
-          {formatTime(advice.optimalInseminationTime)}
+          {formatTime(advice.windowStartTime)} ~ {formatTime(advice.windowEndTime)}
         </p>
         <p className="text-xs mt-0.5" style={{ color: '#3b82f6' }}>
           {advice.optimalTimeLabel}
@@ -231,6 +329,7 @@ export function InseminationPanel({ animalId, onClose }: Props): React.JSX.Eleme
         <p className="text-xs mt-1" style={{ color: 'var(--ct-text-secondary)' }}>
           발정 감지: {formatTime(advice.heatDetectedAt)}
         </p>
+        <InseminationWindowBar advice={advice} />
       </div>
 
       {/* 경고 */}

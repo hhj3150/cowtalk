@@ -5,6 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { useFarmStore } from '@web/stores/farm.store';
+import { TransitionRiskCard } from '@web/components/breeding/TransitionRiskCard';
 
 // ── 타입 ──────────────────────────────────────────
 
@@ -537,6 +538,17 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
             </div>
           </div>
         )}
+      </div>
+
+      {/* 전환기 위험우 카드 */}
+      <div style={{
+        background: 'var(--ct-card)', border: '1px solid var(--ct-border)',
+        borderRadius: 12, padding: '14px 16px',
+      }}>
+        <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 12px' }}>
+          🤰 전환기 모니터링
+        </h3>
+        <TransitionRiskCard farmId={selectedFarmIds[0]} />
       </div>
     </div>
   );

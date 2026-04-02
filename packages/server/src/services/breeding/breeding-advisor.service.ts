@@ -22,8 +22,16 @@ export interface BreedingAdvice {
   readonly heatDetectedAt: string;
   readonly optimalInseminationTime: string;
   readonly optimalTimeLabel: string;
+  readonly windowStartHours: number;
+  readonly windowEndHours: number;
+  readonly windowStartTime: string;  // ISO — 수정 윈도우 시작 시각
+  readonly windowEndTime: string;    // ISO — 수정 윈도우 종료 시각
   readonly warnings: readonly string[];
   readonly recommendations: readonly SemenRecommendation[];
+  readonly farmSettings: {
+    readonly pregnancyCheckDays: number;
+    readonly estrusRecurrenceDays: number;
+  };
 }
 
 export interface SemenRecommendation {
@@ -288,6 +296,9 @@ export async function getBreedingAdvice(
     .sort((a, b) => b.score - a.score)
     .map((r, i) => ({ ...r, rank: i + 1 }));
 
+  const windowStart = farmSettings.inseminationWindowStartHours ?? 10;
+  const windowEnd = farmSettings.inseminationWindowEndHours ?? 18;
+
   return {
     animalId: animal.animalId,
     earTag: animal.earTag,
@@ -296,8 +307,16 @@ export async function getBreedingAdvice(
     heatDetectedAt: heatTime.toISOString(),
     optimalInseminationTime: optimalTime.toISOString(),
     optimalTimeLabel: optimalLabel,
+    windowStartHours: windowStart,
+    windowEndHours: windowEnd,
+    windowStartTime: new Date(heatTime.getTime() + windowStart * 3_600_000).toISOString(),
+    windowEndTime: new Date(heatTime.getTime() + windowEnd * 3_600_000).toISOString(),
     warnings,
     recommendations: sorted.slice(0, 5),
+    farmSettings: {
+      pregnancyCheckDays: farmSettings.pregnancyCheckDays ?? 28,
+      estrusRecurrenceDays: farmSettings.estrusRecurrenceDays ?? 21,
+    },
   };
 }
 

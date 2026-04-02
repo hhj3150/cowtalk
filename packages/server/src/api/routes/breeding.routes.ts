@@ -12,6 +12,8 @@ import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-s
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
 import { seedSemenCatalog, syncHanwooSemenFromPublicApi } from '../../services/breeding/semen-seed.service.js';
 import { PedigreeConnector } from '../../pipeline/connectors/public-data/pedigree.connector.js';
+import { getBreedingInsights } from '../../services/breeding/breeding-insights.service.js';
+import { getTransitionRisk } from '../../services/breeding/transition-risk.service.js';
 
 export const breedingRouter = Router();
 
@@ -326,6 +328,50 @@ breedingRouter.get('/farm/:farmId/settings', async (req: Request, res: Response,
     const farmId = req.params.farmId as string;
     const settings = await getFarmBreedingSettings(farmId);
     res.json({ success: true, data: settings });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/insights — 번식 인사이트 4종 (무발정/불규칙/유산의심/수정실패)
+breedingRouter.get('/insights', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const data = await getBreedingInsights(farmId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/insights/:farmId — 농장별 번식 인사이트
+breedingRouter.get('/insights/:farmId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    const data = await getBreedingInsights(farmId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/transition-risk — 전환기 위험우 목록
+breedingRouter.get('/transition-risk', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const data = await getTransitionRisk(farmId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/transition-risk/:farmId — 농장별 전환기 위험우
+breedingRouter.get('/transition-risk/:farmId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    const data = await getTransitionRisk(farmId);
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }

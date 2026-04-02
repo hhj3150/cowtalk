@@ -80,11 +80,15 @@ export interface BreedingAdvice {
   readonly heatDetectedAt: string;
   readonly optimalInseminationTime: string;
   readonly optimalTimeLabel: string;
+  readonly windowStartHours: number;
+  readonly windowEndHours: number;
+  readonly windowStartTime: string;
+  readonly windowEndTime: string;
   readonly warnings: readonly string[];
   readonly recommendations: readonly SemenRecommendationItem[];
-  readonly farmSettings?: {
-    readonly pregnancyCheckDays?: number;
-    readonly estrusRecurrenceDays?: number;
+  readonly farmSettings: {
+    readonly pregnancyCheckDays: number;
+    readonly estrusRecurrenceDays: number;
   };
 }
 

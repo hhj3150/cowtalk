@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getBreedingPipeline } from '@web/api/breeding.api';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
+import { BreedingInsightsPanel } from '@web/components/breeding/BreedingInsightsPanel';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import type {
   BreedingPipelineData,
@@ -436,6 +437,17 @@ export default function BreedingCommandPage(): React.JSX.Element {
         <p className="text-[11px] mt-2" style={{ color: 'var(--ct-text-secondary)' }}>
           개체를 클릭하면 수정 적기·정액 추천·기록 패널이 열립니다
         </p>
+      </section>
+
+      {/* ── 번식 인사이트 (무발정/불규칙/유산의심/수정실패) */}
+      <section>
+        <p className="text-sm font-bold mb-3" style={{ color: 'var(--ct-text)' }}>번식 인사이트</p>
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'var(--ct-surface)', border: '1px solid var(--ct-border)' }}
+        >
+          <BreedingInsightsPanel farmId={selectedFarmId ?? undefined} />
+        </div>
       </section>
 
       {/* ── 수정 액션 슬라이드오버 */}
