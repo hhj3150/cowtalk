@@ -19,10 +19,12 @@ const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   query_farm_summary: 'farm',
   query_breeding_stats: 'repro',
   query_sensor_data: 'sensor',
-  // 향후 추가되는 tool들
+  query_traceability: 'public_data',
   record_insemination: 'repro',
   record_pregnancy_check: 'repro',
+  recommend_insemination_window: 'repro',
   record_treatment: 'farm',
+  get_farm_kpis: 'farm',
   generate_report: 'report',
   send_alert: 'action',
   submit_admin_notice: 'action',
@@ -35,29 +37,33 @@ const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
 const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   farmer: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
-    'query_breeding_stats', 'query_sensor_data',
+    'query_breeding_stats', 'query_sensor_data', 'query_traceability',
+    'recommend_insemination_window', 'get_farm_kpis',
+    'record_treatment',
   ],
   veterinarian: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
-    'query_breeding_stats', 'query_sensor_data',
-    'record_treatment',
+    'query_breeding_stats', 'query_sensor_data', 'query_traceability',
+    'record_treatment', 'get_farm_kpis',
+    'recommend_insemination_window',
   ],
   inseminator: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
-    'query_breeding_stats', 'query_sensor_data',
+    'query_breeding_stats', 'query_sensor_data', 'query_traceability',
     'record_insemination', 'record_pregnancy_check',
+    'recommend_insemination_window', 'get_farm_kpis',
   ],
   government_admin: [
     'query_animal', 'query_farm_summary', 'query_breeding_stats',
-    'generate_report',
+    'query_traceability', 'get_farm_kpis', 'generate_report',
   ],
   quarantine_officer: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
-    'query_sensor_data', 'generate_report',
-    'send_alert',
+    'query_sensor_data', 'query_traceability', 'get_farm_kpis',
+    'generate_report', 'send_alert',
   ],
   feed_company: [
-    'query_farm_summary', 'query_sensor_data',
+    'query_farm_summary', 'query_sensor_data', 'get_farm_kpis',
   ],
 };
 

@@ -4,10 +4,16 @@
 import { getDb } from '../../config/database.js';
 import {
   animals, farms, smaxtecEvents, breedingEvents,
-  pregnancyChecks, sensorDailyAgg,
+  pregnancyChecks, sensorDailyAgg, healthEvents, treatments,
 } from '../../db/schema.js';
 import { eq, and, desc, gte, ilike, inArray, isNull } from 'drizzle-orm';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
+import {
+  getBreedingAdvice,
+  recordInsemination,
+  recordPregnancyCheck,
+} from '../../services/breeding/breeding-advisor.service.js';
+import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
 import { logger } from '../../lib/logger.js';
 
 const MAX_RESULT_LENGTH = 4000;
@@ -40,6 +46,24 @@ export async function executeTool(
         break;
       case 'query_sensor_data':
         result = await querySensorData(input);
+        break;
+      case 'query_traceability':
+        result = await handleQueryTraceability(input);
+        break;
+      case 'record_insemination':
+        result = await handleRecordInsemination(input);
+        break;
+      case 'record_pregnancy_check':
+        result = await handleRecordPregnancyCheck(input);
+        break;
+      case 'recommend_insemination_window':
+        result = await handleRecommendInseminationWindow(input);
+        break;
+      case 'record_treatment':
+        result = await handleRecordTreatment(input);
+        break;
+      case 'get_farm_kpis':
+        result = await handleGetFarmKpis(input);
         break;
       default:
         result = { error: `알 수 없는 도구: ${name}` };
@@ -331,5 +355,290 @@ async function querySensorData(input: Record<string, unknown>): Promise<unknown>
       max: Number(r.max.toFixed(2)),
       readings: r.count,
     })),
+  };
+}
+
+// ===========================
+// 6. 이력제 조회 (공공데이터)
+// ===========================
+
+let traceConnector: TraceabilityConnector | null = null;
+
+function getTraceConnector(): TraceabilityConnector {
+  if (!traceConnector) {
+    traceConnector = new TraceabilityConnector();
+  }
+  return traceConnector;
+}
+
+async function handleQueryTraceability(input: Record<string, unknown>): Promise<unknown> {
+  const traceId = input.traceId as string;
+  if (!traceId) return { error: '이력번호(traceId)는 필수입니다.' };
+  if (traceId.length !== 12 && traceId.length !== 15) {
+    return { error: '이력번호는 12자리 또는 15자리여야 합니다.' };
+  }
+
+  try {
+    const connector = getTraceConnector();
+    await connector.connect();
+    const record = await connector.fetchByTraceId(traceId);
+
+    if (!record) {
+      return { traceId, message: '이력제 정보를 찾을 수 없습니다. API 키 미설정 또는 해당 이력번호 없음.' };
+    }
+
+    return {
+      traceId: record.traceId,
+      earTag: record.earTag,
+      birthDate: record.birthDate,
+      sex: record.sex,
+      breed: record.breed,
+      farmName: record.farmName,
+      farmAddress: record.farmAddress,
+      movements: record.movements.slice(0, 10),
+      vaccinations: record.vaccinations.slice(0, 10),
+      inspections: record.inspections.slice(0, 5),
+      slaughterInfo: record.slaughterInfo,
+    };
+  } catch (error) {
+    return { error: `이력제 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7. 수정 기록
+// ===========================
+
+async function handleRecordInsemination(input: Record<string, unknown>): Promise<unknown> {
+  const animalId = input.animalId as string;
+  const farmId = input.farmId as string;
+
+  if (!animalId || !farmId) return { error: 'animalId와 farmId는 필수입니다.' };
+
+  try {
+    const result = await recordInsemination({
+      animalId,
+      farmId,
+      semenId: input.semenId as string | undefined,
+      semenInfo: input.semenInfo as string | undefined,
+      technicianName: input.technicianName as string | undefined,
+      notes: input.notes as string | undefined,
+    });
+
+    return {
+      success: true,
+      eventId: result.eventId,
+      message: '수정 기록이 저장되었습니다.',
+    };
+  } catch (error) {
+    return { error: `수정 기록 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7. 임신감정 기록
+// ===========================
+
+async function handleRecordPregnancyCheck(input: Record<string, unknown>): Promise<unknown> {
+  const animalId = input.animalId as string;
+  const result = input.result as string;
+
+  if (!animalId || !result) return { error: 'animalId와 result는 필수입니다.' };
+  if (result !== 'pregnant' && result !== 'open') return { error: "result는 'pregnant' 또는 'open'이어야 합니다." };
+
+  try {
+    const check = await recordPregnancyCheck({
+      animalId,
+      checkDate: new Date().toISOString(),
+      result: result as 'pregnant' | 'open',
+      method: (input.method as 'ultrasound' | 'manual' | 'blood') ?? 'ultrasound',
+      daysPostInsemination: input.daysPostInsemination as number | undefined,
+      notes: input.notes as string | undefined,
+    });
+
+    return {
+      success: true,
+      checkId: check.checkId,
+      result,
+      message: result === 'pregnant' ? '임신 확인되었습니다.' : '미임신(공태)으로 기록되었습니다.',
+    };
+  } catch (error) {
+    return { error: `임신감정 기록 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 8. 수정 적기 추천
+// ===========================
+
+async function handleRecommendInseminationWindow(input: Record<string, unknown>): Promise<unknown> {
+  const animalId = input.animalId as string;
+  if (!animalId) return { error: 'animalId는 필수입니다.' };
+
+  const heatDetectedAt = input.heatDetectedAt
+    ? new Date(input.heatDetectedAt as string)
+    : undefined;
+
+  try {
+    const advice = await getBreedingAdvice(animalId, heatDetectedAt);
+    if (!advice) return { error: '해당 개체의 번식 정보를 조회할 수 없습니다.' };
+
+    return {
+      animalId: advice.animalId,
+      earTag: advice.earTag,
+      farmName: advice.farmName,
+      heatDetectedAt: advice.heatDetectedAt,
+      optimalInseminationTime: advice.optimalInseminationTime,
+      optimalTimeLabel: advice.optimalTimeLabel,
+      windowStart: advice.windowStartTime,
+      windowEnd: advice.windowEndTime,
+      warnings: advice.warnings,
+      recommendations: advice.recommendations.slice(0, 3).map((r) => ({
+        bullName: r.bullName,
+        score: r.score,
+        inbreedingRisk: r.inbreedingRisk,
+        reasoning: r.reasoning,
+      })),
+      farmSettings: advice.farmSettings,
+    };
+  } catch (error) {
+    return { error: `수정 적기 추천 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 9. 치료 기록
+// ===========================
+
+async function handleRecordTreatment(input: Record<string, unknown>): Promise<unknown> {
+  const db = getDb();
+  const animalId = input.animalId as string;
+  const diagnosis = input.diagnosis as string;
+
+  if (!animalId || !diagnosis) return { error: 'animalId와 diagnosis는 필수입니다.' };
+
+  // 개체 확인
+  const animalRows = await db
+    .select({ animalId: animals.animalId, farmId: animals.farmId })
+    .from(animals)
+    .where(and(eq(animals.animalId, animalId), eq(animals.status, 'active')))
+    .limit(1);
+
+  if (animalRows.length === 0) return { error: '해당 개체를 찾을 수 없습니다.' };
+
+  try {
+    // 1. healthEvent 생성
+    const severity = (input.severity as string) ?? 'medium';
+    const [healthEvent] = await db.insert(healthEvents).values({
+      animalId,
+      eventDate: new Date(),
+      diagnosis,
+      severity,
+      notes: input.notes as string | undefined,
+    }).returning({ eventId: healthEvents.eventId });
+
+    if (!healthEvent) return { error: '건강 이벤트 생성 실패' };
+
+    // 2. treatment 기록 (약물 정보가 있는 경우)
+    const drug = input.drug as string | undefined;
+    let treatmentId: string | undefined;
+
+    if (drug) {
+      const [treatment] = await db.insert(treatments).values({
+        healthEventId: healthEvent.eventId,
+        drug,
+        dosage: (input.dosage as string) ?? null,
+        withdrawalDays: (input.withdrawalDays as number) ?? 0,
+        administeredAt: new Date(),
+      }).returning({ treatmentId: treatments.treatmentId });
+
+      treatmentId = treatment?.treatmentId;
+    }
+
+    return {
+      success: true,
+      healthEventId: healthEvent.eventId,
+      treatmentId,
+      diagnosis,
+      severity,
+      drug: drug ?? '미투약',
+      message: `치료 기록이 저장되었습니다. ${drug ? `약물: ${drug}` : '투약 없음'}`,
+    };
+  } catch (error) {
+    return { error: `치료 기록 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 10. 농장 KPI
+// ===========================
+
+async function handleGetFarmKpis(input: Record<string, unknown>): Promise<unknown> {
+  const db = getDb();
+  const farmId = input.farmId as string;
+  if (!farmId) return { error: 'farmId는 필수입니다.' };
+
+  // 농장 확인
+  const farmRows = await db
+    .select({ farmId: farms.farmId, name: farms.name })
+    .from(farms)
+    .where(eq(farms.farmId, farmId))
+    .limit(1);
+
+  if (farmRows.length === 0) return { error: '농장을 찾을 수 없습니다.' };
+  const farm = farmRows[0]!;
+
+  // 두수
+  const animalRows = await db
+    .select({ lactationStatus: animals.lactationStatus })
+    .from(animals)
+    .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active'), isNull(animals.deletedAt)));
+
+  const totalHead = animalRows.length;
+  const milking = animalRows.filter((a) => a.lactationStatus === 'milking').length;
+  const dry = animalRows.filter((a) => a.lactationStatus === 'dry').length;
+
+  // 번식 KPI
+  let breedingKpis: unknown = null;
+  try {
+    const pipeline = await getBreedingPipeline(farmId);
+    breedingKpis = pipeline.kpis;
+  } catch {
+    breedingKpis = { error: '번식 KPI 조회 실패' };
+  }
+
+  // 최근 7일 건강 이벤트 수
+  const since7d = new Date(Date.now() - 7 * 86_400_000);
+  const healthRows = await db
+    .select({ eventId: healthEvents.eventId, severity: healthEvents.severity })
+    .from(healthEvents)
+    .innerJoin(animals, eq(healthEvents.animalId, animals.animalId))
+    .where(and(
+      eq(animals.farmId, farmId),
+      gte(healthEvents.eventDate, since7d),
+    ));
+
+  const criticalCount = healthRows.filter((h) => h.severity === 'critical' || h.severity === 'high').length;
+
+  // 최근 24시간 알림 수
+  const since24h = new Date(Date.now() - 86_400_000);
+  const alertRows = await db
+    .select({ eventId: smaxtecEvents.eventId })
+    .from(smaxtecEvents)
+    .where(and(
+      eq(smaxtecEvents.farmId, farmId),
+      gte(smaxtecEvents.detectedAt, since24h),
+    ));
+
+  return {
+    farmId,
+    farmName: farm.name,
+    headcount: { total: totalHead, milking, dry, heifer: totalHead - milking - dry },
+    breedingKpis,
+    health: {
+      eventsLast7d: healthRows.length,
+      criticalOrHigh: criticalCount,
+    },
+    alertsLast24h: alertRows.length,
   };
 }
