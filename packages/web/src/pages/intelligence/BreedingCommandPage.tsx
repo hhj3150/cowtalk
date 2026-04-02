@@ -7,11 +7,11 @@ import { useNavigate } from 'react-router-dom';
 import { getBreedingPipeline } from '@web/api/breeding.api';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { BreedingInsightsPanel } from '@web/components/breeding/BreedingInsightsPanel';
+import { BreedingActionCard } from '@web/components/breeding/BreedingActionCard';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import type {
   BreedingPipelineData,
   BreedingAnimalSummary,
-  BreedingUrgentAction,
   BreedingKpis,
   BreedingStage,
 } from '@cowtalk/shared';
@@ -37,12 +37,7 @@ const URGENCY_COLORS: Readonly<Record<string, string>> = {
   low:      '#6b7280',
 };
 
-const ACTION_META: Readonly<Record<string, { label: string; icon: string; color: string; bg: string }>> = {
-  inseminate_now:      { label: '즉시 수정 필요',   icon: '💉', color: '#dc2626', bg: 'rgba(220,38,38,0.06)' },
-  pregnancy_check_due: { label: '임신감정 예정',    icon: '🔍', color: '#d97706', bg: 'rgba(217,119,6,0.06)' },
-  calving_imminent:    { label: '분만 임박',         icon: '🐄', color: '#7c3aed', bg: 'rgba(124,58,237,0.06)' },
-  repeat_breeder:      { label: '반복 미수태',       icon: '⚠️', color: '#ea580c', bg: 'rgba(234,88,12,0.06)' },
-};
+// ACTION_META → BreedingActionCard로 이동됨
 
 // ===========================
 // KPI 카드
@@ -112,49 +107,7 @@ function buildKpiCards(kpis: BreedingKpis): readonly KpiCardProps[] {
 // 긴급 조치 카드
 // ===========================
 
-interface UrgentCardProps {
-  readonly action: BreedingUrgentAction;
-  readonly onClick: (animalId: string) => void;
-}
-
-function UrgentCard({ action, onClick }: UrgentCardProps): React.JSX.Element {
-  const meta = ACTION_META[action.actionType] ?? (ACTION_META.inseminate_now as NonNullable<typeof ACTION_META[string]>);
-  const hoursLabel = action.hoursRemaining < 1
-    ? `${Math.round(action.hoursRemaining * 60)}분 남음`
-    : `${action.hoursRemaining.toFixed(0)}시간 남음`;
-
-  return (
-    <button
-      type="button"
-      onClick={() => onClick(action.animalId)}
-      className="rounded-xl p-3 text-left w-full transition-all hover:scale-[1.01] active:scale-[0.99]"
-      style={{
-        background: meta.bg,
-        border: `1.5px solid ${meta.color}30`,
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg flex-shrink-0">{meta.icon}</span>
-          <div className="min-w-0">
-            <p className="text-sm font-bold truncate" style={{ color: meta.color }}>
-              #{action.earTag} — {action.farmName}
-            </p>
-            <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--ct-text-secondary)' }}>
-              {action.description}
-            </p>
-          </div>
-        </div>
-        <span
-          className="text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-          style={{ background: meta.color, color: '#fff' }}
-        >
-          {hoursLabel}
-        </span>
-      </div>
-    </button>
-  );
-}
+// UrgentCard → BreedingActionCard로 교체됨 (원탭 액션 지원)
 
 // ===========================
 // 파이프라인 칸반 컬럼
@@ -398,7 +351,7 @@ export default function BreedingCommandPage(): React.JSX.Element {
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {urgentInseminate.map((action) => (
-              <UrgentCard key={action.animalId} action={action} onClick={handleAnimalClick} />
+              <BreedingActionCard key={action.animalId} action={action} onNavigate={handleAnimalClick} />
             ))}
           </div>
         </section>
@@ -410,7 +363,7 @@ export default function BreedingCommandPage(): React.JSX.Element {
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--ct-text-secondary)' }}>기타 확인 필요</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {urgentOther.map((action) => (
-              <UrgentCard key={`${action.animalId}-${action.actionType}`} action={action} onClick={handleAnimalClick} />
+              <BreedingActionCard key={`${action.animalId}-${action.actionType}`} action={action} onNavigate={handleAnimalClick} />
             ))}
           </div>
         </section>

@@ -19,6 +19,7 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   query_farm_summary: 'farm',
   query_breeding_stats: 'repro',
   query_sensor_data: 'sensor',
+  query_conception_stats: 'repro',
   query_traceability: 'public_data',
   record_insemination: 'repro',
   record_pregnancy_check: 'repro',
@@ -38,19 +39,19 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   farmer: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_traceability',
-    'recommend_insemination_window', 'get_farm_kpis',
+    'query_conception_stats', 'recommend_insemination_window', 'get_farm_kpis',
     'record_treatment',
   ],
   veterinarian: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_traceability',
-    'record_treatment', 'get_farm_kpis',
+    'query_conception_stats', 'record_treatment', 'get_farm_kpis',
     'recommend_insemination_window',
   ],
   inseminator: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_traceability',
-    'record_insemination', 'record_pregnancy_check',
+    'query_conception_stats', 'record_insemination', 'record_pregnancy_check',
     'recommend_insemination_window', 'get_farm_kpis',
   ],
   government_admin: [

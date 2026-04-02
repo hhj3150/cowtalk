@@ -5,6 +5,7 @@
 
 import { logger } from '../lib/logger.js';
 import { syncHanwooSemenFromPublicApi } from '../services/breeding/semen-seed.service.js';
+import { runBreedingReminders } from '../services/breeding/breeding-reminder.service.js';
 import { getDb } from '../config/database.js';
 import { animals, sensorMeasurements } from '../db/schema.js';
 import { eq, and, isNotNull, sql } from 'drizzle-orm';
@@ -335,6 +336,11 @@ export class PipelineOrchestrator {
         .then((r) => logger.info(r, '[Pipeline] 한우 씨수소 주간 동기화 완료'))
         .catch((err) => logger.error({ err }, '[Pipeline] 한우 씨수소 동기화 실패'));
     }
+
+    // 번식 리마인더 (임신감정 알림 + 반복번식우 감지)
+    runBreedingReminders().catch((err) => {
+      logger.error({ err }, '[Pipeline] 번식 리마인더 실행 실패');
+    });
 
     this.state = { ...this.state, lastBatchRun: new Date() };
   }

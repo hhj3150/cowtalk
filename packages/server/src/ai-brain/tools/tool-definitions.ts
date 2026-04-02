@@ -73,6 +73,21 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
   },
 
   // ===========================
+  // 번식 피드백 도메인
+  // ===========================
+
+  {
+    name: 'query_conception_stats',
+    description: '수태율 통계 조회. 정액별·개체별 수태율, 전체 수태율을 반환한다. 정액 성공률, 반복번식우, 번식성적 개선 추이를 확인할 수 있다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        farmId: { type: 'string', description: '농장 ID (생략 시 전체 농장)' },
+      },
+    },
+  },
+
+  // ===========================
   // 공공데이터 도메인
   // ===========================
 

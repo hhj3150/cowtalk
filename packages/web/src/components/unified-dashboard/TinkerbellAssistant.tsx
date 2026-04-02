@@ -166,6 +166,7 @@ const TOOL_LABELS: Record<string, string> = {
   recommend_insemination_window: '수정적기 추천',
   record_treatment: '치료 기록',
   get_farm_kpis: '농장 KPI',
+  query_conception_stats: '수태율 통계',
 };
 
 const DOMAIN_ICONS: Record<string, string> = {

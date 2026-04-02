@@ -14,6 +14,7 @@ import {
   recordPregnancyCheck,
 } from '../../services/breeding/breeding-advisor.service.js';
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
+import { computeConceptionStats } from '../../services/breeding/breeding-feedback.service.js';
 import { logger } from '../../lib/logger.js';
 
 const MAX_RESULT_LENGTH = 4000;
@@ -46,6 +47,9 @@ export async function executeTool(
         break;
       case 'query_sensor_data':
         result = await querySensorData(input);
+        break;
+      case 'query_conception_stats':
+        result = await handleQueryConceptionStats(input);
         break;
       case 'query_traceability':
         result = await handleQueryTraceability(input);
@@ -359,7 +363,28 @@ async function querySensorData(input: Record<string, unknown>): Promise<unknown>
 }
 
 // ===========================
-// 6. 이력제 조회 (공공데이터)
+// 6. 수태율 통계
+// ===========================
+
+async function handleQueryConceptionStats(input: Record<string, unknown>): Promise<unknown> {
+  const farmId = input.farmId as string | undefined;
+
+  try {
+    const stats = await computeConceptionStats(farmId);
+    return {
+      farmId: stats.farmId ?? '전체',
+      farmName: stats.farmName,
+      overall: stats.overall,
+      topSemen: stats.bySemen.slice(0, 10),
+      topAnimals: stats.byAnimal.slice(0, 10),
+    };
+  } catch (error) {
+    return { error: `수태율 통계 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7. 이력제 조회 (공공데이터)
 // ===========================
 
 let traceConnector: TraceabilityConnector | null = null;
