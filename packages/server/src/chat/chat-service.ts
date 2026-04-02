@@ -2,7 +2,7 @@
 // 사용자 질문 + 역할 + 관련 프로파일 → Claude 응답
 
 import type { Role, ChatResponse } from '@cowtalk/shared';
-import { callClaudeForChatJson, callClaudeForChat, type StreamCallbacks } from '../ai-brain/claude-client.js';
+import { callClaudeForChatJson, callClaudeForChatWithTools, type StreamCallbacks } from '../ai-brain/claude-client.js';
 import { SYSTEM_PROMPT } from '../ai-brain/prompts/system-prompt.js';
 import {
   buildConversationPrompt,
@@ -256,7 +256,8 @@ export async function handleChatStream(
     onError: callbacks.onError,
   };
 
-  await callClaudeForChat(systemPrompt, prompt, wrappedCallbacks);
+  // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회
+  await callClaudeForChatWithTools(systemPrompt, prompt, wrappedCallbacks);
 }
 
 // ===========================

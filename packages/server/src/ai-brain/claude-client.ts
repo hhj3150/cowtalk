@@ -6,6 +6,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
+import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
+import { executeTool } from './tools/tool-executor.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -166,6 +168,95 @@ export async function callClaudeForChat(
     callbacks.onDone(fullText);
   } catch (error) {
     logger.error({ error }, 'Claude chat stream failed');
+    callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+// ===========================
+// 대화용 호출 (스트리밍 + Tool Use)
+// ===========================
+
+const MAX_TOOL_ROUNDS = 3;
+
+export async function callClaudeForChatWithTools(
+  systemPrompt: string,
+  prompt: string,
+  callbacks: StreamCallbacks,
+): Promise<void> {
+  const anthropic = getClient();
+  if (!anthropic) {
+    callbacks.onError(new Error('Claude API key not configured'));
+    return;
+  }
+
+  let fullText = '';
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
+
+  try {
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const response = await anthropic.messages.create({
+        model: config.ANTHROPIC_MODEL,
+        max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
+        temperature: 0.7,
+        system: systemPrompt,
+        messages,
+        tools: [...TINKERBELL_TOOLS],
+      });
+
+      // 응답 content blocks 처리
+      const toolUseBlocks: Anthropic.Messages.ToolUseBlock[] = [];
+
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          fullText += block.text;
+          callbacks.onText(block.text);
+        } else if (block.type === 'tool_use') {
+          toolUseBlocks.push(block);
+        }
+      }
+
+      // tool_use 없으면 완료
+      if (response.stop_reason !== 'tool_use' || toolUseBlocks.length === 0) {
+        logger.info({
+          model: response.model,
+          rounds: round + 1,
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        }, '[ToolUse] 대화 완료');
+        callbacks.onDone(fullText);
+        return;
+      }
+
+      // tool_use 실행
+      callbacks.onText('\n\n🔍 데이터 조회 중...\n\n');
+      fullText += '\n\n🔍 데이터 조회 중...\n\n';
+
+      // assistant 메시지 추가 (tool_use blocks 포함)
+      messages.push({ role: 'assistant', content: response.content });
+
+      // 각 tool 실행 후 결과 추가
+      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+      for (const toolBlock of toolUseBlocks) {
+        logger.info({ tool: toolBlock.name, input: toolBlock.input }, '[ToolUse] 도구 실행');
+        const result = await executeTool(
+          toolBlock.name,
+          toolBlock.input as Record<string, unknown>,
+        );
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolBlock.id,
+          content: result,
+        });
+      }
+
+      messages.push({ role: 'user', content: toolResults });
+    }
+
+    // 최대 라운드 초과
+    logger.warn({ rounds: MAX_TOOL_ROUNDS }, '[ToolUse] 최대 도구 호출 횟수 초과');
+    callbacks.onDone(fullText);
+  } catch (error) {
+    logger.error({ error }, '[ToolUse] 대화 실패');
     callbacks.onError(error instanceof Error ? error : new Error(String(error)));
   }
 }
