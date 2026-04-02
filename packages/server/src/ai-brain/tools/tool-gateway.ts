@@ -13,7 +13,7 @@ import type { Role } from '@cowtalk/shared';
 // 도구 → 도메인 매핑
 // ===========================
 
-const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
+export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   query_animal: 'sensor',
   query_animal_events: 'sensor',
   query_farm_summary: 'farm',

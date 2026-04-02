@@ -155,6 +155,9 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
           res.write(`data: ${JSON.stringify({ type: 'error', content: errorMsg })}\n\n`);
           res.end();
         },
+        onToolEvent: (event) => {
+          res.write(`data: ${JSON.stringify({ type: 'tool_event', ...event })}\n\n`);
+        },
       },
     );
   } catch (error) {

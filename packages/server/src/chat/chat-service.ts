@@ -254,6 +254,7 @@ export async function handleChatStream(
       }
     },
     onError: callbacks.onError,
+    onToolEvent: callbacks.onToolEvent,
   };
 
   // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회

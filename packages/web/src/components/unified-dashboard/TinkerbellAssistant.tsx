@@ -138,7 +138,44 @@ type TinkerbellState = 'idle' | 'listening' | 'thinking' | 'speaking';
 interface StreamChunk {
   readonly type: string;
   readonly content: string;
+  // tool_event 전용 필드
+  readonly phase?: 'start' | 'result';
+  readonly toolName?: string;
+  readonly toolDomain?: string;
+  readonly success?: boolean;
+  readonly executionMs?: number;
 }
+
+interface ToolActivity {
+  readonly toolName: string;
+  readonly toolDomain: string;
+  readonly phase: 'start' | 'result';
+  readonly success?: boolean;
+  readonly executionMs?: number;
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  query_animal: '개체 조회',
+  query_animal_events: '이벤트 조회',
+  query_farm_summary: '농장 요약',
+  query_breeding_stats: '번식 통계',
+  query_sensor_data: '센서 데이터',
+  query_traceability: '이력제 조회',
+  record_insemination: '수정 기록',
+  record_pregnancy_check: '임신감정',
+  recommend_insemination_window: '수정적기 추천',
+  record_treatment: '치료 기록',
+  get_farm_kpis: '농장 KPI',
+};
+
+const DOMAIN_ICONS: Record<string, string> = {
+  sensor: '📡',
+  repro: '🐄',
+  farm: '🏠',
+  public_data: '📋',
+  report: '📊',
+  action: '⚡',
+};
 
 // ── 음성 합성 (TTS) ──
 
@@ -345,6 +382,7 @@ export function TinkerbellAssistant({
     }
   });
   const [streamText, setStreamText] = useState(''); // 실시간 스트리밍 중인 텍스트
+  const [toolActivities, setToolActivities] = useState<readonly ToolActivity[]>([]); // 도구 호출 상태
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   // (사이드 패널 — 고정 위치, 드래그/리사이즈 불필요)
@@ -417,6 +455,7 @@ export function TinkerbellAssistant({
     setMessages((prev) => [...prev, userMsg]);
     setState('thinking');
     setStreamText('');
+    setToolActivities([]);
 
     // 학습 현황 질문 감지 → 소버린 통계 컨텍스트 주입
     const isLearningQuery = /학습|배웠|소버린|정확도|오탐|레이블|지식.*강화/i.test(question);
@@ -485,6 +524,23 @@ export function TinkerbellAssistant({
             if (parsed.type === 'error') {
               errorText = parsed.content;
             }
+            if (parsed.type === 'tool_event' && parsed.toolName && parsed.phase) {
+              setToolActivities((prev) => {
+                if (parsed.phase === 'start') {
+                  return [...prev, {
+                    toolName: parsed.toolName!,
+                    toolDomain: parsed.toolDomain ?? 'unknown',
+                    phase: 'start',
+                  }];
+                }
+                // result: 기존 start를 result로 업데이트
+                return prev.map((a) =>
+                  a.toolName === parsed.toolName && a.phase === 'start'
+                    ? { ...a, phase: 'result' as const, success: parsed.success, executionMs: parsed.executionMs }
+                    : a,
+                );
+              });
+            }
           } catch {
             // skip malformed SSE line
           }
@@ -493,6 +549,7 @@ export function TinkerbellAssistant({
 
       const answer = fullText || (errorText ? `⚠️ AI 오류: ${errorText}` : '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
       setStreamText('');
+      setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
       setState('speaking');
       speak(answer, () => setState('idle'));
@@ -716,6 +773,36 @@ export function TinkerbellAssistant({
                   </div>
                 </div>
               ))}
+              {/* 도구 호출 활동 카드 */}
+              {toolActivities.length > 0 && (
+                <div style={{ alignSelf: 'flex-start', maxWidth: '88%', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {toolActivities.map((act, i) => (
+                    <div key={`${act.toolName}-${String(i)}`} style={{
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      background: act.phase === 'start' ? 'rgba(59,130,246,0.15)' : act.success ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                      border: `1px solid ${act.phase === 'start' ? 'rgba(59,130,246,0.3)' : act.success ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                      fontSize: 11,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}>
+                      <span>{DOMAIN_ICONS[act.toolDomain] ?? '🔧'}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.85)' }}>
+                        {TOOL_LABELS[act.toolName] ?? act.toolName}
+                      </span>
+                      {act.phase === 'start' && (
+                        <span style={{ color, animation: 'tinkerbell-dot 1s infinite', fontSize: 10 }}>조회중...</span>
+                      )}
+                      {act.phase === 'result' && (
+                        <span style={{ color: act.success ? '#22c55e' : '#ef4444', fontSize: 10 }}>
+                          {act.success ? '완료' : '실패'}{act.executionMs != null ? ` ${String(act.executionMs)}ms` : ''}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               {/* 실시간 스트리밍 버블 */}
               {streamText && (
                 <div style={{ alignSelf: 'flex-start', maxWidth: '88%' }}>
@@ -1105,6 +1192,36 @@ export function TinkerbellAssistant({
           </div>
         ))}
 
+        {/* 도구 호출 활동 카드 */}
+        {toolActivities.length > 0 && (
+          <div style={{ alignSelf: 'flex-start', maxWidth: '85%', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {toolActivities.map((act, i) => (
+              <div key={`${act.toolName}-${String(i)}`} style={{
+                padding: '6px 10px',
+                borderRadius: 8,
+                background: act.phase === 'start' ? 'rgba(59,130,246,0.15)' : act.success ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                border: `1px solid ${act.phase === 'start' ? 'rgba(59,130,246,0.3)' : act.success ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}>
+                <span>{DOMAIN_ICONS[act.toolDomain] ?? '🔧'}</span>
+                <span style={{ color: 'rgba(255,255,255,0.85)' }}>
+                  {TOOL_LABELS[act.toolName] ?? act.toolName}
+                </span>
+                {act.phase === 'start' && (
+                  <span style={{ color, animation: 'tinkerbell-dot 1s infinite', fontSize: 11 }}>조회중...</span>
+                )}
+                {act.phase === 'result' && (
+                  <span style={{ color: act.success ? '#22c55e' : '#ef4444', fontSize: 11 }}>
+                    {act.success ? '완료' : '실패'}{act.executionMs != null ? ` ${String(act.executionMs)}ms` : ''}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {/* 실시간 스트리밍 버블 */}
         {streamText && (
           <div style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>

@@ -7,7 +7,7 @@ import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
-import { executeToolWithGateway, type ToolCallContext } from './tools/tool-gateway.js';
+import { executeToolWithGateway, TOOL_DOMAIN_MAP, type ToolCallContext } from './tools/tool-gateway.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -109,10 +109,19 @@ export async function callClaudeForAnalysis(
 // 대화용 호출 (스트리밍)
 // ===========================
 
+export interface ToolEvent {
+  readonly phase: 'start' | 'result';
+  readonly toolName: string;
+  readonly toolDomain: string;
+  readonly success?: boolean;
+  readonly executionMs?: number;
+}
+
 export interface StreamCallbacks {
   readonly onText: (text: string) => void;
   readonly onDone: (fullText: string) => void;
   readonly onError: (error: Error) => void;
+  readonly onToolEvent?: (event: ToolEvent) => void;
 }
 
 export async function callClaudeForChat(
@@ -229,9 +238,6 @@ export async function callClaudeForChatWithTools(
       }
 
       // tool_use 실행
-      callbacks.onText('\n\n🔍 데이터 조회 중...\n\n');
-      fullText += '\n\n🔍 데이터 조회 중...\n\n';
-
       // assistant 메시지 추가 (tool_use blocks 포함)
       messages.push({ role: 'assistant', content: response.content });
 
@@ -239,12 +245,27 @@ export async function callClaudeForChatWithTools(
       const gatewayContext: ToolCallContext = toolContext ?? { role: 'farmer' };
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const toolBlock of toolUseBlocks) {
+        const domain = TOOL_DOMAIN_MAP[toolBlock.name] ?? 'unknown';
+
+        // tool 시작 이벤트
+        callbacks.onToolEvent?.({ phase: 'start', toolName: toolBlock.name, toolDomain: domain });
+
         logger.info({ tool: toolBlock.name, input: toolBlock.input }, '[ToolUse] 도구 실행');
         const gatewayResult = await executeToolWithGateway(
           toolBlock.name,
           toolBlock.input as Record<string, unknown>,
           gatewayContext,
         );
+
+        // tool 결과 이벤트
+        callbacks.onToolEvent?.({
+          phase: 'result',
+          toolName: toolBlock.name,
+          toolDomain: domain,
+          success: gatewayResult.success,
+          executionMs: gatewayResult.executionMs,
+        });
+
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolBlock.id,
