@@ -18,6 +18,7 @@ import { VaccinationHistory } from '@web/components/vaccine/VaccinationHistory';
 import { InspectionResults } from '@web/components/vaccine/InspectionResults';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { AnimalEventPanel } from '@web/components/animals/AnimalEventPanel';
+import { ClinicalNotesPanel } from '@web/components/animals/ClinicalNotesPanel';
 import { useSovereignAlarms } from '@web/hooks/useUnifiedDashboard';
 import { SovereignAlarmFeed } from '@web/components/unified-dashboard/SovereignAlarmFeed';
 import { CollapsibleCard } from '@web/components/common/CollapsibleCard';
@@ -140,8 +141,24 @@ interface EventItem {
   readonly eventId: string;
   readonly eventType: string;
   readonly severity: string;
+  readonly confidence?: number;
   readonly detectedAt: string;
   readonly details: unknown;
+}
+
+/** 발정 강도 라벨 — smaXtec confidence 값 기반 */
+function estrusIntensity(confidence: number | undefined): string {
+  if (confidence === undefined || confidence === null) return '';
+  if (confidence >= 0.7) return '강';
+  if (confidence >= 0.4) return '중';
+  return '약';
+}
+
+function estrusIntensityColor(confidence: number | undefined): string {
+  if (confidence === undefined || confidence === null) return '#64748b';
+  if (confidence >= 0.7) return '#ef4444';
+  if (confidence >= 0.4) return '#f97316';
+  return '#eab308';
 }
 
 interface BreedingEvent {
@@ -181,6 +198,19 @@ export default function CowProfilePage(): React.JSX.Element {
   const [showDryOff, setShowDryOff] = useState(false);
   const [showPregnancyCheck, setShowPregnancyCheck] = useState(false);
   const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+  const [farmAnimalIds, setFarmAnimalIds] = useState<readonly string[]>([]);
+
+  // 농장 내 개체 목록 — 프로필 로드 후 비동기 조회 (◀▶ 이동 버튼용)
+  useEffect(() => {
+    if (!profile?.farmId) return;
+    apiGet<readonly { animalId: string }[]>(`/animals?farmId=${profile.farmId}&limit=100`)
+      .then((list) => {
+        if (Array.isArray(list)) {
+          setFarmAnimalIds(list.map((a) => a.animalId));
+        }
+      })
+      .catch(() => {});
+  }, [profile?.farmId]);
 
   // 소버린 AI 알람 — 이 개체에 해당하는 것만 필터
   const { data: sovereignData, isLoading: sovereignLoading } = useSovereignAlarms(profile?.farmId ?? null);
@@ -346,6 +376,11 @@ export default function CowProfilePage(): React.JSX.Element {
     );
   }
 
+  // ◀▶ 이전/다음 개체 ID 계산
+  const currentIdxInFarm = farmAnimalIds.indexOf(id ?? '');
+  const prevAnimalId = currentIdxInFarm > 0 ? farmAnimalIds[currentIdxInFarm - 1] : null;
+  const nextAnimalId = currentIdxInFarm >= 0 && currentIdxInFarm < farmAnimalIds.length - 1 ? farmAnimalIds[currentIdxInFarm + 1] : null;
+
   // 정상체온 기준으로 KPI 상태 판단 (음수 피크 제외 후 베이스라인)
   const displayTemp = sensor?.baselineTemp ?? sensor?.temperature;
   const tempStatus = displayTemp ? (displayTemp >= 39.8 ? '🔴 발열' : displayTemp >= 39.4 ? '🟡 주의' : '🟢 정상') : '—';
@@ -415,13 +450,79 @@ export default function CowProfilePage(): React.JSX.Element {
           🧚 팅커벨 AI
         </button>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
-            🐄 #{profile.earTag} {profile.name ? `(${profile.name})` : ''}
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
+              🐄 #{profile.earTag} {profile.name ? `(${profile.name})` : ''}
+            </h1>
+            {/* Health Index 배지 — AI 건강 점수 */}
+            {healthScore !== null && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                background: `${scoreColor}18`,
+                border: `1px solid ${scoreColor}60`,
+                borderRadius: 20,
+                padding: '2px 10px',
+                fontSize: 12,
+                fontWeight: 700,
+                color: scoreColor,
+                whiteSpace: 'nowrap',
+              }}>
+                ♥ {healthScore.toFixed(0)}
+                <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>
+                  {healthScore >= 80 ? '양호' : healthScore >= 50 ? '주의' : '위험'}
+                </span>
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}>
             {profile.farmName} · {profile.breed} · {profile.sex === 'female' ? '♀' : '♂'} · {profile.lactationStatus ?? '—'} · {profile.parity}산차
           </div>
         </div>
+
+        {/* ◀▶ 농장 내 이전/다음 개체 이동 */}
+        {farmAnimalIds.length > 1 && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              type="button"
+              onClick={() => prevAnimalId && navigate(`/cow/${prevAnimalId}`)}
+              disabled={!prevAnimalId}
+              title="이전 개체"
+              style={{
+                background: 'var(--ct-card)',
+                border: '1px solid var(--ct-border)',
+                borderRadius: 8,
+                padding: isMobile ? '6px 10px' : '6px 12px',
+                color: prevAnimalId ? 'var(--ct-text)' : 'var(--ct-text-muted)',
+                cursor: prevAnimalId ? 'pointer' : 'not-allowed',
+                fontSize: 16,
+                lineHeight: 1,
+                opacity: prevAnimalId ? 1 : 0.4,
+              }}
+            >◀</button>
+            <span style={{ fontSize: 11, color: 'var(--ct-text-muted)', minWidth: 40, textAlign: 'center' }}>
+              {currentIdxInFarm >= 0 ? `${currentIdxInFarm + 1} / ${farmAnimalIds.length}` : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => nextAnimalId && navigate(`/cow/${nextAnimalId}`)}
+              disabled={!nextAnimalId}
+              title="다음 개체"
+              style={{
+                background: 'var(--ct-card)',
+                border: '1px solid var(--ct-border)',
+                borderRadius: 8,
+                padding: isMobile ? '6px 10px' : '6px 12px',
+                color: nextAnimalId ? 'var(--ct-text)' : 'var(--ct-text-muted)',
+                cursor: nextAnimalId ? 'pointer' : 'not-allowed',
+                fontSize: 16,
+                lineHeight: 1,
+                opacity: nextAnimalId ? 1 : 0.4,
+              }}
+            >▶</button>
+          </div>
+        )}
       </div>
 
       {/* ── 현장 경보 배너 — critical/high 알람 시 항상 노출 ── */}
@@ -438,8 +539,13 @@ export default function CowProfilePage(): React.JSX.Element {
         }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: topAlertColor, flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: topAlertColor }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: topAlertColor, display: 'flex', alignItems: 'center', gap: 6 }}>
               {EVENT_LABELS[topAlert.eventType] ?? topAlert.eventType}
+              {topAlert.eventType === 'estrus' && topAlert.confidence !== undefined && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: estrusIntensityColor(topAlert.confidence), background: `${estrusIntensityColor(topAlert.confidence)}20`, borderRadius: 4, padding: '1px 6px' }}>
+                  발정강도 {estrusIntensity(topAlert.confidence)}
+                </span>
+              )}
             </div>
             <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 1 }}>
               {new Date(topAlert.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -674,6 +780,11 @@ export default function CowProfilePage(): React.JSX.Element {
                   <div key={e.eventId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 6, background: `${SEVERITY_COLORS[e.severity] ?? '#64748b'}10`, fontSize: 11 }}>
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: SEVERITY_COLORS[e.severity] ?? '#64748b' }} />
                     <span style={{ fontWeight: 600, flex: 1 }}>{EVENT_LABELS[e.eventType] ?? e.eventType}</span>
+                    {e.eventType === 'estrus' && e.confidence !== undefined && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: estrusIntensityColor(e.confidence), background: `${estrusIntensityColor(e.confidence)}18`, borderRadius: 4, padding: '1px 5px' }}>
+                        {estrusIntensity(e.confidence)}
+                      </span>
+                    )}
                     <span style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>
                       {new Date(e.detectedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -758,6 +869,13 @@ export default function CowProfilePage(): React.JSX.Element {
                 ))}
               </div>
             )}
+          </CollapsibleCard>
+
+          {/* 임상 기록 */}
+          <CollapsibleCard title="📝 임상 기록" badge={null}>
+            <SectionErrorBoundary label="임상 기록">
+              <ClinicalNotesPanel animalId={profile.animalId} farmId={profile.farmId} />
+            </SectionErrorBoundary>
           </CollapsibleCard>
 
           {/* 개체 정보 */}
