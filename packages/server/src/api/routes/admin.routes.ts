@@ -1,11 +1,11 @@
-// 관리자 라우트 — 시스템 상태 모니터링
+// 관리자 라우트 — 시스템 상태 모니터링 + 감사 로그
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
-import { sql, count } from 'drizzle-orm';
+import { sql, count, desc, gte, eq, and } from 'drizzle-orm';
 
 export const adminRouter = Router();
 
@@ -185,6 +185,92 @@ adminRouter.post('/seed-feedback', async (_req: Request, res: Response, next: Ne
 
     res.json({ success: true, message: `AI 피드백 ${String(seeded)}건 생성 완료`, seeded });
   } catch (error) {
+    next(error);
+  }
+});
+
+// GET /admin/audit-log — 팅커벨 AI 도구 호출 감사 로그 조회
+adminRouter.get('/audit-log', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const { toolAuditLog } = await import('../../db/schema.js');
+
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+    const toolName = req.query.toolName as string | undefined;
+    const role = req.query.role as string | undefined;
+    const status = req.query.status as string | undefined;
+    const days = Math.min(Number(req.query.days) || 7, 90);
+
+    const sinceDate = new Date(Date.now() - days * 86_400_000);
+    const conditions = [gte(toolAuditLog.startedAt, sinceDate)];
+
+    if (toolName) conditions.push(eq(toolAuditLog.toolName, toolName));
+    if (role) conditions.push(eq(toolAuditLog.role, role));
+    if (status) conditions.push(eq(toolAuditLog.resultStatus, status));
+
+    const rows = await db
+      .select({
+        logId: toolAuditLog.logId,
+        requestId: toolAuditLog.requestId,
+        role: toolAuditLog.role,
+        toolName: toolAuditLog.toolName,
+        toolDomain: toolAuditLog.toolDomain,
+        inputSummary: toolAuditLog.inputSummary,
+        resultStatus: toolAuditLog.resultStatus,
+        executionMs: toolAuditLog.executionMs,
+        approvalRequired: toolAuditLog.approvalRequired,
+        startedAt: toolAuditLog.startedAt,
+      })
+      .from(toolAuditLog)
+      .where(and(...conditions))
+      .orderBy(desc(toolAuditLog.startedAt))
+      .limit(limit)
+      .offset(offset);
+
+    // 요약 통계
+    const [totalRow] = await db
+      .select({ cnt: count() })
+      .from(toolAuditLog)
+      .where(and(...conditions));
+
+    const [domainStats] = await db.execute(
+      sql`SELECT tool_domain, COUNT(*)::int as cnt, AVG(execution_ms)::int as avg_ms
+          FROM tool_audit_log
+          WHERE started_at >= ${sinceDate}
+          GROUP BY tool_domain
+          ORDER BY cnt DESC`,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        logs: rows,
+        total: Number(totalRow?.cnt ?? 0),
+        limit,
+        offset,
+        summary: {
+          days,
+          domainStats: Array.isArray(domainStats) ? domainStats : [],
+        },
+      },
+    });
+  } catch (error) {
+    // tool_audit_log 테이블이 아직 없을 수 있음
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes('does not exist') || errMsg.includes('relation')) {
+      res.json({
+        success: true,
+        data: {
+          logs: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+          summary: { days: 7, domainStats: [], notice: 'tool_audit_log 테이블 미생성 — 마이그레이션 필요' },
+        },
+      });
+      return;
+    }
     next(error);
   }
 });

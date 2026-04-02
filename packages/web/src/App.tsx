@@ -39,6 +39,7 @@ const CaseDatabase = lazy(() => import('@web/pages/epidemiology/CaseDatabase'));
 const FarmManagementPage = lazy(() => import('@web/pages/admin/FarmManagementPage'));
 const UserManagementPage = lazy(() => import('@web/pages/admin/UserManagementPage'));
 const SystemStatusPage = lazy(() => import('@web/pages/admin/SystemStatusPage'));
+const AuditLogPage = lazy(() => import('@web/pages/admin/AuditLogPage'));
 const AiPerformancePage = lazy(() => import('@web/pages/intelligence/AiPerformancePage'));
 const BreedingCommandPage = lazy(() => import('@web/pages/intelligence/BreedingCommandPage'));
 const BreedingKpiPage = lazy(() => import('@web/pages/intelligence/BreedingKpiPage'));
@@ -130,6 +131,10 @@ export function App(): React.JSX.Element {
               <Route
                 path="/admin/system"
                 element={<RequireRole roles={['government_admin']}><SystemStatusPage /></RequireRole>}
+              />
+              <Route
+                path="/admin/audit-log"
+                element={<RequireRole roles={['government_admin']}><AuditLogPage /></RequireRole>}
               />
               <Route
                 path="/ai-performance"
