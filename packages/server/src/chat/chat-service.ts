@@ -257,7 +257,12 @@ export async function handleChatStream(
   };
 
   // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회
-  await callClaudeForChatWithTools(systemPrompt, prompt, wrappedCallbacks);
+  // Gateway 경유: audit log + role-based access control
+  await callClaudeForChatWithTools(systemPrompt, prompt, wrappedCallbacks, {
+    userId: request.userId,
+    role,
+    farmId: farmId ?? undefined,
+  });
 }
 
 // ===========================

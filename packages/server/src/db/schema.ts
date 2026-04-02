@@ -1529,6 +1529,34 @@ export const paymentHistoryRelations = relations(paymentHistory, ({ one }) => ({
   user: one(users, { fields: [paymentHistory.userId], references: [users.userId] }),
 }));
 
+// ======================================================================
+// Z. MCP Tool Audit Log — 모든 AI 도구 호출 기록
+// ======================================================================
+
+export const toolAuditLog = pgTable('tool_audit_log', {
+  logId: uuid('log_id').primaryKey().defaultRandom(),
+  requestId: varchar('request_id', { length: 64 }).notNull(), // 요청 그룹 ID
+  userId: uuid('user_id'),
+  role: varchar('role', { length: 30 }).notNull().default('unknown'),
+  farmId: uuid('farm_id'),
+  toolName: varchar('tool_name', { length: 100 }).notNull(),
+  toolDomain: varchar('tool_domain', { length: 30 }).notNull(), // sensor, repro, genetics, farm, public, report, action
+  inputSummary: text('input_summary').notNull(), // JSON 요약 (민감정보 제거)
+  resultStatus: varchar('result_status', { length: 20 }).notNull().default('success'), // success, error, partial, denied
+  resultSummary: text('result_summary'), // 결과 요약 (4000자 제한)
+  executionMs: integer('execution_ms').notNull().default(0),
+  approvalRequired: boolean('approval_required').notNull().default(false),
+  approvedBy: uuid('approved_by'),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('tool_audit_log_user_id_idx').on(table.userId),
+  index('tool_audit_log_tool_name_idx').on(table.toolName),
+  index('tool_audit_log_started_at_idx').on(table.startedAt),
+  index('tool_audit_log_request_id_idx').on(table.requestId),
+]);
+
 export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   labelId:           uuid('label_id').primaryKey().defaultRandom(),
   alarmSignature:    varchar('alarm_signature', { length: 200 }).notNull().unique(), // animalId:type:YYYY-MM-DD

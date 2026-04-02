@@ -7,7 +7,7 @@ import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
-import { executeTool } from './tools/tool-executor.js';
+import { executeToolWithGateway, type ToolCallContext } from './tools/tool-gateway.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -182,6 +182,7 @@ export async function callClaudeForChatWithTools(
   systemPrompt: string,
   prompt: string,
   callbacks: StreamCallbacks,
+  toolContext?: ToolCallContext,
 ): Promise<void> {
   const anthropic = getClient();
   if (!anthropic) {
@@ -234,18 +235,20 @@ export async function callClaudeForChatWithTools(
       // assistant 메시지 추가 (tool_use blocks 포함)
       messages.push({ role: 'assistant', content: response.content });
 
-      // 각 tool 실행 후 결과 추가
+      // 각 tool 실행 후 결과 추가 (Gateway 경유 — audit log + role check)
+      const gatewayContext: ToolCallContext = toolContext ?? { role: 'farmer' };
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const toolBlock of toolUseBlocks) {
         logger.info({ tool: toolBlock.name, input: toolBlock.input }, '[ToolUse] 도구 실행');
-        const result = await executeTool(
+        const gatewayResult = await executeToolWithGateway(
           toolBlock.name,
           toolBlock.input as Record<string, unknown>,
+          gatewayContext,
         );
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolBlock.id,
-          content: result,
+          content: gatewayResult.result,
         });
       }
 
