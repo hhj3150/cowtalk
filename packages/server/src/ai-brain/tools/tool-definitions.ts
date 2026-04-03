@@ -102,6 +102,41 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
       required: ['traceId'],
     },
   },
+  {
+    name: 'query_grade',
+    description: '등급판정 결과 조회. 이력번호(12자리)로 소도체 등급(1++~3), 육질등급, 육량등급, 도체중, 판정일, 도축장명을 EKAPE에서 실시간 조회한다. 출하 소의 등급 확인, 품질 분석에 사용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        traceId: { type: 'string', description: '이력제 12자리 번호 (예: "002132665191"). 필수.' },
+      },
+      required: ['traceId'],
+    },
+  },
+  {
+    name: 'query_auction_prices',
+    description: '소도체 경락가격 조회. 품종별·등급별 평균/최고/최저 경락가(원/kg)를 조회한다. 시세 파악, 출하 시기 판단에 활용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        startDate: { type: 'string', description: '조회 시작일 (YYYYMMDD, 예: "20260301"). 생략 시 최근 7일.' },
+        endDate: { type: 'string', description: '조회 종료일 (YYYYMMDD). 생략 시 오늘.' },
+        breed: {
+          type: 'string',
+          enum: ['한우', '육우', '젖소'],
+          description: '품종 필터. 생략 시 전체.',
+        },
+      },
+    },
+  },
+  {
+    name: 'query_sire_info',
+    description: '한우 씨수소(종모우) 정보 조회. 공공데이터(농촌진흥청)에서 등록된 씨수소의 번호, 이름, 혈통(부/모), 근교계수를 조회한다. 한우 교배 계획, 정액 선택에 활용. ⚠️ 한우 전용 — 젖소 종모우는 별도 조회 필요.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
 
   // ===========================
   // 번식 도메인 (write)

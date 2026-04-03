@@ -14,6 +14,8 @@ import {
   recordPregnancyCheck,
 } from '../../services/breeding/breeding-advisor.service.js';
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
+import { GradeConnector } from '../../pipeline/connectors/public-data/grade.connector.js';
+import { SemenConnector } from '../../pipeline/connectors/public-data/semen.connector.js';
 import { computeConceptionStats } from '../../services/breeding/breeding-feedback.service.js';
 import { logger } from '../../lib/logger.js';
 
@@ -53,6 +55,15 @@ export async function executeTool(
         break;
       case 'query_traceability':
         result = await handleQueryTraceability(input);
+        break;
+      case 'query_grade':
+        result = await handleQueryGrade(input);
+        break;
+      case 'query_auction_prices':
+        result = await handleQueryAuctionPrices(input);
+        break;
+      case 'query_sire_info':
+        result = await handleQuerySireInfo(input);
         break;
       case 'record_insemination':
         result = await handleRecordInsemination(input);
@@ -431,7 +442,140 @@ async function handleQueryTraceability(input: Record<string, unknown>): Promise<
 }
 
 // ===========================
-// 7. 수정 기록
+// 7b. 등급판정 조회 (공공데이터)
+// ===========================
+
+let gradeConnector: GradeConnector | null = null;
+
+function getGradeConnector(): GradeConnector {
+  if (!gradeConnector) {
+    gradeConnector = new GradeConnector();
+  }
+  return gradeConnector;
+}
+
+async function handleQueryGrade(input: Record<string, unknown>): Promise<unknown> {
+  const traceId = input.traceId as string;
+  if (!traceId) return { error: '이력번호(traceId)는 필수입니다.' };
+  if (traceId.length !== 12 && traceId.length !== 15) {
+    return { error: '이력번호는 12자리 또는 15자리여야 합니다.' };
+  }
+
+  try {
+    const connector = getGradeConnector();
+    await connector.connect();
+    const record = await connector.fetchGradeByTraceId(traceId);
+
+    if (!record) {
+      return { traceId, message: '등급판정 정보를 찾을 수 없습니다. 도축 전이거나 등급판정 대상이 아닐 수 있습니다.' };
+    }
+
+    return {
+      traceId: record.cattleNo,
+      grade: record.grade,
+      qualityGrade: record.qualityGrade,
+      yieldGrade: record.yieldGrade,
+      weight: record.weight,
+      judgeDate: record.judgeYmd,
+      abattoir: record.abattNm,
+    };
+  } catch (error) {
+    return { error: `등급판정 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7c. 경락가격 조회 (공공데이터)
+// ===========================
+
+async function handleQueryAuctionPrices(input: Record<string, unknown>): Promise<unknown> {
+  const startDate = input.startDate as string | undefined;
+  const endDate = input.endDate as string | undefined;
+  const breed = input.breed as string | undefined;
+
+  // 기본값: 최근 7일
+  const now = new Date();
+  const defaultEnd = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const defaultStart = new Date(now.getTime() - 7 * 86_400_000).toISOString().slice(0, 10).replace(/-/g, '');
+
+  const breedCodeMap: Record<string, string> = { '한우': '1', '육우': '2', '젖소': '3' };
+
+  try {
+    const connector = getGradeConnector();
+    await connector.connect();
+    const prices = await connector.fetchAuctionPrices({
+      startYmd: startDate ?? defaultStart,
+      endYmd: endDate ?? defaultEnd,
+      breedCd: breed ? breedCodeMap[breed] : undefined,
+    });
+
+    if (prices.length === 0) {
+      return { message: '해당 기간 경락가격 데이터가 없습니다.', startDate: startDate ?? defaultStart, endDate: endDate ?? defaultEnd };
+    }
+
+    return {
+      period: { start: startDate ?? defaultStart, end: endDate ?? defaultEnd },
+      breed: breed ?? '전체',
+      prices: prices.slice(0, 20).map((p) => ({
+        date: p.judgeYmd,
+        breed: p.breedNm,
+        grade: p.gradeNm,
+        avgPrice: p.avgPrice,
+        maxPrice: p.maxPrice,
+        minPrice: p.minPrice,
+        headCount: p.totalQty,
+      })),
+      totalRecords: prices.length,
+    };
+  } catch (error) {
+    return { error: `경락가격 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7d. 씨수소 정보 조회 (공공데이터)
+// ===========================
+
+let semenConnector: SemenConnector | null = null;
+
+function getSemenConnector(): SemenConnector {
+  if (!semenConnector) {
+    semenConnector = new SemenConnector();
+  }
+  return semenConnector;
+}
+
+async function handleQuerySireInfo(_input: Record<string, unknown>): Promise<unknown> {
+  try {
+    const connector = getSemenConnector();
+    await connector.connect();
+    const result = await connector.fetch();
+
+    if (result.count === 0) {
+      return { message: '씨수소 정보를 조회할 수 없습니다. API 키 미설정 또는 데이터 없음.' };
+    }
+
+    return {
+      totalBulls: result.count,
+      bulls: result.data.slice(0, 20).map((b) => ({
+        bullNo: b.bullNo,
+        bullName: b.bullName,
+        birthDate: b.birthDate,
+        fatherNo: b.fatherNo,
+        motherNo: b.motherNo,
+        inbreedingCoeff: b.inbreedingCoeff,
+        isAlive: b.isAlive,
+        breed: b.breed,
+      })),
+      note: '한우 종모우만 포함. 젖소 종모우는 별도 조회 필요.',
+    };
+  } catch (error) {
+    return { error: `씨수소 정보 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 8. 수정 기록
 // ===========================
 
 async function handleRecordInsemination(input: Record<string, unknown>): Promise<unknown> {

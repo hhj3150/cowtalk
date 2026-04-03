@@ -232,17 +232,279 @@ export async function checkRepeatBreeders(): Promise<readonly RepeatBreeder[]> {
 }
 
 // ===========================
+// 3. 건유 리마인더
+// ===========================
+
+/**
+ * 분만 예정일 기준 건유 시기(dryOffBeforeCalvingDays)에 도달한 착유우를 찾아 알림
+ * 조건: 임신 확인 + 분만예정일 - 건유기준일 <= 오늘 + 7일 (일주일 여유)
+ */
+async function checkDryOffReminders(): Promise<number> {
+  const db = getDb();
+  const now = new Date();
+  let created = 0;
+
+  try {
+    // 임신 확인된 활성 착유우
+    const pregnantAnimals = await db.execute(sql`
+      SELECT DISTINCT ON (pc.animal_id)
+        pc.animal_id,
+        a.ear_tag,
+        a.farm_id,
+        a.lactation_status,
+        f.name as farm_name,
+        be.event_date as insem_date,
+        pc.check_date as preg_confirmed_date
+      FROM pregnancy_checks pc
+      JOIN animals a ON a.animal_id = pc.animal_id
+      JOIN farms f ON f.farm_id = a.farm_id
+      LEFT JOIN breeding_events be ON be.animal_id = pc.animal_id
+        AND be.type = 'insemination'
+        AND be.event_date <= pc.check_date
+      WHERE pc.result = 'pregnant'
+        AND a.status = 'active'
+        AND a.deleted_at IS NULL
+        AND a.lactation_status = 'milking'
+      ORDER BY pc.animal_id, pc.check_date DESC
+    `);
+
+    const rows = pregnantAnimals as unknown as Array<{
+      animal_id: string;
+      ear_tag: string;
+      farm_id: string;
+      lactation_status: string;
+      farm_name: string;
+      insem_date: Date | null;
+      preg_confirmed_date: Date;
+    }>;
+
+    for (const row of rows) {
+      if (!row.farm_id || !row.insem_date) continue;
+
+      const settings = await getFarmBreedingSettings(row.farm_id);
+      const gestationDays = settings.gestationDays ?? 280;
+      const dryOffBefore = settings.dryOffBeforeCalvingDays ?? 90;
+
+      const expectedCalving = new Date(row.insem_date.getTime() + gestationDays * MS_PER_DAY);
+      const dryOffDate = new Date(expectedCalving.getTime() - dryOffBefore * MS_PER_DAY);
+      const daysUntilDryOff = Math.floor((dryOffDate.getTime() - now.getTime()) / MS_PER_DAY);
+
+      // 건유 시기가 7일 이내이거나 이미 지남
+      if (daysUntilDryOff > 7) continue;
+
+      const dedupKey = `dry-off-${row.animal_id}-${expectedCalving.toISOString().split('T')[0]}`;
+      const priority = daysUntilDryOff <= 0 ? 'high' : 'medium';
+
+      try {
+        const [inserted] = await db.insert(alerts).values({
+          alertType: 'dry_off_reminder',
+          animalId: row.animal_id,
+          farmId: row.farm_id,
+          priority,
+          title: `🟡 건유 시기 — #${row.ear_tag}`,
+          explanation: `${row.farm_name} · 분만예정 ${expectedCalving.toLocaleDateString('ko-KR')} · ${daysUntilDryOff <= 0 ? '건유 시기 경과' : `건유까지 ${String(daysUntilDryOff)}일`}`,
+          recommendedAction: `건유 처리를 실시하세요. 분만 ${String(dryOffBefore)}일 전 건유가 권장됩니다.`,
+          dedupKey,
+        }).onConflictDoNothing().returning({ alertId: alerts.alertId });
+
+        if (inserted) created++;
+      } catch {
+        // 중복 무시
+      }
+    }
+
+    if (created > 0) {
+      logger.info({ count: created }, '[BreedingReminder] 건유 리마인더 생성');
+    }
+    return created;
+  } catch (error) {
+    logger.error({ error }, '[BreedingReminder] 건유 리마인더 체크 실패');
+    return 0;
+  }
+}
+
+// ===========================
+// 4. 분만 임박 알림
+// ===========================
+
+/**
+ * 분만 예정일이 7일 이내인 개체를 찾아 알림
+ */
+async function checkCalvingImminent(): Promise<number> {
+  const db = getDb();
+  const now = new Date();
+  let created = 0;
+
+  try {
+    const pregnantAnimals = await db.execute(sql`
+      SELECT DISTINCT ON (pc.animal_id)
+        pc.animal_id,
+        a.ear_tag,
+        a.farm_id,
+        f.name as farm_name,
+        be.event_date as insem_date
+      FROM pregnancy_checks pc
+      JOIN animals a ON a.animal_id = pc.animal_id
+      JOIN farms f ON f.farm_id = a.farm_id
+      LEFT JOIN breeding_events be ON be.animal_id = pc.animal_id
+        AND be.type = 'insemination'
+        AND be.event_date <= pc.check_date
+      WHERE pc.result = 'pregnant'
+        AND a.status = 'active'
+        AND a.deleted_at IS NULL
+      ORDER BY pc.animal_id, pc.check_date DESC
+    `);
+
+    const rows = pregnantAnimals as unknown as Array<{
+      animal_id: string;
+      ear_tag: string;
+      farm_id: string;
+      farm_name: string;
+      insem_date: Date | null;
+    }>;
+
+    for (const row of rows) {
+      if (!row.farm_id || !row.insem_date) continue;
+
+      const settings = await getFarmBreedingSettings(row.farm_id);
+      const gestationDays = settings.gestationDays ?? 280;
+      const expectedCalving = new Date(row.insem_date.getTime() + gestationDays * MS_PER_DAY);
+      const daysUntilCalving = Math.floor((expectedCalving.getTime() - now.getTime()) / MS_PER_DAY);
+
+      if (daysUntilCalving > 7 || daysUntilCalving < -3) continue;
+
+      const dedupKey = `calving-imminent-${row.animal_id}-${expectedCalving.toISOString().split('T')[0]}`;
+      const priority = daysUntilCalving <= 1 ? 'critical' : 'high';
+
+      try {
+        const [inserted] = await db.insert(alerts).values({
+          alertType: 'calving_imminent',
+          animalId: row.animal_id,
+          farmId: row.farm_id,
+          priority,
+          title: `🔴 분만 임박 — #${row.ear_tag}`,
+          explanation: `${row.farm_name} · 분만예정 ${expectedCalving.toLocaleDateString('ko-KR')} · ${daysUntilCalving <= 0 ? '분만 예정일 경과' : `${String(daysUntilCalving)}일 후`}`,
+          recommendedAction: `분만 준비를 완료하세요. 분만실 이동, 산욕열 예방약 준비, 난산 대비 수의사 연락처를 확인하세요.`,
+          dedupKey,
+        }).onConflictDoNothing().returning({ alertId: alerts.alertId });
+
+        if (inserted) created++;
+      } catch {
+        // 중복 무시
+      }
+    }
+
+    if (created > 0) {
+      logger.info({ count: created }, '[BreedingReminder] 분만 임박 알림 생성');
+    }
+    return created;
+  } catch (error) {
+    logger.error({ error }, '[BreedingReminder] 분만 임박 체크 실패');
+    return 0;
+  }
+}
+
+// ===========================
+// 5. 장기공태우 알림
+// ===========================
+
+/**
+ * DIM(착유일수)이 longOpenDaysDim(기본 200일)을 초과하면서
+ * 수정 기록이 없거나 임신이 확인되지 않은 개체를 감지
+ */
+async function checkLongOpenDays(): Promise<number> {
+  const db = getDb();
+  const now = new Date();
+  let created = 0;
+
+  try {
+    // DIM이 높은 활성 착유우
+    const highDimAnimals = await db
+      .select({
+        animalId: animals.animalId,
+        earTag: animals.earTag,
+        farmId: animals.farmId,
+        daysInMilk: animals.daysInMilk,
+        farmName: farms.name,
+      })
+      .from(animals)
+      .innerJoin(farms, eq(animals.farmId, farms.farmId))
+      .where(and(
+        eq(animals.status, 'active'),
+        isNull(animals.deletedAt),
+        eq(animals.lactationStatus, 'milking'),
+        gte(animals.daysInMilk, 150), // 초기 필터 (세팅별로 재검사)
+      ));
+
+    for (const animal of highDimAnimals) {
+      if (!animal.farmId || !animal.daysInMilk) continue;
+
+      const settings = await getFarmBreedingSettings(animal.farmId);
+      const longOpenDays = settings.longOpenDaysDim ?? 200;
+
+      if (animal.daysInMilk < longOpenDays) continue;
+
+      // 이미 임신 확인된 경우 스킵
+      const recentPreg = await db
+        .select({ checkId: pregnancyChecks.checkId })
+        .from(pregnancyChecks)
+        .where(and(
+          eq(pregnancyChecks.animalId, animal.animalId),
+          eq(pregnancyChecks.result, 'pregnant'),
+          gte(pregnancyChecks.checkDate, new Date(now.getTime() - 120 * MS_PER_DAY)),
+        ))
+        .limit(1);
+
+      if (recentPreg.length > 0) continue;
+
+      const dedupKey = `long-open-${animal.animalId}-${now.toISOString().split('T')[0]?.slice(0, 7)}`; // 월 단위 dedup
+
+      try {
+        const [inserted] = await db.insert(alerts).values({
+          alertType: 'long_open_days',
+          animalId: animal.animalId,
+          farmId: animal.farmId,
+          priority: animal.daysInMilk >= 250 ? 'high' : 'medium',
+          title: `🟠 장기공태우 — #${animal.earTag}`,
+          explanation: `${animal.farmName} · 착유 ${String(animal.daysInMilk)}일 · 임신 미확인 (기준 ${String(longOpenDays)}일)`,
+          recommendedAction: `번식 상태를 점검하세요. 발정 재관찰, 수의사 번식장애 검진, 또는 도태 검토가 필요합니다.`,
+          dedupKey,
+        }).onConflictDoNothing().returning({ alertId: alerts.alertId });
+
+        if (inserted) created++;
+      } catch {
+        // 중복 무시
+      }
+    }
+
+    if (created > 0) {
+      logger.info({ count: created }, '[BreedingReminder] 장기공태우 알림 생성');
+    }
+    return created;
+  } catch (error) {
+    logger.error({ error }, '[BreedingReminder] 장기공태우 체크 실패');
+    return 0;
+  }
+}
+
+// ===========================
 // 통합 실행 (오케스트레이터에서 호출)
 // ===========================
 
 export async function runBreedingReminders(): Promise<void> {
   logger.info('[BreedingReminder] 번식 리마인더 실행 시작');
-  const [pending, repeats] = await Promise.all([
+  const [pending, repeats, dryOff, calving, longOpen] = await Promise.all([
     checkPendingPregnancyTests(),
     checkRepeatBreeders(),
+    checkDryOffReminders(),
+    checkCalvingImminent(),
+    checkLongOpenDays(),
   ]);
   logger.info({
     pregnancyCheckDue: pending.length,
     repeatBreeders: repeats.length,
+    dryOffReminders: dryOff,
+    calvingImminent: calving,
+    longOpenDays: longOpen,
   }, '[BreedingReminder] 번식 리마인더 완료');
 }

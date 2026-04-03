@@ -167,6 +167,9 @@ const TOOL_LABELS: Record<string, string> = {
   record_treatment: '치료 기록',
   get_farm_kpis: '농장 KPI',
   query_conception_stats: '수태율 통계',
+  query_grade: '등급판정 조회',
+  query_auction_prices: '경락가격 조회',
+  query_sire_info: '씨수소 정보',
 };
 
 const DOMAIN_ICONS: Record<string, string> = {
@@ -174,6 +177,7 @@ const DOMAIN_ICONS: Record<string, string> = {
   repro: '🐄',
   farm: '🏠',
   public_data: '📋',
+  genetics: '🧬',
   report: '📊',
   action: '⚡',
 };
