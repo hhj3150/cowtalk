@@ -53,7 +53,7 @@ data.go.kr 공공데이터포털 API를 활용한다.
 - 축산물통합이력정보 (15058923) → TraceabilityConnector 실연결 완료
   - endpoint: http://data.ekape.or.kr/openapi-data/service/user/animalTrace/traceNoSearch
   - 파라미터: traceNo(필수), optionNo(1~9), serviceKey
-- 축산물등급판정확인서 (grade API) → GradeConnector 미구현
+- 축산물등급판정확인서 (grade API) → GradeConnector 구현 완료 + query_grade/query_auction_prices 도구 등록
   - endpoint: https://data.ekape.or.kr/openapi-data/service/user/grade
 
 활용신청 필요 (4건, 자동승인):
@@ -353,6 +353,37 @@ DB 영속화:
 - KPI 5개: 수태율, 발정탐지율, 평균공태일, 분만간격, 첫수정일수
 - 긴급 조치: inseminate_now, pregnancy_check_due, calving_imminent, repeat_breeder
 - GET /breeding/pipeline, GET /breeding/pipeline/:farmId
+
+## MCP 도구 체계 (2026-04-03 Phase 4 완료)
+
+팅커벨 AI가 사용하는 도구 17개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
+
+| 도메인 | 도구명 | 유형 | 설명 |
+|--------|--------|------|------|
+| sensor | query_animal | 조회 | 개체 프로필 (earTag/traceId/animalId 검색) |
+| sensor | query_animal_events | 조회 | 개체 이벤트 이력 (발정/수정/임신/건강) |
+| sensor | query_sensor_data | 조회 | 체온/활동량 일별 집계 |
+| sensor | query_weather | 조회 | 기상/THI 조회 + 열스트레스 권고 |
+| farm | query_farm_summary | 조회 | 농장 요약 (두수/알림/KPI) |
+| farm | get_farm_kpis | 조회 | 농장 핵심 KPI (두수+번식+건강+알림) |
+| farm | record_treatment | 기록 | 치료 기록 (진단/투약/휴약) |
+| repro | query_breeding_stats | 조회 | 번식 통계 (파이프라인 KPI) |
+| repro | query_conception_stats | 조회 | 수태율 통계 (정액별/개체별) |
+| repro | record_insemination | 기록 | 수정 기록 |
+| repro | record_pregnancy_check | 기록 | 임신감정 기록 |
+| repro | recommend_insemination_window | 추천 | 수정 적기 + 정액 추천 |
+| public_data | query_traceability | 조회 | 이력제 실시간 조회 (EKAPE) |
+| public_data | query_grade | 조회 | 등급판정 결과 (EKAPE) |
+| public_data | query_auction_prices | 조회 | 경락가격 시세 (EKAPE) |
+| public_data | query_quarantine_dashboard | 조회 | 방역 대시보드 종합 |
+| public_data | query_national_situation | 조회 | 전국/시도별 방역 현황 |
+| genetics | query_sire_info | 조회 | 한우 씨수소 정보 (농촌진흥청) |
+
+역할별 접근 권한: tool-gateway.ts의 ROLE_TOOL_ACCESS 참조.
+감사 로그: 모든 도구 호출이 tool_audit_log 테이블에 자동 기록.
+
+번식 리마인더 5종 (24h batch, runBreedingReminders):
+- pregnancy_check_due, repeat_breeder_warning, dry_off_reminder, calving_imminent, long_open_days
 
 ## 보고 형식 (매 작업 후)
 
