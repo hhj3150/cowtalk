@@ -16,6 +16,9 @@ import {
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
 import { GradeConnector } from '../../pipeline/connectors/public-data/grade.connector.js';
 import { SemenConnector } from '../../pipeline/connectors/public-data/semen.connector.js';
+import { WeatherConnector } from '../../pipeline/connectors/public-data/weather.connector.js';
+import { getQuarantineDashboard } from '../../services/epidemiology/quarantine-dashboard.service.js';
+import { getNationalSituation, getProvinceDetail } from '../../services/epidemiology/national-situation.service.js';
 import { computeConceptionStats } from '../../services/breeding/breeding-feedback.service.js';
 import { logger } from '../../lib/logger.js';
 
@@ -64,6 +67,15 @@ export async function executeTool(
         break;
       case 'query_sire_info':
         result = await handleQuerySireInfo(input);
+        break;
+      case 'query_weather':
+        result = await handleQueryWeather(input);
+        break;
+      case 'query_quarantine_dashboard':
+        result = await handleQueryQuarantineDashboard(input);
+        break;
+      case 'query_national_situation':
+        result = await handleQueryNationalSituation(input);
         break;
       case 'record_insemination':
         result = await handleRecordInsemination(input);
@@ -571,6 +583,177 @@ async function handleQuerySireInfo(_input: Record<string, unknown>): Promise<unk
     };
   } catch (error) {
     return { error: `씨수소 정보 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7e. 기상/THI 조회
+// ===========================
+
+let weatherConnector: WeatherConnector | null = null;
+
+function getWeatherConnector(): WeatherConnector {
+  if (!weatherConnector) {
+    weatherConnector = new WeatherConnector();
+  }
+  return weatherConnector;
+}
+
+async function handleQueryWeather(input: Record<string, unknown>): Promise<unknown> {
+  const db = getDb();
+  const farmId = input.farmId as string | undefined;
+
+  try {
+    const connector = getWeatherConnector();
+    await connector.connect();
+
+    // 농장 좌표 조회
+    if (farmId) {
+      const farmRows = await db
+        .select({ name: farms.name, lat: farms.lat, lng: farms.lng })
+        .from(farms)
+        .where(eq(farms.farmId, farmId))
+        .limit(1);
+
+      if (farmRows.length === 0) return { error: '농장을 찾을 수 없습니다.' };
+      const farm = farmRows[0]!;
+
+      const lat = Number(farm.lat) || 37.5;
+      const lng = Number(farm.lng) || 127.0;
+
+      const weather = await connector.fetchCurrentWeather(lat, lng);
+      if (!weather) return { error: '기상 데이터를 조회할 수 없습니다.' };
+
+      const thiInfo = WeatherConnector.thiLevel(weather.thi);
+
+      return {
+        farmId,
+        farmName: farm.name,
+        weather: {
+          temperature: weather.temperature,
+          humidity: weather.humidity,
+          thi: weather.thi,
+          thiLevel: thiInfo.level,
+          thiLabel: thiInfo.label,
+          observationTime: weather.observationTime,
+        },
+        recommendation: getThiRecommendation(thiInfo.level),
+      };
+    }
+
+    // 전체 농장 대표 지점 (서울 기준)
+    const weather = await connector.fetchCurrentWeather(37.5, 127.0);
+    if (!weather) return { error: '기상 데이터를 조회할 수 없습니다.' };
+
+    const thiInfo = WeatherConnector.thiLevel(weather.thi);
+
+    return {
+      farmId: '전체',
+      weather: {
+        temperature: weather.temperature,
+        humidity: weather.humidity,
+        thi: weather.thi,
+        thiLevel: thiInfo.level,
+        thiLabel: thiInfo.label,
+        observationTime: weather.observationTime,
+      },
+      recommendation: getThiRecommendation(thiInfo.level),
+    };
+  } catch (error) {
+    return { error: `기상 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+function getThiRecommendation(level: string): string {
+  switch (level) {
+    case 'emergency':
+      return '긴급: 즉시 냉방 가동, 음수량 2배 확보, 사료 급여 시간 조정(새벽/야간), 착유 중단 검토';
+    case 'danger':
+      return '위험: 환기팬 + 스프링클러 가동, 음수 공급 점검, 착유우 일사량 차단, 밀사 방지';
+    case 'warning':
+      return '주의: 환기 상태 점검, 음수량 모니터링, 고온 시간대(12~16시) 방목 자제';
+    default:
+      return '정상: 특별 조치 불필요';
+  }
+}
+
+// ===========================
+// 7f. 방역 대시보드 조회
+// ===========================
+
+async function handleQueryQuarantineDashboard(_input: Record<string, unknown>): Promise<unknown> {
+  try {
+    const data = await getQuarantineDashboard();
+    return {
+      riskLevel: data.kpi.riskLevel,
+      totalAnimals: data.kpi.totalAnimals,
+      feverAnimals: data.kpi.feverAnimals,
+      feverRate: Math.round(data.kpi.feverRate * 1000) / 10,
+      sensorRate: Math.round(data.kpi.sensorRate * 1000) / 10,
+      clusterFarms: data.kpi.clusterFarms,
+      legalDiseaseSuspects: data.kpi.legalDiseaseSuspects,
+      top5RiskFarms: data.top5RiskFarms.map((f) => ({
+        farmName: f.farmName,
+        riskScore: f.riskScore,
+        feverCount: f.feverCount,
+        clusterAlert: f.clusterAlert,
+      })),
+      activeAlerts: data.activeAlerts.slice(0, 10).map((a) => ({
+        farmName: a.farmName,
+        title: a.title,
+        priority: a.priority,
+      })),
+      computedAt: data.computedAt,
+    };
+  } catch (error) {
+    return { error: `방역 대시보드 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 7g. 전국 방역 현황 조회
+// ===========================
+
+async function handleQueryNationalSituation(input: Record<string, unknown>): Promise<unknown> {
+  const province = input.province as string | undefined;
+
+  try {
+    if (province) {
+      const districts = await getProvinceDetail(province);
+      return {
+        province,
+        districts: districts.map((d) => ({
+          district: d.district,
+          farmCount: d.farmCount,
+          totalAnimals: d.totalAnimals,
+          feverAnimals: d.feverAnimals,
+          feverRate: Math.round(d.feverRate * 1000) / 10,
+          riskLevel: d.riskLevel,
+        })),
+      };
+    }
+
+    const data = await getNationalSituation();
+    return {
+      nationalSummary: {
+        totalFarms: data.nationalSummary.totalFarms,
+        totalAnimals: data.nationalSummary.totalAnimals,
+        feverAnimals: data.nationalSummary.feverAnimals,
+        nationalFeverRate: Math.round(data.nationalSummary.nationalFeverRate * 1000) / 10,
+        highRiskProvinces: data.nationalSummary.highRiskProvinces,
+        broadAlertActive: data.nationalSummary.broadAlertActive,
+      },
+      provinces: data.provinces.map((p) => ({
+        province: p.province,
+        farmCount: p.farmCount,
+        totalAnimals: p.totalAnimals,
+        feverAnimals: p.feverAnimals,
+        feverRate: Math.round(p.feverRate * 1000) / 10,
+        riskLevel: p.riskLevel,
+      })),
+    };
+  } catch (error) {
+    return { error: `전국 현황 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
 

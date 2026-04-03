@@ -170,6 +170,9 @@ const TOOL_LABELS: Record<string, string> = {
   query_grade: '등급판정 조회',
   query_auction_prices: '경락가격 조회',
   query_sire_info: '씨수소 정보',
+  query_weather: '기상/THI 조회',
+  query_quarantine_dashboard: '방역 대시보드',
+  query_national_situation: '전국 방역 현황',
 };
 
 const DOMAIN_ICONS: Record<string, string> = {

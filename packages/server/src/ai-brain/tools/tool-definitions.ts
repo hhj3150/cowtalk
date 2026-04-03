@@ -137,6 +137,39 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
       properties: {},
     },
   },
+  {
+    name: 'query_weather',
+    description: '농장 주변 기상 정보 + THI(온습도지수) 조회. 기온, 습도, THI 등급(정상/주의/위험/긴급)을 반환한다. 열스트레스 위험 판단, 사료 조정, 환기 가동 판단에 활용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        farmId: { type: 'string', description: '농장 ID. 생략 시 전체 농장 평균.' },
+      },
+    },
+  },
+
+  // ===========================
+  // 방역 도메인
+  // ===========================
+
+  {
+    name: 'query_quarantine_dashboard',
+    description: '방역 대시보드 종합 데이터 조회. 전국 감시 두수, 발열률, 집단발열 농장 수, 위험등급(green/yellow/orange/red), TOP5 위험농장, 24시간 발열 추이를 반환한다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'query_national_situation',
+    description: '전국 방역 현황 조회. 시도별 농장 수, 두수, 발열률, 위험등급을 반환한다. 광역 방역 대응 판단에 활용.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        province: { type: 'string', description: '시도명 (예: "경기도"). 생략 시 전국 시도별 목록.' },
+      },
+    },
+  },
 
   // ===========================
   // 번식 도메인 (write)
