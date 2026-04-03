@@ -1,6 +1,7 @@
 // 지역 인텔리전스 페이지 — 살아있는 지도 + 실시간 갱신 + 필터
 
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRegionalMap, useRegionalSummary } from '@web/hooks/useRegionalMap';
 import { RegionalMap } from '@web/components/map/RegionalMap';
 import type { MapFilters } from '@web/components/map/RegionalMap';
@@ -27,6 +28,7 @@ const STATUS_OPTIONS = [
 ] as const;
 
 export default function RegionalMapPage(): React.JSX.Element {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<MapMode>('status');
   const [selectedFarm, setSelectedFarm] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(true); // 기본 다크 모드
@@ -164,7 +166,7 @@ export default function RegionalMapPage(): React.JSX.Element {
         {mapData && (
           <RegionalMap
             markers={mapData.markers}
-            onMarkerClick={setSelectedFarm}
+            onMarkerClick={(farmId) => navigate(`/farm/${farmId}`)}
             darkMode={darkMode}
             height="calc(100vh - 280px)"
             selectedFarmId={selectedFarm}

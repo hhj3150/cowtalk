@@ -27,7 +27,7 @@ interface Props {
 
 export function AnimalListLevel({ farmId }: Props): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const { navigateToAnimal } = useDrilldown();
+  const { navigateToDetail } = useDrilldown();
 
   const { data, isLoading } = useQuery({
     queryKey: ['drilldown', 'animals', farmId],
@@ -65,7 +65,7 @@ export function AnimalListLevel({ farmId }: Props): React.JSX.Element {
           <button
             key={animal.animalId}
             type="button"
-            onClick={() => navigateToAnimal(animal.animalId, animal.earTag)}
+            onClick={() => navigateToDetail(animal.animalId, animal.earTag)}
             className="ct-card flex w-full items-center justify-between p-3 text-left transition-all hover:bg-[#FAFAF8]"
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--ct-primary)'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--ct-border)'; }}

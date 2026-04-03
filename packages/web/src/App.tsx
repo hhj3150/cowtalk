@@ -24,6 +24,7 @@ const RadiusAnalysisPage = lazy(() => import('@web/pages/epidemiology/RadiusAnal
 const SpreadSimulationPage = lazy(() => import('@web/pages/epidemiology/SpreadSimulationPage'));
 const ContactNetworkPage = lazy(() => import('@web/pages/epidemiology/ContactNetworkPage'));
 
+const FarmDetailPage = lazy(() => import('@web/pages/farm/FarmDetailPage'));
 const HerdGroupPage = lazy(() => import('@web/pages/farm/HerdGroupPage'));
 const MyCattlePage = lazy(() => import('@web/pages/farm/MyCattlePage'));
 const EarTagScanPage = lazy(() => import('@web/pages/ear-tag/EarTagScanPage'));
@@ -101,6 +102,7 @@ export function App(): React.JSX.Element {
               <Route path="/regional-map" element={<RegionalMapPage />} />
               <Route path="/cow/:id" element={<CowProfilePage />} />
               <Route path="/animals/:id" element={<CowProfilePage />} />
+              <Route path="/farm/:farmId" element={<FarmDetailPage />} />
               <Route path="/my-cattle" element={<MyCattlePage />} />
               <Route path="/farm/:farmId/groups" element={<HerdGroupPage />} />
               <Route path="/report/farm/:farmId/monthly" element={<MonthlyReportPage />} />

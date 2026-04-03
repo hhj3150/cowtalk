@@ -745,7 +745,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           <FarmMapWidget
             markers={farmMapMarkers}
             selectedFarmId={selectedFarmId}
-            onFarmClick={(fid) => { selectFarm(fid); setDrawerFarmId(fid); setDrawerOpen(true); }}
+            onFarmClick={(fid) => navigate(`/farm/${fid}`)}
           />
           )}
 
