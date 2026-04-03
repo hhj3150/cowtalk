@@ -7,6 +7,7 @@ describe('TOOL_DOMAIN_MAP — 도구→도메인 매핑', () => {
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_conception_stats',
     'query_traceability', 'query_grade', 'query_auction_prices', 'query_sire_info',
+    'query_weather', 'query_quarantine_dashboard', 'query_national_situation',
     'record_insemination', 'record_pregnancy_check', 'recommend_insemination_window',
     'record_treatment', 'get_farm_kpis',
   ];
@@ -82,6 +83,54 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
 
     it('quarantine_officer → 접근 불가', () => {
       expect(ROLE_TOOL_ACCESS.quarantine_officer).not.toContain('query_sire_info');
+    });
+  });
+
+  // === Phase 4 도구 접근 권한 ===
+
+  describe('query_weather 접근 권한', () => {
+    it('farmer → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.farmer).toContain('query_weather');
+    });
+
+    it('quarantine_officer → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.quarantine_officer).toContain('query_weather');
+    });
+
+    it('feed_company → 접근 가능 (사료 조정)', () => {
+      expect(ROLE_TOOL_ACCESS.feed_company).toContain('query_weather');
+    });
+  });
+
+  describe('query_quarantine_dashboard 접근 권한', () => {
+    it('quarantine_officer → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.quarantine_officer).toContain('query_quarantine_dashboard');
+    });
+
+    it('government_admin → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.government_admin).toContain('query_quarantine_dashboard');
+    });
+
+    it('farmer → 접근 불가 (방역관 전용)', () => {
+      expect(ROLE_TOOL_ACCESS.farmer).not.toContain('query_quarantine_dashboard');
+    });
+
+    it('inseminator → 접근 불가', () => {
+      expect(ROLE_TOOL_ACCESS.inseminator).not.toContain('query_quarantine_dashboard');
+    });
+  });
+
+  describe('query_national_situation 접근 권한', () => {
+    it('quarantine_officer → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.quarantine_officer).toContain('query_national_situation');
+    });
+
+    it('government_admin → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.government_admin).toContain('query_national_situation');
+    });
+
+    it('veterinarian → 접근 불가', () => {
+      expect(ROLE_TOOL_ACCESS.veterinarian).not.toContain('query_national_situation');
     });
   });
 
