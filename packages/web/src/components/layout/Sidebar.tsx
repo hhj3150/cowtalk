@@ -169,6 +169,7 @@ const COMMON_MENU: readonly MenuItem[] = [
   { label: '내 소', path: '/my-cattle', icon: <IconCow /> },
   { label: '번식 커맨드', path: '/breeding', icon: <IconBreeding /> },
   { label: '번식 캘린더', path: '/breeding/calendar', icon: <IconBreeding /> },
+  { label: '센서 비교', path: '/sensor/compare', icon: <IconCow /> },
   { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
   { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
   { label: '구독 관리', path: '/subscription', icon: <IconCard /> },

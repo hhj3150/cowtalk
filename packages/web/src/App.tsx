@@ -45,6 +45,7 @@ const AiPerformancePage = lazy(() => import('@web/pages/intelligence/AiPerforman
 const BreedingCommandPage = lazy(() => import('@web/pages/intelligence/BreedingCommandPage'));
 const BreedingKpiPage = lazy(() => import('@web/pages/intelligence/BreedingKpiPage'));
 const BreedingCalendarPage = lazy(() => import('@web/pages/breeding/BreedingCalendarPage'));
+const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage'));
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
 
 const queryClient = new QueryClient({
@@ -143,6 +144,7 @@ export function App(): React.JSX.Element {
                 path="/ai-performance"
                 element={<RequireRole roles={['government_admin', 'veterinarian']}><AiPerformancePage /></RequireRole>}
               />
+              <Route path="/sensor/compare" element={<SensorComparePage />} />
               <Route path="/breeding" element={<BreedingCommandPage />} />
               <Route path="/breeding/calendar" element={<BreedingCalendarPage />} />
               <Route path="/breeding/performance" element={<BreedingKpiPage />} />
