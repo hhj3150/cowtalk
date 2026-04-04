@@ -287,7 +287,8 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
 
     const breedComposition: Record<string, number> = {};
     for (const row of breedCounts) {
-      breedComposition[row.breed] = row.count;
+      const key = row.breed ?? 'unknown';
+      breedComposition[key] = (typeof row.count === 'number' ? row.count : Number(row.count)) || 0;
     }
 
     // 최근 이벤트 수 (최근 30일)
@@ -303,7 +304,7 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
       ));
 
     // 개체 수 합산
-    const totalAnimals = Object.values(breedComposition).reduce((s, n) => s + n, 0);
+    const totalAnimals = Object.values(breedComposition).reduce((s, n) => s + (Number(n) || 0), 0);
 
     // 품종 유형 판별
     const dairyCount = breedComposition['Holstein'] ?? breedComposition['홀스타인'] ?? 0;
@@ -316,7 +317,7 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
       ownerName: farm.ownerName ?? '',
       address: farm.address ?? '',
       breedType,
-      totalAnimals: totalAnimals || farm.currentHeadCount || 0,
+      totalAnimals: totalAnimals || (farm.currentHeadCount ?? 0),
       healthScore: 75, // 기본값 — 실제 건강 점수 산출 로직 별도
       conceptionRate: null as number | null,
       avgOpenDays: null as number | null,
