@@ -81,6 +81,33 @@ export interface FarmKpiComparison {
   readonly avgCalvingInterval: number;
 }
 
+// ===========================
+// 번식 캘린더 타입
+// ===========================
+
+export type CalendarEventType =
+  | 'estrus_expected'
+  | 'insemination'
+  | 'pregnancy_check_due'
+  | 'pregnancy_check_done'
+  | 'dry_off'
+  | 'calving_expected'
+  | 'calving_done'
+  | 'recheck_due';
+
+export interface CalendarEvent {
+  readonly eventId: string;
+  readonly animalId: string;
+  readonly earTag: string;
+  readonly farmId: string;
+  readonly farmName: string;
+  readonly date: string;       // YYYY-MM-DD
+  readonly type: CalendarEventType;
+  readonly status: 'scheduled' | 'completed' | 'overdue';
+  readonly urgency: 'critical' | 'high' | 'medium' | 'low';
+  readonly description: string;
+}
+
 /** 산차별 KPI */
 export interface ParityKpiGroup {
   readonly parityLabel: string;  // "1산", "2산", "3산", "4산+"

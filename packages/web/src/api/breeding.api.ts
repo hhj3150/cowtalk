@@ -218,3 +218,18 @@ export function getBreedingPipeline(farmId?: string): Promise<import('@cowtalk/s
   const url = farmId ? `/breeding/pipeline/${farmId}` : '/breeding/pipeline';
   return apiGet<import('@cowtalk/shared').BreedingPipelineData>(url);
 }
+
+// ===========================
+// 번식 캘린더
+// ===========================
+
+export function getBreedingCalendar(
+  startDate: string,
+  endDate: string,
+  farmId?: string,
+): Promise<readonly import('@cowtalk/shared').CalendarEvent[]> {
+  return apiGet<readonly import('@cowtalk/shared').CalendarEvent[]>(
+    '/breeding/calendar',
+    { startDate, endDate, farmId },
+  );
+}

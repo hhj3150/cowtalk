@@ -14,6 +14,8 @@ import type {
   BreedingAnimalSummary,
   BreedingKpis,
   BreedingUrgentAction,
+  CalendarEvent,
+  CalendarEventType,
 } from '@cowtalk/shared';
 
 // ===========================
@@ -519,4 +521,276 @@ function calcKpis(
     avgDaysToFirstService,
     pregnancyRate,
   };
+}
+
+// ===========================
+// 캘린더 이벤트 산출
+// ===========================
+
+function toDateStr(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * MS_PER_DAY);
+}
+
+function makeCalendarEvent(
+  animalId: string,
+  earTag: string,
+  farmId: string,
+  farmName: string,
+  date: Date,
+  type: CalendarEventType,
+  status: CalendarEvent['status'],
+  urgency: CalendarEvent['urgency'],
+  description: string,
+): CalendarEvent {
+  return {
+    eventId: `${animalId}-${type}-${toDateStr(date)}`,
+    animalId,
+    earTag,
+    farmId,
+    farmName,
+    date: toDateStr(date),
+    type,
+    status,
+    urgency,
+    description,
+  };
+}
+
+export async function getBreedingCalendarEvents(
+  startDate: string,
+  endDate: string,
+  farmId?: string,
+): Promise<readonly CalendarEvent[]> {
+  const db = getDb();
+  const now = new Date();
+  const rangeStart = new Date(startDate);
+  const rangeEnd = new Date(endDate);
+  const since365d = new Date(now.getTime() - 365 * MS_PER_DAY);
+
+  function inRange(d: Date): boolean {
+    return d >= rangeStart && d <= rangeEnd;
+  }
+
+  // 1. 활성 암소 조회
+  const animalConditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
+  if (farmId) animalConditions.push(eq(animals.farmId, farmId));
+
+  const allAnimals = await db
+    .select({ animalId: animals.animalId, earTag: animals.earTag, farmId: animals.farmId, sex: animals.sex })
+    .from(animals)
+    .where(and(...animalConditions));
+
+  const femaleAnimals = allAnimals.filter((a) => a.sex !== 'male');
+  const animalIds = femaleAnimals.map((a) => a.animalId);
+  if (animalIds.length === 0) return [];
+
+  // 농장명
+  const farmIds = [...new Set(femaleAnimals.map((a) => a.farmId))];
+  const farmRows = farmIds.length > 0
+    ? await db.select({ farmId: farms.farmId, name: farms.name }).from(farms).where(inArray(farms.farmId, farmIds))
+    : [];
+  const farmNameMap = new Map(farmRows.map((f) => [f.farmId, f.name]));
+
+  // 2. 번식 이벤트 조회 (smaXtec + 수동)
+  const recentEvents = await db
+    .select({ animalId: smaxtecEvents.animalId, eventType: smaxtecEvents.eventType, detectedAt: smaxtecEvents.detectedAt, details: smaxtecEvents.details })
+    .from(smaxtecEvents)
+    .where(and(inArray(smaxtecEvents.animalId, animalIds), inArray(smaxtecEvents.eventType, [...BREEDING_EVENT_TYPES]), gte(smaxtecEvents.detectedAt, since365d)))
+    .orderBy(desc(smaxtecEvents.detectedAt));
+
+  const cwBreedingEvts = await db
+    .select({ animalId: breedingEvents.animalId, type: breedingEvents.type, eventDate: breedingEvents.eventDate })
+    .from(breedingEvents)
+    .where(and(inArray(breedingEvents.animalId, animalIds), gte(breedingEvents.eventDate, since365d)));
+
+  // 임신감정 결과
+  const manualPregnancies = await db
+    .select({ animalId: pregnancyChecks.animalId, result: pregnancyChecks.result, checkDate: pregnancyChecks.checkDate })
+    .from(pregnancyChecks)
+    .where(inArray(pregnancyChecks.animalId, animalIds))
+    .orderBy(desc(pregnancyChecks.checkDate));
+
+  // 분만 기록
+  const manualCalvings = await db
+    .select({ animalId: calvingEvents.animalId, calvingDate: calvingEvents.calvingDate })
+    .from(calvingEvents)
+    .where(inArray(calvingEvents.animalId, animalIds));
+
+  // 목장 설정
+  const settings = farmId ? await getFarmBreedingSettings(farmId) : null;
+  const gestationDays = settings?.gestationDays ?? 280;
+  const pregnancyCheckDays = settings?.pregnancyCheckDays ?? 28;
+  const estrusRecurrenceDays = settings?.estrusRecurrenceDays ?? 21;
+  const dryOffDays = settings?.dryOffBeforeCalvingDays ?? 90;
+
+  // 3. 개체별 이벤트 그룹핑
+  const eventsByAnimal = new Map<string, typeof recentEvents>();
+  for (const evt of recentEvents) {
+    const list = eventsByAnimal.get(evt.animalId) ?? [];
+    list.push(evt);
+    eventsByAnimal.set(evt.animalId, list);
+  }
+
+  const calendarEvents: CalendarEvent[] = [];
+
+  // 4. 개체별 캘린더 이벤트 생성
+  for (const animal of femaleAnimals) {
+    const farmName = farmNameMap.get(animal.farmId) ?? '미상';
+    const events = eventsByAnimal.get(animal.animalId) ?? [];
+
+    // === 과거 실적 이벤트 ===
+
+    // 수정 실적
+    for (const evt of events) {
+      if (evt.eventType !== 'insemination') continue;
+      const d = new Date(evt.detectedAt);
+      if (inRange(d)) {
+        calendarEvents.push(makeCalendarEvent(
+          animal.animalId, animal.earTag, animal.farmId, farmName,
+          d, 'insemination', 'completed', 'low',
+          `${animal.earTag} 수정 완료`,
+        ));
+      }
+    }
+    for (const evt of cwBreedingEvts) {
+      if (evt.animalId !== animal.animalId || evt.type !== 'insemination' || !evt.eventDate) continue;
+      if (inRange(evt.eventDate)) {
+        calendarEvents.push(makeCalendarEvent(
+          animal.animalId, animal.earTag, animal.farmId, farmName,
+          evt.eventDate, 'insemination', 'completed', 'low',
+          `${animal.earTag} 수정 완료 (수동 기록)`,
+        ));
+      }
+    }
+
+    // 임신감정 실적
+    for (const p of manualPregnancies) {
+      if (p.animalId !== animal.animalId) continue;
+      const d = new Date(p.checkDate);
+      if (inRange(d)) {
+        calendarEvents.push(makeCalendarEvent(
+          animal.animalId, animal.earTag, animal.farmId, farmName,
+          d, 'pregnancy_check_done', 'completed', 'low',
+          `${animal.earTag} 임신감정 ${p.result === 'pregnant' ? '✓ 임신' : '✗ 공태'}`,
+        ));
+      }
+    }
+
+    // 분만 실적 (smaXtec)
+    for (const evt of events) {
+      if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation') continue;
+      const d = new Date(evt.detectedAt);
+      if (inRange(d)) {
+        calendarEvents.push(makeCalendarEvent(
+          animal.animalId, animal.earTag, animal.farmId, farmName,
+          d, 'calving_done', 'completed', 'low',
+          `${animal.earTag} 분만 완료`,
+        ));
+      }
+    }
+    for (const c of manualCalvings) {
+      if (c.animalId !== animal.animalId || !c.calvingDate) continue;
+      if (inRange(c.calvingDate)) {
+        calendarEvents.push(makeCalendarEvent(
+          animal.animalId, animal.earTag, animal.farmId, farmName,
+          c.calvingDate, 'calving_done', 'completed', 'low',
+          `${animal.earTag} 분만 완료 (수동 기록)`,
+        ));
+      }
+    }
+
+    // === 예정 이벤트 (미래) ===
+
+    // 최신 수정일 → 임신감정 예정, 분만 예정, 건유 예정
+    const latestInsemination = events.find((e) => e.eventType === 'insemination');
+    const latestInsemDate = latestInsemination ? new Date(latestInsemination.detectedAt) : null;
+
+    // 최신 임신감정 결과
+    const latestPregnancy = manualPregnancies.find((p) => p.animalId === animal.animalId);
+    const isPregnant = latestPregnancy?.result === 'pregnant';
+
+    if (latestInsemDate) {
+      // 임신감정 예정일
+      const checkDue = addDays(latestInsemDate, pregnancyCheckDays);
+      if (inRange(checkDue) && !isPregnant) {
+        const isOverdue = checkDue < now;
+        calendarEvents.push(makeCalendarEvent(
+          animal.animalId, animal.earTag, animal.farmId, farmName,
+          checkDue, 'pregnancy_check_due', isOverdue ? 'overdue' : 'scheduled',
+          isOverdue ? 'high' : 'medium',
+          `${animal.earTag} 임신감정 예정 (수정 후 ${pregnancyCheckDays}일)`,
+        ));
+      }
+
+      // 재검사 예정 (1차 감정 + 14일)
+      if (latestPregnancy && latestPregnancy.result === 'pregnant') {
+        const recheckDate = addDays(new Date(latestPregnancy.checkDate), 14);
+        if (inRange(recheckDate)) {
+          calendarEvents.push(makeCalendarEvent(
+            animal.animalId, animal.earTag, animal.farmId, farmName,
+            recheckDate, 'recheck_due', recheckDate < now ? 'overdue' : 'scheduled', 'medium',
+            `${animal.earTag} 재검사 예정`,
+          ));
+        }
+      }
+
+      if (isPregnant) {
+        // 분만 예정일 (수정일 + 280일)
+        const calvingDue = addDays(latestInsemDate, gestationDays);
+        if (inRange(calvingDue)) {
+          const daysUntil = Math.floor((calvingDue.getTime() - now.getTime()) / MS_PER_DAY);
+          calendarEvents.push(makeCalendarEvent(
+            animal.animalId, animal.earTag, animal.farmId, farmName,
+            calvingDue, 'calving_expected', 'scheduled',
+            daysUntil <= 7 ? 'critical' : daysUntil <= 30 ? 'high' : 'medium',
+            `${animal.earTag} 분만 예정 (D-${Math.max(0, daysUntil)})`,
+          ));
+        }
+
+        // 건유 예정일 (분만 예정일 - 건유일수)
+        const dryOffDate = addDays(latestInsemDate, gestationDays - dryOffDays);
+        if (inRange(dryOffDate)) {
+          calendarEvents.push(makeCalendarEvent(
+            animal.animalId, animal.earTag, animal.farmId, farmName,
+            dryOffDate, 'dry_off', dryOffDate < now ? 'overdue' : 'scheduled',
+            dryOffDate < now ? 'high' : 'medium',
+            `${animal.earTag} 건유 시작 예정`,
+          ));
+        }
+      }
+    }
+
+    // 발정 예상 (최근 발정 + 21일, 또는 분만 후 + 설정값)
+    const latestEstrus = events.find((e) => e.eventType === 'estrus' || e.eventType === 'heat');
+    if (latestEstrus && !isPregnant) {
+      const estrusDate = new Date(latestEstrus.detectedAt);
+      // 다음 발정 3회분 표시
+      for (let cycle = 1; cycle <= 3; cycle++) {
+        const nextEstrus = addDays(estrusDate, estrusRecurrenceDays * cycle);
+        if (inRange(nextEstrus)) {
+          const daysUntil = Math.floor((nextEstrus.getTime() - now.getTime()) / MS_PER_DAY);
+          calendarEvents.push(makeCalendarEvent(
+            animal.animalId, animal.earTag, animal.farmId, farmName,
+            nextEstrus, 'estrus_expected', 'scheduled',
+            daysUntil <= 1 ? 'critical' : daysUntil <= 3 ? 'high' : 'medium',
+            `${animal.earTag} 발정 예상 (${cycle}주기)`,
+          ));
+        }
+      }
+    }
+  }
+
+  // 날짜 순 정렬
+  calendarEvents.sort((a, b) => a.date.localeCompare(b.date));
+
+  logger.info(
+    { startDate, endDate, farmId, eventCount: calendarEvents.length },
+    '[BreedingCalendar] 캘린더 이벤트 산출 완료',
+  );
+
+  return calendarEvents;
 }

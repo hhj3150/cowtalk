@@ -9,7 +9,7 @@ import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, 
 import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedingFeedback } from '../../services/breeding/breeding-advisor.service.js';
 import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-sync.service.js';
-import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
+import { getBreedingPipeline, getBreedingCalendarEvents } from '../../services/breeding/breeding-pipeline.service.js';
 import { seedSemenCatalog, syncHanwooSemenFromPublicApi } from '../../services/breeding/semen-seed.service.js';
 import { PedigreeConnector } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { getBreedingInsights } from '../../services/breeding/breeding-insights.service.js';
@@ -37,6 +37,25 @@ breedingRouter.get('/pipeline/:farmId', async (req: Request, res: Response, next
     const farmId = req.params.farmId as string;
     const data = await getBreedingPipeline(farmId);
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/calendar — 번식 캘린더 이벤트
+breedingRouter.get('/calendar', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    const farmId = req.query.farmId as string | undefined;
+
+    if (!startDate || !endDate) {
+      res.status(400).json({ success: false, error: 'startDate, endDate 필수 (YYYY-MM-DD)' });
+      return;
+    }
+
+    const events = await getBreedingCalendarEvents(startDate, endDate, farmId || undefined);
+    res.json({ success: true, data: events });
   } catch (error) {
     next(error);
   }
