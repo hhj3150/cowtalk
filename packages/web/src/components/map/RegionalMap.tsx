@@ -2,7 +2,7 @@
 // Google Maps API → Leaflet 마이그레이션 (API 키 불필요)
 
 import React, { useMemo, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { FarmMapMarker } from '@web/api/regional.api';
 
@@ -206,8 +206,8 @@ export function RegionalMap({
                 click: () => onMarkerClick?.(m.farmId),
               }}
             >
-              <Popup>
-                <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
+              <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>
+                <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b', minWidth: 130 }}>
                   <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
                   <p style={{ margin: 0 }}>{m.totalAnimals}두</p>
                   {m.activeAlerts > 0 && (
@@ -216,8 +216,9 @@ export function RegionalMap({
                   {m.healthScore !== null && (
                     <p style={{ margin: '2px 0 0', color: '#6b7280' }}>건강점수: {m.healthScore}</p>
                   )}
+                  <p style={{ margin: '4px 0 0', color: '#3b82f6', fontSize: 10 }}>클릭하여 상세 보기</p>
                 </div>
-              </Popup>
+              </Tooltip>
             </CircleMarker>
           );
         })}

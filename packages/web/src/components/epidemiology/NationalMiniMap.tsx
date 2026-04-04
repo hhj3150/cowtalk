@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as LTooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Tooltip as LTooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { RiskLevelBadge } from './RiskLevelBadge';
 import type { RiskLevel } from './RiskLevelBadge';
@@ -217,13 +217,13 @@ export function NationalMiniMap({
                       color: hasFever ? '#fff' : color,
                       weight: hasFever ? 2 : 1,
                     }}
+                    eventHandlers={{
+                      click: () => onFarmSelect?.(farm.farmId, farm.farmName),
+                    }}
                   >
-                    <LTooltip direction="top" offset={[0, -6]}>
-                      <span style={{ fontSize: 11, fontWeight: 600 }}>{farm.farmName}</span>
-                    </LTooltip>
-                    <Popup>
-                      <div style={{ fontSize: 11, lineHeight: 1.6, color: '#1e293b', minWidth: 140 }}>
-                        <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 12 }}>{farm.farmName}</p>
+                    <LTooltip direction="top" offset={[0, -6]} opacity={0.95}>
+                      <div style={{ fontSize: 11, lineHeight: 1.5, color: '#1e293b', minWidth: 130 }}>
+                        <p style={{ fontWeight: 700, margin: '0 0 2px', fontSize: 12 }}>{farm.farmName}</p>
                         <p style={{ margin: 0, color: '#64748b' }}>{farm.province} {farm.district}</p>
                         <p style={{ margin: '2px 0 0' }}>{farm.currentHeadCount}두</p>
                         {hasFever && (
@@ -234,28 +234,9 @@ export function NationalMiniMap({
                         <p style={{ margin: '2px 0 0' }}>
                           등급: <strong style={{ color }}>{farm.riskLevel.toUpperCase()}</strong>
                         </p>
-                        {onFarmSelect && (
-                          <button
-                            type="button"
-                            onClick={() => onFarmSelect(farm.farmId, farm.farmName)}
-                            style={{
-                              marginTop: 6,
-                              width: '100%',
-                              padding: '4px 8px',
-                              borderRadius: 6,
-                              border: 'none',
-                              background: '#3b82f6',
-                              color: '#fff',
-                              fontSize: 11,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            상세 보기 →
-                          </button>
-                        )}
+                        <p style={{ margin: '4px 0 0', color: '#3b82f6', fontSize: 10 }}>클릭하여 상세 보기</p>
                       </div>
-                    </Popup>
+                    </LTooltip>
                   </CircleMarker>
                 );
               })}

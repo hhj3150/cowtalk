@@ -177,7 +177,7 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 5
                   click: () => onFarmClick?.(m.farmId),
                 }}
               >
-                <Tooltip direction="top" offset={[0, -6]} opacity={0.95} permanent={false}>
+                <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>
                   <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b', minWidth: 130 }}>
                     <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
                     <p style={{ margin: 0 }}>{m.headCount}두 · 알람 {m.alertCount}건</p>
@@ -186,6 +186,7 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 5
                         건강알람 {m.healthAlarmCount}건 ({Math.round(m.healthAlarmRate * 100)}%)
                       </p>
                     )}
+                    <p style={{ margin: '4px 0 0', color: '#3b82f6', fontSize: 10 }}>클릭하여 상세 보기</p>
                   </div>
                 </Tooltip>
               </CircleMarker>
