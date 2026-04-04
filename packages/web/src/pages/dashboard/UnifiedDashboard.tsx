@@ -317,13 +317,13 @@ function AiBriefingCard({ onKpiClick }: {
       </div>
 
       {/* Recommendations */}
-      {briefing.recommendations.length > 0 && (
+      {(briefing.recommendations ?? []).length > 0 && (
         <div style={{ borderTop: '1px solid var(--ct-border)', paddingTop: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ct-primary)', marginBottom: 8, letterSpacing: '0.5px' }}>
             AI 추천
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {briefing.recommendations.slice(0, 3).map((rec, i) => (
+            {(briefing.recommendations ?? []).slice(0, 3).map((rec, i) => (
               <div key={i} style={{
                 fontSize: 12,
                 color: 'var(--ct-text-secondary)',

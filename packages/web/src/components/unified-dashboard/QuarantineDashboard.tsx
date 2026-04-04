@@ -262,15 +262,15 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
 
   useEffect(() => {
     Promise.all([
-      apiGet<{ data: QuarantineDashboardData }>('/quarantine/dashboard'),
-      apiGet<{ data: NationalSituationData }>('/quarantine/national-situation'),
-      apiGet<{ data: EarlyDetectionMetrics }>('/quarantine/early-detection-metrics'),
-      apiGet<{ data: readonly ActionQueueItem[] }>('/quarantine/action-queue'),
+      apiGet<QuarantineDashboardData>('/quarantine/dashboard'),
+      apiGet<NationalSituationData>('/quarantine/national-situation'),
+      apiGet<EarlyDetectionMetrics>('/quarantine/early-detection-metrics'),
+      apiGet<readonly ActionQueueItem[]>('/quarantine/action-queue'),
     ]).then(([db, nat, met, aq]) => {
-      setDashboard(db.data);
-      setNational(nat.data);
-      setMetrics(met.data);
-      setActionQueue(aq.data);
+      setDashboard(db);
+      setNational(nat);
+      setMetrics(met);
+      setActionQueue(aq ?? []);
     }).catch(() => {});
   }, []);
 

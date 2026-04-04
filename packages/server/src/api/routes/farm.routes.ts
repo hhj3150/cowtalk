@@ -302,11 +302,25 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
         gt(smaxtecEvents.detectedAt, thirtyDaysAgo),
       ));
 
+    // 개체 수 합산
+    const totalAnimals = Object.values(breedComposition).reduce((s, n) => s + n, 0);
+
+    // 품종 유형 판별
+    const dairyCount = breedComposition['Holstein'] ?? breedComposition['홀스타인'] ?? 0;
+    const beefCount = breedComposition['한우'] ?? breedComposition['Hanwoo'] ?? 0;
+    const breedType = dairyCount > beefCount ? 'dairy' : beefCount > dairyCount ? 'beef' : 'mixed';
+
     const profile = {
       farmId: farm.farmId,
-      name: farm.name,
-      ownerName: farm.ownerName,
-      address: farm.address,
+      farmName: farm.name,
+      ownerName: farm.ownerName ?? '',
+      address: farm.address ?? '',
+      breedType,
+      totalAnimals: totalAnimals || farm.currentHeadCount || 0,
+      healthScore: 75, // 기본값 — 실제 건강 점수 산출 로직 별도
+      conceptionRate: null as number | null,
+      avgOpenDays: null as number | null,
+      mortalityRate: 0,
       capacity: farm.capacity,
       currentHeadCount: farm.currentHeadCount,
       breedComposition,

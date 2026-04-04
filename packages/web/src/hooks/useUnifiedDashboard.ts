@@ -44,9 +44,10 @@ export function useLiveAlarms() {
     queryKey: ['live-alarms', ...queryKey],
     queryFn: async () => {
       const result = await api.getLiveAlarms(farmId, farmIds);
+      const rawAlarms = result?.alarms ?? [];
       // 프론트엔드 안전장치: 같은 농장+귀표번호+이벤트타입 중복 제거
       const seen = new Set<string>();
-      const deduped = result.alarms.filter((a) => {
+      const deduped = rawAlarms.filter((a) => {
         const key = `${a.farmId}-${a.earTag}-${a.eventType}`;
         if (seen.has(key)) return false;
         seen.add(key);
