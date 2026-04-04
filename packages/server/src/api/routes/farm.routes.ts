@@ -275,40 +275,52 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
       return;
     }
 
-    // 개체 수 + 품종 분포
-    const breedCounts = await db
-      .select({
-        breed: animals.breed,
-        count: count(),
-      })
-      .from(animals)
-      .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active')))
-      .groupBy(animals.breed);
+    // 개체 수 + 품종 분포 (개별 방어)
+    let breedComposition: Record<string, number> = {};
+    try {
+      const breedCounts = await db
+        .select({
+          breed: animals.breed,
+          count: count(),
+        })
+        .from(animals)
+        .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active')))
+        .groupBy(animals.breed);
 
-    const breedComposition: Record<string, number> = {};
-    for (const row of breedCounts) {
-      const key = row.breed ?? 'unknown';
-      breedComposition[key] = (typeof row.count === 'number' ? row.count : Number(row.count)) || 0;
+      for (const row of breedCounts) {
+        const key = row.breed ?? 'unknown';
+        breedComposition[key] = (typeof row.count === 'number' ? row.count : Number(row.count)) || 0;
+      }
+    } catch (breedErr) {
+      logger.warn({ farmId, err: breedErr }, '[Farm] breed 분포 조회 실패 — 기본값 사용');
     }
 
-    // 최근 이벤트 수 (최근 30일)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // 최근 이벤트 수 (최근 30일, 개별 방어)
+    let recentEventCount = 0;
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const [eventCountResult] = await db
-      .select({ count: count() })
-      .from(smaxtecEvents)
-      .where(and(
-        eq(smaxtecEvents.farmId, farmId),
-        gt(smaxtecEvents.detectedAt, thirtyDaysAgo),
-      ));
+      const [eventCountResult] = await db
+        .select({ count: count() })
+        .from(smaxtecEvents)
+        .where(and(
+          eq(smaxtecEvents.farmId, farmId),
+          gt(smaxtecEvents.detectedAt, thirtyDaysAgo),
+        ));
+      recentEventCount = eventCountResult?.count ?? 0;
+    } catch (eventErr) {
+      logger.warn({ farmId, err: eventErr }, '[Farm] 이벤트 수 조회 실패 — 0으로 처리');
+    }
 
     // 개체 수 합산
     const totalAnimals = Object.values(breedComposition).reduce((s, n) => s + (Number(n) || 0), 0);
 
     // 품종 유형 판별
-    const dairyCount = breedComposition['Holstein'] ?? breedComposition['홀스타인'] ?? 0;
-    const beefCount = breedComposition['한우'] ?? breedComposition['Hanwoo'] ?? 0;
+    const dairyBreeds = ['Holstein', '홀스타인', 'holstein', 'Jersey', 'jersey'];
+    const beefBreeds = ['한우', 'Hanwoo', 'hanwoo'];
+    const dairyCount = dairyBreeds.reduce((sum, key) => sum + (breedComposition[key] ?? 0), 0);
+    const beefCount = beefBreeds.reduce((sum, key) => sum + (breedComposition[key] ?? 0), 0);
     const breedType = dairyCount > beefCount ? 'dairy' : beefCount > dairyCount ? 'beef' : 'mixed';
 
     const profile = {
@@ -325,7 +337,7 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
       capacity: farm.capacity,
       currentHeadCount: farm.currentHeadCount,
       breedComposition,
-      recentEventCount: eventCountResult?.count ?? 0,
+      recentEventCount,
       status: farm.status,
       createdAt: farm.createdAt,
       updatedAt: farm.updatedAt,
@@ -333,6 +345,7 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
 
     res.json({ success: true, data: profile });
   } catch (error) {
+    logger.error({ farmId: req.params.farmId, error }, '[Farm] profile 조회 실패');
     next(error);
   }
 });

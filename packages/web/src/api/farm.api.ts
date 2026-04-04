@@ -54,8 +54,25 @@ export interface FarmReportCard {
   readonly aiComment: string;
 }
 
-export function getFarmProfile(farmId: string): Promise<FarmProfile> {
-  return apiGet<FarmProfile>(`/farms/${farmId}/profile`);
+export async function getFarmProfile(farmId: string): Promise<FarmProfile> {
+  try {
+    return await apiGet<FarmProfile>(`/farms/${farmId}/profile`);
+  } catch {
+    // /profile 실패 시 기본 /farms/:farmId로 fallback
+    const basic = await apiGet<Record<string, unknown>>(`/farms/${farmId}`);
+    return {
+      farmId: (basic.farmId as string) ?? farmId,
+      farmName: (basic.farmName as string) ?? (basic.name as string) ?? '농장',
+      ownerName: (basic.ownerName as string) ?? '',
+      address: (basic.address as string) ?? '',
+      breedType: 'mixed',
+      totalAnimals: (basic.totalAnimals as number) ?? (basic.currentHeadCount as number) ?? 0,
+      healthScore: 75,
+      conceptionRate: null,
+      avgOpenDays: null,
+      mortalityRate: 0,
+    };
+  }
 }
 
 export function getFarmLearning(farmId: string): Promise<FarmLearning> {
