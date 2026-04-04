@@ -104,8 +104,22 @@ export default function FarmDetailPage() {
     setFarmError(null);
 
     getFarmProfile(farmId)
-      .then((data) => {
-        setFarm(data);
+      .then((raw) => {
+        const r = raw as unknown as Record<string, unknown>;
+        // 서버 필드명 호환: name→farmName, currentHeadCount→totalAnimals
+        const normalized: FarmProfile = {
+          farmId: (r.farmId as string) ?? farmId,
+          farmName: (r.farmName as string) ?? (r.name as string) ?? '농장',
+          ownerName: (r.ownerName as string) ?? '',
+          address: (r.address as string) ?? '',
+          breedType: (r.breedType as 'dairy' | 'beef' | 'mixed') ?? 'mixed',
+          totalAnimals: (r.totalAnimals as number) ?? (r.currentHeadCount as number) ?? 0,
+          healthScore: (r.healthScore as number) ?? 75,
+          conceptionRate: (r.conceptionRate as number | null) ?? null,
+          avgOpenDays: (r.avgOpenDays as number | null) ?? null,
+          mortalityRate: (r.mortalityRate as number) ?? 0,
+        };
+        setFarm(normalized);
         setFarmLoading(false);
       })
       .catch((err) => {
@@ -121,9 +135,10 @@ export default function FarmDetailPage() {
 
     listAnimals({ farmId, limit: 200, status: 'active' })
       .then((result) => {
+        const rawData = Array.isArray(result) ? result : (result?.data ?? []);
         setAnimalState({
-          animals: result.data,
-          total: result.total,
+          animals: rawData,
+          total: Array.isArray(result) ? result.length : (result?.total ?? rawData.length),
           loading: false,
           error: null,
         });
