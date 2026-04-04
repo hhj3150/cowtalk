@@ -112,3 +112,67 @@ export function acknowledgeWarning(warningId: string): Promise<void> {
 export function triggerEpidemicScan(): Promise<unknown> {
   return apiPost('/epidemic/scan', {});
 }
+
+// ======================================================================
+// 방역 사례 DB
+// ======================================================================
+
+export type CaseOutcome = 'true_positive' | 'false_positive' | 'pending';
+
+export interface CaseRecord {
+  readonly alertId: string;
+  readonly farmId: string;
+  readonly farmName: string;
+  readonly alertType: string;
+  readonly priority: string;
+  readonly title: string;
+  readonly createdAt: string;
+  readonly status: string;
+  readonly outcome: CaseOutcome;
+  readonly diseaseName: string | null;
+  readonly dsiScore: number | null;
+}
+
+export interface AccuracyStats {
+  readonly precision: number;
+  readonly recall: number;
+  readonly f1: number;
+  readonly totalCases: number;
+  readonly truePositives: number;
+  readonly falsePositives: number;
+  readonly pending: number;
+}
+
+export interface CaseListResponse {
+  readonly cases: readonly CaseRecord[];
+  readonly accuracy: AccuracyStats;
+  readonly pagination: {
+    readonly page: number;
+    readonly limit: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+}
+
+export function listCases(params?: {
+  outcome?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<CaseListResponse> {
+  return apiGet<{ data: CaseListResponse }>('/quarantine/cases', params).then((r) => r.data);
+}
+
+export function submitCaseFeedback(
+  alertId: string,
+  outcome: CaseOutcome,
+  farmId: string,
+): Promise<unknown> {
+  const feedbackType = outcome === 'true_positive' ? 'disease_confirmed' : 'alert_false_positive';
+  return apiPost('/feedback', {
+    alertId,
+    farmId,
+    feedbackType,
+    notes: null,
+  });
+}

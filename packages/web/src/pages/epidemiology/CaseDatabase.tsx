@@ -7,87 +7,9 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
+import { listCases, submitCaseFeedback } from '@web/api/epidemic.api';
+import type { CaseRecord, CaseOutcome, AccuracyStats } from '@web/api/epidemic.api';
 
-
-// ===========================
-// 타입
-// ===========================
-
-type FeedbackOutcome = 'true_positive' | 'false_positive' | 'pending';
-
-interface CaseRecord {
-  alertId: string;
-  farmId: string;
-  farmName: string;
-  alertType: string;
-  priority: string;
-  title: string;
-  createdAt: string;
-  status: string;
-  outcome: FeedbackOutcome;
-  diseaseName: string | null;
-  dsiScore: number | null;
-}
-
-interface AccuracyStats {
-  precision: number;
-  recall: number;
-  f1: number;
-  totalCases: number;
-  truePositives: number;
-  falsePositives: number;
-  pending: number;
-}
-
-// ===========================
-// 목 데이터 생성 (서버 없을 때 fallback)
-// ===========================
-
-const MOCK_CASES: CaseRecord[] = Array.from({ length: 20 }, (_, i) => ({
-  alertId: `mock-${i}`,
-  farmId: `farm-${i % 5}`,
-  farmName: `가나 농장 ${i + 1}호`,
-  alertType: i % 3 === 0 ? 'cluster_fever' : 'fever',
-  priority: i < 3 ? 'critical' : i < 8 ? 'high' : 'medium',
-  title: i % 3 === 0 ? '집단 발열 감지' : `체온 이상 감지 (${(39.5 + i * 0.1).toFixed(1)}°C)`,
-  createdAt: new Date(Date.now() - i * 2 * 24 * 60 * 60 * 1000).toISOString(),
-  status: i < 10 ? 'acknowledged' : 'new',
-  outcome: i < 12 ? 'true_positive' : i < 15 ? 'false_positive' : 'pending',
-  diseaseName: i < 2 ? '구제역 의심' : null,
-  dsiScore: 30 + i * 3,
-}));
-
-// ===========================
-// API 훅
-// ===========================
-
-async function fetchCases(): Promise<CaseRecord[]> {
-  // 데모: 모의 데이터 (실제: /api/quarantine/cases)
-  await new Promise((r) => setTimeout(r, 300));
-  return MOCK_CASES;
-}
-
-async function submitFeedback(alertId: string, outcome: FeedbackOutcome): Promise<void> {
-  // 실제: POST /api/feedback
-  await new Promise((r) => setTimeout(r, 200));
-  void alertId;
-  void outcome;
-}
-
-// ===========================
-// 정확도 계산
-// ===========================
-
-function calcAccuracy(cases: CaseRecord[]): AccuracyStats {
-  const tp = cases.filter((c) => c.outcome === 'true_positive').length;
-  const fp = cases.filter((c) => c.outcome === 'false_positive').length;
-  const pending = cases.filter((c) => c.outcome === 'pending').length;
-  const total = cases.length;
-  const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-  const recall = total > 0 ? tp / (tp + pending * 0.5) : 0;
-  const f1 = precision + recall > 0 ? 2 * precision * recall / (precision + recall) : 0;
-  return { precision, recall, f1, totalCases: total, truePositives: tp, falsePositives: fp, pending };
-}
 
 // ===========================
 // 메인 컴포넌트
@@ -96,36 +18,35 @@ function calcAccuracy(cases: CaseRecord[]): AccuracyStats {
 export default function CaseDatabase(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [filterOutcome, setFilterOutcome] = useState<FeedbackOutcome | 'all'>('all');
+  const [filterOutcome, setFilterOutcome] = useState<CaseOutcome | 'all'>('all');
 
-  const { data: cases = [], isLoading } = useQuery({
-    queryKey: ['quarantine', 'cases'],
-    queryFn: fetchCases,
+  const { data, isLoading } = useQuery({
+    queryKey: ['quarantine', 'cases', filterOutcome, search],
+    queryFn: () => listCases({
+      outcome: filterOutcome !== 'all' ? filterOutcome : undefined,
+      search: search || undefined,
+      limit: 50,
+    }),
   });
+
+  const cases: readonly CaseRecord[] = data?.cases ?? [];
+  const accuracy: AccuracyStats = data?.accuracy ?? {
+    precision: 0, recall: 0, f1: 0,
+    totalCases: 0, truePositives: 0, falsePositives: 0, pending: 0,
+  };
 
   const feedbackMutation = useMutation({
-    mutationFn: ({ alertId, outcome }: { alertId: string; outcome: FeedbackOutcome }) =>
-      submitFeedback(alertId, outcome),
+    mutationFn: ({ alertId, outcome, farmId }: { alertId: string; outcome: CaseOutcome; farmId: string }) =>
+      submitCaseFeedback(alertId, outcome, farmId),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['quarantine', 'cases'] }),
   });
-
-  const filtered = cases.filter((c) => {
-    const matchSearch = !search ||
-      c.farmName.includes(search) ||
-      c.title.includes(search) ||
-      (c.diseaseName ?? '').includes(search);
-    const matchOutcome = filterOutcome === 'all' || c.outcome === filterOutcome;
-    return matchSearch && matchOutcome;
-  });
-
-  const accuracy = calcAccuracy(cases);
 
   const radarData = [
     { metric: '정밀도', value: Math.round(accuracy.precision * 100) },
     { metric: '재현율', value: Math.round(accuracy.recall * 100) },
     { metric: 'F1', value: Math.round(accuracy.f1 * 100) },
     { metric: '정탐률', value: accuracy.totalCases > 0 ? Math.round(accuracy.truePositives / accuracy.totalCases * 100) : 0 },
-    { metric: '커버리지', value: 85 },
+    { metric: '커버리지', value: accuracy.totalCases > 0 ? Math.round((accuracy.truePositives + accuracy.falsePositives) / accuracy.totalCases * 100) : 0 },
   ];
 
   const outcomeDist = [
@@ -139,7 +60,7 @@ export default function CaseDatabase(): React.JSX.Element {
       {/* 헤더 */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--ct-text)' }}>
-          📚 방역 사례 데이터베이스
+          방역 사례 데이터베이스
         </h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
           경보 이력 + AI 피드백 루프 — 정탐/오탐 입력으로 정확도 지속 개선
@@ -154,7 +75,7 @@ export default function CaseDatabase(): React.JSX.Element {
           style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
         >
           <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ct-text)' }}>
-            🎯 AI 정확도 지표
+            AI 정확도 지표
           </h3>
           <ResponsiveContainer width="100%" height={200}>
             <RadarChart data={radarData}>
@@ -171,7 +92,7 @@ export default function CaseDatabase(): React.JSX.Element {
           style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)' }}
         >
           <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ct-text)' }}>
-            📊 경보 결과 분포 ({accuracy.totalCases}건)
+            경보 결과 분포 ({accuracy.totalCases}건)
           </h3>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={outcomeDist}>
@@ -209,7 +130,7 @@ export default function CaseDatabase(): React.JSX.Element {
       <div className="flex flex-wrap gap-3">
         <input
           type="text"
-          placeholder="농장명, 경보 내용, 질병명 검색..."
+          placeholder="농장명, 경보 유형 검색..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-0 rounded-lg border px-3 py-2 text-sm"
@@ -263,7 +184,7 @@ export default function CaseDatabase(): React.JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c, i) => (
+              {cases.map((c, i) => (
                 <tr
                   key={c.alertId}
                   style={{
@@ -288,9 +209,9 @@ export default function CaseDatabase(): React.JSX.Element {
                   </td>
                   <td className="px-4 py-3">
                     {c.outcome === 'true_positive' ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">정탐 ✓</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">정탐</span>
                     ) : c.outcome === 'false_positive' ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">오탐 ✗</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">오탐</span>
                     ) : (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">확인 중</span>
                     )}
@@ -299,13 +220,13 @@ export default function CaseDatabase(): React.JSX.Element {
                     {c.outcome === 'pending' && (
                       <div className="flex gap-1.5">
                         <button
-                          onClick={() => feedbackMutation.mutate({ alertId: c.alertId, outcome: 'true_positive' })}
+                          onClick={() => feedbackMutation.mutate({ alertId: c.alertId, outcome: 'true_positive', farmId: c.farmId })}
                           className="text-xs px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                         >
                           정탐
                         </button>
                         <button
-                          onClick={() => feedbackMutation.mutate({ alertId: c.alertId, outcome: 'false_positive' })}
+                          onClick={() => feedbackMutation.mutate({ alertId: c.alertId, outcome: 'false_positive', farmId: c.farmId })}
                           className="text-xs px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50"
                         >
                           오탐
@@ -320,10 +241,15 @@ export default function CaseDatabase(): React.JSX.Element {
           </div>
         )}
 
-        {!isLoading && filtered.length === 0 && (
-          <p className="text-center py-8 text-sm" style={{ color: 'var(--ct-text-secondary)' }}>
-            검색 결과가 없습니다
-          </p>
+        {!isLoading && cases.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>
+              경보 이력이 없습니다
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--ct-text-secondary)' }}>
+              smaXtec 센서 이벤트가 수집되면 자동으로 표시됩니다
+            </p>
+          </div>
         )}
       </div>
 

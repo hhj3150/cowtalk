@@ -2,7 +2,7 @@
 // Google Maps API → Leaflet 마이그레이션 (API 키 불필요)
 
 import React, { useMemo } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { FarmRecord } from '@web/api/farm-management.api';
 
@@ -104,12 +104,12 @@ export function FarmMiniMap({ farms, onFarmClick }: Props): React.JSX.Element {
                   click: () => onFarmClick?.(m.farmId),
                 }}
               >
-                <Popup>
+                <Tooltip>
                   <div style={{ fontSize: 12, lineHeight: 1.5, color: '#1e293b' }}>
                     <p style={{ fontWeight: 700, margin: '0 0 4px', fontSize: 13 }}>{m.name}</p>
                     <p style={{ margin: 0 }}>{m.headCount}두</p>
                   </div>
-                </Popup>
+                </Tooltip>
               </CircleMarker>
             );
           })}

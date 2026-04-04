@@ -1,10 +1,12 @@
 // 드릴다운 훅 — 개체 클릭 시 /cow/:id로 직접 이동
 
 import { useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDrilldownStore, type DrilldownFilter } from '@web/stores/drilldown.store';
 
 export function useDrilldown() {
   const store = useDrilldownStore();
+  const navigate = useNavigate();
 
   const openDrilldown = useCallback(
     (filter: DrilldownFilter, title: string) => {
@@ -31,9 +33,9 @@ export function useDrilldown() {
   const navigateToDetail = useCallback(
     (animalId: string, _earTag: string) => {
       store.close();
-      window.location.href = `/cow/${animalId}`;
+      navigate(`/cow/${animalId}`);
     },
-    [store],
+    [store, navigate],
   );
 
   return {
