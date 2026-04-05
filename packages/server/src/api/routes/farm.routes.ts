@@ -259,14 +259,24 @@ farmRouter.delete('/:farmId', requirePermission('farm', 'delete'), (_req, res) =
 });
 
 // GET /farms/:farmId/profile — 농장 프로필 (실제 DB)
-farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
+farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const farmId = req.params.farmId as string;
 
-    // 농장 기본 정보
+    // 농장 기본 정보 (breeding_settings 등 DB에 없을 수 있는 컬럼 제외)
     const [farm] = await db
-      .select()
+      .select({
+        farmId: farms.farmId,
+        name: farms.name,
+        address: farms.address,
+        capacity: farms.capacity,
+        currentHeadCount: farms.currentHeadCount,
+        status: farms.status,
+        ownerName: farms.ownerName,
+        createdAt: farms.createdAt,
+        updatedAt: farms.updatedAt,
+      })
       .from(farms)
       .where(eq(farms.farmId, farmId));
 
@@ -345,13 +355,8 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
 
     res.json({ success: true, data: profile });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    const errStack = error instanceof Error ? error.stack : '';
-    logger.error({ farmId: req.params.farmId, error: errMsg, stack: errStack }, '[Farm] profile 조회 실패');
-    res.status(500).json({
-      success: false,
-      error: { code: 'FARM_PROFILE_ERROR', message: errMsg, detail: errStack?.split('\n').slice(0, 5).join(' | ') },
-    });
+    logger.error({ farmId: req.params.farmId, error }, '[Farm] profile 조회 실패');
+    next(error);
   }
 });
 
