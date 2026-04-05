@@ -408,10 +408,8 @@ export function FarmGroupSelector(): React.JSX.Element {
                     style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--ct-border)', background: 'var(--ct-bg)', color: 'var(--ct-text)', fontSize: 11, outline: 'none' }}
                   >
                     <option value="veterinarian">🩺 수의사</option>
-                    <option value="inseminator">💉 수정사</option>
                     <option value="farmer">🧑‍🌾 농장주</option>
                     <option value="quarantine_officer">🛡️ 방역관</option>
-                    <option value="feed_company">🌾 사료회사</option>
                     <option value="government_admin">🏛️ 행정관리</option>
                   </select>
                   <button

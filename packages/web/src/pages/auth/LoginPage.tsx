@@ -71,14 +71,6 @@ const ROLE_PRESETS: readonly RolePreset[] = [
     scope: 'all',
   },
   {
-    email: 'inseminator@test.kr',
-    name: '이수정사',
-    title: 'INSEMINATOR',
-    badge: '#db2777',
-    access: 'breeding access',
-    scope: 'all',
-  },
-  {
     email: 'admin@gyeonggi.kr',
     name: '최경기행정',
     title: 'GOVERNMENT',
@@ -94,14 +86,6 @@ const ROLE_PRESETS: readonly RolePreset[] = [
     access: 'surveillance',
     scope: 'all',
   },
-  {
-    email: 'feed@test.kr',
-    name: '한사료',
-    title: 'FEED COMPANY',
-    badge: '#ea580c',
-    access: 'nutrition access',
-    scope: 'all',
-  },
 ];
 
 // ── 피처 카드 ──
@@ -114,11 +98,9 @@ interface FeatureCard {
 // 히어로 하단 역할 뱃지 — 클릭 시 quick login
 const ROLE_BADGES: readonly { readonly label: string; readonly email: string }[] = [
   { label: '수의사', email: 'vet@test.kr' },
-  { label: '수정사', email: 'inseminator@test.kr' },
   { label: '목장주', email: 'farmer@test.kr' },
   { label: '행정관', email: 'admin@gyeonggi.kr' },
   { label: '방역관', email: 'quarantine@test.kr' },
-  { label: '사료회사', email: 'feed@test.kr' },
 ];
 
 // ── 메인 컴포넌트 ──
@@ -200,7 +182,7 @@ export default function LoginPage(): React.JSX.Element {
     },
     {
       title: '역할별 AI 액션플랜',
-      description: '수의사 / 수정사 / 목장주 / 행정관 / 방역관 / 사료회사 — 각자 필요한 정보',
+      description: '목장주 / 수의사 / 행정관 / 방역관 — 각자 필요한 정보',
     },
     {
       title: '지역 방역 인텔리전스',

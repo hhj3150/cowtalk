@@ -34,13 +34,8 @@ describe('getRoleTone', () => {
     expect(tone.systemAddendum).toContain('임상');
   });
 
-  it('수정사 톤 설정', () => {
-    const tone = getRoleTone('inseminator');
-    expect(tone.systemAddendum).toContain('번식');
-  });
-
   it('모든 역할 톤 존재', () => {
-    const roles = ['farmer', 'veterinarian', 'inseminator', 'government_admin', 'quarantine_officer', 'feed_company'] as const;
+    const roles = ['farmer', 'veterinarian', 'government_admin', 'quarantine_officer'] as const;
     for (const role of roles) {
       const tone = getRoleTone(role);
       expect(tone.systemAddendum).toBeTruthy();

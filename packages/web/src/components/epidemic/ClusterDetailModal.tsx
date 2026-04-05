@@ -235,8 +235,6 @@ const ROLE_LABELS: Record<string, string> = {
   veterinarian: '수의사',
   quarantine_officer: '방역관',
   government_admin: '행정관',
-  inseminator: '수정사',
-  feed_company: '사료회사',
 };
 
 function ModalOverlay({

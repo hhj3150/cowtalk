@@ -279,10 +279,6 @@ const FALLBACK_HINTS: Readonly<Record<string, readonly string[]>> = {
     '긴급 진료 대상은 대시보드 상단에서 확인하세요.',
     '경합 해석(Decision Fusion)으로 발정/질병을 구분할 수 있습니다.',
   ],
-  inseminator: [
-    '발정 감지 이벤트를 대시보드에서 확인하세요.',
-    '최적 수정 시간은 발정 감지 후 12~18시간입니다.',
-  ],
   government_admin: [
     '관할 지역 현황은 대시보드에서 확인하세요.',
     'Top 경고 농장을 우선 점검하세요.',
@@ -290,10 +286,6 @@ const FALLBACK_HINTS: Readonly<Record<string, readonly string[]>> = {
   quarantine_officer: [
     '체온이상 클러스터를 대시보드에서 확인하세요.',
     '동시다발 발열은 전염병 가능성을 배제할 수 없습니다.',
-  ],
-  feed_company: [
-    '반추이상 동물을 대시보드에서 확인하세요.',
-    'pH 이상은 사료 급여 문제를 시사합니다.',
   ],
 };
 

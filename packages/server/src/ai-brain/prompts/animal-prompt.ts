@@ -178,10 +178,8 @@ ${v4Lines.join('\n')}`);
   "actions": {
     "farmer": "농장주 조언",
     "veterinarian": "수의사 조언",
-    "inseminator": "수정사 조언",
     "government_admin": "행정관 조언",
-    "quarantine_officer": "방역관 조언",
-    "feed_company": "사료회사 조언"
+    "quarantine_officer": "방역관 조언"
   },
   "severity": "low|medium|high|critical",
   "data_references": ["근거 데이터 1", "근거 데이터 2"]

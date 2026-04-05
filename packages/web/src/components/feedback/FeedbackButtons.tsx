@@ -30,11 +30,6 @@ const ROLE_FEEDBACK: Record<Role, readonly FeedbackOption[]> = {
     { label: '치료 반응', type: 'treatment_response', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
     { label: '처방 완료', type: 'action_accepted', color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
   ],
-  inseminator: [
-    { label: '수정 완료', type: 'insemination_done', color: 'bg-purple-50 text-purple-700 hover:bg-purple-100' },
-    { label: '임신 확인', type: 'pregnancy_confirmed', color: 'bg-green-50 text-green-700 hover:bg-green-100' },
-    { label: '비임신', type: 'pregnancy_negative', color: 'bg-orange-50 text-orange-700 hover:bg-orange-100' },
-  ],
   government_admin: [
     { label: '확인함', type: 'alert_acknowledged', color: 'bg-[var(--ct-primary-light)] text-[var(--ct-primary)] hover:opacity-80' },
     { label: '불필요', type: 'alert_dismissed', color: 'bg-gray-50 text-gray-600 hover:bg-gray-100' },
@@ -42,10 +37,6 @@ const ROLE_FEEDBACK: Record<Role, readonly FeedbackOption[]> = {
   quarantine_officer: [
     { label: '역학조사 실시', type: 'disease_confirmed', color: 'bg-red-50 text-red-700 hover:bg-red-100' },
     { label: '오경보', type: 'alert_false_positive', color: 'bg-gray-50 text-gray-600 hover:bg-gray-100' },
-  ],
-  feed_company: [
-    { label: '사양 변경', type: 'alert_acknowledged', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
-    { label: '관련 없음', type: 'alert_dismissed', color: 'bg-gray-50 text-gray-600 hover:bg-gray-100' },
   ],
 };
 

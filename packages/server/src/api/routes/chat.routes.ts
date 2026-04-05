@@ -37,12 +37,6 @@ const ROLE_SUGGESTIONS: Readonly<Record<string, readonly string[]>> = {
     '발정인지 질병인지 구분해 줘',
     '유방염 의심 케이스 있어?',
   ],
-  inseminator: [
-    '오늘 수정할 소 목록',
-    '발정적기 소 있어?',
-    '임신 재검 대상 알려줘',
-    '수태율 통계 분석해 줘',
-  ],
   government_admin: [
     '관할 지역 현황 요약',
     '주의 농장 순위 보여줘',
@@ -54,12 +48,6 @@ const ROLE_SUGGESTIONS: Readonly<Record<string, readonly string[]>> = {
     '집단감염 의심 신호 있어?',
     '질병 클러스터 분석',
     '방역 조치 우선순위',
-  ],
-  feed_company: [
-    '반추이상 동물 현황',
-    '사료 효율 분석',
-    '농장별 사양 리스크',
-    'pH 이상 동물 확인',
   ],
 };
 

@@ -146,10 +146,8 @@ function buildFallbackActions(
     return {
       farmer: `${topRisk ? topRisk.diseaseType : '질병'} 의심. 수의사 호출 권고.`,
       veterinarian: `${topRisk ? topRisk.matchingSymptoms.join(', ') : '증상 확인 필요'}. 정밀 검사 권고.`,
-      inseminator: '건강 이상 우선 해결 후 번식 관리.',
       government_admin: '건강 이상 모니터링.',
       quarantine_officer: '격리 필요 여부 확인.',
-      feed_company: '사료 관련 원인 확인.',
     };
   }
 
@@ -157,10 +155,8 @@ function buildFallbackActions(
     return {
       farmer: `발정 감지. ${estrus.stage === 'estrus' ? '오늘 교배 추천.' : '교배 준비.'}`,
       veterinarian: '발정 확인. 직장검사 권고.',
-      inseminator: `교배 추천. 단계: ${estrus.stage}.`,
       government_admin: '특이사항 없음.',
       quarantine_officer: '특이사항 없음.',
-      feed_company: '특이사항 없음.',
     };
   }
 
@@ -168,19 +164,15 @@ function buildFallbackActions(
     return {
       farmer: `임신 재검 필요 (안정성 ${String(Math.round(pregnancy.stabilityScore * 100))}%).`,
       veterinarian: `DPI ${String(pregnancy.daysPostInsemination ?? 0)}일. 임신 확인 검사 권고.`,
-      inseminator: '재발정 모니터링.',
       government_admin: '특이사항 없음.',
       quarantine_officer: '특이사항 없음.',
-      feed_company: '특이사항 없음.',
     };
   }
 
   return {
     farmer: '현재 특이사항 없음. 정상 관리.',
     veterinarian: '특이사항 없음.',
-    inseminator: '특이사항 없음.',
     government_admin: '특이사항 없음.',
     quarantine_officer: '특이사항 없음.',
-    feed_company: '특이사항 없음.',
   };
 }

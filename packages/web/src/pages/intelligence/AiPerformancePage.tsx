@@ -17,10 +17,8 @@ const ENGINE_LABELS: Record<string, string> = {
 const ROLE_LABELS: Record<string, string> = {
   farmer: '농장주',
   veterinarian: '수의사',
-  inseminator: '수정사',
   government_admin: '행정관',
   quarantine_officer: '방역관',
-  feed_company: '사료회사',
 };
 
 function ProgressBar({ value, label }: { readonly value: number; readonly label: string }): React.JSX.Element {

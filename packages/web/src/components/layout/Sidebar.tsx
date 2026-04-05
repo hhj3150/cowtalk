@@ -239,10 +239,8 @@ function useNewsItems(): readonly NewsItem[] {
 const MENU_BY_ROLE: Record<Role, readonly MenuItem[]> = {
   farmer: COMMON_MENU,
   veterinarian: COMMON_MENU,
-  inseminator: COMMON_MENU,
   government_admin: [...COMMON_MENU, ...ADMIN_EXTRA],
   quarantine_officer: QUARANTINE_MENU,
-  feed_company: COMMON_MENU,
 };
 
 export function Sidebar(): React.JSX.Element {

@@ -39,17 +39,6 @@ const ROLE_CONFIGS: Record<Role, RoleConfig> = {
       '체온이상 소 추이 분석해 줘',
     ],
   },
-  inseminator: {
-    greeting: '수정사님, 오늘 번식 현황이에요 💉',
-    subtitle: '발정 감지부터 수정 스케줄까지 알려드릴게요',
-    icon: '💉',
-    questions: [
-      '오늘 수정할 소 목록',
-      '발정 감지된 소 수정 적기는?',
-      '임신감정 대상 알려줘',
-      '번식 성적 요약해 줘',
-    ],
-  },
   government_admin: {
     greeting: '행정관님, 축산 현황 보고입니다 📊',
     subtitle: '관할 지역 핵심 지표와 현황을 안내합니다',
@@ -70,17 +59,6 @@ const ROLE_CONFIGS: Record<Role, RoleConfig> = {
       '집단감염 의심 농장 있어?',
       '시도별 위험도 분석',
       '긴급 방역 조치 우선순위',
-    ],
-  },
-  feed_company: {
-    greeting: '사양 관리 현황을 정리했습니다 🌾',
-    subtitle: '반추/음수 패턴과 사료 효율 데이터입니다',
-    icon: '🌾',
-    questions: [
-      '반추이상 동물 현황',
-      '사료 효율 분석',
-      '농장별 사양 리스크',
-      'pH 이상 동물 확인',
     ],
   },
 };

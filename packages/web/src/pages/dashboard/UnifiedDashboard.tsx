@@ -57,13 +57,10 @@ import { FarmAnimalDrawer } from '@web/components/unified-dashboard/FarmAnimalDr
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
-import { InseminatorDashboard } from '@web/components/unified-dashboard/InseminatorDashboard';
 import { VetDashboard } from '@web/components/unified-dashboard/VetDashboard';
 import { QuarantineDashboard } from '@web/components/unified-dashboard/QuarantineDashboard';
-import { FeedCompanyDashboard } from '@web/components/unified-dashboard/FeedCompanyDashboard';
 import { GovAdminDashboard } from '@web/components/unified-dashboard/GovAdminDashboard';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
-import { BreedingPerformanceCard } from '@web/components/breeding/BreedingPerformanceCard';
 import { FarmGroupSelector } from '@web/components/unified-dashboard/FarmGroupSelector';
 import { useFarmGroupStore } from '@web/stores/farm-group.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
@@ -77,10 +74,8 @@ import type { Role } from '@cowtalk/shared';
 const ROLE_ICONS: Record<string, string> = {
   farmer: '🧑‍🌾',
   veterinarian: '🩺',
-  inseminator: '💉',
   government_admin: '🏛️',
   quarantine_officer: '🛡️',
-  feed_company: '🌾',
 };
 
 const MASTER_KEY = 'cowtalk-master-role';
@@ -623,9 +618,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   // 역할별 알람 필터
   const ROLE_ALARM_FILTER: Record<string, readonly string[]> = {
     veterinarian: ['temperature_high', 'clinical_condition', 'health_general', 'rumination_decrease', 'activity_decrease', 'temperature_low', 'calving_detection', 'calving_confirmation'],
-    inseminator: ['estrus', 'insemination', 'fertility_warning', 'pregnancy_check', 'no_insemination', 'activity_increase'],
     quarantine_officer: ['temperature_high', 'clinical_condition', 'health_general', 'temperature_low'],
-    feed_company: ['rumination_decrease', 'activity_decrease', 'temperature_low', 'health_general'],
   };
   const roleAlarmFilter = user?.role ? ROLE_ALARM_FILTER[user.role] : undefined;
   const allAlarms = alarmsData?.alarms ?? [];
@@ -788,26 +781,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <VetDashboard onFarmClick={(fid) => selectFarm(fid)} />
           )}
 
-          {/* ── 사료회사 전용 대시보드 ── */}
-          {user?.role === 'feed_company' && (
-            <FeedCompanyDashboard onFarmClick={(fid) => selectFarm(fid)} />
-          )}
-
           {/* ── 정부 행정관 전용 대시보드 ── */}
           {user?.role === 'government_admin' && (
             <GovAdminDashboard onFarmClick={(fid) => selectFarm(fid)} />
-          )}
-
-          {/* ── 수정사 전용 대시보드 ── */}
-          {isVisible('insemination_route') && (
-            <>
-              <InseminatorDashboard
-                onFarmClick={(fid) => selectFarm(fid)}
-              />
-              {selectedFarmId && (
-                <BreedingPerformanceCard farmId={selectedFarmId} />
-              )}
-            </>
           )}
 
           {/* ── 번식성적 커맨드센터 ── */}
@@ -815,8 +791,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <BreedingPipelineWidget data={breedingPipelineData} />
           )}
 
-          {/* ── 건강 알림 + 번식 관리 (수정사/사료회사 제외) ── */}
-          {!isVisible('insemination_route') && (
+          {/* ── 건강 알림 + 번식 관리 ── */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
             {healthAlertsData && (
               <HealthAlertsWidget
@@ -829,10 +804,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
               onAlertClick={(type) => setDrilldown({ eventType: type, label: `번식: ${type}` })}
             />
           </div>
-          )}
 
-          {/* ── AI 예측 위험 TOP 10 (수정사 제외) ── */}
-          {!isVisible('insemination_route') && (
+          {/* ── AI 예측 위험 TOP 10 ── */}
+          {(
             <RiskTop10Widget
               farmId={selectedFarmId}
               onAnimalClick={(aid) => navigate(`/animals/${aid}`)}

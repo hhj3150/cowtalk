@@ -256,7 +256,7 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
   }
 
   const { role: newRole } = req.body as { role: string };
-  const validRoles: readonly string[] = ['farmer', 'veterinarian', 'inseminator', 'government_admin', 'quarantine_officer', 'feed_company'];
+  const validRoles: readonly string[] = ['farmer', 'veterinarian', 'government_admin', 'quarantine_officer'];
 
   if (!newRole || !validRoles.includes(newRole)) {
     res.status(400).json({ success: false, message: 'Invalid role' });

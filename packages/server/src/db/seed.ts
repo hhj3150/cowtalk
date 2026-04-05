@@ -93,8 +93,6 @@ async function seed(): Promise<void> {
     const farm1 = farms[0]!;
     const farm2 = farms[1]!;
     const farm3 = farms[2]!;
-    const farm4 = farms[3]!;
-    const farm5 = farms[4]!;
     const allFarmIds = farms.map((f) => f.farmId);
 
     // 3. 사용자 (7명 — 요구사항 기반)
@@ -104,10 +102,8 @@ async function seed(): Promise<void> {
       { name: '하현제 (Master Admin)', email: 'ha@d2o.kr', role: 'government_admin' },
       { name: '고려동물병원', email: 'vet@test.kr', role: 'veterinarian' },
       { name: '김농장주', email: 'farmer@test.kr', role: 'farmer' },
-      { name: '이수정사', email: 'inseminator@test.kr', role: 'inseminator' },
       { name: '최경기행정', email: 'admin@gyeonggi.kr', role: 'government_admin' },
       { name: '정방역관', email: 'quarantine@test.kr', role: 'quarantine_officer' },
-      { name: '한사료', email: 'feed@test.kr', role: 'feed_company' },
     ].map((u) => ({ ...u, passwordHash, status: 'active' as const }));
 
     const insertedUsers = await db.insert(schema.users).values(userValues).returning();
@@ -129,16 +125,6 @@ async function seed(): Promise<void> {
       } else if (user.email === 'farmer@test.kr') {
         // 농장주: 농장 1만
         farmAccessValues.push({ userId: user.userId, farmId: farm1.farmId, permissionLevel: 'admin' });
-      } else if (user.email === 'inseminator@test.kr') {
-        // 수정사: 농장 1, 2, 5
-        for (const farmId of [farm1.farmId, farm2.farmId, farm5.farmId]) {
-          farmAccessValues.push({ userId: user.userId, farmId, permissionLevel: 'write' });
-        }
-      } else if (user.email === 'feed@test.kr') {
-        // 사료회사: 농장 1, 3, 4, 5
-        for (const farmId of [farm1.farmId, farm3.farmId, farm4.farmId, farm5.farmId]) {
-          farmAccessValues.push({ userId: user.userId, farmId, permissionLevel: 'read' });
-        }
       }
     }
 

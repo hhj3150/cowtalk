@@ -70,8 +70,8 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('한우');
   });
 
-  it('6개 역할 컨텍스트', () => {
-    expect(Object.keys(ROLE_CONTEXT)).toHaveLength(6);
+  it('4개 역할 컨텍스트', () => {
+    expect(Object.keys(ROLE_CONTEXT)).toHaveLength(4);
     expect(ROLE_CONTEXT.farmer).toContain('농장주');
     expect(ROLE_CONTEXT.veterinarian).toContain('수의사');
   });

@@ -20,14 +20,6 @@ export const ROLES: readonly RoleConfig[] = [
     alertPriority: ['health_risk', 'herd_anomaly', 'feeding_metabolic_risk'],
   },
   {
-    role: 'inseminator',
-    label: 'Inseminator',
-    labelKo: '수정사',
-    scope: 'multi_farm',
-    focusAreas: ['estrus_candidates', 'breeding_schedule', 'optimal_timing', 'pregnancy_status'],
-    alertPriority: ['estrus_candidate', 'productivity_drop'],
-  },
-  {
     role: 'government_admin',
     label: 'Government Admin',
     labelKo: '지자체 관리자',
@@ -42,14 +34,6 @@ export const ROLES: readonly RoleConfig[] = [
     scope: 'region',
     focusAreas: ['temperature_anomalies', 'cluster_detection', 'multi_symptom_farms', 'quarantine_status'],
     alertPriority: ['health_risk', 'herd_anomaly', 'regional_warning'],
-  },
-  {
-    role: 'feed_company',
-    label: 'Feed Company',
-    labelKo: '사료회사',
-    scope: 'multi_farm',
-    focusAreas: ['rumination_drop', 'productivity_decline', 'nutrition_issues', 'feed_efficiency'],
-    alertPriority: ['feeding_metabolic_risk', 'productivity_drop'],
   },
 ] as const;
 
@@ -91,18 +75,6 @@ export const PERMISSION_MATRIX: PermissionMatrix = {
     user: READ_ONLY,
     system: [],
   },
-  inseminator: {
-    farm: READ_ONLY,
-    animal: READ_CREATE_UPDATE,
-    sensor: READ_ONLY,
-    prediction: READ_ONLY,
-    alert: READ_CREATE_UPDATE,
-    action: READ_CREATE_UPDATE,
-    feedback: READ_CREATE,
-    regional: [],
-    user: READ_ONLY,
-    system: [],
-  },
   government_admin: {
     farm: READ_EXPORT,
     animal: READ_EXPORT,
@@ -126,18 +98,6 @@ export const PERMISSION_MATRIX: PermissionMatrix = {
     regional: READ_EXPORT,
     user: READ_ONLY,
     system: READ_ONLY,
-  },
-  feed_company: {
-    farm: READ_ONLY,
-    animal: READ_ONLY,
-    sensor: READ_ONLY,
-    prediction: READ_ONLY,
-    alert: READ_ONLY,
-    action: READ_ONLY,
-    feedback: READ_CREATE,
-    regional: [],
-    user: READ_ONLY,
-    system: [],
   },
 } as const;
 

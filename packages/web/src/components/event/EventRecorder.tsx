@@ -41,10 +41,8 @@ const CATEGORY_COLORS: Record<EventCategory, string> = {
 const CATEGORY_ORDER_BY_ROLE: Record<Role, readonly EventCategory[]> = {
   farmer: ['breeding', 'movement', 'management', 'health', 'production_dairy', 'production_beef', 'feed', 'other'],
   veterinarian: ['health', 'management', 'breeding', 'other'],
-  inseminator: ['breeding', 'other'],
   government_admin: ['management', 'movement', 'other'],
   quarantine_officer: ['management', 'health', 'movement', 'other'],
-  feed_company: ['feed', 'production_dairy', 'production_beef', 'other'],
 };
 
 export function EventRecorder({ farmId, animalId, initialCategory, onClose }: Props): React.JSX.Element {

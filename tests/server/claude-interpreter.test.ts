@@ -94,15 +94,13 @@ describe('interpretAnimal (v4 fallback)', () => {
     expect(result.v4Analysis?.dataQualityScore).toBeGreaterThan(0);
   });
 
-  it('actions에 6역할 모두 포함', async () => {
+  it('actions에 4역할 모두 포함', async () => {
     const result = await interpretAnimal(mockAnimalProfile, 'farmer');
 
     expect(result.actions.farmer).toBeTruthy();
     expect(result.actions.veterinarian).toBeTruthy();
-    expect(result.actions.inseminator).toBeTruthy();
     expect(result.actions.government_admin).toBeTruthy();
     expect(result.actions.quarantine_officer).toBeTruthy();
-    expect(result.actions.feed_company).toBeTruthy();
   });
 
   it('데이터 참조 포함', async () => {

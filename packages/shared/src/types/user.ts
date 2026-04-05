@@ -5,10 +5,8 @@ import type { Timestamp, SoftDelete } from './common.js';
 export type Role =
   | 'farmer'
   | 'veterinarian'
-  | 'inseminator'
   | 'government_admin'
-  | 'quarantine_officer'
-  | 'feed_company';
+  | 'quarantine_officer';
 
 export type UserStatus = 'active' | 'inactive' | 'suspended';
 

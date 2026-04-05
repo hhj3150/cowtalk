@@ -1,4 +1,4 @@
-// Tool Gateway RBAC 테스트 — 역할별 도구 접근 권한 매트릭스
+// Tool Gateway RBAC 테스트 — 역할별 도구 접근 권한 매트릭스 (4역할)
 import { describe, it, expect } from 'vitest';
 import { ROLE_TOOL_ACCESS, TOOL_DOMAIN_MAP } from '../../packages/server/src/ai-brain/tools/tool-gateway.js';
 
@@ -34,8 +34,6 @@ describe('TOOL_DOMAIN_MAP — 도구→도메인 매핑', () => {
 });
 
 describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
-  // === 신규 도구 3개 접근 권한 검증 ===
-
   describe('query_grade 접근 권한', () => {
     it('farmer → 접근 가능', () => {
       expect(ROLE_TOOL_ACCESS.farmer).toContain('query_grade');
@@ -49,12 +47,8 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
       expect(ROLE_TOOL_ACCESS.government_admin).toContain('query_grade');
     });
 
-    it('inseminator → 접근 불가', () => {
-      expect(ROLE_TOOL_ACCESS.inseminator).not.toContain('query_grade');
-    });
-
-    it('feed_company → 접근 불가', () => {
-      expect(ROLE_TOOL_ACCESS.feed_company).not.toContain('query_grade');
+    it('quarantine_officer → 접근 불가', () => {
+      expect(ROLE_TOOL_ACCESS.quarantine_officer).not.toContain('query_grade');
     });
   });
 
@@ -73,20 +67,18 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
   });
 
   describe('query_sire_info 접근 권한', () => {
-    it('inseminator → 접근 가능 (정액 선택)', () => {
-      expect(ROLE_TOOL_ACCESS.inseminator).toContain('query_sire_info');
+    it('farmer → 접근 가능 (정액 선택)', () => {
+      expect(ROLE_TOOL_ACCESS.farmer).toContain('query_sire_info');
     });
 
-    it('farmer → 접근 불가 (수정사 전용)', () => {
-      expect(ROLE_TOOL_ACCESS.farmer).not.toContain('query_sire_info');
+    it('veterinarian → 접근 가능 (번식 상담)', () => {
+      expect(ROLE_TOOL_ACCESS.veterinarian).toContain('query_sire_info');
     });
 
     it('quarantine_officer → 접근 불가', () => {
       expect(ROLE_TOOL_ACCESS.quarantine_officer).not.toContain('query_sire_info');
     });
   });
-
-  // === Phase 4 도구 접근 권한 ===
 
   describe('query_weather 접근 권한', () => {
     it('farmer → 접근 가능', () => {
@@ -95,10 +87,6 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
 
     it('quarantine_officer → 접근 가능', () => {
       expect(ROLE_TOOL_ACCESS.quarantine_officer).toContain('query_weather');
-    });
-
-    it('feed_company → 접근 가능 (사료 조정)', () => {
-      expect(ROLE_TOOL_ACCESS.feed_company).toContain('query_weather');
     });
   });
 
@@ -113,10 +101,6 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
 
     it('farmer → 접근 불가 (방역관 전용)', () => {
       expect(ROLE_TOOL_ACCESS.farmer).not.toContain('query_quarantine_dashboard');
-    });
-
-    it('inseminator → 접근 불가', () => {
-      expect(ROLE_TOOL_ACCESS.inseminator).not.toContain('query_quarantine_dashboard');
     });
   });
 
@@ -134,34 +118,29 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
     });
   });
 
-  // === 기존 도구 접근 권한 무결성 ===
-
   describe('기존 도구 접근 권한 유지', () => {
-    it('모든 역할이 query_animal 접근 가능 (feed_company 제외)', () => {
+    it('모든 역할이 query_animal 접근 가능', () => {
       expect(ROLE_TOOL_ACCESS.farmer).toContain('query_animal');
       expect(ROLE_TOOL_ACCESS.veterinarian).toContain('query_animal');
-      expect(ROLE_TOOL_ACCESS.inseminator).toContain('query_animal');
       expect(ROLE_TOOL_ACCESS.government_admin).toContain('query_animal');
       expect(ROLE_TOOL_ACCESS.quarantine_officer).toContain('query_animal');
     });
 
-    it('수정 기록은 inseminator만 가능', () => {
-      expect(ROLE_TOOL_ACCESS.inseminator).toContain('record_insemination');
-      expect(ROLE_TOOL_ACCESS.farmer).not.toContain('record_insemination');
-      expect(ROLE_TOOL_ACCESS.veterinarian).not.toContain('record_insemination');
+    it('수정 기록은 farmer + veterinarian만 가능', () => {
+      expect(ROLE_TOOL_ACCESS.farmer).toContain('record_insemination');
+      expect(ROLE_TOOL_ACCESS.veterinarian).toContain('record_insemination');
+      expect(ROLE_TOOL_ACCESS.quarantine_officer).not.toContain('record_insemination');
     });
 
     it('치료 기록은 farmer + veterinarian만 가능', () => {
       expect(ROLE_TOOL_ACCESS.farmer).toContain('record_treatment');
       expect(ROLE_TOOL_ACCESS.veterinarian).toContain('record_treatment');
-      expect(ROLE_TOOL_ACCESS.inseminator).not.toContain('record_treatment');
+      expect(ROLE_TOOL_ACCESS.government_admin).not.toContain('record_treatment');
     });
   });
 
-  // === 6개 역할 모두 정의 확인 ===
-
-  it('6개 역할 모두 정의됨', () => {
-    const roles = ['farmer', 'veterinarian', 'inseminator', 'government_admin', 'quarantine_officer', 'feed_company'];
+  it('4개 역할 모두 정의됨', () => {
+    const roles = ['farmer', 'veterinarian', 'government_admin', 'quarantine_officer'];
     for (const role of roles) {
       expect(ROLE_TOOL_ACCESS[role], `${role} 역할이 정의되지 않음`).toBeDefined();
       expect(Array.isArray(ROLE_TOOL_ACCESS[role])).toBe(true);

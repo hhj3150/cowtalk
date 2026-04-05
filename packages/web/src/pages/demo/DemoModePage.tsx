@@ -52,19 +52,6 @@ const SLIDES: readonly SlideConfig[] = [
     features: ['농장 그룹별 건강 랭킹', '질병 패턴 분석 + 감별 진단 지원', '처방전 자동 생성 + 기록'],
   },
   {
-    key: 'inseminator',
-    title: '수정사 뷰',
-    description: '발정 알람 → 수정 적기 → 정액 추천 → 기록',
-    icon: '💉',
-    kpis: [
-      { label: '수정 대상', value: 8, suffix: '두', color: 'text-pink-400' },
-      { label: '수태율', value: 48, suffix: '%', color: 'text-blue-400' },
-      { label: '평균 공태일', value: 125, suffix: '일' },
-      { label: '임신감정 대기', value: 5, suffix: '두', color: 'text-yellow-400' },
-    ],
-    features: ['발정 감지 → 수정 타이밍 자동 계산', '근교계수 기반 정액 추천', '수정 → 임신감정 → 피드백 루프'],
-  },
-  {
     key: 'quarantine',
     title: '방역관 뷰',
     description: '146개 농장 통합 방역 — 조기 경보 시스템',

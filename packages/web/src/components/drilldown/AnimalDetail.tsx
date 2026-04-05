@@ -36,11 +36,6 @@ const SENSOR_ORDER_BY_ROLE: Record<Role, readonly { key: string; label: string; 
     { key: 'activity', label: '활동', color: '#3b82f6', unit: '' },
     { key: 'rumination', label: '반추', color: '#22c55e', unit: 'min' },
   ],
-  inseminator: [
-    { key: 'activity', label: '활동', color: '#3b82f6', unit: '' },
-    { key: 'temperature', label: '체온', color: '#ef4444', unit: '°C' },
-    { key: 'rumination', label: '반추', color: '#22c55e', unit: 'min' },
-  ],
   government_admin: [
     { key: 'temperature', label: '체온', color: '#ef4444', unit: '°C' },
     { key: 'activity', label: '활동', color: '#3b82f6', unit: '' },
@@ -51,11 +46,6 @@ const SENSOR_ORDER_BY_ROLE: Record<Role, readonly { key: string; label: string; 
     { key: 'activity', label: '활동', color: '#3b82f6', unit: '' },
     { key: 'rumination', label: '반추', color: '#22c55e', unit: 'min' },
   ],
-  feed_company: [
-    { key: 'rumination', label: '반추', color: '#22c55e', unit: 'min' },
-    { key: 'waterIntake', label: '음수', color: '#06b6d4', unit: 'L' },
-    { key: 'temperature', label: '체온', color: '#ef4444', unit: '°C' },
-  ],
 };
 
 // 역할별 표시 섹션 (순서)
@@ -64,10 +54,8 @@ type SectionKey = 'sensor' | 'ai' | 'actions' | 'record' | 'pedigree' | 'semen' 
 const SECTIONS_BY_ROLE: Record<Role, readonly SectionKey[]> = {
   farmer: ['sensor', 'ai', 'actions', 'record', 'trace', 'insemination', 'production', 'breeding', 'health', 'events', 'feedback'],
   veterinarian: ['sensor', 'ai', 'actions', 'record', 'trace', 'insemination', 'health', 'pedigree', 'breeding', 'production', 'events', 'timeline', 'feedback'],
-  inseminator: ['sensor', 'ai', 'actions', 'record', 'trace', 'insemination', 'semen', 'pedigree', 'breeding', 'timeline', 'events', 'feedback'],
   government_admin: ['sensor', 'ai', 'record', 'trace', 'production', 'health', 'events'],
   quarantine_officer: ['sensor', 'ai', 'record', 'trace', 'health', 'events'],
-  feed_company: ['sensor', 'ai', 'record', 'production', 'events'],
 };
 
 export function AnimalDetail({ animalId }: Props): React.JSX.Element {
@@ -223,7 +211,7 @@ function SectionRenderer({
     case 'breeding':
       return (
         <Section title="번식 이력">
-          <BreedingHistoryList history={data.breedingHistory as readonly Record<string, unknown>[] ?? []} detailed={role === 'inseminator' || role === 'veterinarian'} />
+          <BreedingHistoryList history={data.breedingHistory as readonly Record<string, unknown>[] ?? []} detailed={role === 'veterinarian'} />
         </Section>
       );
 
@@ -308,13 +296,13 @@ const QUICK_ACTIONS: readonly {
   readonly roles: readonly Role[];
 }[] = [
   { label: '백신 접종', icon: '💉', category: 'health', color: '#E24B4A', bg: '#FEE2E2', roles: ['farmer', 'veterinarian', 'quarantine_officer', 'government_admin'] },
-  { label: '분만 기록', icon: '🐄', category: 'breeding', color: '#D97706', bg: '#FEF3C7', roles: ['farmer', 'veterinarian', 'inseminator'] },
+  { label: '분만 기록', icon: '🐄', category: 'breeding', color: '#D97706', bg: '#FEF3C7', roles: ['farmer', 'veterinarian'] },
   { label: '건강 검진', icon: '🩺', category: 'health', color: '#378ADD', bg: '#DBEAFE', roles: ['farmer', 'veterinarian', 'quarantine_officer', 'government_admin'] },
-  { label: '번식 기록', icon: '🧬', category: 'breeding', color: '#A855F7', bg: '#F3E8FF', roles: ['farmer', 'veterinarian', 'inseminator'] },
-  { label: '사료 기록', icon: '🌾', category: 'feed', color: '#EA580C', bg: '#FFF7ED', roles: ['farmer', 'feed_company'] },
+  { label: '번식 기록', icon: '🧬', category: 'breeding', color: '#A855F7', bg: '#F3E8FF', roles: ['farmer', 'veterinarian'] },
+  { label: '사료 기록', icon: '🌾', category: 'feed', color: '#EA580C', bg: '#FFF7ED', roles: ['farmer'] },
   { label: '이동 기록', icon: '🚛', category: 'movement', color: '#7C3AED', bg: '#EDE9FE', roles: ['farmer', 'government_admin', 'quarantine_officer'] },
   { label: '관리 기록', icon: '📋', category: 'management', color: '#1D9E75', bg: '#E1F5EE', roles: ['farmer', 'veterinarian', 'government_admin', 'quarantine_officer'] },
-  { label: '기타', icon: '📝', category: 'other', color: '#888880', bg: '#F5F5F3', roles: ['farmer', 'veterinarian', 'inseminator', 'government_admin', 'quarantine_officer', 'feed_company'] },
+  { label: '기타', icon: '📝', category: 'other', color: '#888880', bg: '#F5F5F3', roles: ['farmer', 'veterinarian', 'government_admin', 'quarantine_officer'] },
 ];
 
 function AnimalRecordPanel({

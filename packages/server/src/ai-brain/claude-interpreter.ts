@@ -265,10 +265,8 @@ function buildV4FallbackFarmInterpretation(
     actions: {
       farmer: `활성 이벤트 ${String(profile.activeSmaxtecEvents.length)}건 확인 필요.`,
       veterinarian: '이벤트 상세 확인.',
-      inseminator: '특이사항 없음.',
       government_admin: '특이사항 없음.',
       quarantine_officer: '특이사항 없음.',
-      feed_company: '특이사항 없음.',
     },
     dataReferences: [],
     severity: profile.activeSmaxtecEvents.length > 0 ? 'medium' : 'low',
@@ -326,10 +324,8 @@ function buildV4FallbackRegionalInterpretation(
     actions: {
       farmer: '정상 관리.',
       veterinarian: '특이사항 없음.',
-      inseminator: '특이사항 없음.',
       government_admin: `${String(profile.farms.length)}개 농장, ${String(profile.totalAnimals)}두 정상 운영.`,
       quarantine_officer: '특이사항 없음.',
-      feed_company: '특이사항 없음.',
     },
     dataReferences: [],
     severity: profile.activeAlerts > 5 ? 'medium' : 'low',
@@ -368,10 +364,8 @@ function parseActions(val: unknown): Record<Role, string> {
   const defaults: Record<Role, string> = {
     farmer: '특이사항 없음.',
     veterinarian: '특이사항 없음.',
-    inseminator: '특이사항 없음.',
     government_admin: '특이사항 없음.',
     quarantine_officer: '특이사항 없음.',
-    feed_company: '특이사항 없음.',
   };
 
   if (typeof val !== 'object' || val === null) return defaults;
@@ -380,10 +374,8 @@ function parseActions(val: unknown): Record<Role, string> {
   return {
     farmer: asString(obj.farmer) || defaults.farmer,
     veterinarian: asString(obj.veterinarian) || defaults.veterinarian,
-    inseminator: asString(obj.inseminator) || defaults.inseminator,
     government_admin: asString(obj.government_admin) || defaults.government_admin,
     quarantine_officer: asString(obj.quarantine_officer) || defaults.quarantine_officer,
-    feed_company: asString(obj.feed_company) || defaults.feed_company,
   };
 }
 
@@ -569,8 +561,6 @@ function buildFallbackEpidemicInterpretation(
       veterinarian: '영향 농장 임상 검사 실시, 샘플 채취 의뢰.',
       quarantine_officer: '이동 제한 검토, 인접 농장 통보.',
       government_admin: '상위 기관 보고, 방역 물자 확보.',
-      inseminator: '영향 농장 인공수정 보류 검토.',
-      feed_company: '사료 변경 시 주의.',
     },
     dataReferences: [`smaXtec 이벤트 ${String(cluster.totalEvents)}건`, `영향 농장 ${String(cluster.farms.length)}개`],
   };

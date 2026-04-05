@@ -25,7 +25,6 @@ export type DashboardWidgetId =
   | 'epidemic_map'
   | 'inline_ai_chat'
   | 'vet_route'
-  | 'insemination_route'
   | 'sovereign_ai';
 
 // 역할별 위젯 목록 (순서 = 표시 우선순위)
@@ -52,14 +51,6 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'vital_monitor_chart',
     'fever_ranking',
     'farm_ranking',
-    'ai_briefing',
-  ],
-
-  // 수정사: 지도 + 발정 대상우 + 번식성적 + AI 정액 추천
-  inseminator: [
-    'farm_map',
-    'herd_overview',
-    'insemination_route',
     'ai_briefing',
   ],
 
@@ -105,26 +96,14 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'farm_ranking',
   ],
 
-  // 사료회사: 지도 + 축군 구성 + 반추 + 농장 비교
-  feed_company: [
-    'epidemic_alert_banner',
-    'farm_map',
-    'herd_overview',
-    'todo_list',
-    'vital_monitor_chart',
-    'herd_composition_chart',
-    'ai_briefing',
-  ],
 };
 
 // 역할별 한글 라벨
 export const ROLE_LABELS: Readonly<Record<Role, string>> = {
   farmer: '농장주',
   veterinarian: '수의사',
-  inseminator: '수정사',
   government_admin: '행정관리',
   quarantine_officer: '방역관',
-  feed_company: '사료회사',
 };
 
 // 위젯 가시성 체크

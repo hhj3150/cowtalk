@@ -15,10 +15,8 @@ interface Props {
 const ROLE_LABELS: Record<string, string> = {
   farmer: '농가주',
   veterinarian: '수의사',
-  inseminator: '수정사',
   government_admin: 'MASTER',
   quarantine_officer: '방역관',
-  feed_company: '사료회사',
 };
 
 function LiveClock(): React.JSX.Element {

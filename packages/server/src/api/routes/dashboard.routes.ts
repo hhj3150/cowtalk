@@ -166,14 +166,10 @@ async function buildDashboardForRole(role: Role, farmIds?: string[]): Promise<Da
         return await buildFarmerDashboard(farmIds?.[0]);
       case 'veterinarian':
         return await buildVetDashboard();
-      case 'inseminator':
-        return await buildInseminatorDashboard();
       case 'government_admin':
         return await buildAdminDashboard();
       case 'quarantine_officer':
         return await buildQuarantineOfficerDashboard();
-      case 'feed_company':
-        return await buildFeedCompanyDashboard(farmIds);
       default:
         return buildFallback(role);
     }
@@ -467,10 +463,11 @@ async function buildVetDashboard(): Promise<DashboardData> {
 }
 
 // ===========================
-// 3. 수정사 대시보드
+// 3. 수정사 대시보드 (deprecated, unused)
 // ===========================
 
-async function buildInseminatorDashboard(): Promise<DashboardData> {
+// @ts-expect-error - kept for reference, not reachable
+async function buildInseminatorDashboard_deprecated(): Promise<DashboardData> {
   const db = getDb();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -715,10 +712,11 @@ async function buildQuarantineOfficerDashboard(): Promise<DashboardData> {
 }
 
 // ===========================
-// 6. 사료회사 대시보드
+// 6. 사료회사 대시보드 (deprecated, unused)
 // ===========================
 
-async function buildFeedCompanyDashboard(farmIds?: string[]): Promise<DashboardData> {
+// @ts-expect-error - kept for reference, not reachable
+async function buildFeedCompanyDashboard_deprecated(farmIds?: string[]): Promise<DashboardData> {
   const db = getDb();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);

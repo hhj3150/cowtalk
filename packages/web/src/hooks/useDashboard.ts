@@ -16,8 +16,6 @@ function useDashboardParams(): Record<string, string | undefined> {
     case 'farmer':
       return { farmId: selectedFarmId ?? user?.farmIds[0] };
     case 'veterinarian':
-    case 'inseminator':
-    case 'feed_company':
       return { tenantId: user?.tenantId ?? undefined };
     case 'government_admin':
     case 'quarantine_officer':

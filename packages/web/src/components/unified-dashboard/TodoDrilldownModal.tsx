@@ -108,7 +108,6 @@ const URGENCY_LABELS: Record<string, string> = {
 const RESPONSIBLE_LABELS: Record<string, string> = {
   farmer: '🧑‍🌾 농장주',
   veterinarian: '🩺 수의사',
-  inseminator: '💉 수정사',
   quarantine_officer: '🛡️ 방역관',
 };
 

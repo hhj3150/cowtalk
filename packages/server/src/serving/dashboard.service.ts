@@ -80,19 +80,6 @@ export async function getVetDashboard(
 }
 
 // ===========================
-// 수정사 대시보드
-// ===========================
-
-export async function getInseminatorDashboard(
-  tenantId: string,
-): Promise<DashboardData | null> {
-  const interpretation = await analyzeTenant(tenantId, 'inseminator');
-  if (!interpretation) return null;
-
-  return buildDashboardFromTenant(interpretation, 'inseminator');
-}
-
-// ===========================
 // 행정관 대시보드
 // ===========================
 
@@ -116,19 +103,6 @@ export async function getQuarantineDashboard(
   if (!interpretation) return null;
 
   return buildDashboardFromRegional(interpretation, 'quarantine_officer');
-}
-
-// ===========================
-// 사료회사 대시보드
-// ===========================
-
-export async function getFeedCompanyDashboard(
-  tenantId: string,
-): Promise<DashboardData | null> {
-  const interpretation = await analyzeTenant(tenantId, 'feed_company');
-  if (!interpretation) return null;
-
-  return buildDashboardFromTenant(interpretation, 'feed_company');
 }
 
 // ===========================

@@ -92,7 +92,7 @@ describe('requireRole middleware', () => {
 
   it('미허용 역할 → ForbiddenError', () => {
     const req = mockReq();
-    req.user = { userId: 'u1', role: 'feed_company', farmIds: [] };
+    req.user = { userId: 'u1', role: 'quarantine_officer', farmIds: [] };
     const middleware = requireRole('farmer', 'veterinarian');
 
     expect(() => middleware(req, mockRes(), next)).toThrow(ForbiddenError);
@@ -116,9 +116,9 @@ describe('requirePermission middleware', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('feed_company가 animal delete → ForbiddenError', () => {
+  it('quarantine_officer가 animal delete → ForbiddenError', () => {
     const req = mockReq();
-    req.user = { userId: 'u1', role: 'feed_company', farmIds: [] };
+    req.user = { userId: 'u1', role: 'quarantine_officer', farmIds: [] };
     const middleware = requirePermission('animal', 'delete');
 
     expect(() => middleware(req, mockRes(), next)).toThrow(ForbiddenError);

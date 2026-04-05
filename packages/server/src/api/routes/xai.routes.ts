@@ -19,14 +19,14 @@ xaiRouter.use(authenticate);
 const animalQuerySchema = {
   query: z.object({
     animalId: z.string().uuid('animalId는 UUID여야 합니다'),
-    role: z.enum(['farmer', 'veterinarian', 'inseminator', 'quarantine_officer', 'government_admin', 'feed_company']).optional(),
+    role: z.enum(['farmer', 'veterinarian', 'quarantine_officer', 'government_admin']).optional(),
   }),
 };
 
 const farmQuerySchema = {
   query: z.object({
     farmId: z.string().uuid('farmId는 UUID여야 합니다'),
-    role: z.enum(['farmer', 'veterinarian', 'inseminator', 'quarantine_officer', 'government_admin', 'feed_company']).optional(),
+    role: z.enum(['farmer', 'veterinarian', 'quarantine_officer', 'government_admin']).optional(),
   }),
 };
 

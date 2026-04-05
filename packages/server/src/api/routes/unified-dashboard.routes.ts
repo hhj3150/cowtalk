@@ -761,28 +761,12 @@ function buildBriefingSummary(
     return parts.length > 0 ? `오늘 진료 대상: ${parts.join(', ')}.${topFarmText}` : `오늘 건강 알림 ${String(total24h)}건. ${trendText}.`;
   }
 
-  if (role === 'inseminator') {
-    const estrus = eventDist.find((e) => e.eventType === 'estrus');
-    const insem = eventDist.find((e) => e.eventType === 'insemination');
-    const noInsem = eventDist.find((e) => e.eventType === 'no_insemination');
-    const estrusCount = estrus?.count ?? 0;
-    const insemCount = insem?.count ?? 0;
-    const farmCount2 = topFarms.filter((f) => f.topEventType === 'estrus').length;
-    return `오늘 발정 ${String(estrusCount)}두 (${String(farmCount2 || topFarms.length)}개 농장), 수정 완료 ${String(insemCount)}두${noInsem && noInsem.count > 0 ? `, 미수정 ${String(noInsem.count)}두 확인 필요` : ''}. ${trendText}.`;
-  }
-
   if (role === 'quarantine_officer') {
     const fever = eventDist.find((e) => e.eventType === 'temperature_high');
     const feverCount = fever?.count ?? 0;
     const multiFarmFever = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
     const riskText = multiFarmFever >= 3 ? '⚠️ 다수 농장 고체온 — 역학 조사 검토' : '지역 방역 안정';
     return `오늘 ${String(farmCount)}개 농장 ${String(total24h)}건 알림. 고체온 ${String(feverCount)}두 (${String(multiFarmFever)}개 농장). ${riskText}. ${trendText}.`;
-  }
-
-  if (role === 'feed_company') {
-    const rum = eventDist.find((e) => e.eventType === 'rumination_decrease');
-    const activity = eventDist.find((e) => e.eventType === 'activity_decrease');
-    return `오늘 반추 저하 ${String(rum?.count ?? 0)}두, 활동 저하 ${String(activity?.count ?? 0)}두. TMR 점검 권장. ${trendText}.`;
   }
 
   // 행정관리 (기본)
@@ -830,17 +814,6 @@ function buildRoleKpis(
     ];
   }
 
-  if (role === 'inseminator') {
-    const estrus = findCount('estrus');
-    const farmCount = new Set(topFarms.map((f) => f.farmId)).size;
-    return [
-      { label: '발정 대상', value: estrus, color: '#ef4444', drilldownType: 'estrus' },
-      { label: '수정 완료', value: findCount('insemination'), color: '#3b82f6', drilldownType: 'insemination' },
-      { label: '미수정', value: findCount('no_insemination'), color: '#eab308', drilldownType: 'no_insemination' },
-      { label: '방문 농장', value: farmCount, color: '#22c55e' },
-    ];
-  }
-
   if (role === 'quarantine_officer') {
     const feverFarms = topFarms.filter((f) => f.topEventType === 'temperature_high').length;
     const riskLevel = feverFarms >= 5 ? '위험' : feverFarms >= 3 ? '주의' : '안정';
@@ -849,15 +822,6 @@ function buildRoleKpis(
       { label: '고체온 두수', value: findCount('temperature_high'), color: '#ef4444', drilldownType: 'temperature_high' },
       { label: '고체온 농장', value: feverFarms, color: '#f97316' },
       { label: '위험 등급', value: riskLevel, color: riskColor },
-      { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
-    ];
-  }
-
-  if (role === 'feed_company') {
-    return [
-      { label: '반추 저하', value: findCount('rumination_decrease'), color: '#f97316', drilldownType: 'rumination_decrease' },
-      { label: '활동 저하', value: findCount('activity_decrease'), color: '#eab308', drilldownType: 'activity_decrease' },
-      { label: '관리 농장', value: topFarms.length, color: '#3b82f6' },
       { label: '전일 대비', value: trendStr, color: trend.direction === 'up' ? '#ef4444' : '#22c55e' },
     ];
   }
@@ -954,22 +918,6 @@ function buildRecommendations(
       recs.push(`${topFarm.farmName} 집중 방문 권장 — ${String(topFarm.alertCount)}건 알림. 사양 환경 전반 점검이 필요합니다.`);
     }
 
-  } else if (role === 'inseminator') {
-    // 수정사: 번식 중심
-    const estrus = eventDist.find((e) => e.eventType === 'estrus');
-    if (estrus && estrus.count > 0) {
-      recs.push(`오늘 발정 ${String(estrus.count)}두 — 발정 시작 12~18시간 후 수정이 최적입니다. 수정 스케줄을 확인하세요.`);
-    }
-    const noInsem = eventDist.find((e) => e.eventType === 'no_insemination');
-    if (noInsem && noInsem.count > 0) {
-      recs.push(`미수정 발정 ${String(noInsem.count)}건 — 발정 놓침 원인을 파악하세요. 다음 발정 예측일을 확인하세요.`);
-    }
-    const fertility = eventDist.find((e) => e.eventType === 'fertility_warning');
-    if (fertility && fertility.count > 0) {
-      recs.push(`재발정 ${String(fertility.count)}건 — 반복 수정 실패 개체는 수의사 번식 검진을 의뢰하세요.`);
-    }
-    if (recs.length === 0) recs.push('오늘 수정 예정 개체가 없습니다. 내일 발정 예측 목록을 확인하세요.');
-
   } else if (role === 'quarantine_officer') {
     // 방역관: 역학 중심
     const tempHigh = eventDist.find((e) => e.eventType === 'temperature_high');
@@ -983,15 +931,6 @@ function buildRecommendations(
       recs.push(`긴급 알림 ${String(alertStats.critical)}건 — 법정 전염병(구제역, AI) 가능성을 배제할 수 없습니다. 역학 조사를 권장합니다.`);
     }
     recs.push('정상 범위: 고체온 개체 비율 2% 미만. 5% 초과 시 지역 방역 경보 발령을 검토하세요.');
-
-  } else if (role === 'feed_company') {
-    // 사료회사: 영양 중심
-    const rumDec = eventDist.find((e) => e.eventType === 'rumination_decrease');
-    if (rumDec && rumDec.count > 0) {
-      recs.push(`반추 저하 ${String(rumDec.count)}두 — TMR 배합비 점검과 사료 품질(수분, 곰팡이) 확인을 권장합니다.`);
-    }
-    recs.push('사료 효율 개선: 반추 시간 480분/일 이상 유지를 목표로 조사료 비율을 조정하세요.');
-    if (recs.length < 3) recs.push('계절별 사료 변경 시 최소 7일 적응 기간을 두고 반추 데이터를 모니터링하세요.');
 
   } else {
     // 행정관리: 전체 현황 중심 (기존 로직)
@@ -2558,9 +2497,7 @@ async function queryTodoList(
   // 역할별 할일 필터 — 각 역할에 의미 있는 이벤트만 표시
   const ROLE_EVENT_FILTER: Record<string, readonly string[]> = {
     veterinarian: ['temperature_high', 'clinical_condition', 'health_general', 'rumination_decrease', 'activity_decrease', 'temperature_low', 'calving_detection', 'calving_confirmation'],
-    inseminator: ['estrus', 'insemination', 'fertility_warning', 'pregnancy_check', 'no_insemination', 'activity_increase', 'dry_off'],
     quarantine_officer: ['temperature_high', 'clinical_condition', 'health_general', 'temperature_low'],
-    feed_company: ['rumination_decrease', 'activity_decrease', 'temperature_low'],
     // farmer, government_admin: 전체 표시
   };
 

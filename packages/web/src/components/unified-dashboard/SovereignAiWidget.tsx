@@ -21,11 +21,9 @@ const VERDICT_LABELS: Record<string, string> = {
 
 const ROLE_LABELS: Record<string, string> = {
   veterinarian: '수의사',
-  inseminator: '수정사',
   government_admin: '행정',
   quarantine_officer: '방역',
   farmer: '농장주',
-  feed_company: '사료사',
 };
 
 // ── AccuracyGauge ──

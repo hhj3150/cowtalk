@@ -85,9 +85,7 @@ ${riskLines.join('\n')}`);
     "farmer": "농장주 즉각 조치 사항",
     "veterinarian": "수의사 긴급 대응 지침",
     "quarantine_officer": "방역관 방역 조치 지침",
-    "government_admin": "행정관 보고/조정 사항",
-    "inseminator": "수정사 관련 유의사항",
-    "feed_company": "사료회사 관련 유의사항"
+    "government_admin": "행정관 보고/조정 사항"
   },
   "severity": "low|medium|high|critical",
   "data_references": ["근거 데이터"]

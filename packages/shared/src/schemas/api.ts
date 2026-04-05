@@ -36,8 +36,8 @@ export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
   role: z.enum([
-    'farmer', 'veterinarian', 'inseminator',
-    'government_admin', 'quarantine_officer', 'feed_company',
+    'farmer', 'veterinarian',
+    'government_admin', 'quarantine_officer',
   ]),
   farmIds: z.array(z.string().uuid()).optional(),
 });

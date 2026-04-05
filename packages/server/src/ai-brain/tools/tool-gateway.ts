@@ -46,19 +46,15 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_traceability',
     'query_conception_stats', 'recommend_insemination_window', 'get_farm_kpis',
-    'record_treatment', 'query_grade', 'query_auction_prices', 'query_weather',
+    'record_treatment', 'record_insemination', 'record_pregnancy_check',
+    'query_grade', 'query_auction_prices', 'query_weather', 'query_sire_info',
   ],
   veterinarian: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_breeding_stats', 'query_sensor_data', 'query_traceability',
     'query_conception_stats', 'record_treatment', 'get_farm_kpis',
-    'recommend_insemination_window', 'query_grade', 'query_weather',
-  ],
-  inseminator: [
-    'query_animal', 'query_animal_events', 'query_farm_summary',
-    'query_breeding_stats', 'query_sensor_data', 'query_traceability',
-    'query_conception_stats', 'record_insemination', 'record_pregnancy_check',
-    'recommend_insemination_window', 'get_farm_kpis', 'query_sire_info', 'query_weather',
+    'recommend_insemination_window', 'record_insemination', 'record_pregnancy_check',
+    'query_grade', 'query_weather', 'query_sire_info',
   ],
   government_admin: [
     'query_animal', 'query_farm_summary', 'query_breeding_stats',
@@ -71,9 +67,6 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_sensor_data', 'query_traceability', 'get_farm_kpis',
     'generate_report', 'send_alert', 'query_weather',
     'query_quarantine_dashboard', 'query_national_situation',
-  ],
-  feed_company: [
-    'query_farm_summary', 'query_sensor_data', 'get_farm_kpis', 'query_weather',
   ],
 };
 

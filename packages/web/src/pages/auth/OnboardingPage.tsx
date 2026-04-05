@@ -46,10 +46,8 @@ interface RoleMeta {
 const ROLE_LIST: readonly RoleMeta[] = [
   { role: 'farmer',            icon: '🐄', label: '농장주',   description: '내 목장 개체 모니터링·번식·질병 관리', needsFarm: true },
   { role: 'veterinarian',      icon: '🩺', label: '수의사',   description: '담당 목장 건강 관리·진단 보조',          needsFarm: false },
-  { role: 'inseminator',       icon: '💉', label: '수정사',   description: '발정 알림·수정 적기·정액 추천',          needsFarm: false },
   { role: 'quarantine_officer',icon: '🛡️', label: '방역관',   description: '지역·전국 단위 방역 모니터링',            needsFarm: false },
   { role: 'government_admin',  icon: '🏛️', label: '정부',    description: '수급 조절·축산 행정 디지털 전환',         needsFarm: false },
-  { role: 'feed_company',      icon: '🌾', label: '사료회사', description: '사양 관리·사료 효율 분석',               needsFarm: false },
 ];
 
 // ===========================

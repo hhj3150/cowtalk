@@ -294,15 +294,13 @@ describe('runV4Analysis (fusion)', () => {
     expect(result.fallbackSummary).toContain('117');
   });
 
-  it('fallbackActions에 6역할 모두 포함', () => {
+  it('fallbackActions에 4역할 모두 포함', () => {
     const profile = createMockProfile();
     const result = runV4Analysis(profile);
 
     expect(result.fallbackActions.farmer).toBeTruthy();
     expect(result.fallbackActions.veterinarian).toBeTruthy();
-    expect(result.fallbackActions.inseminator).toBeTruthy();
     expect(result.fallbackActions.government_admin).toBeTruthy();
     expect(result.fallbackActions.quarantine_officer).toBeTruthy();
-    expect(result.fallbackActions.feed_company).toBeTruthy();
   });
 });

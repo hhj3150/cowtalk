@@ -105,10 +105,8 @@ export async function generateDashboardInsight(
 const ROLE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   farmer: '개별 농장을 운영하는 농장주. 쉬운 한국어로, 오늘 당장 해야 할 일 중심.',
   veterinarian: '141개 농장을 관리하는 수의사. 임상 전문 용어 사용 가능. 긴급 동물과 질병 패턴 중심.',
-  inseminator: '번식 전문 수정사. 발정/수정/임신 효율 중심.',
   government_admin: '경기도 축산 행정관. 지역 전체 통계와 정책 시사점 중심.',
   quarantine_officer: '방역 담당관. 전염병 위험, 조기 경보, 역학 감시 중심.',
-  feed_company: '사료 영업/기술 담당. 반추/사양 이상과 사료 효과 분석 중심.',
 };
 
 function buildInsightPrompt(context: DashboardInsightContext): string {

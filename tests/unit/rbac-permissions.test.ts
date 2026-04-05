@@ -35,30 +35,12 @@ describe('hasPermission — 역할별 권한 매트릭스', () => {
     expect(hasPermission('government_admin' as Role, 'system', 'read')).toBe(true);
   });
 
-  // 수정사
-  it('inseminator → animal:create 가능', () => {
-    expect(hasPermission('inseminator' as Role, 'animal', 'create')).toBe(true);
-  });
-
-  it('inseminator → animal:update 가능', () => {
-    expect(hasPermission('inseminator' as Role, 'animal', 'update')).toBe(true);
-  });
-
-  it('inseminator → system:write 불가', () => {
-    expect(hasPermission('inseminator' as Role, 'system', 'write')).toBe(false);
-  });
-
   // 방역관
   it('quarantine_officer → alert:read 가능', () => {
     expect(hasPermission('quarantine_officer' as Role, 'alert', 'read')).toBe(true);
   });
 
-  // 사료회사
-  it('feed_company → sensor:read 가능', () => {
-    expect(hasPermission('feed_company' as Role, 'sensor', 'read')).toBe(true);
-  });
-
-  it('feed_company → user:write 불가', () => {
-    expect(hasPermission('feed_company' as Role, 'user', 'write')).toBe(false);
+  it('quarantine_officer → animal:export 가능', () => {
+    expect(hasPermission('quarantine_officer' as Role, 'animal', 'export')).toBe(true);
   });
 });

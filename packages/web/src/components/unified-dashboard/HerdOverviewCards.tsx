@@ -39,23 +39,11 @@ const ROLE_CARDS: Readonly<Record<string, readonly CardConfig[]>> = {
     { key: 'activeAlerts', label: '발열·질병', icon: '🌡️', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
     { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
   ],
-  inseminator: [
-    { key: 'totalAnimals', label: '관리 두수', icon: '💉', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
-    { key: 'activeAlerts', label: '발정 대상', icon: '🔴', category: 'alerts', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
-    { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
-    { key: 'healthIssues', label: '번식 주의', icon: '⚠️', category: 'health', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
-  ],
   quarantine_officer: [
     { key: 'totalAnimals', label: '감시 두수', icon: '🛡️', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
     { key: 'healthIssues', label: '발열 두수', icon: '🌡️', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
     { key: 'activeAlerts', label: '역학 경보', icon: '🚨', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
     { key: 'sensorAttached', label: '감시 농장', icon: '📋', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
-  ],
-  feed_company: [
-    { key: 'totalAnimals', label: '거래 두수', icon: '🌾', category: 'total', accent: 'var(--ct-primary)', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
-    { key: 'healthIssues', label: '반추 이상', icon: '🔄', category: 'health', accent: 'var(--ct-danger)', accentRgb: '239,68,68', sparkColor: '#ef4444' },
-    { key: 'activeAlerts', label: '사료 주의', icon: '⚠️', category: 'alerts', accent: 'var(--ct-warning)', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
-    { key: 'sensorAttached', label: '센서 장착', icon: '📡', category: 'sensor', accent: 'var(--ct-info)', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
   ],
 };
 

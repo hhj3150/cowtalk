@@ -32,17 +32,15 @@ describe('CowTalk v5 — Phase 1: Shared Package', () => {
 
   describe('Roles', () => {
     it('should define exactly 6 roles', () => {
-      expect(ROLES).toHaveLength(6);
+      expect(ROLES).toHaveLength(4);
     });
 
     it('should have all role IDs', () => {
       const roleIds = ROLES.map((r) => r.role);
       expect(roleIds).toContain('farmer');
       expect(roleIds).toContain('veterinarian');
-      expect(roleIds).toContain('inseminator');
       expect(roleIds).toContain('government_admin');
       expect(roleIds).toContain('quarantine_officer');
-      expect(roleIds).toContain('feed_company');
     });
 
     it('should have Korean labels for all roles', () => {
@@ -72,8 +70,8 @@ describe('CowTalk v5 — Phase 1: Shared Package', () => {
       expect(hasPermission('government_admin', 'user', 'delete')).toBe(true);
     });
 
-    it('should deny feed_company from creating animals', () => {
-      expect(hasPermission('feed_company', 'animal', 'create')).toBe(false);
+    it('should deny quarantine_officer from deleting animals', () => {
+      expect(hasPermission('quarantine_officer', 'animal', 'delete')).toBe(false);
     });
 
     it('should return permissions for a role', () => {

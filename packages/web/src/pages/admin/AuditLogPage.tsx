@@ -40,10 +40,8 @@ interface AuditLogResponse {
 const ROLE_LABELS: Record<string, string> = {
   farmer: '농장주',
   veterinarian: '수의사',
-  inseminator: '수정사',
   government_admin: '행정관',
   quarantine_officer: '방역관',
-  feed_company: '사료회사',
   unknown: '미상',
 };
 
@@ -166,10 +164,8 @@ export default function AuditLogPage(): React.JSX.Element {
           <option value="">전체 역할</option>
           <option value="farmer">농장주</option>
           <option value="veterinarian">수의사</option>
-          <option value="inseminator">수정사</option>
           <option value="government_admin">행정관</option>
           <option value="quarantine_officer">방역관</option>
-          <option value="feed_company">사료회사</option>
         </select>
 
         <select
