@@ -259,7 +259,7 @@ farmRouter.delete('/:farmId', requirePermission('farm', 'delete'), (_req, res) =
 });
 
 // GET /farms/:farmId/profile — 농장 프로필 (실제 DB)
-farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const db = getDb();
     const farmId = req.params.farmId as string;
@@ -308,7 +308,7 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
           eq(smaxtecEvents.farmId, farmId),
           gt(smaxtecEvents.detectedAt, thirtyDaysAgo),
         ));
-      recentEventCount = eventCountResult?.count ?? 0;
+      recentEventCount = Number(eventCountResult?.count ?? 0);
     } catch (eventErr) {
       logger.warn({ farmId, err: eventErr }, '[Farm] 이벤트 수 조회 실패 — 0으로 처리');
     }
@@ -345,8 +345,13 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
 
     res.json({ success: true, data: profile });
   } catch (error) {
-    logger.error({ farmId: req.params.farmId, error }, '[Farm] profile 조회 실패');
-    next(error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : '';
+    logger.error({ farmId: req.params.farmId, error: errMsg, stack: errStack }, '[Farm] profile 조회 실패');
+    res.status(500).json({
+      success: false,
+      error: { code: 'FARM_PROFILE_ERROR', message: errMsg, detail: errStack?.split('\n').slice(0, 5).join(' | ') },
+    });
   }
 });
 
