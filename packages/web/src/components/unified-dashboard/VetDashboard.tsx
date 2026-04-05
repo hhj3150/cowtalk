@@ -1,11 +1,13 @@
-// 수의사 전용 대시보드 — 실데이터 기반 진료 우선순위 + 농장별 건강이상 + 액션플랜
-// 역학적·수의학적 관점: 개체 → 농장 → 지역 전파 위험 순서로 표시
+// 수의사 Command Center — 담당 농장 위험도 + 긴급 개체 + 방문 동선 + 액션플랜
+// 데이터: drilldown(긴급 개체) + farmHealthScores(농장 위험) + vetRoute(동선) + epidemicIntelligence(집단감지)
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { useFarmStore } from '@web/stores/farm.store';
+import { useFarmHealthScores, useVetRoute, useEpidemicIntelligence } from '@web/hooks/useUnifiedDashboard';
 import { TransitionRiskCard } from '@web/components/breeding/TransitionRiskCard';
+import { VetRouteWidget } from '@web/components/unified-dashboard/VetRouteWidget';
 
 // ── 타입 ──────────────────────────────────────────
 
@@ -23,9 +25,9 @@ interface HealthAnimal {
 interface FarmHealthSummary {
   readonly farmId: string;
   readonly farmName: string;
-  readonly critical: number;   // 즉시 진료 (고체온·임상이상)
-  readonly watch: number;      // 주의 관찰 (반추저하·활동저하)
-  readonly calving: number;    // 분만 임박
+  readonly critical: number;
+  readonly watch: number;
+  readonly calving: number;
   readonly animals: readonly HealthAnimal[];
 }
 
@@ -34,7 +36,7 @@ interface VetStats {
   readonly watchTotal: number;
   readonly calvingTotal: number;
   readonly farms: readonly FarmHealthSummary[];
-  readonly topAnimals: readonly HealthAnimal[];  // 가장 긴급한 10개체
+  readonly topAnimals: readonly HealthAnimal[];
 }
 
 // ── 상수 ──────────────────────────────────────────
@@ -57,8 +59,6 @@ const EVENT_LABELS: Readonly<Record<string, { label: string; icon: string; color
 const SEVERITY_ORDER: Readonly<Record<string, number>> = {
   critical: 0, high: 1, medium: 2, low: 3,
 };
-
-// ── 수의학 액션플랜 ──────────────────────────────
 
 const ACTION_PLANS: Readonly<Record<string, readonly string[]>> = {
   temperature_high: [
@@ -120,6 +120,13 @@ function severityBadge(severity: string): React.JSX.Element {
       {c.label}
     </span>
   );
+}
+
+function riskGrade(score: number): { label: string; color: string; bg: string } {
+  if (score >= 80) return { label: 'A', color: '#22c55e', bg: '#22c55e15' };
+  if (score >= 60) return { label: 'B', color: '#eab308', bg: '#eab30815' };
+  if (score >= 40) return { label: 'C', color: '#f97316', bg: '#f9731615' };
+  return { label: 'D', color: '#ef4444', bg: '#ef444415' };
 }
 
 // ── 서브 컴포넌트: 개체 행 ────────────────────────
@@ -238,7 +245,6 @@ function FarmCard({
           padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer',
         }}
       >
-        {/* 긴급도 인디케이터 */}
         <div style={{
           width: 8, height: 8, borderRadius: '50%',
           background: urgencyColor, flexShrink: 0,
@@ -283,6 +289,97 @@ function FarmCard({
   );
 }
 
+// ── 서브 컴포넌트: 위험 농장 (건강 점수) ─────────
+
+function FarmHealthScoreRow({
+  farm, onFarmClick,
+}: {
+  readonly farm: { farmId: string; name: string; healthScore: number; grade: string; headCount: number; trend: string };
+  readonly onFarmClick: (id: string) => void;
+}): React.JSX.Element {
+  const gradeInfo = riskGrade(farm.healthScore);
+  return (
+    <button
+      type="button"
+      onClick={() => onFarmClick(farm.farmId)}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 14px', borderRadius: 8, border: 'none',
+        background: gradeInfo.bg, cursor: 'pointer', textAlign: 'left',
+        borderBottom: '1px solid var(--ct-border)',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+    >
+      {/* 건강 등급 */}
+      <div style={{
+        width: 36, height: 36, borderRadius: 8,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: gradeInfo.color, color: '#fff',
+        fontSize: 16, fontWeight: 900, flexShrink: 0,
+      }}>
+        {farm.grade}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>
+          {farm.name}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
+          <span>건강 {farm.healthScore}점</span>
+          <span>{farm.headCount}두</span>
+          <span style={{ color: farm.trend === 'improving' ? '#22c55e' : farm.trend === 'declining' ? '#ef4444' : '#64748b' }}>
+            {farm.trend === 'improving' ? '↗ 호전' : farm.trend === 'declining' ? '↘ 악화' : '→ 유지'}
+          </span>
+        </div>
+      </div>
+      <span style={{ fontSize: 16, color: '#64748b', flexShrink: 0 }}>›</span>
+    </button>
+  );
+}
+
+// ── 서브 컴포넌트: 집단이상 경보 배너 ────────────
+
+function ClusterAlertBanner({
+  clusters,
+}: {
+  readonly clusters: readonly { farmName: string; animalCount: number; eventType: string; riskLevel: string }[];
+}): React.JSX.Element | null {
+  if (clusters.length === 0) return null;
+
+  return (
+    <div style={{
+      borderRadius: 12, padding: '12px 16px',
+      background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 16 }}>🚨</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#ef4444' }}>
+          집단 이상 감지 — {clusters.length}건
+        </span>
+      </div>
+      {clusters.map((c, i) => (
+        <div key={i} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '4px 0', fontSize: 12, color: 'var(--ct-text)',
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: c.riskLevel === 'critical' ? '#ef4444' : '#f97316',
+            flexShrink: 0,
+          }} />
+          <span style={{ fontWeight: 600 }}>{c.farmName}</span>
+          <span style={{ color: 'var(--ct-text-muted)' }}>
+            {EVENT_LABELS[c.eventType]?.label ?? c.eventType} {c.animalCount}두
+          </span>
+        </div>
+      ))}
+      <div style={{ marginTop: 6, fontSize: 11, color: '#ef4444', fontWeight: 500 }}>
+        동일 농장 3두+ 동일 증상 → 전파성 질병 의심. 격리·역학조사 검토
+      </div>
+    </div>
+  );
+}
+
 // ── 메인 컴포넌트 ─────────────────────────────────
 
 interface Props {
@@ -294,14 +391,14 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
   const navigate = useNavigate();
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
   const [stats, setStats] = useState<VetStats | null>(null);
-  const [tab, setTab] = useState<'urgent' | 'farms' | 'plans'>('urgent');
+  const [tab, setTab] = useState<'urgent' | 'farms' | 'route' | 'plans'>('urgent');
   const [loading, setLoading] = useState(true);
 
   const farmParam = selectedFarmIds.length > 0 ? `&farmIds=${selectedFarmIds.join(',')}` : '';
 
+  // 기존 drilldown 데이터 (긴급 개체 + 농장별 그룹핑)
   const load = useCallback(() => {
     setLoading(true);
-
     const healthTypes = [
       'temperature_high', 'clinical_condition', 'health_general',
       'rumination_decrease', 'activity_decrease', 'drinking_decrease',
@@ -310,10 +407,9 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
 
     Promise.all(
       healthTypes.map((t) =>
-        apiGet<{
-          items: readonly HealthAnimal[];
-          total: number;
-        }>(`/unified-dashboard/drilldown?eventType=${t}${farmParam}&limit=200`).catch(() => ({ items: [], total: 0 })),
+        apiGet<{ items: readonly HealthAnimal[]; total: number }>(
+          `/unified-dashboard/drilldown?eventType=${t}${farmParam}&limit=200`,
+        ).catch(() => ({ items: [], total: 0 })),
       ),
     ).then((results) => {
       const allAnimals: HealthAnimal[] = [];
@@ -321,7 +417,6 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
         allAnimals.push(...r.items);
       }
 
-      // 농장별 그룹핑
       const farmMap = new Map<string, FarmHealthSummary>();
       for (const a of allAnimals) {
         const ex = farmMap.get(a.farmId);
@@ -339,8 +434,7 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
           });
         } else {
           farmMap.set(a.farmId, {
-            farmId: a.farmId,
-            farmName: a.farmName,
+            farmId: a.farmId, farmName: a.farmName,
             critical: isCritical ? 1 : 0,
             watch:    isWatch    ? 1 : 0,
             calving:  isCalving  ? 1 : 0,
@@ -349,18 +443,16 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
         }
       }
 
-      // 농장 정렬 (critical 내림차순 → calving → watch)
       const farms = [...farmMap.values()].sort((a, b) =>
         b.critical - a.critical || b.calving - a.calving || b.watch - a.watch,
       );
 
-      // 가장 긴급한 개체 TOP 10
       const topAnimals = [...allAnimals]
         .sort((a, b) =>
           (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3) ||
           new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime(),
         )
-        .slice(0, 10);
+        .slice(0, 15);
 
       setStats({
         criticalTotal: allAnimals.filter((a) => CRITICAL_TYPES.has(a.eventType)).length,
@@ -375,22 +467,61 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
 
   useEffect(() => { load(); }, [load]);
 
+  // 추가 데이터: 농장 건강 점수 + 진료 동선 + 역학 감시
+  const { data: healthScores } = useFarmHealthScores();
+  const { data: vetRoute } = useVetRoute();
+  // epidemic intelligence 데이터는 clusterAlerts 계산에서 추가적으로 활용 가능 (향후)
+  useEpidemicIntelligence();
+
+  // 집단이상 감지: 같은 농장 3두+ 동일 이벤트 타입
+  const clusterAlerts = useMemo(() => {
+    if (!stats) return [];
+    const clusters: { farmName: string; animalCount: number; eventType: string; riskLevel: string }[] = [];
+    for (const farm of stats.farms) {
+      const typeCounts = new Map<string, number>();
+      for (const a of farm.animals) {
+        typeCounts.set(a.eventType, (typeCounts.get(a.eventType) ?? 0) + 1);
+      }
+      for (const [eventType, count] of typeCounts) {
+        if (count >= 3 && CRITICAL_TYPES.has(eventType)) {
+          clusters.push({
+            farmName: farm.farmName,
+            animalCount: count,
+            eventType,
+            riskLevel: count >= 5 ? 'critical' : 'high',
+          });
+        }
+      }
+    }
+    return clusters;
+  }, [stats]);
+
+  // 위험 농장 수 (건강 점수 60 미만)
+  const riskFarmCount = useMemo(() => {
+    if (!healthScores) return 0;
+    return healthScores.filter((f) => f.healthScore < 60).length;
+  }, [healthScores]);
+
   if (loading || !stats) {
     return (
       <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 20, textAlign: 'center', color: 'var(--ct-text-muted)' }}>
-        수의사 대시보드 로딩 중...
+        수의사 Command Center 로딩 중...
       </div>
     );
   }
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1, padding: '8px 4px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+    flex: 1, padding: '8px 4px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 600,
     background: active ? 'var(--ct-primary, #10b981)' : 'transparent',
     color: active ? '#fff' : 'var(--ct-text-muted)',
+    whiteSpace: 'nowrap',
   });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* 집단이상 경보 배너 */}
+      <ClusterAlertBanner clusters={clusterAlerts} />
 
       {/* KPI 요약 */}
       <div style={{
@@ -399,58 +530,51 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: 0 }}>
-            🩺 오늘 진료 대상
+            🩺 Command Center
           </h3>
           <button type="button" onClick={load} style={{ fontSize: 11, color: 'var(--ct-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
             새로고침
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {[
             { label: '즉시 진료', count: stats.criticalTotal, color: '#ef4444', icon: '🚨', desc: '고체온·임상이상' },
             { label: '주의 관찰', count: stats.watchTotal,    color: '#eab308', icon: '👁️', desc: '반추·활동저하' },
             { label: '분만 임박', count: stats.calvingTotal,  color: '#8b5cf6', icon: '🐄', desc: '분만 감지' },
+            { label: '위험 농장', count: riskFarmCount,       color: '#f97316', icon: '🏥', desc: '건강점수 60↓' },
           ].map((kpi) => (
             <div key={kpi.label} style={{
-              textAlign: 'center', padding: '10px 6px', borderRadius: 8,
+              textAlign: 'center', padding: '8px 4px', borderRadius: 8,
               background: kpi.count > 0 ? `${kpi.color}12` : 'var(--ct-bg)',
               border: `1px solid ${kpi.count > 0 ? `${kpi.color}30` : 'transparent'}`,
             }}>
-              <div style={{ fontSize: 16, marginBottom: 2 }}>{kpi.icon}</div>
-              <div style={{ fontSize: 24, fontWeight: 900, color: kpi.count > 0 ? kpi.color : 'var(--ct-text-muted)' }}>
+              <div style={{ fontSize: 14, marginBottom: 2 }}>{kpi.icon}</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: kpi.count > 0 ? kpi.color : 'var(--ct-text-muted)' }}>
                 {kpi.count}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: kpi.count > 0 ? kpi.color : 'var(--ct-text-muted)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: kpi.count > 0 ? kpi.color : 'var(--ct-text-muted)' }}>
                 {kpi.label}
               </div>
               <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginTop: 1 }}>{kpi.desc}</div>
             </div>
           ))}
         </div>
-
-        {/* 수의역학 경고 */}
-        {stats.criticalTotal > 20 && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 8,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
-            fontSize: 12, color: '#ef4444', fontWeight: 600,
-          }}>
-            ⚠️ 고체온 개체 {stats.criticalTotal}두 — 농장 간 전파 가능성 역학 모니터링 필요
-          </div>
-        )}
       </div>
 
-      {/* 탭 */}
+      {/* 탭 — 4개 */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: 4 }}>
         <button type="button" style={tabStyle(tab === 'urgent')} onClick={() => setTab('urgent')}>
-          🚨 긴급 개체 ({stats.topAnimals.length})
+          🚨 긴급({stats.topAnimals.length})
         </button>
         <button type="button" style={tabStyle(tab === 'farms')} onClick={() => setTab('farms')}>
-          🏡 농장별 ({stats.farms.length})
+          🏥 농장({healthScores?.length ?? stats.farms.length})
+        </button>
+        <button type="button" style={tabStyle(tab === 'route')} onClick={() => setTab('route')}>
+          🗺️ 동선
         </button>
         <button type="button" style={tabStyle(tab === 'plans')} onClick={() => setTab('plans')}>
-          📋 액션플랜
+          📋 프로토콜
         </button>
       </div>
 
@@ -468,7 +592,7 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
             </div>
             {stats.topAnimals.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--ct-text-muted)', fontSize: 13 }}>
-                ✅ 이상 개체가 없습니다
+                ✅ 현재 이상 개체가 없습니다
               </div>
             ) : (
               stats.topAnimals.map((a) => (
@@ -478,27 +602,62 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
           </div>
         )}
 
-        {/* 농장별 탭 */}
+        {/* 농장 건강 점수 탭 */}
         {tab === 'farms' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, maxHeight: 480, overflowY: 'auto' }}>
-            {stats.farms.length === 0 ? (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--ct-text-muted)', fontSize: 13 }}>
-                ✅ 이상 농장이 없습니다
+          <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--ct-border)', fontSize: 12, color: 'var(--ct-text-muted)' }}>
+              건강 점수 기반 위험도 순 — 클릭하면 농장 대시보드로 이동
+            </div>
+
+            {/* 건강 점수 데이터 있으면 점수 기반 리스트 */}
+            {healthScores && healthScores.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 8 }}>
+                {[...healthScores]
+                  .sort((a, b) => a.healthScore - b.healthScore)
+                  .map((farm) => (
+                    <FarmHealthScoreRow
+                      key={farm.farmId}
+                      farm={farm}
+                      onFarmClick={(fid) => onFarmClick?.(fid)}
+                    />
+                  ))}
               </div>
             ) : (
-              stats.farms.map((farm) => (
-                <FarmCard
-                  key={farm.farmId}
-                  farm={farm}
-                  onAnimalClick={(id) => navigate(`/cow/${id}`)}
-                  onFarmClick={(fid) => onFarmClick?.(fid)}
-                />
-              ))
+              /* 건강 점수 없으면 기존 이벤트 기반 농장 카드 */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10 }}>
+                {stats.farms.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--ct-text-muted)', fontSize: 13 }}>
+                    ✅ 이상 농장이 없습니다
+                  </div>
+                ) : (
+                  stats.farms.map((farm) => (
+                    <FarmCard
+                      key={farm.farmId}
+                      farm={farm}
+                      onAnimalClick={(id) => navigate(`/cow/${id}`)}
+                      onFarmClick={(fid) => onFarmClick?.(fid)}
+                    />
+                  ))
+                )}
+              </div>
             )}
           </div>
         )}
 
-        {/* 수의학 액션플랜 탭 */}
+        {/* 방문 동선 탭 */}
+        {tab === 'route' && (
+          <div style={{ padding: 12 }}>
+            {vetRoute ? (
+              <VetRouteWidget data={vetRoute} />
+            ) : (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--ct-text-muted)', fontSize: 13 }}>
+                방문 동선 데이터 로딩 중...
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 수의학 프로토콜 탭 */}
         {tab === 'plans' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
             <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', padding: '0 4px 4px' }}>
@@ -515,7 +674,7 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
               );
             })}
 
-            {/* 전파 위험 지수 */}
+            {/* 역학 모니터링 기준 */}
             <div style={{
               borderRadius: 10, border: '1px solid rgba(99,102,241,0.3)',
               background: 'rgba(99,102,241,0.06)', padding: '12px 14px',
