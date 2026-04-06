@@ -93,3 +93,60 @@ treatmentsRouter.get('/pending-outcomes', async (_req: Request, res: Response, n
     next(error);
   }
 });
+
+// ── POST /treatments/:treatmentId/outcome — 수의사 결과 확인 ──
+
+treatmentsRouter.post('/:treatmentId/outcome', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const treatmentId = req.params.treatmentId as string;
+    const { outcomeStatus, note } = req.body as {
+      outcomeStatus: 'recovered' | 'relapsed' | 'worsened';
+      note?: string;
+    };
+
+    if (!treatmentId || !outcomeStatus) {
+      res.status(400).json({ success: false, error: 'treatmentId와 outcomeStatus 필수' });
+      return;
+    }
+
+    const validStatuses = ['recovered', 'relapsed', 'worsened'] as const;
+    if (!validStatuses.includes(outcomeStatus as typeof validStatuses[number])) {
+      res.status(400).json({ success: false, error: 'outcomeStatus는 recovered/relapsed/worsened 중 하나' });
+      return;
+    }
+
+    const db = getDb();
+    const userId = (req as unknown as { user?: { userId?: string } }).user?.userId ?? 'unknown';
+
+    // 기존 treatment 조회
+    const [existing] = await db
+      .select({ treatmentId: treatments.treatmentId, details: treatments.details })
+      .from(treatments)
+      .where(eq(treatments.treatmentId, treatmentId))
+      .limit(1);
+
+    if (!existing) {
+      res.status(404).json({ success: false, error: '치료 기록을 찾을 수 없습니다' });
+      return;
+    }
+
+    const currentDetails = (existing.details ?? {}) as Record<string, unknown>;
+    const updatedDetails = {
+      ...currentDetails,
+      outcomeStatus,
+      outcomeDate: new Date().toISOString(),
+      outcomeConfirmedBy: userId,
+      ...(note ? { outcomeNote: note } : {}),
+    } as TreatmentDetails;
+
+    await db.update(treatments)
+      .set({ details: updatedDetails })
+      .where(eq(treatments.treatmentId, treatmentId));
+
+    logger.info({ treatmentId, outcomeStatus, userId }, '[Treatments] 결과 확인 완료');
+    res.json({ success: true, data: { treatmentId, outcomeStatus } });
+  } catch (error) {
+    logger.error({ error }, '[Treatments] 결과 확인 실패');
+    next(error);
+  }
+});

@@ -2,9 +2,9 @@
 // VetDashboard에서 분리 (파일 크기 관리)
 
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { apiGet } from '@web/api/client';
+import { apiGet, apiPost } from '@web/api/client';
 
 // ── 타입 ──
 
@@ -109,8 +109,12 @@ function ActionPlanCard({ eventType, count }: { readonly eventType: string; read
 
 // ── 서브 컴포넌트: 치료 경과 대기 항목 ──
 
-function OutcomeItem({ item }: { readonly item: PendingOutcome }): React.JSX.Element {
+function OutcomeItem({ item, onConfirm }: {
+  readonly item: PendingOutcome;
+  readonly onConfirm: (treatmentId: string, status: 'recovered' | 'relapsed' | 'worsened') => void;
+}): React.JSX.Element {
   const navigate = useNavigate();
+  const [showActions, setShowActions] = useState(false);
   const assessColor = item.autoAssessment === 'recovered' ? '#22c55e'
     : item.autoAssessment === 'worsened' ? '#ef4444' : '#eab308';
   const assessLabel = item.autoAssessment === 'recovered' ? '회복 추정'
@@ -124,30 +128,69 @@ function OutcomeItem({ item }: { readonly item: PendingOutcome }): React.JSX.Ele
     ? `${String(tempPre)}→${String(tempPost)}°C`
     : tempPost !== null ? `현재 ${String(tempPost)}°C` : '—';
 
+  const isConfirmed = item.outcomeStatus !== 'pending';
+
   return (
-    <button
-      type="button"
-      onClick={() => navigate(`/cow/${item.animalId}`)}
-      style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-        padding: '10px 12px', borderRadius: 8, border: 'none',
-        background: `${assessColor}08`, cursor: 'pointer', textAlign: 'left',
-        borderBottom: '1px solid var(--ct-border)',
-      }}
-    >
-      <span style={{ fontSize: 16, flexShrink: 0 }}>{assessIcon}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>#{item.earTag}</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: assessColor }}>{assessLabel}</span>
-          <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>D+{item.daysSinceTreatment}</span>
+    <div style={{ borderBottom: '1px solid var(--ct-border)' }}>
+      <button
+        type="button"
+        onClick={() => isConfirmed ? navigate(`/cow/${item.animalId}`) : setShowActions((v) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 12px', borderRadius: 0, border: 'none',
+          background: `${assessColor}08`, cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 16, flexShrink: 0 }}>{assessIcon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>#{item.earTag}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: assessColor }}>{assessLabel}</span>
+            <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>D+{item.daysSinceTreatment}</span>
+            {isConfirmed && (
+              <span style={{ fontSize: 10, fontWeight: 600, color: '#3b82f6', background: '#3b82f610', padding: '1px 6px', borderRadius: 4 }}>확인됨</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 2 }}>
+            {item.diagnosis} · {item.drug} · 체온 {tempChange}
+          </div>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 2 }}>
-          {item.diagnosis} · {item.drug} · 체온 {tempChange}
+        <span style={{ fontSize: 16, color: '#64748b', flexShrink: 0 }}>{showActions ? '▼' : '›'}</span>
+      </button>
+      {showActions && !isConfirmed && (
+        <div style={{ display: 'flex', gap: 6, padding: '6px 12px 10px', background: `${assessColor}04` }}>
+          {([
+            { status: 'recovered' as const, label: '✅ 회복', bg: '#22c55e' },
+            { status: 'worsened' as const, label: '🔴 악화', bg: '#ef4444' },
+            { status: 'relapsed' as const, label: '🔁 재발', bg: '#f59e0b' },
+          ]).map(({ status, label, bg }) => (
+            <button
+              key={status}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onConfirm(item.treatmentId, status); }}
+              style={{
+                flex: 1, padding: '6px 0', borderRadius: 6, border: 'none',
+                background: bg, color: '#fff', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); navigate(`/cow/${item.animalId}`); }}
+            style={{
+              flex: 1, padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700,
+              border: '1px solid var(--ct-border)', background: 'var(--ct-bg)', color: 'var(--ct-text)',
+              cursor: 'pointer',
+            }}
+          >
+            상세보기
+          </button>
         </div>
-      </div>
-      <span style={{ fontSize: 16, color: '#64748b', flexShrink: 0 }}>›</span>
-    </button>
+      )}
+    </div>
   );
 }
 
@@ -160,12 +203,26 @@ interface Props {
 }
 
 export function VetProtocolTab({ criticalTotal, watchTotal, calvingTotal }: Props): React.JSX.Element {
+  const queryClient = useQueryClient();
+
   const { data: pendingData } = useQuery({
     queryKey: ['treatments', 'pending-outcomes'],
     queryFn: () => apiGet<{ data: readonly PendingOutcome[]; total: number }>('/treatments/pending-outcomes'),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
+
+  const confirmMutation = useMutation({
+    mutationFn: ({ treatmentId, outcomeStatus }: { treatmentId: string; outcomeStatus: 'recovered' | 'relapsed' | 'worsened' }) =>
+      apiPost(`/treatments/${treatmentId}/outcome`, { outcomeStatus }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['treatments', 'pending-outcomes'] });
+    },
+  });
+
+  const handleConfirm = (treatmentId: string, status: 'recovered' | 'relapsed' | 'worsened') => {
+    confirmMutation.mutate({ treatmentId, outcomeStatus: status });
+  };
 
   const pendingItems = pendingData?.data ?? [];
   const recoveredCount = pendingItems.filter((i) => i.autoAssessment === 'recovered').length;
@@ -197,7 +254,7 @@ export function VetProtocolTab({ criticalTotal, watchTotal, calvingTotal }: Prop
                 return (order[a.autoAssessment] ?? 1) - (order[b.autoAssessment] ?? 1);
               })
               .map((item: PendingOutcome) => (
-                <OutcomeItem key={item.treatmentId} item={item} />
+                <OutcomeItem key={item.treatmentId} item={item} onConfirm={handleConfirm} />
               ))}
           </div>
         </div>
