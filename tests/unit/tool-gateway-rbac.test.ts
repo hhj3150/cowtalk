@@ -10,6 +10,7 @@ describe('TOOL_DOMAIN_MAP — 도구→도메인 매핑', () => {
     'query_weather', 'query_quarantine_dashboard', 'query_national_situation',
     'record_insemination', 'record_pregnancy_check', 'recommend_insemination_window',
     'record_treatment', 'get_farm_kpis',
+    'query_differential_diagnosis', 'confirm_treatment_outcome',
   ];
 
   it('모든 실행 가능 도구가 도메인 매핑에 존재', () => {
@@ -136,6 +137,36 @@ describe('ROLE_TOOL_ACCESS — 역할별 도구 접근 권한', () => {
       expect(ROLE_TOOL_ACCESS.farmer).toContain('record_treatment');
       expect(ROLE_TOOL_ACCESS.veterinarian).toContain('record_treatment');
       expect(ROLE_TOOL_ACCESS.government_admin).not.toContain('record_treatment');
+    });
+  });
+
+  // === 임상 도구 접근 권한 ===
+
+  describe('query_differential_diagnosis 접근 권한', () => {
+    it('farmer → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.farmer).toContain('query_differential_diagnosis');
+    });
+
+    it('veterinarian → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.veterinarian).toContain('query_differential_diagnosis');
+    });
+
+    it('quarantine_officer → 접근 불가', () => {
+      expect(ROLE_TOOL_ACCESS.quarantine_officer).not.toContain('query_differential_diagnosis');
+    });
+  });
+
+  describe('confirm_treatment_outcome 접근 권한', () => {
+    it('farmer → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.farmer).toContain('confirm_treatment_outcome');
+    });
+
+    it('veterinarian → 접근 가능', () => {
+      expect(ROLE_TOOL_ACCESS.veterinarian).toContain('confirm_treatment_outcome');
+    });
+
+    it('government_admin → 접근 불가', () => {
+      expect(ROLE_TOOL_ACCESS.government_admin).not.toContain('confirm_treatment_outcome');
     });
   });
 

@@ -53,6 +53,7 @@ import { newsRouter } from './routes/news.routes.js';
 import { reportGenerateRouter } from './routes/report-generate.routes.js';
 import { xaiRouter } from './routes/xai.routes.js';
 import { paymentRouter } from './routes/payment.routes.js';
+import { treatmentsRouter } from './routes/treatments.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -111,6 +112,7 @@ export function createApiRouter(): Router {
   api.use('/report-generate', reportGenerateRouter);
   api.use('/xai', xaiRouter);
   api.use('/payments', paymentRouter);
+  api.use('/treatments', treatmentsRouter);
 
   return api;
 }
