@@ -289,7 +289,7 @@ function MyCattlePage(): React.JSX.Element {
   // 전체 선택 모드일 때 로컬에서 선택한 목장 ID (드릴다운)
   const [browseFarmId, setBrowseFarmId] = useState<string | null>(null);
 
-  const [filterTab, setFilterTab] = useState<FilterTab>('sensor');
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [search, setSearch] = useState('');
 
   // 실제로 소 목록을 보여줄 farmId 결정
@@ -359,7 +359,7 @@ function MyCattlePage(): React.JSX.Element {
 
   const handleFarmSelect = (farmId: string) => {
     setBrowseFarmId(farmId);
-    setFilterTab('sensor');
+    setFilterTab('all');
     setSearch('');
   };
 
