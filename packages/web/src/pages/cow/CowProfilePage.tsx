@@ -22,6 +22,7 @@ import { ClinicalNotesPanel } from '@web/components/animals/ClinicalNotesPanel';
 import { useSovereignAlarms } from '@web/hooks/useUnifiedDashboard';
 import { SovereignAlarmFeed } from '@web/components/unified-dashboard/SovereignAlarmFeed';
 import { CollapsibleCard } from '@web/components/common/CollapsibleCard';
+import { DifferentialDiagnosisCard } from '@web/components/vet/DifferentialDiagnosisCard';
 
 interface CowProfile {
   readonly animalId: string;
@@ -851,6 +852,11 @@ export default function CowProfilePage(): React.JSX.Element {
               이 정보는 수의사의 임상적 판단을 보조하기 위한 참고 자료입니다.
             </div>
           </CollapsibleCard>
+
+          {/* 감별진단 */}
+          <SectionErrorBoundary label="감별진단">
+            <DifferentialDiagnosisCard animalId={profile.animalId} />
+          </SectionErrorBoundary>
 
           {/* 번식 이력 */}
           <CollapsibleCard title="🐄 번식 이력" badge={breeding.length > 0 ? breeding.length : null} badgeColor="#a78bfa">

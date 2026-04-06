@@ -5,38 +5,21 @@ import { eq, and, gte, desc, sql } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { animals, healthEvents, sensorDailyAgg, farms } from '../../db/schema.js';
 
-// ── 출력 타입 ──
+// ── 출력 타입 (공유 패키지에서 가져옴) ──
 
-export interface SensorEvidence {
-  readonly metric: string;
-  readonly currentValue: number | null;
-  readonly normalRange: string;
-  readonly status: 'supports' | 'contradicts' | 'neutral';
-}
+import type {
+  SensorEvidence,
+  DiagnosisCandidate,
+  FarmHistoryPattern,
+  DifferentialDiagnosisResult,
+} from '@cowtalk/shared';
 
-export interface DiagnosisCandidate {
-  readonly disease: string;
-  readonly diseaseKo: string;
-  readonly probability: number;      // 0-100
-  readonly evidence: readonly SensorEvidence[];
-  readonly confirmatoryTests: readonly string[];
-  readonly matchingSymptoms: readonly string[];
-}
-
-export interface FarmHistoryPattern {
-  readonly diagnosis: string;
-  readonly count: number;
-}
-
-export interface DifferentialDiagnosisResult {
-  readonly animalId: string;
-  readonly earTag: string;
-  readonly farmName: string;
-  readonly candidates: readonly DiagnosisCandidate[];
-  readonly farmHistory: readonly FarmHistoryPattern[];
-  readonly urgencyLevel: 'immediate' | 'within_24h' | 'routine';
-  readonly dataQuality: 'good' | 'limited' | 'insufficient';
-}
+export type {
+  SensorEvidence,
+  DiagnosisCandidate,
+  FarmHistoryPattern,
+  DifferentialDiagnosisResult,
+} from '@cowtalk/shared';
 
 // ── 정상 범위 ──
 
