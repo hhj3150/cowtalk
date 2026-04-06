@@ -233,7 +233,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
 
   {
     name: 'record_treatment',
-    description: '치료 기록. 개체에 대한 진단, 투약, 휴약기간을 기록한다. 수의사 또는 농장주가 사용.',
+    description: '치료 기록. 개체에 대한 진단, 투약(약물·경로·빈도·기간), 임상소견(체온·CMT·BCS), 휴약기간을 기록한다. 휴약 종료일은 자동계산된다.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -245,8 +245,16 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
           description: '심각도 (기본: medium)',
         },
         drug: { type: 'string', description: '투여 약물명' },
-        dosage: { type: 'string', description: '용량 (예: "20ml")' },
+        dosage: { type: 'string', description: '용량 (예: "2.2mg/kg", "20ml")' },
+        route: { type: 'string', enum: ['IM', 'IV', 'SC', 'PO', 'topical', 'intramammary'], description: '투여 경로' },
+        frequency: { type: 'string', description: '투여 빈도 (예: BID, SID, q12h)' },
+        durationDays: { type: 'number', description: '투약 기간 (일)' },
         withdrawalDays: { type: 'number', description: '휴약기간 (일)' },
+        rectalTemp: { type: 'number', description: '직장체온 (°C)' },
+        cmtResult: { type: 'string', description: 'CMT 결과 (-, +, ++, +++)' },
+        bcs: { type: 'number', description: '체형점수 BCS (1-5)' },
+        hydrationLevel: { type: 'string', enum: ['normal', 'mild', 'moderate', 'severe'], description: '탈수 정도' },
+        affectedQuarter: { type: 'string', description: '이환 유방 분방 (LF, RF, LR, RR)' },
         notes: { type: 'string', description: '비고' },
       },
       required: ['animalId', 'diagnosis'],
@@ -261,6 +269,44 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
         farmId: { type: 'string', description: '농장 ID (필수)' },
       },
       required: ['farmId'],
+    },
+  },
+
+  // ===========================
+  // 임상 도메인 (수의사 핵심)
+  // ===========================
+
+  {
+    name: 'query_differential_diagnosis',
+    description: '감별진단 조회. 개체의 센서 데이터·건강 이력·농장 패턴을 분석하여 질병별 확률, 근거 센서 데이터, 확인검사 권장을 구조화 JSON으로 반환한다. 수의사가 건강 이상 개체를 질문할 때 반드시 호출.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        animalId: { type: 'string', description: '동물 ID (필수)' },
+        symptoms: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '추가 임상 증상 (예: ["유방부종", "유질변화", "기침"])',
+        },
+      },
+      required: ['animalId'],
+    },
+  },
+  {
+    name: 'confirm_treatment_outcome',
+    description: '치료 결과 확인. 수의사가 치료 후 경과(완치/재발/악화)를 확정 기록한다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        treatmentId: { type: 'string', description: '치료 기록 ID (필수)' },
+        outcome: {
+          type: 'string',
+          enum: ['recovered', 'relapsed', 'worsened'],
+          description: '치료 결과',
+        },
+        notes: { type: 'string', description: '비고' },
+      },
+      required: ['treatmentId', 'outcome'],
     },
   },
 ];

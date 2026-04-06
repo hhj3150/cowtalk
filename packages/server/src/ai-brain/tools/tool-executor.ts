@@ -5,6 +5,7 @@ import { getDb } from '../../config/database.js';
 import {
   animals, farms, smaxtecEvents, breedingEvents,
   pregnancyChecks, sensorDailyAgg, healthEvents, treatments,
+  type TreatmentDetails,
 } from '../../db/schema.js';
 import { eq, and, desc, gte, ilike, inArray, isNull } from 'drizzle-orm';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
@@ -91,6 +92,12 @@ export async function executeTool(
         break;
       case 'get_farm_kpis':
         result = await handleGetFarmKpis(input);
+        break;
+      case 'query_differential_diagnosis':
+        result = await handleDifferentialDiagnosis(input);
+        break;
+      case 'confirm_treatment_outcome':
+        result = await handleConfirmTreatmentOutcome(input);
         break;
       default:
         result = { error: `알 수 없는 도구: ${name}` };
@@ -859,66 +866,12 @@ async function handleRecommendInseminationWindow(input: Record<string, unknown>)
 }
 
 // ===========================
-// 9. 치료 기록
+// 9. 치료 기록 (서비스 위임)
 // ===========================
 
 async function handleRecordTreatment(input: Record<string, unknown>): Promise<unknown> {
-  const db = getDb();
-  const animalId = input.animalId as string;
-  const diagnosis = input.diagnosis as string;
-
-  if (!animalId || !diagnosis) return { error: 'animalId와 diagnosis는 필수입니다.' };
-
-  // 개체 확인
-  const animalRows = await db
-    .select({ animalId: animals.animalId, farmId: animals.farmId })
-    .from(animals)
-    .where(and(eq(animals.animalId, animalId), eq(animals.status, 'active')))
-    .limit(1);
-
-  if (animalRows.length === 0) return { error: '해당 개체를 찾을 수 없습니다.' };
-
-  try {
-    // 1. healthEvent 생성
-    const severity = (input.severity as string) ?? 'medium';
-    const [healthEvent] = await db.insert(healthEvents).values({
-      animalId,
-      eventDate: new Date(),
-      diagnosis,
-      severity,
-      notes: input.notes as string | undefined,
-    }).returning({ eventId: healthEvents.eventId });
-
-    if (!healthEvent) return { error: '건강 이벤트 생성 실패' };
-
-    // 2. treatment 기록 (약물 정보가 있는 경우)
-    const drug = input.drug as string | undefined;
-    let treatmentId: string | undefined;
-
-    if (drug) {
-      const [treatment] = await db.insert(treatments).values({
-        healthEventId: healthEvent.eventId,
-        drug,
-        dosage: (input.dosage as string) ?? null,
-        withdrawalDays: (input.withdrawalDays as number) ?? 0,
-        administeredAt: new Date(),
-      }).returning({ treatmentId: treatments.treatmentId });
-
-      treatmentId = treatment?.treatmentId;
-    }
-
-    return {
-      success: true,
-      healthEventId: healthEvent.eventId,
-      treatmentId,
-      diagnosis,
-      severity,
-      drug: drug ?? '미투약',
-      message: `치료 기록이 저장되었습니다. ${drug ? `약물: ${drug}` : '투약 없음'}`,
-    };
-  } catch (error) {
-    return { error: `치료 기록 실패: ${error instanceof Error ? error.message : String(error)}` };
-  }
+  const { recordTreatment } = await import('../../services/vet/treatment.service.js');
+  return recordTreatment(input as unknown as Parameters<typeof recordTreatment>[0]);
 }
 
 // ===========================
@@ -993,4 +946,57 @@ async function handleGetFarmKpis(input: Record<string, unknown>): Promise<unknow
     },
     alertsLast24h: alertRows.length,
   };
+}
+
+// ===========================
+// 11. 감별진단 (서비스 위임)
+// ===========================
+
+async function handleDifferentialDiagnosis(input: Record<string, unknown>): Promise<unknown> {
+  const { getDifferentialDiagnosis } = await import('../../services/vet/differential-diagnosis.service.js');
+  const animalId = input.animalId as string;
+  if (!animalId) return { error: 'animalId는 필수입니다.' };
+  const symptoms = Array.isArray(input.symptoms) ? input.symptoms as string[] : undefined;
+  return getDifferentialDiagnosis(animalId, symptoms);
+}
+
+// ===========================
+// 12. 치료 결과 확인 (서비스 위임)
+// ===========================
+
+async function handleConfirmTreatmentOutcome(input: Record<string, unknown>): Promise<unknown> {
+  const db = getDb();
+  const treatmentId = input.treatmentId as string;
+  const outcome = input.outcome as string;
+
+  if (!treatmentId || !outcome) return { error: 'treatmentId와 outcome은 필수입니다.' };
+
+  const validOutcomes = ['recovered', 'relapsed', 'worsened'];
+  if (!validOutcomes.includes(outcome)) return { error: `outcome은 ${validOutcomes.join('/')} 중 하나여야 합니다.` };
+
+  try {
+    const [existing] = await db.select().from(treatments).where(eq(treatments.treatmentId, treatmentId)).limit(1);
+    if (!existing) return { error: '해당 치료 기록을 찾을 수 없습니다.' };
+
+    const currentDetails = (existing.details ?? {}) as Record<string, unknown>;
+    const updatedDetails = {
+      ...currentDetails,
+      outcomeStatus: outcome as 'recovered' | 'relapsed' | 'worsened',
+      outcomeDate: new Date().toISOString(),
+    } as TreatmentDetails;
+
+    await db.update(treatments)
+      .set({ details: updatedDetails })
+      .where(eq(treatments.treatmentId, treatmentId));
+
+    const outcomeLabel = outcome === 'recovered' ? '완치' : outcome === 'relapsed' ? '재발' : '악화';
+    return {
+      success: true,
+      treatmentId,
+      outcome,
+      message: `치료 결과 '${outcomeLabel}'로 기록되었습니다.`,
+    };
+  } catch (error) {
+    return { error: `결과 기록 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }

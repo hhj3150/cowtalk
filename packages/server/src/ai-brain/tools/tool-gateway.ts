@@ -32,6 +32,8 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   recommend_insemination_window: 'repro',
   record_treatment: 'farm',
   get_farm_kpis: 'farm',
+  query_differential_diagnosis: 'health',
+  confirm_treatment_outcome: 'health',
   generate_report: 'report',
   send_alert: 'action',
   submit_admin_notice: 'action',
@@ -48,6 +50,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_conception_stats', 'recommend_insemination_window', 'get_farm_kpis',
     'record_treatment', 'record_insemination', 'record_pregnancy_check',
     'query_grade', 'query_auction_prices', 'query_weather', 'query_sire_info',
+    'query_differential_diagnosis', 'confirm_treatment_outcome',
   ],
   veterinarian: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
@@ -55,6 +58,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_conception_stats', 'record_treatment', 'get_farm_kpis',
     'recommend_insemination_window', 'record_insemination', 'record_pregnancy_check',
     'query_grade', 'query_weather', 'query_sire_info',
+    'query_differential_diagnosis', 'confirm_treatment_outcome',
   ],
   government_admin: [
     'query_animal', 'query_farm_summary', 'query_breeding_stats',

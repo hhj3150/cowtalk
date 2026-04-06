@@ -334,6 +334,26 @@ export const healthEvents = pgTable('health_events', {
   index('health_events_animal_id_idx').on(table.animalId),
 ]);
 
+// 치료 상세 정보 (jsonb)
+export interface TreatmentDetails {
+  readonly route?: 'IM' | 'IV' | 'SC' | 'PO' | 'topical' | 'intramammary';
+  readonly frequency?: string;          // BID, SID, q12h
+  readonly durationDays?: number;
+  readonly withdrawalEndDate?: string;  // ISO date, 자동계산
+  readonly clinicalFindings?: {
+    readonly bcs?: number;              // 1-5
+    readonly rectalTemp?: number;       // °C
+    readonly cmtResult?: string;        // -, +, ++, +++
+    readonly hydrationLevel?: 'normal' | 'mild' | 'moderate' | 'severe';
+    readonly affectedQuarter?: string;  // LF, RF, LR, RR
+  };
+  readonly outcomeStatus?: 'pending' | 'recovered' | 'relapsed' | 'worsened';
+  readonly outcomeDate?: string;
+  readonly outcomeConfirmedBy?: string;
+  readonly sensorEvidencePre?: { readonly temp?: number; readonly rumination?: number; readonly activity?: number };
+  readonly sensorEvidencePost?: { readonly temp?: number; readonly rumination?: number; readonly activity?: number };
+}
+
 export const treatments = pgTable('treatments', {
   treatmentId: uuid('treatment_id').primaryKey().defaultRandom(),
   healthEventId: uuid('health_event_id').notNull().references(() => healthEvents.eventId),
@@ -342,6 +362,7 @@ export const treatments = pgTable('treatments', {
   withdrawalDays: integer('withdrawal_days').notNull().default(0),
   administeredBy: uuid('administered_by'),
   administeredAt: timestamp('administered_at', { withTimezone: true }).notNull(),
+  details: jsonb('details').$type<TreatmentDetails>(),
 }, (table) => [
   index('treatments_health_event_id_idx').on(table.healthEventId),
 ]);
