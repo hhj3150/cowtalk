@@ -56,17 +56,18 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
   },
   {
     name: 'query_sensor_data',
-    description: '개체의 센서 데이터 조회. 체온(temperature)과 활동량(activity)의 일별 집계 데이터를 반환한다.',
+    description: '개체의 센서 데이터 조회. 일별 집계 + 기간 비교 분석(어제 대비, 3일 vs 7일, 변화율, 이상치 점수) + 개체별 기준선 + 품종/산차/DIM 보정 임계값을 반환한다.',
     input_schema: {
       type: 'object' as const,
       properties: {
         animalId: { type: 'string', description: '동물 ID (필수)' },
         metric: {
           type: 'string',
-          enum: ['temperature', 'activity'],
+          enum: ['temperature', 'activity', 'rumination', 'water_intake', 'ph'],
           description: '메트릭 유형 (기본: temperature)',
         },
         days: { type: 'number', description: '조회할 일수 (기본 7, 최대 30)' },
+        includeHourlyPattern: { type: 'boolean', description: '시간대별 패턴 분석 포함 여부 (기본: false)' },
       },
       required: ['animalId'],
     },

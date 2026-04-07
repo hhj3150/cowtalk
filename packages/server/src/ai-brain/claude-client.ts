@@ -146,13 +146,13 @@ export async function callClaudeForChat(
 
     let fullText = '';
 
-    // 30초 타임아웃 (무한 대기 방지)
+    // 60초 타임아웃 (도구 호출 포함 시 30초로는 부족)
     const timeout = setTimeout(() => {
       if (fullText.length === 0) {
         stream.abort();
-        callbacks.onError(new Error('AI 응답 시간 초과 (30초)'));
+        callbacks.onError(new Error('AI 응답 시간 초과 (60초)'));
       }
-    }, 30000);
+    }, 60000);
 
     stream.on('text', (text) => {
       fullText += text;

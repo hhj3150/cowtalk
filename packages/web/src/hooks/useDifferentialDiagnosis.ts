@@ -7,11 +7,16 @@ import type { DifferentialDiagnosisResult } from '@cowtalk/shared';
 export function useDifferentialDiagnosis(
   animalId: string,
   enabled: boolean,
+  symptoms: readonly string[] = [],
 ) {
+  const symptomsKey = [...symptoms].sort().join(',');
+  const query = symptomsKey
+    ? `/diagnosis/${animalId}?symptoms=${encodeURIComponent(symptomsKey)}`
+    : `/diagnosis/${animalId}`;
+
   return useQuery({
-    queryKey: ['differential-diagnosis', animalId],
-    queryFn: () =>
-      apiGet<DifferentialDiagnosisResult>(`/diagnosis/${animalId}`),
+    queryKey: ['differential-diagnosis', animalId, symptomsKey],
+    queryFn: () => apiGet<DifferentialDiagnosisResult>(query),
     enabled,
     staleTime: 5 * 60 * 1000,
     retry: 1,

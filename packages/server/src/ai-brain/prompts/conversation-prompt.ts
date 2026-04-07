@@ -5,6 +5,12 @@
 import type { AnimalProfile, FarmProfile, Role, BreedingPipelineData } from '@cowtalk/shared';
 import type { GlobalContext } from '../../pipeline/profile-builder.js';
 import { ROLE_CONTEXT } from './system-prompt.js';
+import {
+  computeComparisonStats,
+  computePersonalBaseline,
+  assessAgainstBaseline,
+  computeAdjustedThresholds,
+} from '../tools/sensor-analysis.js';
 
 export interface QuarantineContextData {
   readonly kpi: {
@@ -478,6 +484,62 @@ function buildAnimalContext(profile: AnimalProfile): string {
     }
 
     lines.push(`→ 위 30일 데이터를 기반으로 "급성(최근 7일 변화)" vs "만성(30일 평균 대비)" 구분하여 진단하세요.`);
+  }
+
+  // ── 기간별 비교 분석 (체온 기준, 프로필 센서 히스토리에서 직접 계산) ──
+  {
+    const hist30 = (profile.sensorHistory30d ?? []).map((h) => h.temperature).filter((v): v is number => v !== null);
+    if (hist30.length >= 7) {
+      const dailyRows = hist30.map((avg, i) => ({ date: `day-${String(i)}`, avg, min: avg - 0.3, max: avg + 0.3, count: 1 }));
+      // 가장 최근이 [0]이 되도록 역순
+      const descRows = [...dailyRows].reverse();
+
+      const c = computeComparisonStats(descRows);
+      lines.push(`\n### 🔄 기간별 비교 분석 (체온)`);
+      if (c.todayVsYesterday) {
+        const dir = c.todayVsYesterday.delta > 0 ? '↗' : c.todayVsYesterday.delta < 0 ? '↘' : '→';
+        lines.push(`- 어제 대비: ${c.todayVsYesterday.delta > 0 ? '+' : ''}${c.todayVsYesterday.delta.toFixed(2)}°C (${dir} ${c.todayVsYesterday.pctChange.toFixed(1)}%)`);
+      }
+      if (c.threeDayVsSevenDay) {
+        const accel = c.threeDayVsSevenDay.delta > 0.1 ? '가속 추세' : c.threeDayVsSevenDay.delta < -0.1 ? '감속 추세' : '안정';
+        lines.push(`- 3일 평균 vs 7일 평균: ${c.threeDayVsSevenDay.delta > 0 ? '+' : ''}${c.threeDayVsSevenDay.delta.toFixed(2)}°C (${accel})`);
+      }
+      if (c.sevenDayVsThirtyDay) {
+        const drift = Math.abs(c.sevenDayVsThirtyDay.delta) > 0.3 ? '중기 이동 확인' : '안정';
+        lines.push(`- 7일 평균 vs 30일 평균: ${c.sevenDayVsThirtyDay.delta > 0 ? '+' : ''}${c.sevenDayVsThirtyDay.delta.toFixed(2)}°C (${drift})`);
+      }
+      lines.push(`- 변화율: ${c.rateOfChange > 0 ? '+' : ''}${c.rateOfChange.toFixed(3)}°C/일`);
+      const sigmaLabel = Math.abs(c.anomalyScore) <= 1 ? '정상' : Math.abs(c.anomalyScore) <= 2 ? '주의' : '이상치';
+      lines.push(`- 이상치 점수: ${c.anomalyScore.toFixed(1)}σ (${sigmaLabel})`);
+
+      // 개체별 기준선
+      const baseline = computePersonalBaseline('temperature', descRows);
+      lines.push(`\n### 📏 개체별 기준선 (${String(baseline.sampleDays)}일 학습)`);
+      lines.push(`- 개체 정상범위: ${baseline.min95.toFixed(2)}~${baseline.max95.toFixed(2)}°C (평균 ${baseline.avg.toFixed(2)}°C, σ=${baseline.stddev.toFixed(2)})`);
+      const latestTemp = profile.latestSensor?.temperature;
+      if (latestTemp != null) {
+        const assessment = assessAgainstBaseline(latestTemp, baseline);
+        lines.push(`- 현재 상태: ${assessment.interpretation} (${assessment.deviationSigma.toFixed(1)}σ, ${assessment.withinNormal ? '범위 내' : '⚠️ 범위 이탈'})`);
+      }
+
+      // 품종/산차/DIM 보정
+      if (profile.breed || profile.parity != null) {
+        const adjusted = computeAdjustedThresholds({
+          breed: profile.breed ?? 'holstein',
+          breedType: profile.breedType ?? 'dairy',
+          parity: profile.parity ?? 0,
+          daysInMilk: null,
+          lactationStatus: 'unknown',
+        });
+        lines.push(`\n### 🎯 보정된 임계값`);
+        lines.push(`- 체온 정상: ${adjusted.temperature.normalMin.toFixed(1)}~${adjusted.temperature.normalMax.toFixed(1)}°C / 발열: ≥${adjusted.temperature.feverThreshold.toFixed(1)}°C`);
+        lines.push(`- 반추 정상: ${String(adjusted.rumination.normalMin)}~${String(adjusted.rumination.normalMax)}분/일`);
+        for (const reason of adjusted.adjustmentReasons) {
+          lines.push(`  → ${reason}`);
+        }
+        lines.push(`→ 위 보정 임계값을 고정값(38.0~39.3°C)보다 우선 적용하세요.`);
+      }
+    }
   }
 
   // ── 번식 이력 ──

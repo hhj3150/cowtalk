@@ -90,6 +90,15 @@ function severityBadge(severity: string): React.JSX.Element {
   );
 }
 
+const DIAGNOSIS_HINTS: Readonly<Record<string, string>> = {
+  temperature_high:    '유방염·폐렴 의심',
+  clinical_condition:  '감별진단 필요',
+  health_general:      '케토시스·대사질환 의심',
+  rumination_decrease: '산독증·케토시스 의심',
+  activity_decrease:   '자궁내막염·파행 의심',
+  drinking_decrease:   '산독증·제4위변위 의심',
+};
+
 function riskGrade(score: number): { label: string; color: string; bg: string } {
   if (score >= 80) return { label: 'A', color: '#22c55e', bg: '#22c55e15' };
   if (score >= 60) return { label: 'B', color: '#eab308', bg: '#eab30815' };
@@ -125,6 +134,14 @@ function AnimalRow({
           <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>#{animal.earTag}</span>
           {severityBadge(animal.severity)}
           <span style={{ fontSize: 11, color: meta.color, fontWeight: 600 }}>{meta.label}</span>
+          {DIAGNOSIS_HINTS[animal.eventType] && (
+            <span style={{
+              fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3,
+              background: '#6366f115', color: '#6366f1', whiteSpace: 'nowrap',
+            }}>
+              🔬 {DIAGNOSIS_HINTS[animal.eventType]}
+            </span>
+          )}
         </div>
         <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 2 }}>
           {animal.farmName} · {timeAgo(animal.detectedAt)}

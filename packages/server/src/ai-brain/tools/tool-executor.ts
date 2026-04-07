@@ -4,7 +4,7 @@
 import { getDb } from '../../config/database.js';
 import {
   animals, farms, smaxtecEvents, breedingEvents,
-  pregnancyChecks, sensorDailyAgg, healthEvents, treatments,
+  pregnancyChecks, sensorDailyAgg, sensorHourlyAgg, healthEvents, treatments,
   type TreatmentDetails,
 } from '../../db/schema.js';
 import { eq, and, desc, gte, ilike, inArray, isNull } from 'drizzle-orm';
@@ -22,8 +22,16 @@ import { getQuarantineDashboard } from '../../services/epidemiology/quarantine-d
 import { getNationalSituation, getProvinceDetail } from '../../services/epidemiology/national-situation.service.js';
 import { computeConceptionStats } from '../../services/breeding/breeding-feedback.service.js';
 import { logger } from '../../lib/logger.js';
+import {
+  computeComparisonStats,
+  computePersonalBaseline,
+  assessAgainstBaseline,
+  computeTimeOfDayAnalysis,
+  computeAdjustedThresholds,
+  type DailyAggRow,
+} from './sensor-analysis.js';
 
-const MAX_RESULT_LENGTH = 4000;
+const MAX_RESULT_LENGTH = 6000;
 
 // ===========================
 // 메인 디스패처
@@ -347,19 +355,38 @@ async function queryBreedingStats(input: Record<string, unknown>): Promise<unkno
 // 5. 센서 데이터
 // ===========================
 
+const METRIC_TYPE_MAP: Readonly<Record<string, string>> = {
+  temperature: 'temp',
+  activity: 'act',
+  rumination: 'rum',
+  water_intake: 'water',
+  ph: 'ph',
+};
+
+const METRIC_UNIT_MAP: Readonly<Record<string, string>> = {
+  temperature: '°C',
+  activity: 'index',
+  rumination: '분/일',
+  water_intake: 'L/일',
+  ph: 'pH',
+};
+
 async function querySensorData(input: Record<string, unknown>): Promise<unknown> {
   const db = getDb();
   const animalId = input.animalId as string;
   const metric = (input.metric as string) || 'temperature';
-  const days = Math.min(Number(input.days) || 7, 30);
+  const requestedDays = Math.min(Number(input.days) || 7, 30);
+  const includeHourly = input.includeHourlyPattern === true;
 
   if (!animalId) return { error: 'animalId는 필수입니다.' };
 
-  const metricType = metric === 'activity' ? 'act' : 'temp';
-  const sinceDate = new Date(Date.now() - days * 86_400_000).toISOString().split('T')[0]!;
+  const metricType = METRIC_TYPE_MAP[metric] ?? 'temp';
+  // 항상 30일 조회 (기준선 계산용) — 반환은 요청 기간만
+  const sinceDate30 = new Date(Date.now() - 30 * 86_400_000).toISOString().split('T')[0]!;
 
-  const rows = await db
-    .select({
+  // 병렬 조회: 일별 집계 + 개체 프로필
+  const [allRows, animalRows] = await Promise.all([
+    db.select({
       date: sensorDailyAgg.date,
       avg: sensorDailyAgg.avg,
       min: sensorDailyAgg.min,
@@ -370,25 +397,112 @@ async function querySensorData(input: Record<string, unknown>): Promise<unknown>
     .where(and(
       eq(sensorDailyAgg.animalId, animalId),
       eq(sensorDailyAgg.metricType, metricType),
-      gte(sensorDailyAgg.date, sinceDate),
+      gte(sensorDailyAgg.date, sinceDate30),
     ))
     .orderBy(desc(sensorDailyAgg.date))
-    .limit(days);
+    .limit(30),
 
-  if (rows.length === 0) return { animalId, metric, message: '해당 기간 센서 데이터가 없습니다.' };
+    db.select({
+      breed: animals.breed,
+      breedType: animals.breedType,
+      parity: animals.parity,
+      daysInMilk: animals.daysInMilk,
+      lactationStatus: animals.lactationStatus,
+    })
+    .from(animals)
+    .where(eq(animals.animalId, animalId))
+    .limit(1),
+  ]);
+
+  if (allRows.length === 0) return { animalId, metric, message: '해당 기간 센서 데이터가 없습니다.' };
+
+  const dailyRows: readonly DailyAggRow[] = allRows.map((r) => ({
+    date: r.date,
+    avg: Number(r.avg),
+    min: Number(r.min),
+    max: Number(r.max),
+    count: r.count,
+  }));
+
+  // Phase 1: 비교 통계
+  const comparison = computeComparisonStats(dailyRows);
+
+  // Phase 2: 개체별 기준선
+  const personalBaseline = dailyRows.length >= 7
+    ? computePersonalBaseline(metric, dailyRows)
+    : null;
+  const todayAvg = dailyRows[0]!.avg;
+  const baselineAssessment = personalBaseline
+    ? assessAgainstBaseline(todayAvg, personalBaseline)
+    : null;
+
+  // Phase 4: 품종/산차/DIM 보정
+  const animalProfile = animalRows[0];
+  const adjustedThresholds = animalProfile
+    ? computeAdjustedThresholds({
+        breed: animalProfile.breed ?? 'holstein',
+        breedType: animalProfile.breedType ?? 'dairy',
+        parity: animalProfile.parity ?? 0,
+        daysInMilk: animalProfile.daysInMilk ?? null,
+        lactationStatus: animalProfile.lactationStatus ?? 'unknown',
+      })
+    : null;
+
+  // Phase 3: 시간대별 패턴 (옵션)
+  let timeOfDayAnalysis = null;
+  if (includeHourly) {
+    const sinceDate7 = new Date(Date.now() - 7 * 86_400_000);
+    const hourlyRows = await db.select({
+      hour: sensorHourlyAgg.hour,
+      avg: sensorHourlyAgg.avg,
+      min: sensorHourlyAgg.min,
+      max: sensorHourlyAgg.max,
+      count: sensorHourlyAgg.count,
+    })
+    .from(sensorHourlyAgg)
+    .where(and(
+      eq(sensorHourlyAgg.animalId, animalId),
+      eq(sensorHourlyAgg.metricType, metricType),
+      gte(sensorHourlyAgg.hour, sinceDate7),
+    ))
+    .orderBy(desc(sensorHourlyAgg.hour))
+    .limit(168); // 7일 × 24시간
+
+    if (hourlyRows.length > 0) {
+      const todayDate = new Date().toISOString().split('T')[0]!;
+      timeOfDayAnalysis = computeTimeOfDayAnalysis(
+        hourlyRows.map((r) => ({
+          hour: typeof r.hour === 'string' ? r.hour : new Date(r.hour).toISOString(),
+          avg: Number(r.avg),
+          min: Number(r.min),
+          max: Number(r.max),
+          count: r.count,
+        })),
+        todayDate,
+      );
+    }
+  }
+
+  // 요청 기간만큼 dataPoints 자르기
+  const trimmedRows = dailyRows.slice(0, requestedDays);
 
   return {
     animalId,
     metric,
-    unit: metric === 'temperature' ? '°C' : 'index',
-    days,
-    dataPoints: rows.map((r) => ({
+    unit: METRIC_UNIT_MAP[metric] ?? 'index',
+    days: requestedDays,
+    dataPoints: trimmedRows.map((r) => ({
       date: r.date,
       avg: Number(r.avg.toFixed(2)),
       min: Number(r.min.toFixed(2)),
       max: Number(r.max.toFixed(2)),
       readings: r.count,
     })),
+    comparison,
+    personalBaseline,
+    baselineAssessment,
+    adjustedThresholds,
+    ...(timeOfDayAnalysis ? { timeOfDayAnalysis } : {}),
   };
 }
 

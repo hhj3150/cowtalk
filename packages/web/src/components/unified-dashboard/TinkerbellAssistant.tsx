@@ -488,6 +488,10 @@ export function TinkerbellAssistant({
         conversationHistory: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
       };
 
+      // 90초 타임아웃 (도구 호출 + Claude 응답 대기)
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 90_000);
+
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: {
@@ -495,7 +499,10 @@ export function TinkerbellAssistant({
           'Authorization': `Bearer ${token ?? ''}`,
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+
+      clearTimeout(fetchTimeout);
 
       if (!res.ok || !res.body) {
         throw new Error(`HTTP ${res.status}`);
@@ -563,11 +570,14 @@ export function TinkerbellAssistant({
       speak(answer, () => setState('idle'));
     } catch (err) {
       setStreamText('');
-      const fetchErr = err as { message?: string };
+      const fetchErr = err as { message?: string; name?: string };
+      const isAbort = fetchErr.name === 'AbortError';
       const isNetworkError = fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError');
-      const errorContent = isNetworkError
+      const errorContent = isAbort
+        ? 'AI 응답이 지연되고 있습니다. 질문을 다시 시도해 주세요.'
+        : isNetworkError
         ? '인터넷 연결을 확인해 주세요. 네트워크 오류가 발생했습니다.'
-        : `서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.`;
+        : '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 
       const errorMsg: TinkerbellMessage = {
         role: 'assistant',

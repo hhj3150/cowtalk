@@ -93,8 +93,8 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  // SSE keep-alive (프록시 타임아웃 방지)
-  const keepAlive = setInterval(() => { res.write(':\n\n'); }, 15000);
+  // SSE keep-alive (프록시 타임아웃 방지 — 10초 간격)
+  const keepAlive = setInterval(() => { res.write(':\n\n'); }, 10000);
   req.on('close', () => { clearInterval(keepAlive); });
 
   const chatRequest = {

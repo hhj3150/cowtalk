@@ -16,6 +16,21 @@ interface DifferentialDiagnosisCardProps {
   readonly animalId: string;
 }
 
+// ── 증상 칩 목록 ──
+
+const SYMPTOM_CHIPS: readonly { readonly label: string; readonly value: string }[] = [
+  { label: '유방부종', value: '유방부종' },
+  { label: '식욕감소', value: '식욕감소' },
+  { label: '절뚝거림', value: '절뚝거림' },
+  { label: '설사', value: '설사' },
+  { label: '기침', value: '기침' },
+  { label: '비루', value: '비루' },
+  { label: '유량감소', value: '유량감소' },
+  { label: '복부팽만', value: '복부팽만' },
+  { label: '체온상승', value: '체온상승' },
+  { label: '질분비물', value: '질분비물' },
+];
+
 // ── 상수 ──
 
 const URGENCY_CONFIG: Readonly<Record<string, { label: string; color: string; bg: string }>> = {
@@ -42,10 +57,26 @@ export function DifferentialDiagnosisCard({
   animalId,
 }: DifferentialDiagnosisCardProps): React.JSX.Element {
   const [triggered, setTriggered] = useState(false);
-  const { data, isLoading, error } = useDifferentialDiagnosis(animalId, triggered);
+  const [selectedSymptoms, setSelectedSymptoms] = useState<readonly string[]>([]);
+  const { data, isLoading, error } = useDifferentialDiagnosis(animalId, triggered, selectedSymptoms);
+
+  const toggleSymptom = (value: string) => {
+    setSelectedSymptoms((prev) =>
+      prev.includes(value)
+        ? prev.filter((s) => s !== value)
+        : [...prev, value],
+    );
+    // queryKey에 symptoms가 포함되어 있으므로 변경 시 자동 refetch
+  };
 
   return (
     <CollapsibleCard title="🔬 감별진단" badge={data ? data.candidates.length : null} badgeColor="#8b5cf6">
+      {/* 증상 칩 선택 */}
+      <SymptomChips
+        selected={selectedSymptoms}
+        onToggle={toggleSymptom}
+      />
+
       {!triggered ? (
         <TriggerButton onClick={() => setTriggered(true)} />
       ) : isLoading ? (
@@ -65,6 +96,47 @@ export function DifferentialDiagnosisCard({
 }
 
 // ── 서브 컴포넌트 ──
+
+function SymptomChips({
+  selected,
+  onToggle,
+}: {
+  readonly selected: readonly string[];
+  readonly onToggle: (value: string) => void;
+}): React.JSX.Element {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ct-text-muted)', marginBottom: 6 }}>
+        관찰 증상 선택 (선택사항)
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {SYMPTOM_CHIPS.map((chip) => {
+          const isActive = selected.includes(chip.value);
+          return (
+            <button
+              key={chip.value}
+              type="button"
+              onClick={() => onToggle(chip.value)}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                borderRadius: 14,
+                border: `1px solid ${isActive ? '#8b5cf6' : 'var(--ct-border)'}`,
+                background: isActive ? '#8b5cf615' : 'transparent',
+                color: isActive ? '#8b5cf6' : 'var(--ct-text-muted)',
+                fontWeight: isActive ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {chip.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function TriggerButton({ onClick }: { readonly onClick: () => void }): React.JSX.Element {
   return (
