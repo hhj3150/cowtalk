@@ -18,6 +18,10 @@ import { buildAnimalPrompt } from './prompts/animal-prompt.js';
 import { buildFarmPrompt } from './prompts/farm-prompt.js';
 import { buildRegionalPrompt } from './prompts/regional-prompt.js';
 import { buildEpidemicPrompt } from './prompts/epidemic-prompt.js';
+import {
+  createAnimalDeidentifier,
+  createFarmDeidentifier,
+} from './prompts/deidentify.js';
 import { runV4Analysis, type V4FusionResult } from './v4-engines/index.js';
 import type { DetectedCluster } from '../epidemic/cluster-detector.js';
 import { logger } from '../lib/logger.js';
@@ -35,15 +39,19 @@ export async function interpretAnimal(
   // 1. v4 보조 분석 (항상 실행 — 빠르고 로컬)
   const v4Result = runV4Analysis(profile);
 
-  // 2. Claude API 해석
-  const prompt = buildAnimalPrompt(profile, role, v4Result.analysis);
+  // 2. 비식별화: Claude API 전송 전 개체·농장 식별자를 해시 토큰으로 치환
+  const { profile: safeProfile, rehydrateRecord } = createAnimalDeidentifier(profile);
+
+  // 3. Claude API 해석 (비식별 프로필만 외부 전송)
+  const prompt = buildAnimalPrompt(safeProfile, role, v4Result.analysis);
   const claudeResult = await callClaudeForAnalysis(prompt);
 
   if (claudeResult) {
-    // Claude 성공
+    // Claude 성공 — 응답 내 비식별 토큰을 원본 식별자로 복원
+    const rehydrated = rehydrateRecord(claudeResult.parsed) as Record<string, unknown>;
     return mapClaudeToAnimalInterpretation(
       profile,
-      claudeResult.parsed,
+      rehydrated,
       claudeResult.model,
       Date.now() - startTime,
       'claude',
@@ -66,13 +74,17 @@ export async function interpretFarm(
 ): Promise<FarmInterpretation> {
   const startTime = Date.now();
 
-  const prompt = buildFarmPrompt(profile, role);
+  // 비식별화: 농장명·주소·지역 + 포함된 모든 개체 프로필의 식별자 치환
+  const { profile: safeProfile, rehydrateRecord } = createFarmDeidentifier(profile);
+
+  const prompt = buildFarmPrompt(safeProfile, role);
   const claudeResult = await callClaudeForAnalysis(prompt);
 
   if (claudeResult) {
+    const rehydrated = rehydrateRecord(claudeResult.parsed) as Record<string, unknown>;
     return mapClaudeToFarmInterpretation(
       profile,
-      claudeResult.parsed,
+      rehydrated,
       claudeResult.model,
       Date.now() - startTime,
       'claude',
