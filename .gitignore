@@ -40,3 +40,8 @@ package-lock 2.json
 *schema 2.ts
 .claude/
 .github/workflows/
+
+# Word/Office lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
