@@ -970,6 +970,10 @@ async function handleRecommendInseminationWindow(input: Record<string, unknown>)
         bullName: r.bullName,
         score: r.score,
         inbreedingRisk: r.inbreedingRisk,
+        inbreedingReason: r.inbreedingReason,
+        pastConceptionRate: r.pastConceptionRate,  // 목장 내 과거 수태율 (학습 근거)
+        pastSampleSize: r.pastSampleSize,
+        learningBonus: r.learningBonus,
         reasoning: r.reasoning,
       })),
       farmSettings: advice.farmSettings,

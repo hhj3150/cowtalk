@@ -1,6 +1,6 @@
 // 번식 AI 어드바이저 — 발정 감지 → 수정 적기 + 정액 추천
 // smaXtec 발정 알람 수신 시 자동으로 수정 추천 알림 생성
-// 목장 보유 정액 중 최적 정액 추천 (근교계수 + 유전능력 기반)
+// 목장 보유 정액 중 최적 정액 추천 (근교계수 + 유전능력 + 학습 피드백 기반)
 
 import { getDb } from '../../config/database.js';
 import {
@@ -9,6 +9,8 @@ import {
 } from '../../db/schema.js';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { getFarmSemenPerformance, type SemenPerformance } from './breeding-feedback.service.js';
+import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 
 // ===========================
 // 타입
@@ -43,10 +45,15 @@ export interface SemenRecommendation {
   readonly score: number;
   readonly inbreedingRisk: 'low' | 'medium' | 'high';
   readonly estimatedInbreeding: number;
+  readonly inbreedingReason: string;           // 근교계수 산출 근거 (예: "혈통 정보 없음")
   readonly milkYieldGain: number | null;
   readonly reasoning: string;
   readonly availableStraws: number;
   readonly pricePerStraw: number | null;
+  // 학습 근거: 이 목장에서 과거 수태율 (decided >= 2건일 때만 non-null)
+  readonly pastConceptionRate: number | null;
+  readonly pastSampleSize: number;
+  readonly learningBonus: number;              // 점수에 반영된 학습 가산점 (-15~+15)
 }
 
 // ===========================
@@ -84,49 +91,137 @@ function calculateOptimalTime(
 }
 
 // ===========================
-// 근교계수 추정
+// 학습 가산점 (순수 함수, 테스트 용이)
 // ===========================
 
 /**
- * 간이 근교계수 추정
- * 실제 혈통 3대를 다 추적하려면 pedigree 데이터 필요
- * 현재는 동일 종모우 사용 이력 기반 간이 추정
+ * 목장 내 과거 수태율로부터 학습 가산점을 계산한다.
+ * - 결정된 샘플(decided) 2건 미만이면 가산점 없음 (통계 신뢰 부족)
+ * - 신뢰도: 샘플 N에 대해 min(15, 3+N) 포인트까지 스케일
+ * - baseline 수태율 60% 기준: 100% → +confidence, 20% → -confidence
  */
-function estimateInbreeding(
-  _animalBreed: string,
-  bullRegistration: string | null,
-  _parentInfo: { sireId?: string; damSireId?: string } | null,
-): { coefficient: number; risk: 'low' | 'medium' | 'high' } {
-  // 혈통 정보 없으면 기본값 (평균 근교계수 3~4%)
-  if (!bullRegistration) {
-    return { coefficient: 0.03, risk: 'low' };
+export function computeLearningBonus(params: {
+  readonly conceptionRate: number;   // 0~100
+  readonly decidedCount: number;
+}): number {
+  if (params.decidedCount < 2) return 0;
+  const confidence = Math.min(15, 3 + params.decidedCount);
+  const bonus = ((params.conceptionRate - 60) / 40) * confidence;
+  return Math.round(bonus);
+}
+
+// ===========================
+// 근교계수 추정 (실데이터 기반)
+// ===========================
+
+export interface InbreedingAssessment {
+  readonly coefficient: number;
+  readonly risk: 'low' | 'medium' | 'high';
+  readonly reason: string;
+}
+
+// 혈통 캐시 (in-memory, 1h TTL) — 시연 중 cold fetch 1회 후 warm hit
+const pedigreeCache = new Map<string, { record: PedigreeRecord | null; cachedAt: number }>();
+const PEDIGREE_TTL_MS = 60 * 60 * 1000;
+let pedigreeConnector: PedigreeConnector | null = null;
+
+async function fetchPedigreeCached(traceId: string): Promise<PedigreeRecord | null> {
+  const hit = pedigreeCache.get(traceId);
+  if (hit && Date.now() - hit.cachedAt < PEDIGREE_TTL_MS) {
+    return hit.record;
+  }
+  try {
+    if (!pedigreeConnector) {
+      pedigreeConnector = new PedigreeConnector();
+      await pedigreeConnector.connect();
+    }
+    const record = await pedigreeConnector.fetchPedigree(traceId);
+    pedigreeCache.set(traceId, { record, cachedAt: Date.now() });
+    return record;
+  } catch (err) {
+    logger.debug({ err, traceId }, '[BreedingAdvisor] pedigree fetch failed');
+    pedigreeCache.set(traceId, { record: null, cachedAt: Date.now() });
+    return null;
+  }
+}
+
+/**
+ * 실데이터 기반 근교 위험 평가
+ * 우선순위:
+ *   1) 동일 종모우 재사용 (breeding_events 이력)
+ *   2) 혈통 직계 매칭 (pedigree 캐시, optional)
+ *   3) 기본값 (혈통 정보 없음)
+ */
+export async function estimateInbreedingRisk(params: {
+  readonly animalTraceId: string | null;
+  readonly bullRegistration: string | null;
+  readonly semenId: string;
+  readonly previousBreedings: readonly { semenId: string | null }[];
+}): Promise<InbreedingAssessment> {
+  // 1) 동일 종모우 재사용 체크
+  const sameBullUses = params.previousBreedings.filter((b) => b.semenId === params.semenId).length;
+  if (sameBullUses >= 2) {
+    return { coefficient: 0.12, risk: 'high', reason: `동일 종모우 재사용 ${sameBullUses}회` };
+  }
+  if (sameBullUses === 1) {
+    return { coefficient: 0.08, risk: 'medium', reason: '동일 종모우 재사용 1회' };
   }
 
-  // TODO: 실제 혈통 3대 기반 계산 (pedigree 데이터 연동 후)
-  // 현재는 평균 근교계수 반환
-  const coefficient = 0.035;
-  const risk = coefficient >= 0.0625 ? 'high' : coefficient >= 0.04 ? 'medium' : 'low';
-  return { coefficient, risk };
+  // 2) 혈통 직계 매칭 (traceId + bullRegistration 둘 다 있을 때만)
+  if (params.animalTraceId && params.bullRegistration) {
+    const pedigree = await fetchPedigreeCached(params.animalTraceId);
+    const sireNo = pedigree?.sire?.registrationNumber;
+    if (sireNo && sireNo === params.bullRegistration) {
+      return { coefficient: 0.25, risk: 'high', reason: '부-자 직접 매칭' };
+    }
+  }
+
+  // 3) 기본값 — 혈통 정보 없음, 평균 근교계수 가정
+  return { coefficient: 0.03, risk: 'low', reason: '혈통 정보 없음' };
 }
 
 // ===========================
 // 수정 전 경고 체크
 // ===========================
 
-async function checkWarnings(animalId: string): Promise<readonly string[]> {
+interface RecentInsemination {
+  readonly semenId: string | null;
+  readonly semenInfo: string | null;
+  readonly eventDate: Date | null;
+}
+
+export interface WarningContext {
+  readonly animalId: string;
+  readonly parity: number;
+  readonly daysInMilk: number | null;
+  readonly birthDate: Date | null;
+  readonly recentInseminations: readonly RecentInsemination[];
+  readonly minBreedingAgeMonths: number;
+  readonly longOpenDaysDim: number;
+}
+
+/**
+ * 수정 전 경고 체크 — 확장 버전
+ * - 최근 건강 이벤트
+ * - 연속 미임신
+ * - 산차별 위험 (초산우 / 고산차우)
+ * - 조기 반복 발정 (직전 수정 후 21일 미만)
+ * - 장기공태우 (DIM > longOpenDaysDim)
+ */
+export async function checkWarnings(ctx: WarningContext): Promise<readonly string[]> {
   const db = getDb();
   const warnings: string[] = [];
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  // 최근 30일 건강 이벤트 확인 (유방염, 자궁염 등)
+  // 1) 최근 30일 건강 이벤트
   const recentHealth = await db.select({
     eventType: smaxtecEvents.eventType,
     detectedAt: smaxtecEvents.detectedAt,
   })
     .from(smaxtecEvents)
     .where(and(
-      eq(smaxtecEvents.animalId, animalId),
+      eq(smaxtecEvents.animalId, ctx.animalId),
       gte(smaxtecEvents.detectedAt, thirtyDaysAgo),
       sql`${smaxtecEvents.eventType} IN ('clinical_condition', 'health_warning', 'temperature_high')`,
     ))
@@ -139,28 +234,12 @@ async function checkWarnings(animalId: string): Promise<readonly string[]> {
     warnings.push(`⚠️ 최근 ${daysSince}일 전 건강 이벤트 (${latest.eventType}) — 수의사 확인 권장`);
   }
 
-  // 연속 수정 실패 횟수 확인
-  const recentBreedings = await db.select({
-    type: breedingEvents.type,
-    eventDate: breedingEvents.eventDate,
-  })
-    .from(breedingEvents)
-    .where(eq(breedingEvents.animalId, animalId))
-    .orderBy(desc(breedingEvents.eventDate))
-    .limit(10);
-
-  let consecutiveFails = 0;
-  for (const b of recentBreedings) {
-    if (b.type === 'insemination') consecutiveFails++;
-    else if (b.type === 'pregnancy_check') break;
-  }
-
-  // 최근 임신감정에서 미임신 횟수
+  // 2) 연속 미임신
   const recentChecks = await db.select({
     result: pregnancyChecks.result,
   })
     .from(pregnancyChecks)
-    .where(eq(pregnancyChecks.animalId, animalId))
+    .where(eq(pregnancyChecks.animalId, ctx.animalId))
     .orderBy(desc(pregnancyChecks.checkDate))
     .limit(5);
 
@@ -169,6 +248,34 @@ async function checkWarnings(animalId: string): Promise<readonly string[]> {
     warnings.push(`🔴 최근 수정 ${failCount}회 연속 미임신 — 번식장애 검진 필요`);
   } else if (failCount >= 2) {
     warnings.push(`🟡 최근 수정 ${failCount}회 미임신 — 수의사 상담 권장`);
+  }
+
+  // 3) 산차 경고
+  if (ctx.parity >= 6) {
+    warnings.push(`🟡 ${ctx.parity}산 고산차우 — 자궁 회복 상태 확인 권장`);
+  } else if (ctx.parity === 0 && ctx.birthDate) {
+    const ageMonths = Math.floor(
+      (now.getTime() - ctx.birthDate.getTime()) / (30.44 * 24 * 60 * 60 * 1000),
+    );
+    if (ageMonths < ctx.minBreedingAgeMonths) {
+      warnings.push(`🟡 미경산 ${ageMonths}개월 — 목장 기준 ${ctx.minBreedingAgeMonths}개월 미달 가능`);
+    }
+  }
+
+  // 4) 조기 반복 발정 — 직전 수정 후 21일(±3) 미만이면 임신 실패 가능성
+  const lastInsem = ctx.recentInseminations[0];
+  if (lastInsem?.eventDate) {
+    const daysSinceLast = Math.floor((now.getTime() - lastInsem.eventDate.getTime()) / (24 * 60 * 60 * 1000));
+    if (daysSinceLast >= 15 && daysSinceLast <= 24) {
+      warnings.push(`🟡 직전 수정 후 ${daysSinceLast}일 경과 — 발정재귀 범위 (수정 실패 가능)`);
+    } else if (daysSinceLast < 15) {
+      warnings.push(`🔴 직전 수정 후 ${daysSinceLast}일 — 조기 반복 발정, 수의사 확인 권장`);
+    }
+  }
+
+  // 5) 장기공태우
+  if (ctx.daysInMilk != null && ctx.daysInMilk > ctx.longOpenDaysDim) {
+    warnings.push(`🔴 DIM ${ctx.daysInMilk}일 — 장기공태우 (기준 ${ctx.longOpenDaysDim}일), 번식장애 검진 권장`);
   }
 
   return warnings;
@@ -184,14 +291,17 @@ export async function getBreedingAdvice(
 ): Promise<BreedingAdvice | null> {
   const db = getDb();
 
-  // 1. 개체 정보 조회
+  // 1. 개체 정보 조회 (경고 계산에 필요한 필드 포함)
   const [animal] = await db.select({
     animalId: animals.animalId,
     earTag: animals.earTag,
+    traceId: animals.traceId,
     farmId: animals.farmId,
     farmName: farms.name,
     breed: animals.breed,
     parity: animals.parity,
+    daysInMilk: animals.daysInMilk,
+    birthDate: animals.birthDate,
     lactationStatus: animals.lactationStatus,
   })
     .from(animals)
@@ -218,10 +328,35 @@ export async function getBreedingAdvice(
   const farmSettings = await getFarmBreedingSettings(animal.farmId);
   const { time: optimalTime, label: optimalLabel } = calculateOptimalTime(heatTime, farmSettings);
 
-  // 4. 수정 전 경고 체크
-  const warnings = await checkWarnings(animalId);
+  // 4. 최근 수정 이력 (재사용 경고 + 근교 평가 양쪽에서 사용)
+  const recentInseminationsRaw = await db.select({
+    semenId: breedingEvents.semenId,
+    semenInfo: breedingEvents.semenInfo,
+    eventDate: breedingEvents.eventDate,
+  })
+    .from(breedingEvents)
+    .where(and(
+      eq(breedingEvents.animalId, animalId),
+      eq(breedingEvents.type, 'insemination'),
+    ))
+    .orderBy(desc(breedingEvents.eventDate))
+    .limit(10);
 
-  // 5. 목장 보유 정액 조회 (동일 품종만)
+  // 5. 수정 전 경고 체크 (확장된 컨텍스트)
+  const warnings = await checkWarnings({
+    animalId: animal.animalId,
+    parity: animal.parity,
+    daysInMilk: animal.daysInMilk,
+    birthDate: animal.birthDate ? new Date(animal.birthDate) : null,
+    recentInseminations: recentInseminationsRaw,
+    minBreedingAgeMonths: farmSettings.minBreedingAgeMonths ?? 12,
+    longOpenDaysDim: farmSettings.longOpenDaysDim ?? 200,
+  });
+
+  // 6. 학습 피드백 로드 (목장 내 정액별 과거 수태율)
+  const performance = await getFarmSemenPerformance(animal.farmId);
+
+  // 7. 목장 보유 정액 조회 (동일 품종만)
   // ⚠️ 한우 씨수소 API(15101999)는 한우 전용
   // 젖소는 젖소 정액만, 한우는 한우 정액만 추천
   const inventory = await db.select({
@@ -243,53 +378,80 @@ export async function getBreedingAdvice(
     ))
     .orderBy(desc(farmSemenInventory.quantity));
 
-  // 6. 각 정액에 대해 점수 계산 + 추천 순위
-  const recommendations: SemenRecommendation[] = inventory.map((inv) => {
-    const traits = inv.genomicTraits as Record<string, number> | null;
-    const milkGain = traits?.milk ?? traits?.milkYield ?? null;
-    const { coefficient, risk } = estimateInbreeding(animal.breed, inv.bullRegistration, null);
+  // 8. 각 정액에 대해 점수 계산 + 추천 순위
+  const recommendations: SemenRecommendation[] = await Promise.all(
+    inventory.map(async (inv): Promise<SemenRecommendation> => {
+      const traits = inv.genomicTraits as Record<string, number> | null;
+      const milkGain = traits?.milk ?? traits?.milkYield ?? null;
 
-    // 점수: 유량 기여도(40) + 근교 안전(30) + 재고(20) + 가격 효율(10)
-    let score = 50; // 기본점
+      const inbreeding = await estimateInbreedingRisk({
+        animalTraceId: animal.traceId,
+        bullRegistration: inv.bullRegistration,
+        semenId: inv.semenId,
+        previousBreedings: recentInseminationsRaw,
+      });
 
-    // 유량 기여도 (±20점)
-    if (milkGain != null) {
-      score += Math.min(20, Math.max(-10, milkGain / 50));
-    }
+      // 점수: 기본(50) + 유량(±20) + 근교(0~30) + 재고(0~10) + 가격(0~10) + 학습(-15~+15)
+      let score = 50;
 
-    // 근교 안전 (0~30점)
-    if (risk === 'low') score += 30;
-    else if (risk === 'medium') score += 15;
-    // high → 0점 추가
+      if (milkGain != null) {
+        score += Math.min(20, Math.max(-10, milkGain / 50));
+      }
 
-    // 재고 충분 (0~10점)
-    score += Math.min(10, inv.quantity * 2);
+      if (inbreeding.risk === 'low') score += 30;
+      else if (inbreeding.risk === 'medium') score += 15;
+      // high → 0
 
-    // 가격 효율
-    if (inv.pricePerStraw != null && inv.pricePerStraw < 30000) score += 10;
-    else if (inv.pricePerStraw != null && inv.pricePerStraw < 50000) score += 5;
+      score += Math.min(10, inv.quantity * 2);
 
-    const reasons: string[] = [];
-    if (risk === 'low') reasons.push('근교 위험 낮음');
-    if (risk === 'high') reasons.push('⚠️ 근교 위험 높음');
-    if (milkGain != null && milkGain > 0) reasons.push(`유량 +${Math.round(milkGain)}kg 기대`);
-    if (inv.quantity >= 5) reasons.push(`보유 ${inv.quantity}스트로`);
+      if (inv.pricePerStraw != null && inv.pricePerStraw < 30000) score += 10;
+      else if (inv.pricePerStraw != null && inv.pricePerStraw < 50000) score += 5;
 
-    return {
-      rank: 0,
-      semenId: inv.semenId,
-      bullName: inv.bullName,
-      bullRegistration: inv.bullRegistration,
-      breed: inv.breed,
-      score: Math.round(score),
-      inbreedingRisk: risk,
-      estimatedInbreeding: coefficient,
-      milkYieldGain: milkGain != null ? Math.round(milkGain) : null,
-      reasoning: reasons.join(' · '),
-      availableStraws: inv.quantity,
-      pricePerStraw: inv.pricePerStraw,
-    };
-  });
+      // 학습 피드백 가산점 — 과거 수태율 2건 이상일 때만 적용
+      const perf: SemenPerformance | undefined = performance.get(inv.semenId);
+      let learningBonus = 0;
+      let pastConceptionRate: number | null = null;
+      let pastSampleSize = 0;
+      if (perf && perf.decidedCount >= 2) {
+        pastConceptionRate = perf.conceptionRate;
+        pastSampleSize = perf.decidedCount;
+        learningBonus = computeLearningBonus({
+          conceptionRate: perf.conceptionRate,
+          decidedCount: perf.decidedCount,
+        });
+        score += learningBonus;
+      }
+
+      const reasons: string[] = [];
+      if (inbreeding.risk === 'low') reasons.push('근교 위험 낮음');
+      else if (inbreeding.risk === 'medium') reasons.push(`🟡 ${inbreeding.reason}`);
+      else reasons.push(`🔴 ${inbreeding.reason}`);
+      if (milkGain != null && milkGain > 0) reasons.push(`유량 +${Math.round(milkGain)}kg 기대`);
+      if (inv.quantity >= 5) reasons.push(`보유 ${inv.quantity}스트로`);
+      if (pastConceptionRate != null) {
+        reasons.push(`본 목장 ${pastSampleSize}회 · 수태율 ${pastConceptionRate}%`);
+      }
+
+      return {
+        rank: 0,
+        semenId: inv.semenId,
+        bullName: inv.bullName,
+        bullRegistration: inv.bullRegistration,
+        breed: inv.breed,
+        score: Math.round(score),
+        inbreedingRisk: inbreeding.risk,
+        estimatedInbreeding: inbreeding.coefficient,
+        inbreedingReason: inbreeding.reason,
+        milkYieldGain: milkGain != null ? Math.round(milkGain) : null,
+        reasoning: reasons.join(' · '),
+        availableStraws: inv.quantity,
+        pricePerStraw: inv.pricePerStraw,
+        pastConceptionRate,
+        pastSampleSize,
+        learningBonus,
+      };
+    }),
+  );
 
   // 점수순 정렬 + 순위 부여
   const sorted = [...recommendations]

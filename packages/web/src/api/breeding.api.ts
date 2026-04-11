@@ -15,16 +15,6 @@ export interface SemenRecord {
   readonly stockCount: number;
 }
 
-export interface MatingRecommendation {
-  readonly rank: number;
-  readonly semenId: string;
-  readonly sireName: string;
-  readonly inbreedingCoefficient: number;
-  readonly a2Status: string;
-  readonly milkYieldGain: number | null;
-  readonly reasoning: string;
-}
-
 export interface PedigreeNode {
   readonly id: string;
   readonly name: string | null;
@@ -39,10 +29,6 @@ export function getSemenCatalog(params?: {
   search?: string;
 }): Promise<readonly SemenRecord[]> {
   return apiGet<readonly SemenRecord[]>('/breeding/semen', params);
-}
-
-export function getMatingRecommendations(animalId: string): Promise<readonly MatingRecommendation[]> {
-  return apiGet<readonly MatingRecommendation[]>(`/breeding/recommend/${animalId}`);
 }
 
 export function getPedigree(animalId: string): Promise<PedigreeNode> {
@@ -66,10 +52,15 @@ export interface SemenRecommendationItem {
   readonly score: number;
   readonly inbreedingRisk: 'low' | 'medium' | 'high';
   readonly estimatedInbreeding: number;
+  readonly inbreedingReason: string;
   readonly milkYieldGain: number | null;
   readonly reasoning: string;
   readonly availableStraws: number;
   readonly pricePerStraw: number | null;
+  // 학습 근거: 목장 내 과거 수태율
+  readonly pastConceptionRate: number | null;
+  readonly pastSampleSize: number;
+  readonly learningBonus: number;
 }
 
 export interface BreedingAdvice {
