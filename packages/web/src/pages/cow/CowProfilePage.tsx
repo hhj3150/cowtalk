@@ -413,7 +413,7 @@ export default function CowProfilePage(): React.JSX.Element {
               : '[센서 데이터 없음]';
 
             const healthCtx = healthPred
-              ? `[AI 건강평가] 위험점수 ${healthPred.riskScore}/100 (${healthPred.riskLevel}), 사유: ${healthPred.reasons.join(', ')}, 권고: ${healthPred.recommendation}`
+              ? `[AI 건강평가] 위험점수 ${healthPred.riskScore}/100 (${healthPred.riskLevel}), 사유: ${(healthPred.reasons ?? []).join(', ')}, 권고: ${healthPred.recommendation}`
               : '';
 
             const estrusCtx = estrusPred?.hasData
@@ -421,7 +421,7 @@ export default function CowProfilePage(): React.JSX.Element {
               : '';
 
             const calvingCtx = calvingPred
-              ? `[분만예측] 위험도 ${calvingPred.calvingRisk}, 사유: ${calvingPred.reasons.join(', ')}`
+              ? `[분만예측] 위험도 ${calvingPred.calvingRisk}, 사유: ${(calvingPred.reasons ?? []).join(', ')}`
               : '';
 
             const alarmCtx = events.length > 0
@@ -819,7 +819,7 @@ export default function CowProfilePage(): React.JSX.Element {
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
                     🏥 72시간 건강 예측: <span style={{ color: healthPred.riskLevel === 'critical' ? '#ef4444' : healthPred.riskLevel === 'warning' ? '#f97316' : '#22c55e' }}>{healthPred.riskLevel}</span>
                   </div>
-                  {healthPred.reasons.map((r, i) => (
+                  {(healthPred.reasons ?? []).map((r, i) => (
                     <div key={i} style={{ fontSize: 10, color: 'var(--ct-text-secondary)', paddingLeft: 8 }}>• {r}</div>
                   ))}
                   <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 4, fontStyle: 'italic' }}>{healthPred.recommendation}</div>
@@ -841,7 +841,7 @@ export default function CowProfilePage(): React.JSX.Element {
                   <div style={{ fontSize: 12, fontWeight: 700, color: calvingPred.calvingRisk === 'imminent' ? '#ef4444' : '#f97316' }}>
                     🍼 분만 예측: {calvingPred.calvingRisk}
                   </div>
-                  {calvingPred.reasons.map((r, i) => (
+                  {(calvingPred.reasons ?? []).map((r, i) => (
                     <div key={i} style={{ fontSize: 10, color: 'var(--ct-text-secondary)', paddingLeft: 8 }}>• {r}</div>
                   ))}
                   <div style={{ fontSize: 10, fontStyle: 'italic', color: 'var(--ct-text-muted)', marginTop: 4 }}>{calvingPred.recommendation}</div>
