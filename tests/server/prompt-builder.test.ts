@@ -56,24 +56,34 @@ const mockAnimalProfile: AnimalProfile = {
 };
 
 describe('SYSTEM_PROMPT', () => {
-  it('smaXtec 신뢰 원칙 포함', () => {
+  it('CowTalk + Claude 정체성 명시', () => {
+    expect(SYSTEM_PROMPT).toContain('CowTalk');
+    expect(SYSTEM_PROMPT).toContain('Claude');
+  });
+
+  it('smaXtec 데이터 컨텍스트 포함', () => {
     expect(SYSTEM_PROMPT).toContain('smaXtec');
-    expect(SYSTEM_PROMPT).toContain('재판단하지 말고');
   });
 
-  it('JSON 응답 요구 포함', () => {
-    expect(SYSTEM_PROMPT).toContain('지정된 JSON');
+  it('이모지 금지 규칙 포함 (TTS 대응)', () => {
+    expect(SYSTEM_PROMPT).toContain('이모지');
+    expect(SYSTEM_PROMPT).toContain('TTS');
   });
 
-  it('축종별 가이드 포함', () => {
-    expect(SYSTEM_PROMPT).toContain('젖소');
-    expect(SYSTEM_PROMPT).toContain('한우');
+  it('도구 사용 가이드 포함', () => {
+    expect(SYSTEM_PROMPT).toContain('query_animal');
   });
 
   it('4개 역할 컨텍스트', () => {
     expect(Object.keys(ROLE_CONTEXT)).toHaveLength(4);
     expect(ROLE_CONTEXT.farmer).toContain('농장주');
     expect(ROLE_CONTEXT.veterinarian).toContain('수의사');
+  });
+
+  it('시스템 프롬프트에 이모지가 없다', () => {
+    // TTS 합성이 이모지를 텍스트로 읽는 것을 방지
+    const emojiRe = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+    expect(emojiRe.test(SYSTEM_PROMPT)).toBe(false);
   });
 });
 
