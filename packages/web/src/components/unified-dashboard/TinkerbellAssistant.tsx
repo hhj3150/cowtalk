@@ -396,6 +396,7 @@ export function TinkerbellAssistant({
   // (사이드 패널 — 고정 위치, 드래그/리사이즈 불필요)
   const [transcript, setTranscript] = useState('');
   const [inputText, setInputText] = useState('');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -625,13 +626,56 @@ export function TinkerbellAssistant({
     void askTinkerbell(pending);
   }, [messages, state, askTinkerbell]);
 
-  // 음성 인식 시작
-  const startListening = useCallback(() => {
-    if (!hasSpeechRecognition) return;
+  // 음성 인식 시작 (권한 체크 + 에러 메시지 포함)
+  const startListening = useCallback(async () => {
+    setVoiceError(null);
+
+    if (!hasSpeechRecognition) {
+      setVoiceError('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome/Edge를 사용해 주세요.');
+      return;
+    }
+
+    // HTTPS 체크 (localhost는 예외)
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      const host = window.location.hostname;
+      if (host !== 'localhost' && host !== '127.0.0.1') {
+        setVoiceError('음성 인식은 HTTPS 연결이 필요합니다.');
+        return;
+      }
+    }
 
     stopSpeaking();
     // iOS Safari: 사용자 제스처 직후에 TTS 잠금 해제
     unlockTts();
+
+    // 마이크 권한 사전 확인 — denied면 바로 안내, prompt면 getUserMedia로 요청
+    try {
+      const permApi = (navigator as { permissions?: { query: (p: { name: PermissionName }) => Promise<PermissionStatus> } }).permissions;
+      if (permApi?.query) {
+        const status = await permApi.query({ name: 'microphone' as PermissionName });
+        if (status.state === 'denied') {
+          setVoiceError('마이크 권한이 차단되어 있습니다. 주소창의 자물쇠 아이콘을 눌러 마이크를 허용으로 바꿔주세요.');
+          return;
+        }
+      }
+    } catch {
+      // permissions API 미지원 — 무시하고 진행
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+    } catch (err) {
+      const name = (err as { name?: string })?.name ?? '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setVoiceError('마이크 권한을 허용해야 음성으로 질문할 수 있습니다.');
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setVoiceError('마이크를 찾을 수 없습니다. 장치 연결을 확인해 주세요.');
+      } else {
+        setVoiceError('마이크 접근 중 오류가 발생했습니다.');
+      }
+      return;
+    }
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
@@ -675,15 +719,42 @@ export function TinkerbellAssistant({
       transcriptRef.current = '';
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       setState('idle');
       setTranscript('');
       transcriptRef.current = '';
+      switch (event.error) {
+        case 'not-allowed':
+        case 'service-not-allowed':
+          setVoiceError('마이크 권한이 차단되어 있습니다. 브라우저 설정에서 허용해 주세요.');
+          break;
+        case 'no-speech':
+          setVoiceError('음성이 감지되지 않았습니다. 다시 말씀해 주세요.');
+          break;
+        case 'audio-capture':
+          setVoiceError('마이크를 찾을 수 없습니다.');
+          break;
+        case 'network':
+          setVoiceError('음성 인식 서버에 연결할 수 없습니다. 인터넷을 확인해 주세요.');
+          break;
+        case 'aborted':
+          // 사용자 취소 — 메시지 없음
+          break;
+        default:
+          setVoiceError('음성 인식 중 오류가 발생했습니다.');
+      }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-  }, [hasSpeechRecognition, transcript, askTinkerbell]);
+    try {
+      recognition.start();
+    } catch (err) {
+      const name = (err as { name?: string })?.name ?? '';
+      if (name !== 'InvalidStateError') {
+        setVoiceError('음성 인식을 시작할 수 없습니다.');
+      }
+    }
+  }, [hasSpeechRecognition, askTinkerbell]);
 
   // 음성 인식 중지
   const stopListening = useCallback(() => {
@@ -864,6 +935,28 @@ export function TinkerbellAssistant({
             </div>
           )}
 
+          {/* 음성 인식 에러 배너 */}
+          {voiceError && (
+            <div
+              role="alert"
+              onClick={() => setVoiceError(null)}
+              style={{
+                margin: '0 14px',
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                color: '#ef4444',
+                fontSize: 12,
+                lineHeight: 1.4,
+                cursor: 'pointer',
+              }}
+            >
+              {voiceError}
+              <span style={{ opacity: 0.7, marginLeft: 6, fontSize: 10 }}>(클릭해서 닫기)</span>
+            </div>
+          )}
+
           {/* 입력 바 — 항상 표시 (Claude 스타일) */}
           <div style={{
             display: 'flex',
@@ -891,8 +984,8 @@ export function TinkerbellAssistant({
             {/* 마이크 버튼 */}
             <button type="button"
               onClick={() => {
-                if (!hasSpeechRecognition) return;
-                if (state === 'listening') { stopListening(); } else { unlockTts(); startListening(); }
+                if (!hasSpeechRecognition) { setVoiceError('이 브라우저는 음성 인식을 지원하지 않습니다.'); return; }
+                if (state === 'listening') { stopListening(); } else { unlockTts(); void startListening(); }
               }}
               disabled={state === 'thinking'}
               style={{
@@ -1294,6 +1387,28 @@ export function TinkerbellAssistant({
         <div ref={messagesEndRef} />
       </div>}
 
+      {/* 음성 인식 에러 배너 (모바일 floating) */}
+      {!isMinimized && voiceError && (
+        <div
+          role="alert"
+          onClick={() => setVoiceError(null)}
+          style={{
+            margin: '0 16px',
+            padding: '8px 12px',
+            borderRadius: 8,
+            background: 'rgba(239,68,68,0.1)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            color: '#ef4444',
+            fontSize: 12,
+            lineHeight: 1.4,
+            cursor: 'pointer',
+          }}
+        >
+          {voiceError}
+          <span style={{ opacity: 0.7, marginLeft: 6, fontSize: 10 }}>(클릭해서 닫기)</span>
+        </div>
+      )}
+
       {/* 입력 영역 */}
       {!isMinimized && (
       <div style={{
@@ -1307,10 +1422,10 @@ export function TinkerbellAssistant({
           <button
             onClick={() => {
               if (!hasSpeechRecognition) {
-                askTinkerbell('오늘 긴급한 소 알려줘');
+                setVoiceError('이 브라우저는 음성 인식을 지원하지 않습니다.');
                 return;
               }
-              if (state === 'listening') { stopListening(); } else { startListening(); }
+              if (state === 'listening') { stopListening(); } else { void startListening(); }
             }}
             disabled={state === 'thinking'}
             style={{

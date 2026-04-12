@@ -1917,6 +1917,28 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             )}
           </div>
 
+          {/* 음성 인식 에러 배너 */}
+          {voice.error && (
+            <div
+              role="alert"
+              onClick={voice.dismissError}
+              style={{
+                margin: '0 18px',
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                color: '#ef4444',
+                fontSize: 12,
+                lineHeight: 1.4,
+                cursor: 'pointer',
+              }}
+            >
+              {voice.error.message}
+              <span style={{ opacity: 0.7, marginLeft: 6, fontSize: 10 }}>(클릭해서 닫기)</span>
+            </div>
+          )}
+
           {/* 입력 영역 */}
           <div style={{
             padding: '12px 18px',
@@ -1929,7 +1951,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
             }}>
               <MicButton
                 isListening={voice.isListening}
-                onClick={voice.isListening ? voice.stopListening : voice.startListening}
+                onClick={voice.isListening ? voice.stopListening : () => { void voice.startListening(); }}
                 disabled={isStreaming || !canChat}
                 size={34}
               />

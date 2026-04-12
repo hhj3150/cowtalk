@@ -291,6 +291,22 @@ export function InlineAiChat(): React.JSX.Element {
         {isStreaming && !streamingText && <StreamingIndicator />}
       </div>
 
+      {/* 음성 입력 에러 배너 */}
+      {voice.error && (
+        <div
+          role="alert"
+          onClick={voice.dismissError}
+          className="cursor-pointer border-t px-4 py-2 text-xs"
+          style={{
+            borderColor: 'var(--ct-border)',
+            background: 'rgba(239, 68, 68, 0.08)',
+            color: '#ef4444',
+          }}
+        >
+          {voice.error.message} <span style={{ opacity: 0.7 }}>(클릭해서 닫기)</span>
+        </div>
+      )}
+
       {/* 입력 영역 */}
       <div
         className="flex items-center gap-2 border-t px-4 py-3"
@@ -298,7 +314,7 @@ export function InlineAiChat(): React.JSX.Element {
       >
         <MicButton
           isListening={voice.isListening}
-          onClick={voice.isListening ? voice.stopListening : voice.startListening}
+          onClick={voice.isListening ? voice.stopListening : () => { void voice.startListening(); }}
           disabled={isStreaming}
           size={34}
         />
