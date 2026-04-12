@@ -695,15 +695,17 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 0' }}>
               <FarmFilterDropdown />
               <FarmGroupSelector />
             </div>
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center', flex: '0 0 auto', padding: '0 16px' }}>
               <h1 style={{
                 fontSize: 18,
                 fontWeight: 800,
                 letterSpacing: '-0.3px',
+                whiteSpace: 'nowrap',
+                margin: 0,
                 background: 'linear-gradient(135deg, var(--ct-text), var(--ct-primary))',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
@@ -711,10 +713,10 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 CowTalk 통합 대시보드
               </h1>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-              <span style={{ color: 'var(--ct-text-secondary)', fontWeight: 500 }}>{user?.name ?? ''} ({roleLabel})</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, fontSize: 12, minWidth: 0, flex: '1 1 0' }}>
+              <span style={{ color: 'var(--ct-text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.name ?? ''} ({roleLabel})</span>
               <RoleSwitcher />
-              <span style={{ color: 'var(--ct-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{lastUpdated}</span>
+              <span style={{ color: 'var(--ct-text-muted)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{lastUpdated}</span>
             </div>
           </>
         )}
@@ -739,6 +741,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
             markers={farmMapMarkers}
             selectedFarmId={selectedFarmId}
             onFarmClick={(fid) => navigate(`/farm/${fid}`)}
+            totalHeadOverride={data?.herdOverview?.totalAnimals}
           />
           )}
 

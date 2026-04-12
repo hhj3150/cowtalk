@@ -103,12 +103,13 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
   const isMobile = useIsMobile();
 
   useEffect(() => {
+    // apiGet는 이미 res.data.data를 언래핑하므로 직접 타입으로 호출
     Promise.all([
-      apiGet<{ data: NationalSituationData }>('/quarantine/national-situation'),
-      apiGet<{ data: EarlyDetectionMetrics }>('/quarantine/early-detection-metrics'),
+      apiGet<NationalSituationData>('/quarantine/national-situation'),
+      apiGet<EarlyDetectionMetrics>('/quarantine/early-detection-metrics'),
     ]).then(([nat, met]) => {
-      setNational(nat.data);
-      setMetrics(met.data);
+      setNational(nat);
+      setMetrics(met);
     }).catch(() => {});
   }, []);
 

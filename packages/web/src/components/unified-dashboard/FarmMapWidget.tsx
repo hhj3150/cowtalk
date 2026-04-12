@@ -25,6 +25,8 @@ interface Props {
   readonly selectedFarmId?: string | null;
   readonly onFarmClick?: (farmId: string) => void;
   readonly height?: number;
+  /** 헤더 합계 표시에 사용할 총 두수 (KPI와 정합성 유지) */
+  readonly totalHeadOverride?: number;
 }
 
 // ── 상수 ──
@@ -85,16 +87,17 @@ function MapController({
 
 // ── 메인 컴포넌트 ──
 
-export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 520 }: Props): React.JSX.Element {
+export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 520, totalHeadOverride }: Props): React.JSX.Element {
   const stats = useMemo(() => {
     const total = markers.length;
     const normal = markers.filter((m) => m.status === 'normal').length;
     const caution = markers.filter((m) => m.status === 'caution').length;
     const warning = markers.filter((m) => m.status === 'warning').length;
     const critical = markers.filter((m) => m.status === 'critical').length;
-    const totalHead = markers.reduce((sum, m) => sum + m.headCount, 0);
+    // KPI와 정합성: totalHeadOverride가 주어지면 우선 사용 (currentHeadCount 캐시 불일치 방지)
+    const totalHead = totalHeadOverride ?? markers.reduce((sum, m) => sum + m.headCount, 0);
     return { total, normal, caution, warning, critical, totalHead };
-  }, [markers]);
+  }, [markers, totalHeadOverride]);
 
   return (
     <div

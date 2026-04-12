@@ -2605,7 +2605,7 @@ async function queryAssistantAlerts(
 
   const clinicalMap: Record<string, string> = {
     health_warning: '건강 경고',
-    health_general: '일반 건강',
+    health_general: '건강 주의',
     clinical_condition: '임상 이상',
     temperature_warning: '체온 이상',
     temperature_high: '고체온',
@@ -2620,15 +2620,20 @@ async function queryAssistantAlerts(
     feeding_warning: '사양 이상',
     ph_warning: 'pH 이상',
     estrus: '발정 감지',
+    estrus_dnb: '발정 감지',
+    heat: '발정 감지',
     fertility_warning: '재발정',
     insemination: '수정',
     pregnancy_check: '임신 감정',
     no_insemination: '미수정',
     calving: '분만 징후',
+    calving_prediction: '분만 예측',
     calving_detection: '분만 감지',
     calving_confirmation: '분만 확인',
     dry_off: '건유 전환',
     abort: '유산',
+    abortion: '유산',
+    management: '개체 관리',
     death: '폐사',
     sold: '출하',
   };
@@ -4193,7 +4198,7 @@ function determineBreedingStage(
   }
 
   const pregnancyPositive = pregChecks
-    .filter((p) => p.animalId === animalId && p.result === 'positive')
+    .filter((p) => p.animalId === animalId && p.result === 'pregnant')
     .sort((a, b) => (b.checkDate?.getTime() ?? 0) - (a.checkDate?.getTime() ?? 0));
 
   const latestPreg = pregnancyPositive.at(0);
@@ -4250,7 +4255,7 @@ function computeBreedingKpis(
   smaxtecEvts: readonly SmaxtecBreedingRow[],
 ): BreedingKpis {
   const bInseminations = breedingEvts.filter((e) => e.type === 'insemination');
-  const pregnancies = pregChecks.filter((p) => p.result === 'positive');
+  const pregnancies = pregChecks.filter((p) => p.result === 'pregnant');
 
   const conceptionRate = bInseminations.length > 0
     ? Math.round((pregnancies.length / bInseminations.length) * 1000) / 10
@@ -4413,7 +4418,7 @@ function buildBreedingUrgentActions(
   for (const e of breedingEvts.filter((b) => b.type === 'insemination')) {
     insemCountByAnimal.set(e.animalId, (insemCountByAnimal.get(e.animalId) ?? 0) + 1);
   }
-  const pregnantAnimals = new Set(pregChecks.filter((p) => p.result === 'positive').map((p) => p.animalId));
+  const pregnantAnimals = new Set(pregChecks.filter((p) => p.result === 'pregnant').map((p) => p.animalId));
 
   for (const [animalId, insemCount] of insemCountByAnimal) {
     if (insemCount >= 3 && !pregnantAnimals.has(animalId)) {
