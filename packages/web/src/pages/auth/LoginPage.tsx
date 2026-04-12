@@ -1,6 +1,7 @@
 // 로그인 페이지 — CowTalk 2-panel 레이아웃 (좌: 로그인폼, 우: 히어로)
 // 히어로 섹션 수치는 /api/public/stats에서 실시간 조회
 // 역할 카드 클릭 → 비밀번호 없이 즉시 로그인 (quick-login)
+// 4언어 지원: 한국어/영어/러시아어/우즈벡어 (5/13 중앙아시아 시연 대응)
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +21,229 @@ function useIsMobile(breakpoint = 768): boolean {
     return () => mql.removeEventListener('change', handler);
   }, [breakpoint]);
   return isMobile;
+}
+
+// ── i18n 번역 리소스 (로그인 첫 화면 전용) ──
+
+type Lang = 'ko' | 'en' | 'ru' | 'uz';
+
+interface Strings {
+  readonly tagline: string;
+  readonly corporation: string;
+  readonly email: string;
+  readonly password: string;
+  readonly login: string;
+  readonly loggingIn: string;
+  readonly loginFailed: string;
+  readonly demoMode: string;
+  readonly signupCta: string;
+  readonly rolePrompt: string;
+  readonly entering: string;
+  readonly heroBadge: string;
+  readonly heroLine1: string;
+  readonly heroLine2: string;
+  readonly statFarms: string;
+  readonly statCattle: string;
+  readonly statMonitoring: string;
+  readonly statDetection: string;
+  readonly statEngines: string;
+  readonly roleVet: string;
+  readonly roleFarmer: string;
+  readonly roleAdmin: string;
+  readonly roleQuarantine: string;
+  readonly feature1Title: string;
+  readonly feature1Desc: string;
+  readonly feature2Title: string;
+  readonly feature2Desc: string;
+  readonly feature3Title: string;
+  readonly feature3Desc: string;
+  readonly feature4Title: string;
+  readonly feature4Desc: string;
+  readonly feature5Title: string;
+  readonly feature5Desc: string;
+  readonly feature6Title: string;
+  readonly feature6DescTemplate: string; // {farms} placeholder
+  readonly footer: string;
+  readonly footerHero: string;
+}
+
+const I18N: Readonly<Record<Lang, Strings>> = {
+  ko: {
+    tagline: 'AI 축산 디지털 운영체제',
+    corporation: 'D2O Corp. | 농업회사법인',
+    email: '이메일',
+    password: '비밀번호',
+    login: '로그인',
+    loggingIn: '로그인 중...',
+    loginFailed: '로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.',
+    demoMode: '데모 모드 — 로그인 없이 둘러보기',
+    signupCta: '🐄 CowTalk 시작하기 — 3분 무료 가입',
+    rolePrompt: '역할을 선택하여 바로 입장',
+    entering: '입장 중...',
+    heroBadge: 'AI 기반 축산 인텔리전스 플랫폼',
+    heroLine1: '소가 데이터로 말합니다.',
+    heroLine2: 'CowTalk이 행동으로 번역합니다.',
+    statFarms: '농장',
+    statCattle: '소',
+    statMonitoring: '24/7',
+    statDetection: '감지 정확도',
+    statEngines: 'AI 엔진',
+    roleVet: '수의사',
+    roleFarmer: '목장주',
+    roleAdmin: '행정관',
+    roleQuarantine: '방역관',
+    feature1Title: '위내센서 인텔리전스',
+    feature1Desc: '체온 0.01°C 정밀도, 반추, 활동, 음수, pH — 24시간 실시간 모니터링',
+    feature2Title: '국가 공공데이터 융합',
+    feature2Desc: '이력추적, DHI 검정, 혈통, 유전체, 방역, 기상 — 완전 통합',
+    feature3Title: '역할별 AI 액션플랜',
+    feature3Desc: '목장주 / 수의사 / 행정관 / 방역관 — 각자 필요한 정보',
+    feature4Title: '지역 방역 인텔리전스',
+    feature4Desc: '다농장 클러스터, 조기경보, 역학 감시, 정책 대시보드',
+    feature5Title: '번식 + 유전체',
+    feature5Desc: '혈통, 근교계수, 유전체 육종가, 정액 추천, 교배 계획',
+    feature6Title: '농장 성과 벤치마크',
+    feature6DescTemplate: '생산성 분석, ROI 계산기, 농장 리포트 카드, {farms}개 농장 비교',
+    footer: 'CowTalk v5.0 | D2O Corp. | Powered by AI',
+    footerHero: 'D2O Corp. — Dairy + Beef | Korea + Global    Powered by CowTalk AI',
+  },
+  en: {
+    tagline: 'AI livestock digital operating system',
+    corporation: 'D2O Corp. | Agricultural corporation',
+    email: 'Email',
+    password: 'Password',
+    login: 'Sign in',
+    loggingIn: 'Signing in...',
+    loginFailed: 'Login failed. Please check your email and password.',
+    demoMode: 'Demo mode — browse without logging in',
+    signupCta: '🐄 Start CowTalk — Free 3-minute signup',
+    rolePrompt: 'Choose a role to enter instantly',
+    entering: 'Entering...',
+    heroBadge: 'AI-POWERED LIVESTOCK INTELLIGENCE PLATFORM',
+    heroLine1: 'Cows speak through data.',
+    heroLine2: 'We translate it into action.',
+    statFarms: 'Farms',
+    statCattle: 'Cattle',
+    statMonitoring: 'Monitoring',
+    statDetection: 'Detection',
+    statEngines: 'AI engines',
+    roleVet: 'Veterinarian',
+    roleFarmer: 'Farmer',
+    roleAdmin: 'Government',
+    roleQuarantine: 'Quarantine',
+    feature1Title: 'Rumen Sensor Intelligence',
+    feature1Desc: 'Body temp 0.01°C precision, rumination, activity, water, pH — 24/7 real-time monitoring',
+    feature2Title: 'National Public Data Fusion',
+    feature2Desc: 'Traceability, DHI, pedigree, genomics, quarantine, weather — fully integrated',
+    feature3Title: 'Role-based AI Action Plans',
+    feature3Desc: 'Farmer / Vet / Government / Quarantine — each gets what they need',
+    feature4Title: 'Regional Disease Intelligence',
+    feature4Desc: 'Multi-farm clusters, early warning, epidemiological surveillance, policy dashboards',
+    feature5Title: 'Breeding + Genomics',
+    feature5Desc: 'Pedigree, inbreeding coefficient, genomic EBV, semen recommendation, mating plans',
+    feature6Title: 'Farm Performance Benchmark',
+    feature6DescTemplate: 'Productivity analysis, ROI calculator, farm report cards, {farms} farms compared',
+    footer: 'CowTalk v5.0 | D2O Corp. | Powered by AI',
+    footerHero: 'D2O Corp. — Dairy + Beef | Korea + Global    Powered by CowTalk AI',
+  },
+  ru: {
+    tagline: 'ИИ-операционная система для молочного и мясного скотоводства',
+    corporation: 'D2O Corp. | Сельскохозяйственная корпорация',
+    email: 'Эл. почта',
+    password: 'Пароль',
+    login: 'Войти',
+    loggingIn: 'Вход...',
+    loginFailed: 'Ошибка входа. Проверьте эл. почту и пароль.',
+    demoMode: 'Демо-режим — просмотр без входа',
+    signupCta: '🐄 Начать CowTalk — Бесплатная регистрация за 3 минуты',
+    rolePrompt: 'Выберите роль для быстрого входа',
+    entering: 'Вход...',
+    heroBadge: 'ИИ-ПЛАТФОРМА ЖИВОТНОВОДЧЕСКОЙ АНАЛИТИКИ',
+    heroLine1: 'Коровы говорят с помощью данных.',
+    heroLine2: 'CowTalk превращает их в действия.',
+    statFarms: 'Ферм',
+    statCattle: 'Коров',
+    statMonitoring: 'Мониторинг',
+    statDetection: 'Точность',
+    statEngines: 'ИИ-модулей',
+    roleVet: 'Ветеринар',
+    roleFarmer: 'Фермер',
+    roleAdmin: 'Администратор',
+    roleQuarantine: 'Карантин',
+    feature1Title: 'Интеллект внутрижелудочных датчиков',
+    feature1Desc: 'Температура 0.01°C, жвачка, активность, водопой, pH — мониторинг 24/7',
+    feature2Title: 'Интеграция государственных данных',
+    feature2Desc: 'Прослеживаемость, DHI, родословная, геномика, карантин, погода — единая платформа',
+    feature3Title: 'ИИ-планы действий по ролям',
+    feature3Desc: 'Фермер / Ветеринар / Администратор / Карантин — каждому своё',
+    feature4Title: 'Региональная эпидемиологическая разведка',
+    feature4Desc: 'Кластеры ферм, раннее предупреждение, эпиднадзор, управленческие дашборды',
+    feature5Title: 'Воспроизводство + Геномика',
+    feature5Desc: 'Родословная, инбридинг, геномные оценки, подбор семени, планы скрещивания',
+    feature6Title: 'Эталон производительности ферм',
+    feature6DescTemplate: 'Анализ продуктивности, калькулятор ROI, отчёты ферм, сравнение {farms} хозяйств',
+    footer: 'CowTalk v5.0 | D2O Corp. | Работает на ИИ',
+    footerHero: 'D2O Corp. — Молочное + Мясное | Корея + Мир    Работает на CowTalk AI',
+  },
+  uz: {
+    tagline: 'Chorvachilik uchun sun\'iy intellekt raqamli operatsion tizimi',
+    corporation: 'D2O Corp. | Qishloq xo\'jaligi korporatsiyasi',
+    email: 'Elektron pochta',
+    password: 'Parol',
+    login: 'Kirish',
+    loggingIn: 'Kirmoqda...',
+    loginFailed: 'Kirish muvaffaqiyatsiz. Elektron pochta va parolingizni tekshiring.',
+    demoMode: 'Demo rejim — kirmasdan ko\'rib chiqish',
+    signupCta: '🐄 CowTalk\'ni boshlash — 3 daqiqada bepul ro\'yxatdan o\'tish',
+    rolePrompt: 'Tezkor kirish uchun rolni tanlang',
+    entering: 'Kirmoqda...',
+    heroBadge: 'SUN\'IY INTELLEKT CHORVACHILIK PLATFORMASI',
+    heroLine1: 'Qoramol ma\'lumotlar orqali gapiradi.',
+    heroLine2: 'CowTalk ularni amalga aylantiradi.',
+    statFarms: 'Ferma',
+    statCattle: 'Qoramol',
+    statMonitoring: 'Monitoring',
+    statDetection: 'Aniqlik',
+    statEngines: 'AI dvigatel',
+    roleVet: 'Veterinar',
+    roleFarmer: 'Fermer',
+    roleAdmin: 'Ma\'mur',
+    roleQuarantine: 'Karantin',
+    feature1Title: 'Oshqozon ichi sensor intellekti',
+    feature1Desc: 'Tana harorati 0.01°C aniqlik, kavshash, faollik, suv, pH — 24/7 real vaqt monitoringi',
+    feature2Title: 'Milliy ochiq ma\'lumotlar integratsiyasi',
+    feature2Desc: 'Hisob, DHI, nasl, genomika, karantin, ob-havo — to\'liq integratsiya',
+    feature3Title: 'Rolga asoslangan AI harakat rejalari',
+    feature3Desc: 'Fermer / Veterinar / Ma\'mur / Karantin — har biri uchun kerakli ma\'lumot',
+    feature4Title: 'Hududiy karantin razvedkasi',
+    feature4Desc: 'Ko\'p fermali klasterlar, erta ogohlantirish, epidemiologik nazorat, siyosat panellari',
+    feature5Title: 'Ko\'paytirish + Genomika',
+    feature5Desc: 'Nasl, qarindosh koeffitsiyenti, genomik baholash, sperma tavsiyasi, juftlash rejalari',
+    feature6Title: 'Ferma samaradorligi benchmark',
+    feature6DescTemplate: 'Samaradorlik tahlili, ROI kalkulyatori, ferma hisobotlari, {farms} fermani taqqoslash',
+    footer: 'CowTalk v5.0 | D2O Corp. | AI asosida ishlaydi',
+    footerHero: 'D2O Corp. — Sut + Go\'sht | Koreya + Global    CowTalk AI asosida ishlaydi',
+  },
+};
+
+const LANG_OPTIONS: readonly { readonly code: Lang; readonly label: string }[] = [
+  { code: 'ko', label: '한국어' },
+  { code: 'en', label: 'English' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'uz', label: 'O\'zbekcha' },
+];
+
+const LANG_STORAGE_KEY = 'cowtalk-login-lang';
+
+function detectInitialLang(): Lang {
+  if (typeof window === 'undefined') return 'ko';
+  const saved = localStorage.getItem(LANG_STORAGE_KEY);
+  if (saved === 'ko' || saved === 'en' || saved === 'ru' || saved === 'uz') return saved;
+  const browserLang = navigator.language?.toLowerCase() ?? '';
+  if (browserLang.startsWith('ko')) return 'ko';
+  if (browserLang.startsWith('ru')) return 'ru';
+  if (browserLang.startsWith('uz')) return 'uz';
+  return 'en';
 }
 
 // ── 공개 통계 타입 ──
@@ -95,14 +319,6 @@ interface FeatureCard {
   readonly description: string;
 }
 
-// 히어로 하단 역할 뱃지 — 클릭 시 quick login
-const ROLE_BADGES: readonly { readonly label: string; readonly email: string }[] = [
-  { label: '수의사', email: 'vet@test.kr' },
-  { label: '목장주', email: 'farmer@test.kr' },
-  { label: '행정관', email: 'admin@gyeonggi.kr' },
-  { label: '방역관', email: 'quarantine@test.kr' },
-];
-
 // ── 메인 컴포넌트 ──
 
 export default function LoginPage(): React.JSX.Element {
@@ -110,9 +326,29 @@ export default function LoginPage(): React.JSX.Element {
   const [password, setPassword] = useState('');
   const [stats, setStats] = useState<PublicStats | null>(null);
   const [quickLoggingEmail, setQuickLoggingEmail] = useState<string | null>(null);
+  const [lang, setLang] = useState<Lang>(detectInitialLang);
   const { login, quickLogin, isLoggingIn, loginError, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const t = I18N[lang];
+
+  // 역할별 라벨 (언어 변환)
+  const roleBadges: readonly { readonly label: string; readonly email: string }[] = [
+    { label: t.roleVet, email: 'vet@test.kr' },
+    { label: t.roleFarmer, email: 'farmer@test.kr' },
+    { label: t.roleAdmin, email: 'admin@gyeonggi.kr' },
+    { label: t.roleQuarantine, email: 'quarantine@test.kr' },
+  ];
+
+  // 언어 전환 + 저장
+  function handleLangChange(next: Lang): void {
+    setLang(next);
+    try {
+      localStorage.setItem(LANG_STORAGE_KEY, next);
+    } catch {
+      // storage 비활성화 환경 무시
+    }
+  }
 
   // 실제 통계 조회
   useEffect(() => {
@@ -172,31 +408,101 @@ export default function LoginPage(): React.JSX.Element {
   const heroEngines = String(stats?.aiEngines ?? 6);
 
   const features: readonly FeatureCard[] = [
+    { title: t.feature1Title, description: t.feature1Desc },
+    { title: t.feature2Title, description: t.feature2Desc },
+    { title: t.feature3Title, description: t.feature3Desc },
+    { title: t.feature4Title, description: t.feature4Desc },
+    { title: t.feature5Title, description: t.feature5Desc },
     {
-      title: '위내센서 인텔리전스',
-      description: '체온 0.01°C 정밀도, 반추, 활동, 음수, pH — 24시간 실시간 모니터링',
-    },
-    {
-      title: '국가 공공데이터 융합',
-      description: '이력추적, DHI 검정, 혈통, 유전체, 방역, 기상 — 완전 통합',
-    },
-    {
-      title: '역할별 AI 액션플랜',
-      description: '목장주 / 수의사 / 행정관 / 방역관 — 각자 필요한 정보',
-    },
-    {
-      title: '지역 방역 인텔리전스',
-      description: '다농장 클러스터, 조기경보, 역학 감시, 정책 대시보드',
-    },
-    {
-      title: '번식 + 유전체',
-      description: '혈통, 근교계수, 유전체 육종가, 정액 추천, 교배 계획',
-    },
-    {
-      title: `농장 성과 벤치마크`,
-      description: `생산성 분석, ROI 계산기, 농장 리포트 카드, ${heroFarms}개 농장 비교`,
+      title: t.feature6Title,
+      description: t.feature6DescTemplate.replace('{farms}', heroFarms),
     },
   ];
+
+  // ── 언어 스위처 ──
+  const LangSwitcher = (
+    <div
+      role="group"
+      aria-label="Language"
+      style={{
+        display: 'flex',
+        gap: 4,
+        alignItems: 'center',
+        padding: '4px',
+        borderRadius: 999,
+        background: 'rgba(255,255,255,0.08)',
+        border: '1px solid rgba(255,255,255,0.15)',
+        backdropFilter: 'blur(4px)',
+      }}
+    >
+      {LANG_OPTIONS.map((opt) => {
+        const active = opt.code === lang;
+        return (
+          <button
+            key={opt.code}
+            type="button"
+            onClick={() => handleLangChange(opt.code)}
+            aria-pressed={active}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 999,
+              border: 'none',
+              background: active ? '#ffffff' : 'transparent',
+              color: active ? '#166534' : 'rgba(255,255,255,0.85)',
+              fontSize: 11,
+              fontWeight: active ? 700 : 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // 모바일/폼 쪽 스위처 (연한 배경)
+  const LangSwitcherLight = (
+    <div
+      role="group"
+      aria-label="Language"
+      style={{
+        display: 'flex',
+        gap: 4,
+        alignItems: 'center',
+        padding: '4px',
+        borderRadius: 999,
+        background: '#f0fdf4',
+        border: '1px solid #bbf7d0',
+      }}
+    >
+      {LANG_OPTIONS.map((opt) => {
+        const active = opt.code === lang;
+        return (
+          <button
+            key={opt.code}
+            type="button"
+            onClick={() => handleLangChange(opt.code)}
+            aria-pressed={active}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 999,
+              border: 'none',
+              background: active ? '#16a34a' : 'transparent',
+              color: active ? '#ffffff' : '#166534',
+              fontSize: 11,
+              fontWeight: active ? 700 : 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div style={{
@@ -212,19 +518,21 @@ export default function LoginPage(): React.JSX.Element {
             background: 'linear-gradient(160deg, #0f4c3a 0%, #1a6b4f 50%, #2a8f6a 100%)',
             padding: '32px 20px 24px',
             textAlign: 'center',
+            position: 'relative',
           }}
         >
+          <div style={{ position: 'absolute', top: 12, right: 12 }}>{LangSwitcher}</div>
           <h2 style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 }}>
             Cow<span style={{ color: '#86efac' }}>Talk</span>
           </h2>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', margin: '4px 0 16px' }}>
-            Cows speak through data. We translate it into action.
+            {t.heroLine1} {t.heroLine2}
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <StatItem value={heroFarms} label="Farms" />
-            <StatItem value={heroCattle} label="Cattle" />
-            <StatItem value={heroMonitoring} label="24/7" />
-            <StatItem value={heroDetection} label="Detection" />
+            <StatItem value={heroFarms} label={t.statFarms} />
+            <StatItem value={heroCattle} label={t.statCattle} />
+            <StatItem value={heroMonitoring} label={t.statMonitoring} />
+            <StatItem value={heroDetection} label={t.statDetection} />
           </div>
         </div>
       )}
@@ -242,18 +550,24 @@ export default function LoginPage(): React.JSX.Element {
           width: isMobile ? '100%' : undefined,
           maxWidth: isMobile ? '100%' : undefined,
           boxSizing: 'border-box',
+          position: 'relative',
         }}
       >
+        {/* Desktop 전용: 폼 상단 오른쪽에 언어 스위처 */}
+        {!isMobile && (
+          <div style={{ position: 'absolute', top: 16, right: 16 }}>{LangSwitcherLight}</div>
+        )}
+
         {/* Logo */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ fontSize: 36, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>
             Cow<span style={{ color: '#16a34a' }}>Talk</span>
           </h1>
           <p style={{ fontSize: 14, color: '#666', margin: '4px 0 0' }}>
-            AI livestock digital operating system
+            {t.tagline}
           </p>
           <p style={{ fontSize: 12, color: '#999', margin: '2px 0 0' }}>
-            D2O Corp. | Agricultural corporation
+            {t.corporation}
           </p>
         </div>
 
@@ -265,7 +579,7 @@ export default function LoginPage(): React.JSX.Element {
                 htmlFor="email"
                 style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 4 }}
               >
-                Email
+                {t.email}
               </label>
               <input
                 id="email"
@@ -295,7 +609,7 @@ export default function LoginPage(): React.JSX.Element {
                 htmlFor="password"
                 style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 4 }}
               >
-                Password
+                {t.password}
               </label>
               <input
                 id="password"
@@ -325,7 +639,7 @@ export default function LoginPage(): React.JSX.Element {
 
           {loginError && (
             <p style={{ fontSize: 12, color: '#dc2626', marginBottom: 8 }}>
-              Login failed. Please check your email and password.
+              {t.loginFailed}
             </p>
           )}
 
@@ -358,7 +672,7 @@ export default function LoginPage(): React.JSX.Element {
               e.currentTarget.style.borderColor = '#e5e7eb';
             }}
           >
-            {isLoggingIn ? '로그인 중...' : '로그인'}
+            {isLoggingIn ? t.loggingIn : t.login}
           </button>
         </form>
 
@@ -378,7 +692,7 @@ export default function LoginPage(): React.JSX.Element {
             textAlign: 'center',
           }}
         >
-          데모 모드 &mdash; 로그인 없이 둘러보기
+          {t.demoMode}
         </button>
         <button
           type="button"
@@ -396,16 +710,16 @@ export default function LoginPage(): React.JSX.Element {
             fontWeight: 600,
           }}
         >
-          🐄 CowTalk 시작하기 — 3분 무료 가입
+          {t.signupCta}
         </button>
         {/* 모바일: 역할 선택 버튼 */}
         {isMobile && (
           <div style={{ marginTop: 20 }}>
             <p style={{ fontSize: 11, color: '#999', textAlign: 'center', marginBottom: 8 }}>
-              역할을 선택하여 바로 입장
+              {t.rolePrompt}
             </p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {ROLE_BADGES.map((role) => {
+              {roleBadges.map((role) => {
                 const isLoading = quickLoggingEmail === role.email;
                 return (
                   <button
@@ -424,7 +738,7 @@ export default function LoginPage(): React.JSX.Element {
                       cursor: isLoggingIn ? 'wait' : 'pointer',
                     }}
                   >
-                    {isLoading ? '입장 중...' : role.label}
+                    {isLoading ? t.entering : role.label}
                   </button>
                 );
               })}
@@ -433,7 +747,7 @@ export default function LoginPage(): React.JSX.Element {
         )}
 
         <p style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 16 }}>
-          CowTalk v5.0 | D2O Corp. | Powered by AI
+          {t.footer}
         </p>
       </div>
 
@@ -465,7 +779,7 @@ export default function LoginPage(): React.JSX.Element {
             marginBottom: 20,
           }}
         >
-          AI-POWERED LIVESTOCK INTELLIGENCE PLATFORM
+          {t.heroBadge}
         </span>
 
         {/* Title */}
@@ -481,10 +795,10 @@ export default function LoginPage(): React.JSX.Element {
           Cow<span style={{ color: '#86efac' }}>Talk</span>
         </h2>
         <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.85)', textAlign: 'center', margin: 0 }}>
-          Cows speak through data.
+          {t.heroLine1}
         </p>
         <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.85)', textAlign: 'center', margin: '2px 0 0' }}>
-          We translate it into action.
+          {t.heroLine2}
         </p>
 
         {/* Stats bar — 실제 DB 데이터 */}
@@ -498,11 +812,11 @@ export default function LoginPage(): React.JSX.Element {
             justifyContent: 'center',
           }}
         >
-          <StatItem value={heroFarms} label="Farms" />
-          <StatItem value={heroCattle} label="Cattle" />
-          <StatItem value={heroMonitoring} label="Monitoring" />
-          <StatItem value={heroDetection} label="Detection" />
-          <StatItem value={heroEngines} label="AI engines" />
+          <StatItem value={heroFarms} label={t.statFarms} />
+          <StatItem value={heroCattle} label={t.statCattle} />
+          <StatItem value={heroMonitoring} label={t.statMonitoring} />
+          <StatItem value={heroDetection} label={t.statDetection} />
+          <StatItem value={heroEngines} label={t.statEngines} />
         </div>
 
         {/* Feature cards grid */}
@@ -538,10 +852,10 @@ export default function LoginPage(): React.JSX.Element {
 
         {/* Role badges — 클릭 시 즉시 로그인 */}
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 28, marginBottom: 10, textAlign: 'center' }}>
-          역할을 선택하여 바로 입장
+          {t.rolePrompt}
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {ROLE_BADGES.map((role) => {
+          {roleBadges.map((role) => {
             const isLoading = quickLoggingEmail === role.email;
             return (
               <button
@@ -573,7 +887,7 @@ export default function LoginPage(): React.JSX.Element {
                   e.currentTarget.style.transform = 'scale(1)';
                 }}
               >
-                {isLoading ? '입장 중...' : role.label}
+                {isLoading ? t.entering : role.label}
               </button>
             );
           })}
@@ -588,7 +902,7 @@ export default function LoginPage(): React.JSX.Element {
             textAlign: 'center',
           }}
         >
-          D2O Corp. &mdash; Dairy + Beef | Korea + Global&nbsp;&nbsp;&nbsp;&nbsp;Powered by CowTalk AI
+          {t.footerHero}
         </p>
       </div>}
     </div>
