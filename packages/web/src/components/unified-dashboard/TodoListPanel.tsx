@@ -9,32 +9,12 @@ interface Props {
   readonly onItemClick?: (item: TodoItem) => void;
 }
 
-// Lucide 아이콘 이름 → 이모지 매핑
-const ICON_MAP: Record<string, string> = {
-  venus: '♀️',
-  baby: '👶',
-  thermometer: '🌡️',
-  'heart-pulse': '💓',
-  utensils: '🍽️',
-  activity: '📊',
-  'alert-triangle': '⚠️',
-  droplets: '💧',
-  stethoscope: '🩺',
-  syringe: '💉',
-  pill: '💊',
-  cow: '🐄',
-};
-
-function resolveIcon(icon: string): string {
-  return ICON_MAP[icon] ?? icon;
-}
-
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: 'var(--ct-danger)',
-  high: 'var(--ct-warning)',
+  critical: '#ef4444',
+  high: '#f97316',
   medium: '#eab308',
-  low: 'var(--ct-info)',
-  info: 'var(--ct-text-secondary)',
+  low: '#64748b',
+  info: '#94a3b8',
 };
 
 function makeTodoKey(item: TodoItem): string {
@@ -43,9 +23,7 @@ function makeTodoKey(item: TodoItem): string {
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 // ── 프로그레스바 ──
@@ -60,29 +38,16 @@ function CompletionProgressBar({
   const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
 
   return (
-    <div className="mb-3">
-      <div className="flex items-center justify-between mb-1">
-        <span style={{ fontSize: '11px', color: 'var(--ct-text-secondary)', fontWeight: 500 }}>
-          오늘 할 일 {completed}/{total} 완료
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+        <span style={{ fontSize: 11, color: 'var(--ct-text-secondary)', fontWeight: 500 }}>
+          {completed}/{total} 완료
         </span>
-        <span
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: pct === 100 ? '#22c55e' : 'var(--ct-primary)',
-          }}
-        >
+        <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? '#22c55e' : 'var(--ct-primary)' }}>
           {pct}%
         </span>
       </div>
-      <div
-        style={{
-          height: 6,
-          borderRadius: 3,
-          background: 'var(--ct-border)',
-          overflow: 'hidden',
-        }}
-      >
+      <div style={{ height: 5, borderRadius: 3, background: 'var(--ct-border)', overflow: 'hidden' }}>
         <div
           style={{
             height: '100%',
@@ -103,158 +68,167 @@ function CompletionProgressBar({
 
 export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element {
   const { completedTodos, toggleTodo } = useDxCompletion();
-
   const completedCount = items.filter((item) => completedTodos.has(makeTodoKey(item))).length;
 
   return (
-    <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
-      <h3
-        className="mb-3 font-semibold"
-        style={{ fontSize: '13px', color: 'var(--ct-text)' }}
-      >
-        {'\uD83D\uDCCB'} 오늘 할 일
+    <div
+      className="ct-card"
+      style={{
+        borderRadius: 12,
+        padding: '14px 12px',
+        overflow: 'hidden',       // 모바일 넘침 방지
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+      }}
+    >
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ct-text)', margin: '0 0 10px 2px' }}>
+        오늘 할 일
       </h3>
 
       {items.length > 0 && (
         <CompletionProgressBar completed={completedCount} total={items.length} />
       )}
 
-      <ul className="flex flex-col gap-1">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {items.map((item) => {
           const key = makeTodoKey(item);
           const completedAt = completedTodos.get(key);
           const isCompleted = completedAt !== undefined;
           const hasCount = item.count > 0;
-          const badgeColor = hasCount
-            ? SEVERITY_COLORS[item.severity] ?? 'var(--ct-text-secondary)'
-            : 'var(--ct-border)';
-
-          const shouldPulse = item.count > 10 && !isCompleted;
+          const barColor = isCompleted
+            ? '#22c55e'
+            : hasCount
+              ? (SEVERITY_COLORS[item.severity] ?? '#64748b')
+              : 'var(--ct-border)';
+          const badgeColor = isCompleted ? '#22c55e' : barColor;
 
           return (
-            <li key={key}>
-              <div
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors"
+            <div
+              key={key}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 6px 7px 0',
+                borderRadius: 8,
+                opacity: isCompleted ? 0.5 : 1,
+                transition: 'opacity 0.2s',
+                position: 'relative',
+                minWidth: 0,          // flex children 넘침 방지
+              }}
+            >
+              {/* severity accent bar */}
+              <span
                 style={{
-                  position: 'relative',
-                  opacity: isCompleted ? 0.55 : 1,
-                  transition: 'opacity 0.3s ease',
+                  flexShrink: 0,
+                  width: 3,
+                  alignSelf: 'stretch',
+                  borderRadius: 2,
+                  background: barColor,
+                }}
+              />
+
+              {/* 체크박스 */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleTodo(key); }}
+                style={{
+                  flexShrink: 0,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 4,
+                  border: `1.5px solid ${isCompleted ? '#22c55e' : 'var(--ct-border)'}`,
+                  background: isCompleted ? '#22c55e' : 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                }}
+                title={isCompleted ? '완료 취소' : '완료 처리'}
+              >
+                {isCompleted && (
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                    <path d="M2.5 6L5 8.5L9.5 3.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+
+              {/* 라벨 — 클릭 시 드릴다운 */}
+              <button
+                type="button"
+                onClick={() => onItemClick?.(item)}
+                disabled={!onItemClick}
+                style={{
+                  flex: '1 1 0',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'left',
+                  fontSize: 13,
+                  fontWeight: hasCount && !isCompleted ? 500 : 400,
+                  color: isCompleted
+                    ? 'var(--ct-text-secondary)'
+                    : hasCount ? 'var(--ct-text)' : 'var(--ct-text-secondary)',
+                  textDecoration: isCompleted ? 'line-through' : 'none',
+                  cursor: onItemClick ? 'pointer' : 'default',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  lineHeight: 1.3,
                 }}
               >
-                {/* severity accent bar */}
+                {item.label}
+              </button>
+
+              {/* 완료 시각 */}
+              {isCompleted && completedAt !== undefined && (
+                <span style={{ flexShrink: 0, fontSize: 10, color: '#22c55e', fontWeight: 500 }}>
+                  {formatTime(completedAt)}
+                </span>
+              )}
+
+              {/* 카운트 배지 */}
+              {!isCompleted && (
                 <span
                   style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: '20%',
-                    bottom: '20%',
-                    width: 3,
-                    borderRadius: 2,
-                    backgroundColor: isCompleted
-                      ? '#22c55e'
-                      : hasCount
-                        ? badgeColor
-                        : 'var(--ct-border)',
-                    transition: 'background-color 0.2s ease',
+                    flexShrink: 0,
+                    minWidth: 24,
+                    padding: '2px 6px',
+                    borderRadius: 10,
+                    background: badgeColor,
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textAlign: 'center',
+                    lineHeight: 1.3,
                   }}
-                />
-
-                {/* 완료 체크박스 */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleTodo(key);
-                  }}
-                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition-all"
-                  style={{
-                    borderColor: isCompleted ? '#22c55e' : 'var(--ct-border)',
-                    backgroundColor: isCompleted ? '#22c55e' : 'transparent',
-                    cursor: 'pointer',
-                    marginLeft: 2,
-                  }}
-                  title={isCompleted ? '완료 취소' : '완료 처리'}
                 >
-                  {isCompleted && (
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M2.5 6L5 8.5L9.5 3.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-
-                {/* 본문 클릭 영역 */}
-                <button
-                  type="button"
-                  onClick={() => onItemClick?.(item)}
-                  disabled={!onItemClick}
-                  className={`flex flex-1 items-center gap-2 ${
-                    onItemClick ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
-                  }`}
-                >
-                  <span style={{ fontSize: '14px' }}>{resolveIcon(item.icon)}</span>
-                  <span
-                    className="flex-1 text-sm"
-                    style={{
-                      color: isCompleted
-                        ? 'var(--ct-text-secondary)'
-                        : hasCount
-                          ? 'var(--ct-text)'
-                          : 'var(--ct-text-secondary)',
-                      textDecoration: isCompleted ? 'line-through' : 'none',
-                      transition: 'color 0.2s ease',
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </button>
-
-                {/* 완료 시간 표시 */}
-                {isCompleted && completedAt !== undefined && (
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      color: '#22c55e',
-                      fontWeight: 500,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {formatTime(completedAt)}
-                  </span>
-                )}
-
-                {/* severity badge */}
+                  {item.count}
+                </span>
+              )}
+              {isCompleted && (
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium${hasCount && !isCompleted ? ' ct-severity-glow' : ''}`}
                   style={{
-                    backgroundColor: isCompleted ? '#22c55e' : hasCount ? badgeColor : 'var(--ct-border)',
-                    color: isCompleted || hasCount ? '#ffffff' : 'var(--ct-text-secondary)',
-                    minWidth: '24px',
+                    flexShrink: 0,
+                    minWidth: 24,
+                    padding: '2px 6px',
+                    borderRadius: 10,
+                    background: '#22c55e',
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 600,
                     textAlign: 'center',
                   }}
                 >
-                  {isCompleted ? '\u2713' : item.count}
+                  ✓
                 </span>
-
-                {/* count badge with pulse when > 10 */}
-                {shouldPulse && (
-                  <span
-                    className="ct-count-pulse rounded-full px-1.5 py-0.5 text-xs font-bold"
-                    style={{
-                      backgroundColor: 'var(--ct-danger)',
-                      color: '#ffffff',
-                      minWidth: '20px',
-                      textAlign: 'center',
-                      fontSize: '10px',
-                    }}
-                  >
-                    !
-                  </span>
-                )}
-              </div>
-            </li>
+              )}
+            </div>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 }
