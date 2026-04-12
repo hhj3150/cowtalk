@@ -82,7 +82,7 @@ breedingRouter.get('/semen', async (req: Request, res: Response, next: NextFunct
 });
 
 // GET /breeding/recommend/:animalId — 발정→수정 추천 (실 로직)
-breedingRouter.get('/recommend/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.get('/recommend/:animalId', async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const animalId = req.params.animalId as string;
     const advice = await getBreedingAdvice(animalId);
@@ -94,7 +94,30 @@ breedingRouter.get('/recommend/:animalId', async (req: Request, res: Response, n
 
     res.json({ success: true, data: advice });
   } catch (error) {
-    next(error);
+    // 스키마 드리프트/런타임 에러 시 빈 추천 결과로 graceful degrade
+    // (5/13 시연 중 UI 크래시 방지 — CowProfilePage가 크래시하면 전체 드릴다운 차단됨)
+    const msg = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('[breeding/recommend] degraded fallback:', { animalId: req.params.animalId, msg, stack });
+    res.json({
+      success: true,
+      data: {
+        animalId: req.params.animalId,
+        earTag: '',
+        farmId: '',
+        farmName: '',
+        heatDetectedAt: new Date().toISOString(),
+        optimalInseminationTime: new Date().toISOString(),
+        optimalTimeLabel: '추천 불가',
+        windowStartHours: 10,
+        windowEndHours: 18,
+        windowStartTime: new Date().toISOString(),
+        windowEndTime: new Date().toISOString(),
+        warnings: [`⚠️ 추천 엔진 일시 오류: ${msg}`],
+        recommendations: [],
+        farmSettings: { pregnancyCheckDays: 28, estrusRecurrenceDays: 21 },
+      },
+    });
   }
 });
 

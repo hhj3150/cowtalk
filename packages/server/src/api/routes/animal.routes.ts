@@ -252,7 +252,7 @@ animalRouter.get('/:animalId/trace', requirePermission('animal', 'read'), async 
 });
 
 // GET /animals/:animalId/breeding-timeline — 임신 관리 통합 타임라인
-animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -501,7 +501,17 @@ animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 're
       },
     });
   } catch (error) {
-    next(error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('[breeding-timeline] degraded fallback:', { animalId: req.params.animalId, msg });
+    res.json({
+      success: true,
+      data: {
+        animalId: req.params.animalId,
+        timeline: [],
+        currentStage: 'unknown',
+        nextAction: null,
+      },
+    });
   }
 });
 

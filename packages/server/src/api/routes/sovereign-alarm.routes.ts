@@ -15,14 +15,16 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 
-sovereignAlarmRouter.get('/', async (req, res, next) => {
+sovereignAlarmRouter.get('/', async (req, res, _next) => {
   try {
     const { farmId, limit } = querySchema.parse(req.query);
     const alarms = await generateSovereignAlarms(farmId, limit);
     res.json({ success: true, data: { alarms, generatedAt: new Date().toISOString() } });
   } catch (err) {
-    logger.error({ err }, 'sovereign alarm error');
-    next(err);
+    // UI 크래시 방지를 위한 graceful degrade
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, msg }, 'sovereign alarm degraded fallback');
+    res.json({ success: true, data: { alarms: [], generatedAt: new Date().toISOString() } });
   }
 });
 
