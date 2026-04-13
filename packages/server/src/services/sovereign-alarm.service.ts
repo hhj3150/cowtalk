@@ -406,9 +406,34 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
     }
   }
 
+  // AX 학습: 레이블 정확도 기반 confidence 보정 (루프 폐쇄)
+  // false_positive가 많은 알람 타입은 confidence 하향, confirmed 많으면 유지
+  let calibratedAlarms = alarms;
+  try {
+    const accuracy = await getSovereignAlarmAccuracy(farmId);
+    calibratedAlarms = alarms.map((alarm) => {
+      const typeStats = accuracy.byType[alarm.type];
+      if (!typeStats || typeStats.total < 3) return alarm; // 3건 미만이면 보정 안 함
+      const fpRate = typeStats.falsePositive / typeStats.total;
+      let newConf = alarm.confidence;
+      if (fpRate > 0.5) {
+        newConf = Math.round(newConf * 0.7);       // 오탐 50%+ → -30%
+      } else if (fpRate > 0.3) {
+        newConf = Math.round(newConf * 0.85);      // 오탐 30~50% → -15%
+      }
+      const confirmRate = typeStats.confirmed / typeStats.total;
+      if (confirmRate > 0.9 && typeStats.total >= 5) {
+        newConf = Math.min(100, Math.round(newConf * 1.1)); // 정확 90%+ → +10%
+      }
+      return newConf !== alarm.confidence ? { ...alarm, confidence: newConf } : alarm;
+    });
+  } catch (err) {
+    logger.debug({ err, farmId }, '[Sovereign] 레이블 보정 실패 — 원본 confidence 유지');
+  }
+
   // severity 우선순위 정렬 + limit
   const ORDER: Record<string, number> = { critical: 0, warning: 1, caution: 2, info: 3 };
-  const sorted = alarms
+  const sorted = [...calibratedAlarms]
     .sort((a, b) => (ORDER[a.severity] ?? 3) - (ORDER[b.severity] ?? 3))
     .slice(0, limit);
 

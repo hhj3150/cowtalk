@@ -4,6 +4,7 @@
 import { eq, and, gte, desc, sql } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { animals, healthEvents, sensorDailyAgg, farms } from '../../db/schema.js';
+import { logger } from '../../lib/logger.js';
 
 // ── 출력 타입 (공유 패키지에서 가져옴) ──
 
@@ -140,6 +141,95 @@ async function loadFarmHistory(farmId: string, days: number = 90): Promise<reado
   return rows.map((row: { diagnosis: string; count: number }) => ({ diagnosis: row.diagnosis, count: row.count }));
 }
 
+// ── AX 학습: 치료 결과 기반 진단 가중치 ──
+
+interface TreatmentOutcomeWeight {
+  readonly diagnosis: string;
+  readonly totalCases: number;
+  readonly recoveredCount: number;
+  readonly recoveryRate: number;  // 0~1
+  readonly weight: number;        // 가중치 보정 (양수=확률↑, 음수=확률↓)
+}
+
+/**
+ * 농장·개체의 과거 치료 결과로부터 진단별 학습 가중치를 계산한다.
+ * - 이 농장에서 자주 발생하는 질병(유병률) → 확률 상향
+ * - 이 개체가 과거 같은 질병으로 치료받은 이력 → 재발 가중치
+ * - 치료 성공률이 높은 질병 → 안정 신뢰(변동 없음)
+ * - 치료 실패(relapsed/worsened)가 잦으면 → "잘 낫지 않는다" 맥락 제공
+ */
+async function loadTreatmentOutcomeWeights(
+  farmId: string,
+  animalId: string,
+  days: number = 365,
+): Promise<Map<string, TreatmentOutcomeWeight>> {
+  const db = getDb();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const result = new Map<string, TreatmentOutcomeWeight>();
+
+  try {
+    // 농장 내 진단별 치료 결과 집계
+    const rows = await db.execute(sql`
+      SELECT
+        he.diagnosis,
+        COUNT(*)::int AS total_cases,
+        COUNT(CASE WHEN (t.details->>'outcomeStatus') = 'recovered' THEN 1 END)::int AS recovered,
+        COUNT(CASE WHEN (t.details->>'outcomeStatus') IN ('relapsed', 'worsened') THEN 1 END)::int AS failed
+      FROM health_events he
+      JOIN animals a ON a.animal_id = he.animal_id
+      LEFT JOIN treatments t ON t.health_event_id = he.event_id
+      WHERE a.farm_id = ${farmId}
+        AND he.event_date >= ${cutoff}
+      GROUP BY he.diagnosis
+      HAVING COUNT(*) >= 1
+    `);
+
+    for (const row of rows as unknown as Array<{
+      diagnosis: string;
+      total_cases: number;
+      recovered: number;
+      failed: number;
+    }>) {
+      const recoveryRate = row.total_cases > 0 ? row.recovered / row.total_cases : 0;
+      // 가중치: 빈도 보정(자주 발생 = 유병률 높음 → +) + 재발 보정(실패 많으면 → +, 잘 낫지 않는 질병)
+      const frequencyBonus = Math.min(10, row.total_cases * 2);    // 최대 +10
+      const failPenalty = row.failed >= 2 ? 5 : 0;                 // 실패 2건+ → 재발 의심 +5
+      result.set(row.diagnosis, {
+        diagnosis: row.diagnosis,
+        totalCases: row.total_cases,
+        recoveredCount: row.recovered,
+        recoveryRate,
+        weight: frequencyBonus + failPenalty,
+      });
+    }
+
+    // 개체별 이전 진단 이력 (재발 가중치)
+    const animalHistory = await db.execute(sql`
+      SELECT he.diagnosis, COUNT(*)::int AS cnt
+      FROM health_events he
+      WHERE he.animal_id = ${animalId}
+        AND he.event_date >= ${cutoff}
+      GROUP BY he.diagnosis
+    `);
+
+    for (const row of animalHistory as unknown as Array<{ diagnosis: string; cnt: number }>) {
+      const existing = result.get(row.diagnosis);
+      if (existing && row.cnt >= 2) {
+        // 같은 개체 재발 2회+ → 추가 가중치
+        result.set(row.diagnosis, {
+          ...existing,
+          weight: existing.weight + 8,
+        });
+      }
+    }
+  } catch (error) {
+    logger.debug({ error, farmId }, '[DiffDiag] 치료 결과 학습 실패 — 기본 가중치 사용');
+  }
+
+  return result;
+}
+
 // ── 근거 분류 ──
 
 function classifyEvidence(
@@ -201,6 +291,9 @@ export async function getDifferentialDiagnosis(
   const dataQuality: DifferentialDiagnosisResult['dataQuality'] =
     sensorData.size >= 3 ? 'good' : sensorData.size >= 1 ? 'limited' : 'insufficient';
 
+  // AX 학습: 과거 치료 결과 기반 가중치 (질병 루프 피드백)
+  const outcomeWeights = await loadTreatmentOutcomeWeights(animal.farmId, animalId);
+
   // 각 질병 점수 계산
   const scored: { disease: string; score: number }[] = [];
 
@@ -241,6 +334,13 @@ export async function getDifferentialDiagnosis(
         return bonus;
       }, 0);
       score += symptomBonus;
+    }
+
+    // AX 학습 가중치: 농장·개체의 과거 치료 결과 반영
+    // diagnosis 이름을 매칭 (profile.nameKo 또는 diseaseKey)
+    const outcomeW = outcomeWeights.get(profile.nameKo) ?? outcomeWeights.get(diseaseKey);
+    if (outcomeW) {
+      score += outcomeW.weight;
     }
 
     if (score > 0 || evidenceCount > 0) {
