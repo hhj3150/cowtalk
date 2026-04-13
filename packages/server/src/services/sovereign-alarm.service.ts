@@ -8,6 +8,7 @@
 import { getDb } from '../config/database.js';
 import { animals, sensorDailyAgg, sovereignAlarmLabels } from '../db/schema.js';
 import { eq, and, gte, desc } from 'drizzle-orm';
+import { saveSovereignAlarmsBatch } from '../intelligence-loop/prediction-bridge.service.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 
@@ -436,6 +437,11 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
   const sorted = [...calibratedAlarms]
     .sort((a, b) => (ORDER[a.severity] ?? 3) - (ORDER[b.severity] ?? 3))
     .slice(0, limit);
+
+  // AI 성능 측정: 소버린 알람을 predictions 테이블에 저장 (비동기, 실패해도 알람 반환에 영향 없음)
+  saveSovereignAlarmsBatch(sorted).catch((err) => {
+    logger.debug({ err, count: sorted.length }, '[Sovereign] prediction bridge save failed');
+  });
 
   // Load existing labels for these alarms
   try {

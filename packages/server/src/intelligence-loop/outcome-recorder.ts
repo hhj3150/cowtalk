@@ -1,8 +1,8 @@
 // 예측-결과 매칭 서비스 — Intelligence Loop Phase 11A
 
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, sql, desc, gte, lte } from 'drizzle-orm';
 import { getDb } from '../config/database.js';
-import { predictions, outcomeEvaluations, feedback } from '../db/schema.js';
+import { predictions, outcomeEvaluations, feedback, smaxtecEvents } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 
 type OutcomeRow = typeof outcomeEvaluations.$inferSelect;
@@ -231,18 +231,19 @@ async function findMatchingFeedback(
     )
     .orderBy(desc(feedback.createdAt));
 
-  if (animalMatches.length === 0) {
-    return null;
+  if (animalMatches.length > 0) {
+    return classifyFeedback(pred.engineType, animalMatches[0]!.feedbackType);
   }
 
-  return classifyFeedback(pred.engineType, animalMatches[0]!.feedbackType);
+  // 3) smaXtec 이벤트 기반 후향적 매칭 (feedback 없을 때 fallback)
+  return findMatchingSmaxtecEvent(pred);
 }
 
 function classifyFeedback(
   engineType: string,
   feedbackType: string,
 ): FeedbackMatch | null {
-  if (engineType === 'estrus') {
+  if (engineType === 'estrus' || engineType === 'breeding_advisor_v1') {
     if (ESTRUS_POSITIVE_TYPES.includes(feedbackType)) {
       return { feedbackType, isCorrect: true, matchResult: 'true_positive' };
     }
@@ -251,7 +252,7 @@ function classifyFeedback(
     }
   }
 
-  if (engineType === 'disease') {
+  if (engineType === 'disease' || engineType === 'sovereign_v1' || engineType === 'diff_diagnosis_v1') {
     if (HEALTH_POSITIVE_TYPES.includes(feedbackType)) {
       return { feedbackType, isCorrect: true, matchResult: 'true_positive' };
     }
@@ -261,4 +262,70 @@ function classifyFeedback(
   }
 
   return null;
+}
+
+// ── smaXtec 이벤트 기반 후향적 매칭 ──
+// feedback 테이블에 없어도, smaXtec이 나중에 이벤트를 발생시키면 매칭 가능
+
+/** 소버린/감별진단 예측에 대해 smaXtec 건강 이벤트가 실제 발생했는지 확인 */
+const HEALTH_EVENT_TYPES = [
+  'health_warning', 'health_general', 'clinical_condition',
+  'temperature_high', 'temperature_warning', 'rumination_warning',
+  'rumination_decrease', 'activity_decrease',
+];
+
+const ESTRUS_EVENT_TYPES = ['estrus', 'estrus_dnb', 'heat', 'insemination'];
+
+async function findMatchingSmaxtecEvent(
+  pred: PredictionRow,
+): Promise<FeedbackMatch | null> {
+  if (!pred.animalId) return null;
+
+  const db = getDb();
+  const engine = pred.engineType;
+  const isHealthEngine = engine === 'sovereign_v1' || engine === 'diff_diagnosis_v1' || engine === 'disease';
+  const isBreedingEngine = engine === 'breeding_advisor_v1' || engine === 'estrus';
+
+  const windowMs = isBreedingEngine ? ESTRUS_MATCH_WINDOW_MS : HEALTH_MATCH_WINDOW_MS;
+  const windowEnd = new Date(pred.timestamp.getTime() + windowMs);
+  const eventTypes = isHealthEngine ? HEALTH_EVENT_TYPES : isBreedingEngine ? ESTRUS_EVENT_TYPES : [];
+
+  if (eventTypes.length === 0) return null;
+
+  try {
+    const matches = await db
+      .select({ eventType: smaxtecEvents.eventType, detectedAt: smaxtecEvents.detectedAt })
+      .from(smaxtecEvents)
+      .where(and(
+        eq(smaxtecEvents.animalId, pred.animalId),
+        gte(smaxtecEvents.detectedAt, pred.timestamp),
+        lte(smaxtecEvents.detectedAt, windowEnd),
+        sql`${smaxtecEvents.eventType} = ANY(${eventTypes})`,
+      ))
+      .orderBy(smaxtecEvents.detectedAt)
+      .limit(1);
+
+    if (matches.length > 0) {
+      return {
+        feedbackType: `smaxtec_${matches[0]!.eventType}`,
+        isCorrect: true,
+        matchResult: 'true_positive',
+      };
+    }
+
+    // 윈도우 만료 + 이벤트 없음 = false_positive (7일 이상 경과한 예측만)
+    const daysSincePred = (Date.now() - pred.timestamp.getTime()) / (24 * 60 * 60 * 1000);
+    if (daysSincePred > 7) {
+      return {
+        feedbackType: 'no_smaxtec_event',
+        isCorrect: false,
+        matchResult: 'false_positive',
+      };
+    }
+
+    return null; // 아직 윈도우 내 — 판정 보류
+  } catch (error) {
+    logger.debug({ error, predictionId: pred.predictionId }, 'smaXtec matching failed');
+    return null;
+  }
 }

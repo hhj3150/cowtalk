@@ -956,6 +956,11 @@ async function handleRecommendInseminationWindow(input: Record<string, unknown>)
     const advice = await getBreedingAdvice(animalId, heatDetectedAt);
     if (!advice) return { error: '해당 개체의 번식 정보를 조회할 수 없습니다.' };
 
+    // AI 성능 측정: 번식 추천을 predictions에 저장 (비동기)
+    import('../../intelligence-loop/prediction-bridge.service.js')
+      .then(({ saveBreedingAdviceAsPrediction }) => saveBreedingAdviceAsPrediction(advice))
+      .catch(() => {});
+
     return {
       animalId: advice.animalId,
       earTag: advice.earTag,
@@ -1072,10 +1077,14 @@ async function handleGetFarmKpis(input: Record<string, unknown>): Promise<unknow
 
 async function handleDifferentialDiagnosis(input: Record<string, unknown>): Promise<unknown> {
   const { getDifferentialDiagnosis } = await import('../../services/vet/differential-diagnosis.service.js');
+  const { saveDifferentialDiagnosisAsPrediction } = await import('../../intelligence-loop/prediction-bridge.service.js');
   const animalId = input.animalId as string;
   if (!animalId) return { error: 'animalId는 필수입니다.' };
   const symptoms = Array.isArray(input.symptoms) ? input.symptoms as string[] : undefined;
-  return getDifferentialDiagnosis(animalId, symptoms);
+  const result = await getDifferentialDiagnosis(animalId, symptoms);
+  // AI 성능 측정: 감별진단 결과를 predictions에 저장 (비동기)
+  saveDifferentialDiagnosisAsPrediction(result).catch(() => {});
+  return result;
 }
 
 // ===========================
