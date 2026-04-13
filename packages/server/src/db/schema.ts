@@ -1593,3 +1593,26 @@ export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   index('sovereign_alarm_labels_animal_id_idx').on(table.animalId),
   index('sovereign_alarm_labels_labeled_at_idx').on(table.labeledAt),
 ]);
+
+// ======================================================================
+// L. 알람 패턴 스냅샷 — smaXtec 이벤트 전후 48h 센서 데이터 캡처
+// ======================================================================
+
+export const alarmPatternSnapshots = pgTable('alarm_pattern_snapshots', {
+  snapshotId:       uuid('snapshot_id').primaryKey().defaultRandom(),
+  animalId:         uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId:           uuid('farm_id').notNull().references(() => farms.farmId),
+  eventType:        varchar('event_type', { length: 50 }).notNull(),
+  eventDetectedAt:  timestamp('event_detected_at', { withTimezone: true }).notNull(),
+  smaxtecEventId:   varchar('smaxtec_event_id', { length: 100 }),
+  sensorBefore:     jsonb('sensor_before').notNull().default('{}'),
+  sensorAfter:      jsonb('sensor_after'),
+  captureStatus:    varchar('capture_status', { length: 20 }).notNull().default('before_captured'),
+  capturedAt:       timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt:      timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_aps_animal').on(table.animalId),
+  index('idx_aps_type').on(table.eventType),
+  index('idx_aps_status').on(table.captureStatus),
+  index('idx_aps_farm').on(table.farmId),
+]);

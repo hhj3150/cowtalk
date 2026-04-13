@@ -4,6 +4,7 @@
 
 import { getDb } from '../config/database.js';
 import { farms, animals, regions, smaxtecEvents } from '../db/schema.js';
+import { captureBeforeSnapshot } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
 import { eq, and, inArray } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './connectors/smaxtec.connector.js';
@@ -329,6 +330,17 @@ async function syncEvents(
           .returning({ eventId: smaxtecEvents.eventId });
 
         stored += rows.length;
+
+        // 알람 패턴 스냅샷 캡처 — 이벤트 전 48h 센서 데이터 저장
+        for (const v of values) {
+          captureBeforeSnapshot(
+            v.animalId,
+            v.farmId,
+            v.eventType,
+            v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt),
+            v.externalEventId,
+          ).catch(err => logger.debug({ err, eventType: v.eventType }, '[Snapshot] capture skipped'));
+        }
       } catch (error) {
         logger.error({ err: error, batchSize: values.length }, '[Sync] Failed to store event batch');
       }

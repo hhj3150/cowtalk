@@ -5,6 +5,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { generateSovereignAlarms, saveSovereignAlarmLabel, getSovereignAlarmAccuracy } from '../../services/sovereign-alarm.service.js';
+import { computeAccuracyComparison } from '../../services/sovereign-alarm/comparison/accuracy-comparison.service.js';
+import { getRuleCount } from '../../services/sovereign-alarm/rules/rule-registry.js';
 import { logger } from '../../lib/logger.js';
 
 export const sovereignAlarmRouter = Router();
@@ -56,6 +58,31 @@ sovereignAlarmRouter.get('/accuracy', async (req, res, next) => {
     res.json({ success: true, data: accuracy });
   } catch (err) {
     logger.error({ err }, 'sovereign alarm accuracy error');
+    next(err);
+  }
+});
+
+// smaXtec vs CowTalk 정확도 비교
+const comparisonSchema = z.object({
+  farmId: z.string().uuid(),
+  days: z.coerce.number().int().min(1).max(365).default(90),
+});
+
+sovereignAlarmRouter.get('/comparison', async (req, res, next) => {
+  try {
+    const { farmId, days } = comparisonSchema.parse(req.query);
+    const comparison = await computeAccuracyComparison(farmId, undefined, days);
+    res.json({
+      success: true,
+      data: {
+        comparison,
+        ruleCount: getRuleCount(),
+        periodDays: days,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'sovereign alarm comparison error');
     next(err);
   }
 });
