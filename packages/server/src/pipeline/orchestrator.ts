@@ -434,13 +434,26 @@ export class PipelineOrchestrator {
   // ===========================
 
   async runIntelligenceLoopBatch(): Promise<void> {
-    logger.info('[Pipeline] Running Intelligence Loop batch matching');
+    logger.info('[Pipeline] Running Intelligence Loop batch');
     try {
+      // 1) 자동 레이블링 — 146개 농장의 smaXtec 이벤트 → 소버린 알람 레이블 자동 생성
+      const { runAutoLabeling } = await import('../intelligence-loop/auto-labeler.service.js');
+      const labelResult = await runAutoLabeling(3);
+      logger.info({
+        events: labelResult.totalEvents,
+        labels: labelResult.labelsCreated,
+        matched: labelResult.predictionsMatched,
+      }, '[Pipeline] Auto-labeling completed');
+
+      // 2) 예측-결과 배치 매칭 — predictions ↔ smaXtec 이벤트/feedback
       const { runBatchMatching } = await import('../intelligence-loop/outcome-recorder.js');
-      const result = await runBatchMatching();
-      logger.info({ matched: result.matched, totalChecked: result.totalChecked }, '[Pipeline] Intelligence Loop batch matching completed');
+      const matchResult = await runBatchMatching();
+      logger.info({
+        matched: matchResult.matched,
+        totalChecked: matchResult.totalChecked,
+      }, '[Pipeline] Batch matching completed');
     } catch (error) {
-      logger.error({ err: error }, '[Pipeline] Intelligence Loop batch matching failed');
+      logger.error({ err: error }, '[Pipeline] Intelligence Loop batch failed');
     }
   }
 
