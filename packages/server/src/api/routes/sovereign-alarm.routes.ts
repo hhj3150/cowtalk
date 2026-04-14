@@ -7,6 +7,8 @@ import { authenticate } from '../middleware/auth.js';
 import { generateSovereignAlarms, saveSovereignAlarmLabel, getSovereignAlarmAccuracy } from '../../services/sovereign-alarm.service.js';
 import { computeAccuracyComparison } from '../../services/sovereign-alarm/comparison/accuracy-comparison.service.js';
 import { getRuleCount } from '../../services/sovereign-alarm/rules/rule-registry.js';
+import { runThresholdLearning, runFarmThresholdLearning } from '../../intelligence-loop/threshold-learner.js';
+import { computePatternSummaries, findSimilarPatterns, runPatternMining } from '../../services/sovereign-alarm/pattern-mining.service.js';
 import { logger } from '../../lib/logger.js';
 
 export const sovereignAlarmRouter = Router();
@@ -83,6 +85,76 @@ sovereignAlarmRouter.get('/comparison', async (req, res, next) => {
     });
   } catch (err) {
     logger.error({ err }, 'sovereign alarm comparison error');
+    next(err);
+  }
+});
+
+// ── 임계값 학습 (Phase 2) ──
+
+sovereignAlarmRouter.post('/learning/run', async (req, res, next) => {
+  try {
+    const days = z.coerce.number().int().min(1).max(365).default(90).parse(req.query.days ?? 90);
+    const farmId = z.string().uuid().optional().parse(req.query.farmId);
+    const result = farmId
+      ? await runFarmThresholdLearning(farmId, days)
+      : await runThresholdLearning(days);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    logger.error({ err }, 'threshold learning error');
+    next(err);
+  }
+});
+
+// ── 패턴 마이닝 (Phase 2) ──
+
+sovereignAlarmRouter.get('/patterns/summary', async (req, res, next) => {
+  try {
+    const farmId = z.string().uuid().optional().parse(req.query.farmId);
+    const summaries = await computePatternSummaries(farmId ?? undefined);
+    res.json({ success: true, data: { summaries, generatedAt: new Date().toISOString() } });
+  } catch (err) {
+    logger.error({ err }, 'pattern summary error');
+    next(err);
+  }
+});
+
+const similarSchema = z.object({
+  tempMean: z.coerce.number().optional(),
+  rumMean: z.coerce.number().optional(),
+  actMean: z.coerce.number().optional(),
+  tempTrend: z.coerce.number().optional(),
+  rumTrend: z.coerce.number().optional(),
+  eventType: z.string().optional(),
+  topK: z.coerce.number().int().min(1).max(20).default(5),
+});
+
+sovereignAlarmRouter.get('/patterns/similar', async (req, res, next) => {
+  try {
+    const { tempMean, rumMean, actMean, tempTrend, rumTrend, eventType, topK } = similarSchema.parse(req.query);
+    const results = await findSimilarPatterns(
+      {
+        tempMean: tempMean ?? null,
+        rumMean: rumMean ?? null,
+        actMean: actMean ?? null,
+        tempTrend: tempTrend ?? null,
+        rumTrend: rumTrend ?? null,
+      },
+      eventType,
+      topK,
+    );
+    res.json({ success: true, data: { results, generatedAt: new Date().toISOString() } });
+  } catch (err) {
+    logger.error({ err }, 'similar pattern error');
+    next(err);
+  }
+});
+
+sovereignAlarmRouter.post('/patterns/mine', async (_req, res, next) => {
+  try {
+    const result = await runPatternMining();
+    res.json({ success: true, data: result });
+  } catch (err) {
+    logger.error({ err }, 'pattern mining error');
     next(err);
   }
 });

@@ -16,3 +16,5 @@ export { generateSovereignAlarms } from './orchestrator.js';
 export { saveSovereignAlarmLabel, getSovereignAlarmAccuracy } from './label.service.js';
 export { getBatchDailySummaries } from './data-loader.js';
 export { getAllRules, getRulesByCategory, getRuleCount, SENSOR_DETECTABLE_EVENT_TYPES } from './rules/rule-registry.js';
+export { extractPatternFeatures, computePatternSummaries, findSimilarPatterns, runPatternMining } from './pattern-mining.service.js';
+export type { PatternFeatures, PatternSummary, PatternMiningResult } from './pattern-mining.service.js';

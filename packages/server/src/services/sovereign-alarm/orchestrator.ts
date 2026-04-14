@@ -9,6 +9,7 @@ import { eq, and } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { saveSovereignAlarmsBatch } from '../../intelligence-loop/prediction-bridge.service.js';
+import { getConfidenceMultipliers } from '../../intelligence-loop/threshold-learner.js';
 import { getBatchDailySummaries } from './data-loader.js';
 import { getSovereignAlarmAccuracy } from './label.service.js';
 import { getAllRules } from './rules/rule-registry.js';
@@ -64,24 +65,40 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
     }
   }
 
-  // AX 학습: 레이블 정확도 기반 confidence 보정
+  // AX 학습: 학습된 임계값 multiplier + 레이블 정확도 기반 confidence 보정
   let calibratedAlarms = alarms;
   try {
+    // Phase 2: threshold-learner가 생성한 글로벌+농장별 multiplier 로드
+    const learnedMultipliers = await getConfidenceMultipliers(farmId);
+
+    // Phase 1: 기존 레이블 기반 보정 (fallback)
     const accuracy = await getSovereignAlarmAccuracy(farmId);
+
     calibratedAlarms = alarms.map(alarm => {
-      const typeStats = accuracy.byType[alarm.type];
-      if (!typeStats || typeStats.total < 3) return alarm;
-      const fpRate = typeStats.falsePositive / typeStats.total;
       let newConf = alarm.confidence;
-      if (fpRate > 0.5) {
-        newConf = Math.round(newConf * 0.7);
-      } else if (fpRate > 0.3) {
-        newConf = Math.round(newConf * 0.85);
+
+      // 1순위: 학습된 multiplier (sovereign_alarm_labels 90일 집계)
+      const learned = learnedMultipliers.get(alarm.type);
+      if (learned && learned !== 1.0) {
+        newConf = Math.round(newConf * learned);
+      } else {
+        // 2순위: 기존 실시간 레이블 보정 (학습 데이터 부족 시)
+        const typeStats = accuracy.byType[alarm.type];
+        if (typeStats && typeStats.total >= 3) {
+          const fpRate = typeStats.falsePositive / typeStats.total;
+          if (fpRate > 0.5) {
+            newConf = Math.round(newConf * 0.7);
+          } else if (fpRate > 0.3) {
+            newConf = Math.round(newConf * 0.85);
+          }
+          const confirmRate = typeStats.confirmed / typeStats.total;
+          if (confirmRate > 0.9 && typeStats.total >= 5) {
+            newConf = Math.min(100, Math.round(newConf * 1.1));
+          }
+        }
       }
-      const confirmRate = typeStats.confirmed / typeStats.total;
-      if (confirmRate > 0.9 && typeStats.total >= 5) {
-        newConf = Math.min(100, Math.round(newConf * 1.1));
-      }
+
+      newConf = Math.max(1, Math.min(100, newConf));
       return newConf !== alarm.confidence ? { ...alarm, confidence: newConf } : alarm;
     });
   } catch (err) {

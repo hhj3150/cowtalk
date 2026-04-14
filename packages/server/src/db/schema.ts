@@ -1616,3 +1616,34 @@ export const alarmPatternSnapshots = pgTable('alarm_pattern_snapshots', {
   index('idx_aps_status').on(table.captureStatus),
   index('idx_aps_farm').on(table.farmId),
 ]);
+
+// ======================================================================
+// M. 임계값 학습 제안 — sovereign_alarm_labels 분석 결과
+// ======================================================================
+
+export const thresholdSuggestions = pgTable('threshold_suggestions', {
+  suggestionId:         uuid('suggestion_id').primaryKey().defaultRandom(),
+  alarmType:            varchar('alarm_type', { length: 50 }).notNull(),
+  farmId:               uuid('farm_id').references(() => farms.farmId), // NULL = 글로벌
+  // 성능 지표
+  totalLabels:          integer('total_labels').notNull().default(0),
+  confirmedCount:       integer('confirmed_count').notNull().default(0),
+  fpCount:              integer('fp_count').notNull().default(0),
+  modifiedCount:        integer('modified_count').notNull().default(0),
+  confirmRate:          real('confirm_rate').notNull().default(0),
+  fpRate:               real('fp_rate').notNull().default(0),
+  // 조정 제안
+  confidenceMultiplier: real('confidence_multiplier').notNull().default(1.0),
+  severityAdjustment:   varchar('severity_adjustment', { length: 20 }),
+  suggestedAction:      text('suggested_action'),
+  // 추세
+  trend:                varchar('trend', { length: 20 }).default('stable'),
+  previousConfirmRate:  real('previous_confirm_rate'),
+  // 메타
+  analysisWindowDays:   integer('analysis_window_days').notNull().default(90),
+  computedAt:           timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_ts_alarm_type').on(table.alarmType),
+  index('idx_ts_farm_id').on(table.farmId),
+  index('idx_ts_computed_at').on(table.computedAt),
+]);
