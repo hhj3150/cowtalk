@@ -32,10 +32,12 @@ export async function getBatchDailySummaries(
     const byDate = nested.get(aid)!;
     if (!byDate.has(d)) byDate.set(d, {});
     const entry = byDate.get(d)!;
-    if (row.metricType === 'temp')         entry.temp = row.avg;
-    if (row.metricType === 'rum_index')    entry.rum  = row.avg / 60;    // seconds -> minutes
-    if (row.metricType === 'act')          entry.act  = row.avg;
-    if (row.metricType === 'water_intake') entry.dr   = row.avg * 144;   // 10-min avg -> daily L
+    // metric_type 매핑: DB에 temperature/rumination/activity 또는 temp/rum_index/act로 저장
+    const mt = row.metricType;
+    if (mt === 'temp' || mt === 'temperature')           entry.temp = row.avg;
+    if (mt === 'rum_index' || mt === 'rumination')       entry.rum  = mt === 'rum_index' ? row.avg / 60 : row.avg;
+    if (mt === 'act' || mt === 'activity')               entry.act  = row.avg;
+    if (mt === 'water_intake' || mt === 'drinking')      entry.dr   = mt === 'water_intake' ? row.avg * 144 : row.avg;
   }
 
   const result = new Map<string, DailySummary[]>();
