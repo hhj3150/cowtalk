@@ -45,3 +45,6 @@ package-lock 2.json
 ~$*.docx
 ~$*.xlsx
 ~$*.pptx
+
+# 전달용 버전 복사본 (원본은 docs/에 유지)
+docs/delivery/

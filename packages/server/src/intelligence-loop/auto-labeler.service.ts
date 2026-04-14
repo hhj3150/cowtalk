@@ -15,22 +15,46 @@ import { recordOutcome } from './outcome-recorder.js';
 // smaXtec 이벤트 → 소버린 알람 타입 매핑
 // smaXtec 이벤트가 발생하면, 해당 알람 타입의 소버린 알람을 confirmed로 레이블링
 const EVENT_TO_ALARM_TYPE: Readonly<Record<string, readonly string[]>> = {
-  // 건강 이벤트 → 건강 알람 확인
-  health_warning: ['ketosis_risk', 'mastitis_risk', 'acidosis_risk', 'heat_stress_risk'],
-  health_general: ['ketosis_risk', 'mastitis_risk', 'acidosis_risk'],
-  clinical_condition: ['ketosis_risk', 'mastitis_risk', 'acidosis_risk', 'laminitis_risk'],
-  temperature_high: ['mastitis_risk', 'heat_stress_risk'],
-  temperature_warning: ['mastitis_risk', 'heat_stress_risk'],
-  rumination_warning: ['ketosis_risk', 'acidosis_risk'],
-  rumination_decrease: ['ketosis_risk', 'acidosis_risk'],
-  activity_decrease: ['laminitis_risk', 'ketosis_risk'],
-  // 번식 이벤트 → 번식 예측 확인
+  // ── 질병 리스크 (기존) ──
+  health_warning: ['ketosis_risk', 'mastitis_risk', 'acidosis_risk', 'heat_stress', 'health_general'],
+  health_general: ['ketosis_risk', 'mastitis_risk', 'acidosis_risk', 'health_general'],
+  clinical_condition: ['ketosis_risk', 'mastitis_risk', 'acidosis_risk', 'laminitis_risk', 'clinical_condition'],
+
+  // ── 체온 (기존 + 신규) ──
+  temperature_high: ['mastitis_risk', 'heat_stress', 'temperature_high'],
+  temperature_low: ['temperature_low'],
+  temperature_warning: ['mastitis_risk', 'heat_stress', 'temperature_warning'],
+
+  // ── 반추 (기존 + 신규) ──
+  rumination_decrease: ['ketosis_risk', 'acidosis_risk', 'rumination_decrease'],
+  rumination_warning: ['ketosis_risk', 'acidosis_risk', 'rumination_warning'],
+
+  // ── 활동 (기존 + 신규) ──
+  activity_increase: ['activity_increase', 'estrus'],
+  activity_decrease: ['laminitis_risk', 'ketosis_risk', 'activity_decrease'],
+  activity_warning: ['activity_warning'],
+
+  // ── 발정 (신규) ──
+  estrus: ['estrus', 'insemination_recommended'],
+  estrus_dnb: ['estrus_dnb'],
+
+  // ── 분만 (신규) ──
+  calving_detection: ['calving_detection'],
+  calving_waiting: ['calving_waiting'],
+  calving_confirmation: ['calving_detection'],
+  abortion: ['abortion'],
+
+  // ── 사양/음수 (기존 + 신규) ──
+  feeding_warning: ['feeding_warning'],
+  drinking_warning: ['water_decrease', 'water_increase'],
+  drinking_decrease: ['water_decrease'],
+
+  // ── 번식 기록 → 번식 예측 확인 ──
   insemination: ['insemination_recommended'],
-  estrus: ['insemination_recommended'],
   pregnancy_check: ['insemination_recommended'],
-  // 음수 이벤트
-  drinking_warning: ['water_intake_anomaly'],
-  drinking_decrease: ['water_intake_anomaly'],
+
+  // ── 관리 이벤트 ──
+  dry_off: ['calving_waiting'],
 };
 
 interface AutoLabelResult {
