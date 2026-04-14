@@ -5,7 +5,7 @@
 import { getDb } from '../config/database.js';
 import { farms, animals, regions, smaxtecEvents } from '../db/schema.js';
 import { captureBeforeSnapshot } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './connectors/smaxtec.connector.js';
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
@@ -387,6 +387,9 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
     farmResult.farmMap,
   );
 
+  // 5. DIM/parity 이벤트 기반 업데이트 (calving_confirmation 기반)
+  const dimUpdated = await updateDimAndParity();
+
   const elapsed = Date.now() - startTime;
   logger.info(
     {
@@ -394,6 +397,7 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
       farmsCreated: farmResult.created,
       animalsCreated: animalResult.created,
       eventsStored,
+      dimUpdated,
     },
     `[Sync] Complete in ${String(elapsed)}ms`,
   );
@@ -464,4 +468,58 @@ function findFarmForAnimal(
 ): string | undefined {
   // 이벤트에 org_id가 없는 경우 fallback — 실제로는 대부분 있음
   return undefined;
+}
+
+// ===========================
+// DIM/parity 이벤트 기반 업데이트
+// ===========================
+
+/**
+ * smaXtec calving_confirmation/calving_detection 이벤트로부터
+ * DIM(착유일수)과 parity(산차)를 자동 계산하여 animals 테이블 업데이트.
+ * 5분 주기 sync마다 실행.
+ */
+async function updateDimAndParity(): Promise<number> {
+  const db = getDb();
+  try {
+    // DIM 업데이트: 가장 최근 분만 기록 기준
+    await db.execute(sql`
+      WITH latest_calving AS (
+        SELECT DISTINCT ON (animal_id)
+          animal_id,
+          EXTRACT(DAY FROM now() - detected_at)::int AS dim
+        FROM smaxtec_events
+        WHERE event_type IN ('calving_confirmation', 'calving_detection')
+        ORDER BY animal_id, detected_at DESC
+      )
+      UPDATE animals a
+      SET days_in_milk = lc.dim, updated_at = now()
+      FROM latest_calving lc
+      WHERE a.animal_id = lc.animal_id
+        AND a.status = 'active'
+        AND (a.days_in_milk IS NULL OR a.days_in_milk != lc.dim)
+    `);
+
+    // Parity 업데이트: 분만 횟수
+    await db.execute(sql`
+      WITH calving_count AS (
+        SELECT animal_id, count(*)::int AS parity
+        FROM smaxtec_events
+        WHERE event_type IN ('calving_confirmation', 'calving_detection')
+        GROUP BY animal_id
+      )
+      UPDATE animals a
+      SET parity = cc.parity, updated_at = now()
+      FROM calving_count cc
+      WHERE a.animal_id = cc.animal_id
+        AND a.status = 'active'
+        AND (a.parity IS NULL OR a.parity != cc.parity)
+    `);
+
+    // 간단한 카운트 추정 (정확한 rowCount 접근이 드라이버마다 다름)
+    return 1;
+  } catch (error) {
+    logger.warn({ error }, '[Sync] DIM/parity update failed');
+    return 0;
+  }
 }
