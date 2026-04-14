@@ -15,18 +15,11 @@ import type { BreedingAdvice } from '../services/breeding/breeding-advisor.servi
 export async function saveSovereignAlarmAsPrediction(alarm: SovereignAlarm): Promise<void> {
   try {
     const db = getDb();
-    const today = new Date().toISOString().slice(0, 10);
 
-    // 같은 날 같은 개체 같은 타입은 1회만 저장
-    const existing = await db.execute(sql`
-      SELECT 1 FROM predictions
-      WHERE engine_type = 'sovereign_v1'
-        AND animal_id = ${alarm.animalId}
-        AND prediction_label = ${alarm.type}
-        AND timestamp::date = ${today}::date
-      LIMIT 1
-    `);
-    if ((existing as unknown[]).length > 0) return;
+    // 빈 animalId/farmId 방어 (룰 반환 시 빈 문자열 가능)
+    if (!alarm.animalId || !alarm.farmId || alarm.animalId.length < 10) {
+      return;
+    }
 
     await db.insert(predictions).values({
       engineType: 'sovereign_v1',

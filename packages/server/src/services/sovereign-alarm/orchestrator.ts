@@ -111,10 +111,15 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
     .sort((a, b) => (ORDER[a.severity] ?? 3) - (ORDER[b.severity] ?? 3))
     .slice(0, limit);
 
-  // predictions 테이블 저장 (비동기)
-  saveSovereignAlarmsBatch(sorted).catch(err => {
-    logger.debug({ err, count: sorted.length }, '[Sovereign] prediction bridge save failed');
-  });
+  // predictions 테이블 저장 (동기화하여 에러 감지)
+  try {
+    const savedCount = await saveSovereignAlarmsBatch(sorted);
+    if (savedCount > 0) {
+      logger.info({ savedCount, farmId }, '[Sovereign] predictions saved');
+    }
+  } catch (err) {
+    logger.error({ err, count: sorted.length, farmId }, '[Sovereign] prediction bridge save FAILED');
+  }
 
   // 기존 레이블 로드
   try {
