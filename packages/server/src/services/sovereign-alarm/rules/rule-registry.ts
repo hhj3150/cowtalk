@@ -5,8 +5,11 @@
 
 import type { RuleDefinition } from '../types.js';
 
-// 질병 리스크 (기존 5종 + heat_stress)
-import { ruleKetosisRisk, ruleMastitisRisk, ruleAcidosisRisk, ruleLaminitisRisk, ruleHeatStressRisk } from './disease-risk.rules.js';
+// 질병 리스크 (기존 5종 + heat_stress + 대사성 3종)
+import {
+  ruleKetosisRisk, ruleMastitisRisk, ruleAcidosisRisk, ruleLaminitisRisk, ruleHeatStressRisk,
+  ruleMilkFever, ruleRetainedPlacenta, ruleDownerCow,
+} from './disease-risk.rules.js';
 
 // 체온 (3종)
 import { ruleTemperatureHigh, ruleTemperatureLow, ruleTemperatureWarning } from './temperature.rules.js';
@@ -36,6 +39,9 @@ const RULE_REGISTRY: readonly RuleDefinition[] = [
   { eventType: 'acidosis_risk',   category: 'disease',     rule: ruleAcidosisRisk },
   { eventType: 'laminitis_risk',  category: 'disease',     rule: ruleLaminitisRisk },
   { eventType: 'heat_stress',     category: 'disease',     rule: ruleHeatStressRisk },
+  { eventType: 'milk_fever',      category: 'disease',     rule: ruleMilkFever },
+  { eventType: 'retained_placenta', category: 'disease',   rule: ruleRetainedPlacenta },
+  { eventType: 'downer_cow',      category: 'disease',     rule: ruleDownerCow },
 
   // ── 체온 (신규) ──
   { eventType: 'temperature_high',    category: 'temperature', rule: ruleTemperatureHigh },

@@ -491,14 +491,159 @@ async function checkLongOpenDays(): Promise<number> {
 // 통합 실행 (오케스트레이터에서 호출)
 // ===========================
 
+// ===========================
+// 6. 분만 후 체크리스트 (자동 트리거)
+// ===========================
+
+/**
+ * 분만 확인된 소 중 DIM 0~3일인 개체에 대해 체크리스트 알림 생성
+ * - DIM 0: 초유 급여 (6시간 이내)
+ * - DIM 1: 체온 모니터링 (자궁내막염 조기 감지)
+ * - DIM 1: 후산 배출 확인
+ * - DIM 3: 케토시스 고위험기 진입 알림
+ */
+async function checkPostCalvingChecklist(): Promise<number> {
+  const db = getDb();
+  let created = 0;
+
+  try {
+    // DIM 0~3인 활성 개체
+    const freshCows = await db.execute(sql`
+      SELECT a.animal_id, a.ear_tag, a.farm_id, a.days_in_milk, f.name AS farm_name
+      FROM animals a
+      JOIN farms f ON f.farm_id = a.farm_id
+      WHERE a.status = 'active'
+        AND a.days_in_milk >= 0 AND a.days_in_milk <= 3
+    `) as unknown as Array<{
+      animal_id: string;
+      ear_tag: string;
+      farm_id: string;
+      days_in_milk: number;
+      farm_name: string;
+    }>;
+
+    for (const cow of freshCows) {
+      const dim = cow.days_in_milk;
+      let message = '';
+      let priority: 'critical' | 'high' | 'normal' = 'normal';
+
+      if (dim === 0) {
+        message = `분만 당일 — ① 6시간 이내 초유 급여 (체중의 10%, 최소 4L) ② 후산 배출 확인 ③ 송아지 호흡/활력 확인`;
+        priority = 'critical';
+      } else if (dim === 1) {
+        message = `분만 후 1일 — ① 체온 측정 (>39.5°C 시 자궁내막염 의심) ② 후산 배출 확인 (미배출 시 후산정체) ③ 사료 섭취량 확인`;
+        priority = 'high';
+      } else if (dim === 2) {
+        message = `분만 후 2일 — ① 체온 재측정 ② 반추 활동 정상화 확인 ③ BCS 평가`;
+        priority = 'normal';
+      } else if (dim === 3) {
+        message = `분만 후 3일 — 케토시스 고위험기 진입. ① 뇨 케톤 검사 권장 ② 사료섭취량 모니터링 ③ 착유량 변화 확인`;
+        priority = 'high';
+      }
+
+      if (!message) continue;
+
+      // 중복 방지: 같은 날 같은 개체에 이미 알림이 있으면 스킵
+      const existing = await db.execute(sql`
+        SELECT 1 FROM alerts
+        WHERE animal_id = ${cow.animal_id}
+          AND alert_type = 'post_calving_checklist'
+          AND created_at::date = now()::date
+        LIMIT 1
+      `);
+      if ((existing as unknown[]).length > 0) continue;
+
+      await db.insert(alerts).values({
+        farmId: cow.farm_id,
+        animalId: cow.animal_id,
+        alertType: 'post_calving_checklist',
+        priority,
+        title: `분만 후 ${dim}일 체크리스트 — #${cow.ear_tag}`,
+        explanation: message,
+        recommendedAction: message,
+        dedupKey: `post_calving:${cow.animal_id}:${dim}:${new Date().toISOString().slice(0, 10)}`,
+        status: 'new',
+      });
+      created++;
+    }
+  } catch (err) {
+    logger.warn({ err }, '[BreedingReminder] 분만 후 체크리스트 실패');
+  }
+
+  return created;
+}
+
+// ===========================
+// 7. 발정동기화 오늘 할 일 알림
+// ===========================
+
+async function checkSyncProtocolTasks(): Promise<number> {
+  const db = getDb();
+  let created = 0;
+
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const scheduled = await db.execute(sql`
+      SELECT be.event_id, be.animal_id, be.farm_id, be.semen_info, be.notes,
+             a.ear_tag, f.name AS farm_name
+      FROM breeding_events be
+      JOIN animals a ON a.animal_id = be.animal_id
+      JOIN farms f ON f.farm_id = be.farm_id
+      WHERE be.status = 'scheduled'
+        AND be.event_date::date = ${today}::date
+    `) as unknown as Array<{
+      event_id: string; animal_id: string; farm_id: string;
+      semen_info: string; notes: string; ear_tag: string; farm_name: string;
+    }>;
+
+    for (const task of scheduled) {
+      // 중복 방지
+      const existing = await db.execute(sql`
+        SELECT 1 FROM alerts
+        WHERE animal_id = ${task.animal_id}
+          AND alert_type = 'sync_protocol_task'
+          AND created_at::date = now()::date
+        LIMIT 1
+      `);
+      if ((existing as unknown[]).length > 0) continue;
+
+      const isAI = (task.semen_info ?? '').includes('수정') || (task.notes ?? '').includes('수정');
+      const cleanNote = (task.notes ?? '').replace(/\[.+?\]\s*/, '');
+      await db.insert(alerts).values({
+        farmId: task.farm_id,
+        animalId: task.animal_id,
+        alertType: 'sync_protocol_task',
+        priority: isAI ? 'critical' : 'high',
+        title: `발정동기화 — #${task.ear_tag} ${task.semen_info ?? '처치'}`,
+        explanation: `${task.farm_name} #${task.ear_tag}: ${cleanNote}`,
+        recommendedAction: task.semen_info ?? '처치 실시',
+        dedupKey: `sync:${task.event_id}:${new Date().toISOString().slice(0, 10)}`,
+        status: 'new',
+      });
+      created++;
+    }
+  } catch (err) {
+    logger.warn({ err }, '[BreedingReminder] 발정동기화 할 일 알림 실패');
+  }
+
+  return created;
+}
+
+// ===========================
+// 메인: 전체 리마인더 실행
+// ===========================
+
 export async function runBreedingReminders(): Promise<void> {
   logger.info('[BreedingReminder] 번식 리마인더 실행 시작');
-  const [pending, repeats, dryOff, calving, longOpen] = await Promise.all([
+  const [pending, repeats, dryOff, calving, longOpen, postCalving, syncTasks] = await Promise.all([
     checkPendingPregnancyTests(),
     checkRepeatBreeders(),
     checkDryOffReminders(),
     checkCalvingImminent(),
     checkLongOpenDays(),
+    checkPostCalvingChecklist(),
+    checkSyncProtocolTasks(),
   ]);
   logger.info({
     pregnancyCheckDue: pending.length,
@@ -506,5 +651,7 @@ export async function runBreedingReminders(): Promise<void> {
     dryOffReminders: dryOff,
     calvingImminent: calving,
     longOpenDays: longOpen,
+    postCalvingChecklist: postCalving,
+    syncProtocolTasks: syncTasks,
   }, '[BreedingReminder] 번식 리마인더 완료');
 }

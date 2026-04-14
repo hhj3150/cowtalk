@@ -53,6 +53,11 @@ const EVENT_TO_ALARM_TYPE: Readonly<Record<string, readonly string[]>> = {
   insemination: ['insemination_recommended'],
   pregnancy_check: ['insemination_recommended'],
 
+  // ── 대사성 질병 (신규) ──
+  milk_fever: ['milk_fever', 'downer_cow'],
+  retained_placenta: ['retained_placenta'],
+  downer_cow: ['downer_cow', 'milk_fever'],
+
   // ── 관리 이벤트 ──
   dry_off: ['calving_waiting'],
 };

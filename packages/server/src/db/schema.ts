@@ -245,10 +245,12 @@ export const breedingEvents = pgTable('breeding_events', {
   optimalTime: timestamp('optimal_time', { withTimezone: true }), // AI 추천 수정 적기
   noInseminationReason: varchar('no_insemination_reason', { length: 200 }), // 미수정 사유
   notes: text('notes'),
+  status: varchar('status', { length: 20 }).default('completed'),  // completed, scheduled, cancelled
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('breeding_events_animal_id_idx').on(table.animalId),
   index('breeding_events_farm_id_idx').on(table.farmId),
+  index('breeding_events_status_idx').on(table.status),
 ]);
 
 export const pregnancyChecks = pgTable('pregnancy_checks', {
