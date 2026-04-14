@@ -102,6 +102,53 @@ adminRouter.get('/users', async (_req: Request, res: Response, next: NextFunctio
   }
 });
 
+// POST /admin/debug-sovereign — 단일 농장 소버린 알람 생성 + predictions 저장 테스트
+adminRouter.post('/debug-sovereign', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string;
+    if (!farmId) {
+      // 센서 데이터가 가장 많은 농장 자동 선택
+      const db = getDb();
+      const [topFarm] = await db.execute(sql`
+        SELECT a.farm_id, f.name, count(DISTINCT s.animal_id) AS cnt
+        FROM sensor_daily_agg s
+        JOIN animals a ON a.animal_id = s.animal_id
+        JOIN farms f ON f.farm_id = a.farm_id
+        WHERE s.date >= (now() - interval '7 days')::date
+        GROUP BY a.farm_id, f.name
+        ORDER BY cnt DESC LIMIT 1
+      `) as unknown as [{ farm_id: string; name: string; cnt: number }];
+
+      if (!topFarm) {
+        res.json({ success: false, error: 'No farm with sensor data' });
+        return;
+      }
+
+      const { generateSovereignAlarms } = await import('../../services/sovereign-alarm/orchestrator.js');
+      const alarms = await generateSovereignAlarms(topFarm.farm_id, 20);
+
+      res.json({
+        success: true,
+        data: {
+          farmId: topFarm.farm_id,
+          farmName: topFarm.name,
+          animalsWithData: topFarm.cnt,
+          alarmsGenerated: alarms.length,
+          alarmTypes: alarms.map(a => a.type),
+          firstAlarm: alarms[0] ?? null,
+        },
+      });
+      return;
+    }
+
+    const { generateSovereignAlarms } = await import('../../services/sovereign-alarm/orchestrator.js');
+    const alarms = await generateSovereignAlarms(farmId, 20);
+    res.json({ success: true, data: { alarmsGenerated: alarms.length, types: alarms.map(a => a.type) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST /admin/run-intelligence — Intelligence Loop 즉시 실행 (배포 후 데이터 워밍업)
 adminRouter.post('/run-intelligence', async (_req: Request, res: Response, next: NextFunction) => {
   try {
