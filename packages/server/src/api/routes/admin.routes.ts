@@ -125,7 +125,13 @@ adminRouter.post('/debug-sovereign', async (req: Request, res: Response, next: N
       }
 
       const { generateSovereignAlarms } = await import('../../services/sovereign-alarm/orchestrator.js');
-      const alarms = await generateSovereignAlarms(topFarm.farm_id, 20);
+      let alarms: unknown[] = [];
+      let debugError: string | null = null;
+      try {
+        alarms = await generateSovereignAlarms(topFarm.farm_id, 20);
+      } catch (e) {
+        debugError = e instanceof Error ? `${e.message}\n${e.stack}` : String(e);
+      }
 
       res.json({
         success: true,
@@ -134,16 +140,23 @@ adminRouter.post('/debug-sovereign', async (req: Request, res: Response, next: N
           farmName: topFarm.name,
           animalsWithData: topFarm.cnt,
           alarmsGenerated: alarms.length,
-          alarmTypes: alarms.map(a => a.type),
+          alarmTypes: (alarms as Array<{type: string}>).map(a => a.type),
           firstAlarm: alarms[0] ?? null,
+          debugError,
         },
       });
       return;
     }
 
     const { generateSovereignAlarms } = await import('../../services/sovereign-alarm/orchestrator.js');
-    const alarms = await generateSovereignAlarms(farmId, 20);
-    res.json({ success: true, data: { alarmsGenerated: alarms.length, types: alarms.map(a => a.type) } });
+    let alarms: unknown[] = [];
+    let debugError: string | null = null;
+    try {
+      alarms = await generateSovereignAlarms(farmId, 20);
+    } catch (e) {
+      debugError = e instanceof Error ? `${e.message}\n${e.stack}` : String(e);
+    }
+    res.json({ success: true, data: { alarmsGenerated: alarms.length, debugError } });
   } catch (error) {
     next(error);
   }
