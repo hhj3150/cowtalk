@@ -102,6 +102,25 @@ adminRouter.get('/users', async (_req: Request, res: Response, next: NextFunctio
   }
 });
 
+// POST /admin/run-intelligence — Intelligence Loop 즉시 실행 (배포 후 데이터 워밍업)
+adminRouter.post('/run-intelligence', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { getPipelineOrchestrator } = await import('../../pipeline/orchestrator.js');
+    const pipeline = getPipelineOrchestrator();
+    // 비동기 실행 (응답 즉시 반환)
+    pipeline.runIntelligenceLoopBatch().catch((err: unknown) => {
+      console.error('[Admin] Intelligence Loop batch failed:', err);
+    });
+    res.json({
+      success: true,
+      message: 'Intelligence Loop 배치 시작됨 (소버린 알람 sweep + auto-labeler + threshold-learner + pattern-mining)',
+      triggeredAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST /admin/seed-feedback — AI 피드백 seed 데이터 생성 (시연용)
 adminRouter.post('/seed-feedback', async (_req: Request, res: Response, next: NextFunction) => {
   try {

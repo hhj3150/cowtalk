@@ -444,6 +444,9 @@ export class PipelineOrchestrator {
   async runIntelligenceLoopBatch(): Promise<void> {
     logger.info('[Pipeline] Running Intelligence Loop batch');
     try {
+      // 0) 소버린 알람 전 농장 순회 — predictions 테이블에 알람 저장 (학습 데이터 원천)
+      await this.runSovereignAlarmSweep();
+
       // 1) 자동 레이블링 — 146개 농장의 smaXtec 이벤트 → 소버린 알람 레이블 자동 생성
       const { runAutoLabeling } = await import('../intelligence-loop/auto-labeler.service.js');
       const labelResult = await runAutoLabeling(3);
@@ -490,6 +493,39 @@ export class PipelineOrchestrator {
       }
     } catch (error) {
       logger.error({ err: error }, '[Pipeline] Intelligence Loop batch failed');
+    }
+  }
+
+  // ===========================
+  // 소버린 알람 전 농장 순회 배치
+  // ===========================
+
+  private async runSovereignAlarmSweep(): Promise<void> {
+    try {
+      const db = getDb();
+      const { generateSovereignAlarms } = await import('../services/sovereign-alarm/orchestrator.js');
+
+      // 활성 농장 ID 목록
+      const farmRows = await db.execute(sql`
+        SELECT farm_id FROM farms WHERE status = 'active' LIMIT 200
+      `) as unknown as Array<{ farm_id: string }>;
+
+      let totalAlarms = 0;
+      for (const row of farmRows) {
+        try {
+          const alarms = await generateSovereignAlarms(row.farm_id, 10);
+          totalAlarms += alarms.length;
+        } catch {
+          // 개별 농장 실패 무시
+        }
+      }
+
+      logger.info({
+        farms: farmRows.length,
+        totalAlarms,
+      }, '[Pipeline] Sovereign alarm sweep completed');
+    } catch (error) {
+      logger.error({ err: error }, '[Pipeline] Sovereign alarm sweep failed');
     }
   }
 
