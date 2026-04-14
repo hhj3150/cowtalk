@@ -268,6 +268,98 @@ adminRouter.post('/seed-feedback', async (_req: Request, res: Response, next: Ne
   }
 });
 
+// POST /admin/sync-breeding — 번식 이벤트 동기화 즉시 실행
+// smaxtec_events (insemination/pregnancy_check) → breeding_events + pregnancy_checks
+adminRouter.post('/sync-breeding', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+
+    // 동기화 전 카운트
+    const [beforeInsem] = await db.execute(
+      sql`SELECT COUNT(*)::int as cnt FROM breeding_events WHERE type = 'insemination'`,
+    );
+    const [beforePreg] = await db.execute(
+      sql`SELECT COUNT(*)::int as cnt FROM pregnancy_checks`,
+    );
+
+    // insemination + no_insemination → breeding_events
+    await db.execute(sql`
+      INSERT INTO breeding_events (animal_id, farm_id, event_date, type, no_insemination_reason, notes, status)
+      SELECT
+        se.animal_id,
+        se.farm_id,
+        se.detected_at,
+        se.event_type,
+        CASE WHEN se.event_type = 'no_insemination'
+          THEN COALESCE(se.details->>'reason', '미기록')
+          ELSE NULL
+        END,
+        'smaxtec:' || se.external_event_id,
+        'completed'
+      FROM smaxtec_events se
+      WHERE se.event_type IN ('insemination', 'no_insemination')
+        AND se.animal_id IS NOT NULL
+        AND se.farm_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM breeding_events be
+          WHERE be.notes = 'smaxtec:' || se.external_event_id
+        )
+      ON CONFLICT DO NOTHING
+    `);
+
+    // pregnancy_check → pregnancy_checks
+    await db.execute(sql`
+      INSERT INTO pregnancy_checks (animal_id, check_date, result, method, days_post_insemination, notes)
+      SELECT
+        se.animal_id,
+        se.detected_at,
+        CASE WHEN (se.details->>'pregnant')::boolean = true THEN 'pregnant' ELSE 'open' END,
+        'sensor',
+        CASE
+          WHEN se.details->>'insemination_date' IS NOT NULL
+            THEN EXTRACT(DAY FROM se.detected_at - (se.details->>'insemination_date')::timestamp)::int
+          ELSE NULL
+        END,
+        'smaxtec:' || se.external_event_id
+      FROM smaxtec_events se
+      WHERE se.event_type = 'pregnancy_check'
+        AND se.animal_id IS NOT NULL
+        AND se.details->>'pregnant' IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM pregnancy_checks pc
+          WHERE pc.notes = 'smaxtec:' || se.external_event_id
+        )
+      ON CONFLICT DO NOTHING
+    `);
+
+    // 동기화 후 카운트
+    const [afterInsem] = await db.execute(
+      sql`SELECT COUNT(*)::int as cnt FROM breeding_events WHERE type = 'insemination'`,
+    );
+    const [afterPreg] = await db.execute(
+      sql`SELECT COUNT(*)::int as cnt FROM pregnancy_checks`,
+    );
+
+    const insemSynced = Number((afterInsem as { cnt: number })?.cnt ?? 0) - Number((beforeInsem as { cnt: number })?.cnt ?? 0);
+    const pregSynced = Number((afterPreg as { cnt: number })?.cnt ?? 0) - Number((beforePreg as { cnt: number })?.cnt ?? 0);
+
+    res.json({
+      success: true,
+      message: `번식 동기화 완료: 수정 ${String(insemSynced)}건, 임신감정 ${String(pregSynced)}건 추가`,
+      before: {
+        inseminations: Number((beforeInsem as { cnt: number })?.cnt ?? 0),
+        pregnancyChecks: Number((beforePreg as { cnt: number })?.cnt ?? 0),
+      },
+      after: {
+        inseminations: Number((afterInsem as { cnt: number })?.cnt ?? 0),
+        pregnancyChecks: Number((afterPreg as { cnt: number })?.cnt ?? 0),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /admin/audit-log — 팅커벨 AI 도구 호출 감사 로그 조회
 adminRouter.get('/audit-log', async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -390,6 +390,12 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
   // 5. DIM/parity 이벤트 기반 업데이트 (calving_confirmation 기반)
   const dimUpdated = await updateDimAndParity();
 
+  // 6. 번식 이벤트 동기화 (smaxtec_events → breeding_events + pregnancy_checks)
+  const breedingSynced = await syncBreedingFromEvents();
+
+  // 7. lactation_status 정규화 (Lactating_Cow → lactating, Dry_Cow → dry, Young_Cow → heifer)
+  await normalizeLactationStatus();
+
   const elapsed = Date.now() - startTime;
   logger.info(
     {
@@ -398,6 +404,7 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
       animalsCreated: animalResult.created,
       eventsStored,
       dimUpdated,
+      breedingSynced,
     },
     `[Sync] Complete in ${String(elapsed)}ms`,
   );
@@ -468,6 +475,128 @@ function findFarmForAnimal(
 ): string | undefined {
   // 이벤트에 org_id가 없는 경우 fallback — 실제로는 대부분 있음
   return undefined;
+}
+
+// ===========================
+// 번식 이벤트 동기화: smaxtec_events → breeding_events + pregnancy_checks
+// ===========================
+
+/**
+ * smaXtec 이벤트에서 번식 관련 데이터를 CowTalk 전용 테이블로 동기화.
+ * - insemination → breeding_events (type='insemination')
+ * - no_insemination → breeding_events (type='no_insemination')
+ * - pregnancy_check → pregnancy_checks (result='pregnant'|'open')
+ *
+ * 중복 방지: smaxtec_events.external_event_id 기반 존재 여부 체크.
+ * 매 sync 주기마다 증분 동기화 (새 이벤트만 처리).
+ */
+async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregnancies: number }> {
+  const db = getDb();
+  let inseminations = 0;
+  let pregnancies = 0;
+
+  try {
+    // --- 1. insemination / no_insemination → breeding_events ---
+    // breeding_events.notes에 smaxtec event_id를 기록하여 중복 방지
+    const insemResult = await db.execute(sql`
+      INSERT INTO breeding_events (animal_id, farm_id, event_date, type, no_insemination_reason, notes, status)
+      SELECT
+        se.animal_id,
+        se.farm_id,
+        se.detected_at,
+        se.event_type,
+        CASE
+          WHEN se.event_type = 'no_insemination'
+            THEN COALESCE(se.details->>'reason', '미기록')
+          ELSE NULL
+        END,
+        'smaxtec:' || se.external_event_id,
+        'completed'
+      FROM smaxtec_events se
+      WHERE se.event_type IN ('insemination', 'no_insemination')
+        AND se.animal_id IS NOT NULL
+        AND se.farm_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM breeding_events be
+          WHERE be.notes = 'smaxtec:' || se.external_event_id
+        )
+      ON CONFLICT DO NOTHING
+    `);
+
+    inseminations = typeof insemResult === 'object' && insemResult !== null && 'rowCount' in insemResult
+      ? (insemResult as { rowCount: number }).rowCount ?? 0
+      : 0;
+
+    // --- 2. pregnancy_check → pregnancy_checks ---
+    // notes에 smaxtec event_id 기록하여 중복 방지
+    const pregResult = await db.execute(sql`
+      INSERT INTO pregnancy_checks (animal_id, check_date, result, method, days_post_insemination, notes)
+      SELECT
+        se.animal_id,
+        se.detected_at,
+        CASE
+          WHEN (se.details->>'pregnant')::boolean = true THEN 'pregnant'
+          ELSE 'open'
+        END,
+        'sensor',
+        CASE
+          WHEN se.details->>'insemination_date' IS NOT NULL
+            THEN EXTRACT(DAY FROM se.detected_at - (se.details->>'insemination_date')::timestamp)::int
+          ELSE NULL
+        END,
+        'smaxtec:' || se.external_event_id
+      FROM smaxtec_events se
+      WHERE se.event_type = 'pregnancy_check'
+        AND se.animal_id IS NOT NULL
+        AND se.details->>'pregnant' IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM pregnancy_checks pc
+          WHERE pc.notes = 'smaxtec:' || se.external_event_id
+        )
+      ON CONFLICT DO NOTHING
+    `);
+
+    pregnancies = typeof pregResult === 'object' && pregResult !== null && 'rowCount' in pregResult
+      ? (pregResult as { rowCount: number }).rowCount ?? 0
+      : 0;
+
+    if (inseminations > 0 || pregnancies > 0) {
+      logger.info(
+        { inseminations, pregnancies },
+        `[Sync] Breeding sync: ${String(inseminations)} inseminations, ${String(pregnancies)} pregnancy checks`,
+      );
+    }
+  } catch (error) {
+    logger.warn({ error }, '[Sync] Breeding event sync failed (non-critical)');
+  }
+
+  return { inseminations, pregnancies };
+}
+
+// ===========================
+// lactation_status 정규화
+// ===========================
+
+/**
+ * smaXtec에서 동기화된 lactation_status 값을 표준형으로 정규화.
+ * Lactating_Cow/lactating → lactating, Dry_Cow/dry → dry, Young_Cow → heifer
+ */
+async function normalizeLactationStatus(): Promise<void> {
+  const db = getDb();
+  try {
+    await db.execute(sql`
+      UPDATE animals SET lactation_status = CASE
+        WHEN lactation_status IN ('Lactating_Cow') THEN 'lactating'
+        WHEN lactation_status IN ('Dry_Cow') THEN 'dry'
+        WHEN lactation_status IN ('Young_Cow') THEN 'heifer'
+        ELSE lactation_status
+      END,
+      updated_at = now()
+      WHERE lactation_status IN ('Lactating_Cow', 'Dry_Cow', 'Young_Cow')
+    `);
+  } catch (error) {
+    logger.debug({ error }, '[Sync] lactation_status normalization skipped');
+  }
 }
 
 // ===========================
