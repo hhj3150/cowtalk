@@ -228,6 +228,37 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     },
   },
 
+  {
+    name: 'schedule_sync_protocol',
+    description: '발정동기화 프로그램 스케줄 생성. 수의사가 공태우에 OVSYNCH/PG/G6G/Double OVSYNCH 프로토콜을 처방하면, 호르몬 투여 일정과 수정일을 자동 생성한다. 오늘 할 일 리스트에 매일 처치 항목이 표시된다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        animalId: { type: 'string', description: '동물 ID (필수)' },
+        farmId: { type: 'string', description: '농장 ID (필수)' },
+        protocol: {
+          type: 'string',
+          enum: ['PG', 'OVSYNCH', 'G6G', 'DOUBLE_OVSYNCH'],
+          description: '프로토콜: PG(단순), OVSYNCH(보편적), G6G(정밀), DOUBLE_OVSYNCH(최고수태율)',
+        },
+        startDate: { type: 'string', description: '시작일 (YYYY-MM-DD)' },
+        prescribedBy: { type: 'string', description: '처방 수의사명' },
+      },
+      required: ['animalId', 'farmId', 'protocol', 'startDate'],
+    },
+  },
+  {
+    name: 'query_sync_today',
+    description: '오늘 예정된 발정동기화 처치 목록을 조회한다. "오늘 할 일"에 해당하는 호르몬 투여·수정 일정을 반환한다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        farmId: { type: 'string', description: '농장 ID (생략 시 전체 농장)' },
+      },
+      required: [],
+    },
+  },
+
   // ===========================
   // 농장 도메인
   // ===========================

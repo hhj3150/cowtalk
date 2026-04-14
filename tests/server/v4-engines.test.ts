@@ -252,7 +252,7 @@ describe('analyzePregnancy', () => {
     const features = extractFeatures(profile);
     const result = analyzePregnancy(profile, features);
 
-    expect(result.signals.some((s) => s.includes('수태 실패'))).toBe(true);
+    expect(result.signals.some((s) => s.description.includes('수태 실패'))).toBe(true);
   });
 });
 

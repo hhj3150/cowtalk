@@ -15,6 +15,7 @@ import { PedigreeConnector } from '../../pipeline/connectors/public-data/pedigre
 import { getBreedingInsights } from '../../services/breeding/breeding-insights.service.js';
 import { getTransitionRisk } from '../../services/breeding/transition-risk.service.js';
 import { getMonthlyTrends, getFarmComparison, getParityAnalysis } from '../../services/breeding/breeding-performance.service.js';
+import { createSyncSchedule, getTodaySyncTasks, completeSyncTask, getAvailableProtocols } from '../../services/breeding/sync-protocol.service.js';
 
 export const breedingRouter = Router();
 
@@ -473,6 +474,70 @@ breedingRouter.post('/semen/sync-hanwoo', async (_req: Request, res: Response, n
   try {
     const result = await syncHanwooSemenFromPublicApi();
     res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===========================
+// 발정동기화 프로그램 (Synchronization Protocol)
+// ===========================
+
+// GET /breeding/sync/protocols — 사용 가능한 프로토콜 목록
+breedingRouter.get('/sync/protocols', (_req: Request, res: Response) => {
+  res.json({ success: true, data: getAvailableProtocols() });
+});
+
+// POST /breeding/sync/schedule — 발정동기화 스케줄 생성
+breedingRouter.post('/sync/schedule', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { animalId, farmId, protocol, startDate, prescribedBy, notes } = req.body as {
+      animalId: string;
+      farmId: string;
+      protocol: string;
+      startDate: string;
+      prescribedBy?: string;
+      notes?: string;
+    };
+
+    if (!animalId || !farmId || !protocol || !startDate) {
+      res.status(400).json({ success: false, error: 'animalId, farmId, protocol, startDate 필수' });
+      return;
+    }
+
+    const result = await createSyncSchedule({
+      animalId,
+      farmId,
+      protocol: protocol as 'PG' | 'OVSYNCH' | 'G6G' | 'DOUBLE_OVSYNCH',
+      startDate,
+      prescribedBy,
+      notes,
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/sync/today — 오늘 발정동기화 할 일 목록
+breedingRouter.get('/sync/today', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const tasks = await getTodaySyncTasks(farmId);
+    res.json({ success: true, data: tasks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /breeding/sync/complete/:eventId — 처치 완료 기록
+breedingRouter.post('/sync/complete/:eventId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const eventId = req.params.eventId as string;
+    const completedBy = req.body?.completedBy as string | undefined;
+    await completeSyncTask(eventId, completedBy);
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

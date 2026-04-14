@@ -95,6 +95,12 @@ export async function executeTool(
       case 'recommend_insemination_window':
         result = await handleRecommendInseminationWindow(input);
         break;
+      case 'schedule_sync_protocol':
+        result = await handleScheduleSyncProtocol(input);
+        break;
+      case 'query_sync_today':
+        result = await handleQuerySyncToday(input);
+        break;
       case 'record_treatment':
         result = await handleRecordTreatment(input);
         break;
@@ -1131,5 +1137,75 @@ async function handleConfirmTreatmentOutcome(input: Record<string, unknown>): Pr
     };
   } catch (error) {
     return { error: `결과 기록 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// ===========================
+// 13. 발정동기화 스케줄
+// ===========================
+
+async function handleScheduleSyncProtocol(input: Record<string, unknown>): Promise<unknown> {
+  const { createSyncSchedule } = await import('../../services/breeding/sync-protocol.service.js');
+  const animalId = input.animalId as string;
+  const farmId = input.farmId as string;
+  const protocol = input.protocol as string;
+  const startDate = input.startDate as string;
+  const prescribedBy = input.prescribedBy as string | undefined;
+
+  if (!animalId || !farmId || !protocol || !startDate) {
+    return { error: 'animalId, farmId, protocol, startDate 모두 필수입니다.' };
+  }
+
+  try {
+    const result = await createSyncSchedule({
+      animalId,
+      farmId,
+      protocol: protocol as 'PG' | 'OVSYNCH' | 'G6G' | 'DOUBLE_OVSYNCH',
+      startDate,
+      prescribedBy,
+    });
+
+    return {
+      success: true,
+      protocol: result.protocolName,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      aiDate: result.aiDate,
+      stepsCreated: result.eventsCreated,
+      steps: result.steps.map(s => ({
+        date: s.date,
+        treatment: s.treatment,
+        isAI: s.isAI,
+        note: s.note,
+      })),
+      message: `${result.protocolName} 스케줄이 생성되었습니다. ${result.startDate}~${result.endDate}, 수정 예정일: ${result.aiDate}`,
+    };
+  } catch (error) {
+    return { error: `발정동기화 스케줄 생성 실패: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+async function handleQuerySyncToday(input: Record<string, unknown>): Promise<unknown> {
+  const { getTodaySyncTasks } = await import('../../services/breeding/sync-protocol.service.js');
+  const farmId = input.farmId as string | undefined;
+
+  try {
+    const tasks = await getTodaySyncTasks(farmId);
+    if (tasks.length === 0) {
+      return { tasks: [], message: '오늘 예정된 발정동기화 처치가 없습니다.' };
+    }
+    return {
+      tasks: tasks.map(t => ({
+        earTag: t.earTag,
+        farmName: t.farmName,
+        treatment: t.treatment,
+        protocol: t.protocol,
+        isAI: t.isAI,
+        note: t.note,
+      })),
+      message: `오늘 ${tasks.length}건의 발정동기화 처치가 예정되어 있습니다.`,
+    };
+  } catch (error) {
+    return { error: `오늘 할 일 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
   }
 }

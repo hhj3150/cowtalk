@@ -1649,3 +1649,46 @@ export const thresholdSuggestions = pgTable('threshold_suggestions', {
   index('idx_ts_farm_id').on(table.farmId),
   index('idx_ts_computed_at').on(table.computedAt),
 ]);
+
+// ======================================================================
+// N. 지능형 카메라 연동
+// ======================================================================
+
+export const farmCameras = pgTable('farm_cameras', {
+  cameraId:       uuid('camera_id').primaryKey().defaultRandom(),
+  farmId:         uuid('farm_id').notNull().references(() => farms.farmId),
+  name:           varchar('name', { length: 100 }).notNull(),
+  location:       varchar('location', { length: 200 }),
+  model:          varchar('model', { length: 100 }),
+  streamUrl:      varchar('stream_url', { length: 500 }),
+  ptzControlUrl:  varchar('ptz_control_url', { length: 500 }),
+  snapshotUrl:    varchar('snapshot_url', { length: 500 }),
+  protocol:       varchar('protocol', { length: 20 }).default('onvif'),
+  capabilities:   jsonb('capabilities').notNull().default('{}'),
+  status:         varchar('status', { length: 20 }).notNull().default('offline'),
+  lastHeartbeat:  timestamp('last_heartbeat', { withTimezone: true }),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_fc_farm').on(table.farmId),
+]);
+
+export const cameraTrackingEvents = pgTable('camera_tracking_events', {
+  trackingId:           uuid('tracking_id').primaryKey().defaultRandom(),
+  cameraId:             uuid('camera_id').notNull().references(() => farmCameras.cameraId),
+  animalId:             uuid('animal_id').references(() => animals.animalId),
+  alarmId:              varchar('alarm_id', { length: 200 }),
+  reason:               varchar('reason', { length: 100 }).notNull(),
+  trackingStatus:       varchar('tracking_status', { length: 20 }).notNull().default('searching'),
+  identificationMethod: varchar('identification_method', { length: 30 }),
+  confidence:           real('confidence').default(0),
+  snapshotUrl:          varchar('snapshot_url', { length: 500 }),
+  clipUrl:              varchar('clip_url', { length: 500 }),
+  ptzPosition:          jsonb('ptz_position'),
+  requestedAt:          timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+  locatedAt:            timestamp('located_at', { withTimezone: true }),
+  completedAt:          timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_cte_camera').on(table.cameraId),
+  index('idx_cte_animal').on(table.animalId),
+  index('idx_cte_status').on(table.trackingStatus),
+]);
