@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { requireFarmAccess } from '../middleware/rbac.js';
 import { analyzeRadius } from '../../services/epidemiology/radius-analyzer.js';
-import { simulate } from '../../services/epidemiology/spread-simulator.js';
+import { runAndStoreSEIR, runSEIRFeedbackLoop, getCalibratedR0 } from '../../services/epidemiology/seir-feedback.service.js';
 import { buildContactNetwork } from '../../services/epidemiology/contact-tracer.js';
 import { calculateWindRisk } from '../../services/epidemiology/wind-risk.calculator.js';
 import { getDb } from '../../config/database.js';
@@ -62,17 +62,53 @@ const simulateBodySchema = z.object({
 epidemiologyRouter.post('/simulate', async (req, res, next) => {
   try {
     const body = simulateBodySchema.parse(req.body);
-    const result = simulate(body);
+
+    // SEIR 피드백 루프: 시뮬레이션 실행 + 결과 DB 저장
+    const farmId = typeof req.query.farmId === 'string' ? req.query.farmId : undefined;
+    const result = await runAndStoreSEIR({ ...body, farmId });
 
     logger.info(
       { diseaseCode: body.diseaseCode, pop: body.totalPopulation },
-      '[Epidemiology] SEIR simulation run',
+      '[Epidemiology] SEIR simulation run + stored',
     );
 
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }
+});
+
+// ===========================
+// POST /feedback — SEIR 피드백 루프 배치 실행
+// ===========================
+
+epidemiologyRouter.post('/feedback', async (_req, res, next) => {
+  try {
+    const days = 90;
+    const result = await runSEIRFeedbackLoop(days);
+
+    logger.info(
+      { evaluated: result.predictionsEvaluated, calibrations: result.calibrations.length },
+      '[Epidemiology] SEIR feedback loop completed',
+    );
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===========================
+// GET /calibrated-r0 — 보정된 R0 조회
+// ===========================
+
+epidemiologyRouter.get('/calibrated-r0', (_req, res) => {
+  const calibrated = getCalibratedR0();
+  const result: Record<string, number> = {};
+  for (const [disease, r0] of calibrated) {
+    result[disease] = r0;
+  }
+  res.json({ success: true, data: { calibratedR0: result, generatedAt: new Date().toISOString() } });
 });
 
 // ===========================

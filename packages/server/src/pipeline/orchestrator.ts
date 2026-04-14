@@ -61,6 +61,8 @@ export class PipelineOrchestrator {
 
   // 씨수소 공공API 동기화: 배치 주기(24h) × 7 = 주 1회
   private semenSyncBatchCount = 0;
+  // SEIR 피드백 루프: 배치 주기(24h) × 7 = 주 1회
+  private seirFeedbackBatchCount = 0;
 
   // ===========================
   // 시작/종료
@@ -475,6 +477,17 @@ export class PipelineOrchestrator {
         complete: miningResult.completeSnapshots,
         features: miningResult.featuresExtracted,
       }, '[Pipeline] Pattern mining completed');
+
+      // 5) SEIR 피드백 루프 — 주 1회 (7배치마다)
+      this.seirFeedbackBatchCount++;
+      if (this.seirFeedbackBatchCount % 7 === 0) {
+        const { runSEIRFeedbackLoop } = await import('../services/epidemiology/seir-feedback.service.js');
+        const seirResult = await runSEIRFeedbackLoop(90);
+        logger.info({
+          evaluated: seirResult.predictionsEvaluated,
+          calibrations: seirResult.calibrations.filter(c => c.sampleCount > 0).length,
+        }, '[Pipeline] SEIR feedback loop completed');
+      }
     } catch (error) {
       logger.error({ err: error }, '[Pipeline] Intelligence Loop batch failed');
     }
