@@ -11,10 +11,20 @@ import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { getFarmSemenPerformance, type SemenPerformance } from './breeding-feedback.service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
+import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
 
 // ===========================
 // 타입
 // ===========================
+
+/** 센서 패턴 기반 수태 예측 인사이트 */
+export interface SensorInsight {
+  readonly similarCaseCount: number;
+  readonly estimatedConceptionRate: number | null;  // 유사 패턴 소의 평균 수태율 (null=데이터 부족)
+  readonly avgLeadTimeHours: number | null;
+  readonly confidence: 'high' | 'medium' | 'low';
+  readonly reasoning: string;
+}
 
 export interface BreedingAdvice {
   readonly animalId: string;
@@ -30,6 +40,7 @@ export interface BreedingAdvice {
   readonly windowEndTime: string;    // ISO — 수정 윈도우 종료 시각
   readonly warnings: readonly string[];
   readonly recommendations: readonly SemenRecommendation[];
+  readonly sensorInsight: SensorInsight | null;  // 센서 패턴 기반 수태 예측
   readonly farmSettings: {
     readonly pregnancyCheckDays: number;
     readonly estrusRecurrenceDays: number;
@@ -461,6 +472,9 @@ export async function getBreedingAdvice(
   const windowStart = farmSettings.inseminationWindowStartHours ?? 10;
   const windowEnd = farmSettings.inseminationWindowEndHours ?? 18;
 
+  // 9. 센서 패턴 기반 수태 예측 (비동기, 실패해도 무시)
+  const sensorInsight = await computeSensorInsight(animalId).catch(() => null);
+
   return {
     animalId: animal.animalId,
     earTag: animal.earTag,
@@ -475,6 +489,7 @@ export async function getBreedingAdvice(
     windowEndTime: new Date(heatTime.getTime() + windowEnd * 3_600_000).toISOString(),
     warnings,
     recommendations: sorted.slice(0, 5),
+    sensorInsight,
     farmSettings: {
       pregnancyCheckDays: farmSettings.pregnancyCheckDays ?? 28,
       estrusRecurrenceDays: farmSettings.estrusRecurrenceDays ?? 21,
@@ -659,5 +674,92 @@ export async function getBreedingFeedback(animalId: string): Promise<BreedingFee
     pendingCount,
     conceptionRate: decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0,
     entries,
+  };
+}
+
+// ===========================
+// 센서 패턴 기반 수태 예측
+// ===========================
+
+/**
+ * 현재 개체의 최근 센서 데이터를 기반으로 유사 발정 패턴의 과거 수태율을 추정한다.
+ * alarm_pattern_snapshots의 estrus 이벤트와 비교하여 "비슷한 패턴의 소들이 수태율 X%였다" 제공.
+ */
+async function computeSensorInsight(animalId: string): Promise<SensorInsight | null> {
+  const db = getDb();
+  const { sensorDailyAgg } = await import('../../db/schema.js');
+
+  // 최근 3일 센서 집계
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400_000).toISOString().slice(0, 10);
+  const rows = await db.select()
+    .from(sensorDailyAgg)
+    .where(and(
+      eq(sensorDailyAgg.animalId, animalId),
+      gte(sensorDailyAgg.date, threeDaysAgo),
+    ));
+
+  // 메트릭 집계
+  const temps = rows.filter(r => r.metricType === 'temp').map(r => r.avg);
+  const rums = rows.filter(r => r.metricType === 'rum_index').map(r => r.avg / 60);
+  const acts = rows.filter(r => r.metricType === 'act').map(r => r.avg);
+
+  const tempMean = temps.length > 0 ? temps.reduce((s, v) => s + v, 0) / temps.length : null;
+  const rumMean = rums.length > 0 ? rums.reduce((s, v) => s + v, 0) / rums.length : null;
+  const actMean = acts.length > 0 ? acts.reduce((s, v) => s + v, 0) / acts.length : null;
+
+  if (tempMean === null && rumMean === null && actMean === null) {
+    return null; // 센서 데이터 없음
+  }
+
+  // 체온 추세 (단순 기울기)
+  const tempTrend = temps.length >= 2
+    ? (temps[temps.length - 1]! - temps[0]!) / (temps.length - 1)
+    : null;
+  const rumTrend = rums.length >= 2
+    ? (rums[rums.length - 1]! - rums[0]!) / (rums.length - 1)
+    : null;
+
+  // 유사 발정 패턴 검색 (estrus 이벤트 기반 스냅샷)
+  const similarPatterns = await findSimilarPatterns(
+    { tempMean, rumMean, actMean, tempTrend, rumTrend },
+    'estrus',
+    10,
+  );
+
+  if (similarPatterns.length < 3) {
+    return {
+      similarCaseCount: similarPatterns.length,
+      estimatedConceptionRate: null,
+      avgLeadTimeHours: null,
+      confidence: 'low',
+      reasoning: `유사 발정 패턴 ${similarPatterns.length}건 — 데이터 부족으로 수태율 예측 불가. 스냅샷 축적 후 정확도 향상 예정.`,
+    };
+  }
+
+  // 유사 패턴 소들의 수태율 추정 (after 센서 변화로 간접 추정)
+  // after에서 체온이 안정되고 활동량이 낮아지면 임신 가능성 높음
+  const withAfterData = similarPatterns.filter(p => p.afterTempMean !== null);
+  let estimatedRate: number | null = null;
+  let reasoning = '';
+
+  if (withAfterData.length >= 3) {
+    // 발정 후 센서가 안정화된 비율 = 임신 proxy
+    const stabilized = withAfterData.filter(p => {
+      const tempStable = p.tempDelta !== null && p.tempDelta < 0.3; // 체온 하강/유지
+      const actStable = p.actDelta !== null && p.actDelta < 0;      // 활동량 감소
+      return tempStable || actStable;
+    });
+    estimatedRate = Math.round((stabilized.length / withAfterData.length) * 100);
+    reasoning = `유사 발정 패턴 ${withAfterData.length}건 중 발정 후 센서 안정화 ${stabilized.length}건 (${estimatedRate}%). 체온 평균 ${tempMean?.toFixed(1) ?? 'N/A'}°C, 반추 ${rumMean?.toFixed(0) ?? 'N/A'}분/일.`;
+  } else {
+    reasoning = `유사 발정 패턴 ${similarPatterns.length}건 발견. 발정 후 추적 데이터 부족으로 수태율은 참고치만 제공.`;
+  }
+
+  return {
+    similarCaseCount: similarPatterns.length,
+    estimatedConceptionRate: estimatedRate,
+    avgLeadTimeHours: null,
+    confidence: withAfterData.length >= 5 ? 'high' : withAfterData.length >= 3 ? 'medium' : 'low',
+    reasoning,
   };
 }

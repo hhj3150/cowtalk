@@ -458,6 +458,23 @@ export class PipelineOrchestrator {
         matched: matchResult.matched,
         totalChecked: matchResult.totalChecked,
       }, '[Pipeline] Batch matching completed');
+
+      // 3) 임계값 학습 — sovereign_alarm_labels 90일 집계 → confidence multiplier 제안
+      const { runThresholdLearning } = await import('../intelligence-loop/threshold-learner.js');
+      const learnResult = await runThresholdLearning(90);
+      logger.info({
+        alarmTypes: learnResult.totalAlarmTypes,
+        suggestions: learnResult.suggestionsCreated,
+      }, '[Pipeline] Threshold learning completed');
+
+      // 4) 패턴 마이닝 — alarm_pattern_snapshots → 특성 벡터 추출 + 요약
+      const { runPatternMining } = await import('../services/sovereign-alarm/pattern-mining.service.js');
+      const miningResult = await runPatternMining();
+      logger.info({
+        snapshots: miningResult.totalSnapshots,
+        complete: miningResult.completeSnapshots,
+        features: miningResult.featuresExtracted,
+      }, '[Pipeline] Pattern mining completed');
     } catch (error) {
       logger.error({ err: error }, '[Pipeline] Intelligence Loop batch failed');
     }

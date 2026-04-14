@@ -12,6 +12,7 @@ import type {
   SensorEvidence,
   DiagnosisCandidate,
   FarmHistoryPattern,
+  SimilarCase,
   DifferentialDiagnosisResult,
 } from '@cowtalk/shared';
 
@@ -19,8 +20,11 @@ export type {
   SensorEvidence,
   DiagnosisCandidate,
   FarmHistoryPattern,
+  SimilarCase,
   DifferentialDiagnosisResult,
 } from '@cowtalk/shared';
+
+import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
 
 // ── 정상 범위 ──
 
@@ -281,7 +285,7 @@ export async function getDifferentialDiagnosis(
   if (!animal) {
     return {
       animalId, earTag: '?', farmName: '?',
-      candidates: [], farmHistory: [],
+      candidates: [], farmHistory: [], similarCases: [],
       urgencyLevel: 'routine', dataQuality: 'insufficient',
     };
   }
@@ -375,6 +379,49 @@ export async function getDifferentialDiagnosis(
   // 농장 이력
   const farmHistory = await loadFarmHistory(animal.farmId);
 
+  // 유사 센서 패턴 검색 (패턴 마이닝 기반)
+  let similarCases: SimilarCase[] = [];
+  try {
+    const tempData = sensorData.get('temp');
+    const rumData = sensorData.get('rum_index');
+    const actData = sensorData.get('act');
+
+    // 체온 추세 계산
+    const tempValues = tempData?.values ?? [];
+    const rumValues = rumData?.values ?? [];
+    const tempTrend = tempValues.length >= 2
+      ? (tempValues[0]! - tempValues[tempValues.length - 1]!) / (tempValues.length - 1)
+      : null;
+    const rumTrend = rumValues.length >= 2
+      ? (rumValues[0]! - rumValues[rumValues.length - 1]!) / (rumValues.length - 1)
+      : null;
+
+    const similar = await findSimilarPatterns(
+      {
+        tempMean: tempData?.avg ?? null,
+        rumMean: rumData ? rumData.avg / 60 : null,
+        actMean: actData?.avg ?? null,
+        tempTrend,
+        rumTrend,
+      },
+      undefined, // 모든 이벤트 타입
+      5,
+    );
+
+    similarCases = similar.map(p => ({
+      eventType: p.eventType,
+      eventDate: p.eventDetectedAt,
+      similarity: Math.round(p.similarity * 100) / 100,
+      sensorSummary: [
+        p.beforeTempMean !== null ? `체온 ${p.beforeTempMean.toFixed(1)}°C` : null,
+        p.beforeRumMean !== null ? `반추 ${p.beforeRumMean.toFixed(0)}분` : null,
+        p.beforeActMean !== null ? `활동 ${p.beforeActMean.toFixed(0)}` : null,
+      ].filter(Boolean).join(', '),
+    }));
+  } catch (err) {
+    logger.debug({ err, animalId }, '[DiffDiag] 유사 패턴 검색 실패');
+  }
+
   // 긴급도
   const topScore = scored.length > 0 ? scored[0]!.score : 0;
   const urgencyLevel: DifferentialDiagnosisResult['urgencyLevel'] =
@@ -386,6 +433,7 @@ export async function getDifferentialDiagnosis(
     farmName: animal.farmName,
     candidates,
     farmHistory,
+    similarCases,
     urgencyLevel,
     dataQuality,
   };

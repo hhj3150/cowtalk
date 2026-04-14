@@ -21,12 +21,21 @@ export interface FarmHistoryPattern {
   readonly count: number;
 }
 
+/** 유사 센서 패턴 사례 (패턴 마이닝 기반) */
+export interface SimilarCase {
+  readonly eventType: string;
+  readonly eventDate: string;
+  readonly similarity: number; // 0~1
+  readonly sensorSummary: string;
+}
+
 export interface DifferentialDiagnosisResult {
   readonly animalId: string;
   readonly earTag: string;
   readonly farmName: string;
   readonly candidates: readonly DiagnosisCandidate[];
   readonly farmHistory: readonly FarmHistoryPattern[];
+  readonly similarCases: readonly SimilarCase[];  // 유사 센서 패턴의 과거 사례
   readonly urgencyLevel: 'immediate' | 'within_24h' | 'routine';
   readonly dataQuality: 'good' | 'limited' | 'insufficient';
 }

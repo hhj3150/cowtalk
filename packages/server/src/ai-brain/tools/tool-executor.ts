@@ -981,6 +981,12 @@ async function handleRecommendInseminationWindow(input: Record<string, unknown>)
         learningBonus: r.learningBonus,
         reasoning: r.reasoning,
       })),
+      sensorInsight: advice.sensorInsight ? {
+        similarCaseCount: advice.sensorInsight.similarCaseCount,
+        estimatedConceptionRate: advice.sensorInsight.estimatedConceptionRate,
+        confidence: advice.sensorInsight.confidence,
+        reasoning: advice.sensorInsight.reasoning,
+      } : null,
       farmSettings: advice.farmSettings,
     };
   } catch (error) {

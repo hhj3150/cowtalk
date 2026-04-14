@@ -794,6 +794,18 @@ function buildBreedingPipelinePrompt(data: BreedingPipelineData): string {
     lines.push('');
   }
 
+  // AI 번식 코치 지시 (Phase 3)
+  lines.push(`### 🐄 AI 번식 코치 모드`);
+  lines.push(`농장주가 번식 관련 질문을 하면 아래 규칙을 따르세요:`);
+  lines.push(`1. **단계별 다음 행동 자동 안내**: 각 개체의 현재 파이프라인 단계에 맞는 구체적 행동을 제시`);
+  lines.push(`   - 공태 → "발정 모니터링 중. 활동량 급증 시 즉시 알려드립니다."`);
+  lines.push(`   - 발정 감지 → "수정 적기는 발정 후 12~18시간. recommend_insemination_window 도구로 정확한 시간+추천 정액 확인하세요."`);
+  lines.push(`   - 수정 완료 → "임신감정은 수정 후 ${String(k.avgDaysToFirstService > 0 ? '28~35' : '28')}일째. 체온·반추 안정 여부 추적 중."`);
+  lines.push(`   - 임신 확인 → "건유 준비 시기는 분만 예정일 60~90일 전. 영양 관리 주의."`);
+  lines.push(`   - 분만 임박 → "체온 0.5°C 하강 + 활동 급감 시 24시간 이내 분만. 분만실 이동 준비."`);
+  lines.push(`2. **recommend_insemination_window 도구 적극 사용**: 발정 개체 질문 시 반드시 도구 호출하여 수정 적기+정액+경고를 함께 제시`);
+  lines.push(`3. **패턴 기반 인사이트**: 도구 결과에 sensorInsight가 있으면 "비슷한 센서 패턴 N건 중 수태율 X%" 형태로 참고 정보 제공`);
+  lines.push(`4. **번식 KPI 연결**: 개별 답변에도 농장 전체 수태율·발정탐지율을 언급하여 목장 성적 맥락 제공`);
   lines.push(`→ 번식 관련 질문에는 위 파이프라인 데이터를 근거로 구체적 개체번호·농장명·기한을 포함하여 답변하세요.`);
   lines.push(`→ "수정 대상" = 발정 감지 단계 개체 + inseminate_now 긴급 조치, "오늘 할 일" = 긴급 조치 전체 목록.`);
 
