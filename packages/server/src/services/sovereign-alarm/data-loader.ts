@@ -4,8 +4,7 @@
 
 import { getDb } from '../../config/database.js';
 import { sensorDailyAgg } from '../../db/schema.js';
-import { and, gte, desc } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { and, gte, desc, inArray } from 'drizzle-orm';
 import type { DailySummary } from './types.js';
 
 export async function getBatchDailySummaries(
@@ -19,7 +18,7 @@ export async function getBatchDailySummaries(
   const rows = await db.select()
     .from(sensorDailyAgg)
     .where(and(
-      sql`${sensorDailyAgg.animalId} = ANY(${animalIds})`,
+      inArray(sensorDailyAgg.animalId, [...animalIds]),
       gte(sensorDailyAgg.date, since.toISOString().slice(0, 10)),
     ))
     .orderBy(desc(sensorDailyAgg.date));
