@@ -195,7 +195,7 @@ async function findFarmByName(question: string): Promise<string | null> {
   }
 }
 
-// 귀표번호로 DB에서 동물 검색
+// 귀표번호로 DB에서 동물 검색 — 정확 일치 우선, 없을 때만 contains 매칭
 async function findAnimalByEarTag(
   earTag: string,
   farmId: string | null,
@@ -203,22 +203,28 @@ async function findAnimalByEarTag(
   const db = getDb();
 
   try {
-    const conditions = [
-      ilike(animals.earTag, `%${earTag}%`),
-      isNull(animals.deletedAt),
-    ];
-
+    const baseConditions = [isNull(animals.deletedAt)];
     if (farmId) {
-      conditions.push(eq(animals.farmId, farmId));
+      baseConditions.push(eq(animals.farmId, farmId));
     }
 
-    const results = await db
+    // 1) 정확 일치 (팅커벨이 "423번" → "42423"로 오인하는 문제 방지)
+    const exactMatch = await db
       .select({ animalId: animals.animalId })
       .from(animals)
-      .where(and(...conditions))
+      .where(and(eq(animals.earTag, earTag), ...baseConditions))
       .limit(1);
 
-    return results[0]?.animalId ?? null;
+    if (exactMatch[0]) return exactMatch[0].animalId;
+
+    // 2) contains 매칭 fallback (사용자가 부분번호로 질의한 경우)
+    const fuzzy = await db
+      .select({ animalId: animals.animalId })
+      .from(animals)
+      .where(and(ilike(animals.earTag, `%${earTag}%`), ...baseConditions))
+      .limit(1);
+
+    return fuzzy[0]?.animalId ?? null;
   } catch (error) {
     logger.error({ error, earTag }, 'Failed to search animal by ear tag');
     return null;
