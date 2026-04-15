@@ -169,11 +169,28 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
   }
 
   // 4. 분만 이력 — smaXtec 'calving'/'calving_confirmation' 이벤트 + calvingEvents 테이블 병합
+  // 분만간격은 정상 380~420일이므로 365일 윈도우로는 2회 분만을 포착 불가 → 1095일(3년) 별도 조회
   const calvingByAnimal = new Map<string, Date[]>();
+  const since1095d = new Date(now.getTime() - 1095 * MS_PER_DAY);
 
-  // smaXtec 이벤트에서 분만 날짜 추출 (가장 데이터 풍부)
-  for (const evt of recentEvents) {
-    if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation' && evt.eventType !== 'calving_detection') continue;
+  const calvingEventsWide = animalIds.length > 0
+    ? await db
+        .select({
+          animalId: smaxtecEvents.animalId,
+          eventType: smaxtecEvents.eventType,
+          detectedAt: smaxtecEvents.detectedAt,
+        })
+        .from(smaxtecEvents)
+        .where(
+          and(
+            inArray(smaxtecEvents.animalId, animalIds),
+            inArray(smaxtecEvents.eventType, ['calving', 'calving_confirmation', 'calving_detection']),
+            gte(smaxtecEvents.detectedAt, since1095d),
+          ),
+        )
+    : [];
+
+  for (const evt of calvingEventsWide) {
     const list = calvingByAnimal.get(evt.animalId) ?? [];
     calvingByAnimal.set(evt.animalId, [...list, new Date(evt.detectedAt)]);
   }
