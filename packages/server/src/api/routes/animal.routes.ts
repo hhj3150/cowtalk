@@ -301,13 +301,19 @@ animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 're
       .orderBy(desc(calvingEvents.calvingDate))
       .limit(10);
 
-    // 건유 기록
-    const dryOffs = await db
-      .select()
-      .from(dryOffRecords)
-      .where(eq(dryOffRecords.animalId, animalId))
-      .orderBy(desc(dryOffRecords.dryOffDate))
-      .limit(10);
+    // 건유 기록 (테이블 미존재 시 빈 배열로 degrade)
+    type DryOffRow = typeof dryOffRecords.$inferSelect;
+    let dryOffs: DryOffRow[] = [];
+    try {
+      dryOffs = await db
+        .select()
+        .from(dryOffRecords)
+        .where(eq(dryOffRecords.animalId, animalId))
+        .orderBy(desc(dryOffRecords.dryOffDate))
+        .limit(10);
+    } catch (err) {
+      console.warn('[breeding-timeline] dry_off_records unavailable:', err instanceof Error ? err.message : String(err));
+    }
 
     // smaXtec 발정 이벤트
     const estrusEvents = await db
