@@ -31,7 +31,11 @@ const STAGE_LABELS: Readonly<Record<BreedingStage, string>> = {
   calving_expected: '분만 예정',
 };
 
-const BREEDING_EVENT_TYPES = ['estrus', 'heat', 'insemination', 'pregnancy_check', 'calving', 'dry_off'] as const;
+const BREEDING_EVENT_TYPES = [
+  'estrus', 'heat', 'insemination', 'pregnancy_check',
+  'calving', 'calving_detection', 'calving_confirmation',
+  'dry_off', 'no_insemination', 'abortion',
+] as const;
 
 const MS_PER_DAY = 86_400_000;
 
@@ -152,7 +156,7 @@ export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipe
 
   // smaXtec 이벤트에서 분만 날짜 추출 (가장 데이터 풍부)
   for (const evt of recentEvents) {
-    if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation') continue;
+    if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation' && evt.eventType !== 'calving_detection') continue;
     const list = calvingByAnimal.get(evt.animalId) ?? [];
     calvingByAnimal.set(evt.animalId, [...list, new Date(evt.detectedAt)]);
   }
@@ -319,7 +323,7 @@ function determineStage(
   // 최근 이벤트 유형별
   const type = latestEvent.eventType;
 
-  if (type === 'calving' || type === 'calving_confirmation') {
+  if (type === 'calving' || type === 'calving_confirmation' || type === 'calving_detection') {
     // 분만 후 → open
     return { stage: 'open', lastEventDate: eventDate.toISOString(), daysInStage: daysSinceEvent };
   }
@@ -682,7 +686,7 @@ export async function getBreedingCalendarEvents(
 
     // 분만 실적 (smaXtec)
     for (const evt of events) {
-      if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation') continue;
+      if (evt.eventType !== 'calving' && evt.eventType !== 'calving_confirmation' && evt.eventType !== 'calving_detection') continue;
       const d = new Date(evt.detectedAt);
       if (inRange(d)) {
         calendarEvents.push(makeCalendarEvent(
