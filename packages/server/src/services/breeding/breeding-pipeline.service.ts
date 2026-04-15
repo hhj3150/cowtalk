@@ -39,6 +39,23 @@ const BREEDING_EVENT_TYPES = [
 
 const MS_PER_DAY = 86_400_000;
 
+// 같은 분만이 calving_detection + calving_confirmation 쌍으로 기록되거나
+// calvingEvents 테이블에도 중복 저장될 수 있어, 60일 이내는 동일 분만으로 병합
+// (실제 분만간격 최소값은 임신기간 280일이므로 60일 임계값은 안전)
+export const CALVING_DEDUP_WINDOW_DAYS = 60;
+
+export function dedupCalvingDates(dates: readonly Date[]): Date[] {
+  const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+  const merged: Date[] = [];
+  for (const d of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || (d.getTime() - last.getTime()) / MS_PER_DAY > CALVING_DEDUP_WINDOW_DAYS) {
+      merged.push(d);
+    }
+  }
+  return merged;
+}
+
 // ===========================
 // 메인: getBreedingPipeline
 // ===========================
@@ -480,12 +497,16 @@ function calcKpis(
     : 0;
 
   // 분만간격 — 개체별 연속 분만일 간격의 전체 평균
+  // 개체별 분만일 정규화 (이후 첫수정일수 계산도 동일 데이터 사용)
+  const dedupedCalvingByAnimal = new Map<string, Date[]>();
+  for (const [animalId, calvings] of calvingByAnimal) {
+    dedupedCalvingByAnimal.set(animalId, dedupCalvingDates(calvings));
+  }
   const calvingIntervals: number[] = [];
-  for (const [, calvings] of calvingByAnimal) {
-    const sorted = [...calvings].sort((a, b) => a.getTime() - b.getTime());
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
-      const curr = sorted[i];
+  for (const [, calvings] of dedupedCalvingByAnimal) {
+    for (let i = 1; i < calvings.length; i++) {
+      const prev = calvings[i - 1];
+      const curr = calvings[i];
       if (prev && curr) {
         calvingIntervals.push(Math.floor((curr.getTime() - prev.getTime()) / MS_PER_DAY));
       }
@@ -497,7 +518,7 @@ function calcKpis(
 
   // 첫 수정일수 — 개체별 분만 후 첫 수정까지 일수의 전체 평균
   const daysToFirstServiceValues: number[] = [];
-  for (const [animalId, calvings] of calvingByAnimal) {
+  for (const [animalId, calvings] of dedupedCalvingByAnimal) {
     const insemDates = (inseminationsByAnimal.get(animalId) ?? [])
       .map((d) => d.getTime())
       .sort((a, b) => a - b);
