@@ -534,6 +534,7 @@ function calcKpis(
     : 0;
 
   // 첫 수정일수 — 개체별 분만 후 첫 수정까지 일수의 전체 평균
+  // 분만 후 365일 이내의 수정만 유효(정상 60~90일, 장기공태 시 200일+). 365일 초과는 다음 번식 사이클.
   const daysToFirstServiceValues: number[] = [];
   for (const [animalId, calvings] of dedupedCalvingByAnimal) {
     const insemDates = (inseminationsByAnimal.get(animalId) ?? [])
@@ -544,7 +545,10 @@ function calcKpis(
       const calvTime = calvDate.getTime();
       const firstInsAfterCalv = insemDates.find((t) => t > calvTime);
       if (firstInsAfterCalv) {
-        daysToFirstServiceValues.push(Math.floor((firstInsAfterCalv - calvTime) / MS_PER_DAY));
+        const days = Math.floor((firstInsAfterCalv - calvTime) / MS_PER_DAY);
+        if (days <= 365) {
+          daysToFirstServiceValues.push(days);
+        }
       }
     }
   }
