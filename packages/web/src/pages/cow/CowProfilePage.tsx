@@ -400,8 +400,8 @@ export default function CowProfilePage(): React.JSX.Element {
     <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: isMobile ? '12px 10px 80px' : '20px 24px', overflowX: 'hidden' }}>
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* 헤더 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <button type="button" onClick={() => navigate(-1)} style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 8, padding: '6px 12px', color: 'var(--ct-text)', cursor: 'pointer', fontSize: 13 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => navigate(-1)} style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 8, padding: '6px 12px', color: 'var(--ct-text)', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap', flexShrink: 0 }}>
           ← 돌아가기
         </button>
         <button
@@ -446,7 +446,7 @@ export default function CowProfilePage(): React.JSX.Element {
 
             setTinkerbellTrigger(`[팅커벨 AI — 개체 정밀 분석]\n[개체ID] ${profile.animalId}\n[농장ID] ${profile.farmId}\n${fullContext}\n\n(${Date.now()})`);
           }}
-          style={{ background: '#7c3aed', border: 'none', borderRadius: 8, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+          style={{ background: '#7c3aed', border: 'none', borderRadius: 8, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', flexShrink: 0 }}
         >
           🧚 팅커벨 AI
         </button>

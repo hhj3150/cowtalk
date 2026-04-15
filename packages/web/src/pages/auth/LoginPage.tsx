@@ -516,12 +516,11 @@ export default function LoginPage(): React.JSX.Element {
         <div
           style={{
             background: 'linear-gradient(160deg, #0f4c3a 0%, #1a6b4f 50%, #2a8f6a 100%)',
-            padding: '32px 20px 24px',
+            padding: '16px 20px 24px',
             textAlign: 'center',
-            position: 'relative',
           }}
         >
-          <div style={{ position: 'absolute', top: 12, right: 12 }}>{LangSwitcher}</div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>{LangSwitcher}</div>
           <h2 style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 }}>
             Cow<span style={{ color: '#86efac' }}>Talk</span>
           </h2>

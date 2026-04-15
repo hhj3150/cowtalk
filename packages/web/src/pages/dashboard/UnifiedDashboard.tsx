@@ -672,7 +672,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
       }}>
         {isMobile ? (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
               <h1 style={{
                 fontSize: 16,
                 fontWeight: 800,
@@ -680,11 +680,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 margin: 0,
+                flex: '0 0 auto',
+                whiteSpace: 'nowrap',
               }}>
                 CowTalk
               </h1>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>{user?.name ?? ''} ({roleLabel})</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: '1 1 auto', justifyContent: 'flex-end' }}>
+                <span style={{ fontSize: 11, color: 'var(--ct-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{user?.name ?? ''} ({roleLabel})</span>
                 <RoleSwitcher />
               </div>
             </div>
