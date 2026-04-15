@@ -27,6 +27,7 @@ import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { ErrorFallback } from '@web/components/common/ErrorFallback';
+import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
 import {
   HerdOverviewCards,
   TodoListPanel,
@@ -729,29 +730,45 @@ export default function UnifiedDashboard(): React.JSX.Element {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14 }}>
           {/* ── 전염병 배너 ── */}
-          <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
+          <SectionErrorBoundary label="전염병 배너">
+            <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
+          </SectionErrorBoundary>
 
           {/* ── AI 브리핑 ── */}
-          <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
+          <SectionErrorBoundary label="AI 일일 브리핑">
+            <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
+          </SectionErrorBoundary>
 
           {/* ── KPI 카드 ── */}
-          <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} role={user?.role} />
+          <SectionErrorBoundary label="KPI 카드">
+            <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} role={user?.role} />
+          </SectionErrorBoundary>
 
           {/* ── 농장 지도 (최상단 — 전국 현황 한눈에) ── */}
           {isVisible('farm_map') && (
-          <FarmMapWidget
-            markers={farmMapMarkers}
-            selectedFarmId={selectedFarmId}
-            onFarmClick={(fid) => navigate(`/farm/${fid}`)}
-            totalHeadOverride={data?.herdOverview?.totalAnimals}
-          />
+          <SectionErrorBoundary label="농장 분포 지도">
+            <FarmMapWidget
+              markers={farmMapMarkers}
+              selectedFarmId={selectedFarmId}
+              onFarmClick={(fid) => navigate(`/farm/${fid}`)}
+              totalHeadOverride={data?.herdOverview?.totalAnimals}
+            />
+          </SectionErrorBoundary>
           )}
 
           {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널) ── */}
           {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
-            {isVisible('todo_list') && <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />}
-            {isVisible('live_alarm_feed') && <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => navigate(`/animals/${aid}`)} />}
+            {isVisible('todo_list') && (
+              <SectionErrorBoundary label="오늘 할 일">
+                <TodoListPanel items={data?.todoList ?? []} onItemClick={handleTodoClick} />
+              </SectionErrorBoundary>
+            )}
+            {isVisible('live_alarm_feed') && (
+              <SectionErrorBoundary label="실시간 알람">
+                <LiveAlarmFeed alarms={alarms} onFarmClick={(fid) => selectFarm(fid)} onAnimalClick={(aid) => navigate(`/animals/${aid}`)} />
+              </SectionErrorBoundary>
+            )}
           </div>
           )}
 
@@ -772,51 +789,63 @@ export default function UnifiedDashboard(): React.JSX.Element {
                   </span>
                 ) : null}
               </div>
-              <SovereignAlarmFeed
-                alarms={sovereignAlarmData?.alarms ?? []}
-                isLoading={sovereignLoading}
-                farmId={selectedFarmId}
-                onLabelChange={handleSovereignLabelChange}
-              />
+              <SectionErrorBoundary label="소버린 AI 알람">
+                <SovereignAlarmFeed
+                  alarms={sovereignAlarmData?.alarms ?? []}
+                  isLoading={sovereignLoading}
+                  farmId={selectedFarmId}
+                  onLabelChange={handleSovereignLabelChange}
+                />
+              </SectionErrorBoundary>
             </div>
           )}
 
           {/* ── 수의사 전용 대시보드 ── */}
           {user?.role === 'veterinarian' && (
-            <VetDashboard onFarmClick={(fid) => selectFarm(fid)} />
+            <SectionErrorBoundary label="수의사 대시보드">
+              <VetDashboard onFarmClick={(fid) => selectFarm(fid)} />
+            </SectionErrorBoundary>
           )}
 
           {/* ── 정부 행정관 전용 대시보드 ── */}
           {user?.role === 'government_admin' && (
-            <GovAdminDashboard onFarmClick={(fid) => selectFarm(fid)} />
+            <SectionErrorBoundary label="행정관 대시보드">
+              <GovAdminDashboard onFarmClick={(fid) => selectFarm(fid)} />
+            </SectionErrorBoundary>
           )}
 
           {/* ── 번식성적 커맨드센터 ── */}
           {isVisible('breeding_pipeline') && breedingPipelineData && (
-            <BreedingPipelineWidget data={breedingPipelineData} />
+            <SectionErrorBoundary label="번식 파이프라인">
+              <BreedingPipelineWidget data={breedingPipelineData} />
+            </SectionErrorBoundary>
           )}
 
           {/* ── 건강 알림 + 번식 관리 ── */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
             {healthAlertsData && (
-              <HealthAlertsWidget
-                items={healthAlertsData}
-                onCategoryClick={(cat) => setDrilldown({ eventType: cat, label: `건강 알림: ${cat}` })}
-              />
+              <SectionErrorBoundary label="건강 알림">
+                <HealthAlertsWidget
+                  items={healthAlertsData}
+                  onCategoryClick={(cat) => setDrilldown({ eventType: cat, label: `건강 알림: ${cat}` })}
+                />
+              </SectionErrorBoundary>
             )}
-            <FertilityManagementWidget
-              data={fertilityMgmtData ?? null}
-              onAlertClick={(type) => setDrilldown({ eventType: type, label: `번식: ${type}` })}
-            />
+            <SectionErrorBoundary label="번식 관리">
+              <FertilityManagementWidget
+                data={fertilityMgmtData ?? null}
+                onAlertClick={(type) => setDrilldown({ eventType: type, label: `번식: ${type}` })}
+              />
+            </SectionErrorBoundary>
           </div>
 
           {/* ── AI 예측 위험 TOP 10 ── */}
-          {(
+          <SectionErrorBoundary label="AI 예측 위험 TOP 10">
             <RiskTop10Widget
               farmId={selectedFarmId}
               onAnimalClick={(aid) => navigate(`/animals/${aid}`)}
             />
-          )}
+          </SectionErrorBoundary>
 
           {/* ── 소버린 AI 어시스턴트 — 지식 강화 루프 ── */}
           <>

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { getBreedingCalendar, getBreedingPipeline } from '@web/api/breeding.api';
 import { useFarmStore } from '@web/stores/farm.store';
 import type { CalendarEvent, CalendarEventType, BreedingUrgentAction } from '@cowtalk/shared';
+import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
 
 // ===========================
 // 상수
@@ -239,27 +240,29 @@ export default function BreedingCalendarPage(): React.JSX.Element {
       <div className="flex gap-4">
         {/* 캘린더 그리드 */}
         <div className="flex-1">
-          {viewMode === 'month' ? (
-            <MonthGrid
-              days={calendarDays}
-              eventsByDate={eventsByDate}
-              todayStr={todayStr}
-              selectedDate={selectedDate}
-              isCurrentMonth={isCurrentMonth}
-              onSelectDate={setSelectedDate}
-              isLoading={isLoading}
-            />
-          ) : (
-            <WeekView
-              days={calendarDays}
-              eventsByDate={eventsByDate}
-              todayStr={todayStr}
-              selectedDate={selectedDate}
-              onSelectDate={setSelectedDate}
-              onAnimalClick={(animalId) => nav(`/cow/${animalId}`)}
-              isLoading={isLoading}
-            />
-          )}
+          <SectionErrorBoundary label="번식 캘린더">
+            {viewMode === 'month' ? (
+              <MonthGrid
+                days={calendarDays}
+                eventsByDate={eventsByDate}
+                todayStr={todayStr}
+                selectedDate={selectedDate}
+                isCurrentMonth={isCurrentMonth}
+                onSelectDate={setSelectedDate}
+                isLoading={isLoading}
+              />
+            ) : (
+              <WeekView
+                days={calendarDays}
+                eventsByDate={eventsByDate}
+                todayStr={todayStr}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                onAnimalClick={(animalId) => nav(`/cow/${animalId}`)}
+                isLoading={isLoading}
+              />
+            )}
+          </SectionErrorBoundary>
         </div>
 
         {/* 사이드바 — 오늘 긴급 조치 (lg 이상) */}

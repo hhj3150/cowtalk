@@ -18,6 +18,7 @@ import { TinkerbellAssistant } from '@web/components/unified-dashboard/Tinkerbel
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
 import { NationalMiniMap } from '@web/components/epidemiology/NationalMiniMap';
 import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
+import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
 import { apiGet } from '@web/api/client';
 import { listAnimals } from '@web/api/animal.api';
 import type { AnimalSummary } from '@web/api/animal.api';
@@ -277,28 +278,30 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             상세 보기 →
           </Link>
         </div>
-        <NationalMiniMap
-          onProvinceSelect={(province) => {
-            setSelectedProvince(province);
-            setShowFarmPanel(true);
-          }}
-          onFarmSelect={(farmId, farmName) => {
-            setSelectedFarm({
-              farmId,
-              farmName,
-              feverCount: 0,
-              clusterAlert: false,
-              legalSuspect: false,
-              riskScore: 0,
-              lat: 0,
-              lng: 0,
-            });
-            setFarmTab('animals');
-          }}
-          mapHeight={420}
-          showSummary={false}
-          showBroadAlert={true}
-        />
+        <SectionErrorBoundary label="전국 방역 지도">
+          <NationalMiniMap
+            onProvinceSelect={(province) => {
+              setSelectedProvince(province);
+              setShowFarmPanel(true);
+            }}
+            onFarmSelect={(farmId, farmName) => {
+              setSelectedFarm({
+                farmId,
+                farmName,
+                feverCount: 0,
+                clusterAlert: false,
+                legalSuspect: false,
+                riskScore: 0,
+                lat: 0,
+                lng: 0,
+              });
+              setFarmTab('animals');
+            }}
+            mapHeight={420}
+            showSummary={false}
+            showBroadAlert={true}
+          />
+        </SectionErrorBoundary>
       </div>
 
       {/* 시도 농장 목록 패널 (슬라이드인) */}
@@ -332,16 +335,18 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
       )}
 
       {/* 역학 현황판 */}
-      <SituationBoard
-        top5RiskFarms={dashboard?.top5RiskFarms ?? []}
-        activeAlerts={dashboard?.activeAlerts ?? []}
-        isLoading={dashLoading}
-        onFarmClick={(farm) => { setSelectedFarm(farm); setFarmTab('info'); }}
-        onAlertClick={(alert) => {
-          const farm = (dashboard?.top5RiskFarms ?? []).find((f) => f.farmId === alert.farmId);
-          if (farm) { setSelectedFarm(farm); setFarmTab('info'); }
-        }}
-      />
+      <SectionErrorBoundary label="역학 현황판">
+        <SituationBoard
+          top5RiskFarms={dashboard?.top5RiskFarms ?? []}
+          activeAlerts={dashboard?.activeAlerts ?? []}
+          isLoading={dashLoading}
+          onFarmClick={(farm) => { setSelectedFarm(farm); setFarmTab('info'); }}
+          onAlertClick={(alert) => {
+            const farm = (dashboard?.top5RiskFarms ?? []).find((f) => f.farmId === alert.farmId);
+            if (farm) { setSelectedFarm(farm); setFarmTab('info'); }
+          }}
+        />
+      </SectionErrorBoundary>
 
       {/* 농장 드릴다운 패널 */}
       {selectedFarm && (
@@ -591,7 +596,9 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             </span>
           )}
         </div>
-        <ActionQueue items={actionQueue ?? []} isLoading={queueLoading} />
+        <SectionErrorBoundary label="방역 조치 큐">
+          <ActionQueue items={actionQueue ?? []} isLoading={queueLoading} />
+        </SectionErrorBoundary>
       </div>
 
       <TinkerbellAssistant openTrigger={tinkerbellTriggerOverride ?? tinkerbellTrigger} />
