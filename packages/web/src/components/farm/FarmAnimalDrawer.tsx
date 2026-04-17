@@ -4,6 +4,10 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@web/api/client';
+import { useAuthStore } from '@web/stores/auth.store';
+import { AnimalFormPanel } from '@web/components/animal/AnimalFormPanel';
+import { AnimalStatusChangeModal } from '@web/components/animal/AnimalStatusChangeModal';
+import type { AnimalRecord as FullAnimalRecord } from '@web/api/animal-management.api';
 
 interface Props {
   readonly farmId: string;
@@ -42,6 +46,15 @@ export function FarmAnimalDrawer({ farmId, farmName, onClose, onAnimalClick }: P
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'earTag' | 'traceId' | 'lactationStatus' | 'daysInMilk'>('earTag');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // MDM 편집 UI 상태
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingAnimal, setEditingAnimal] = useState<FullAnimalRecord | null>(null);
+  const [statusChangeAnimal, setStatusChangeAnimal] = useState<FullAnimalRecord | null>(null);
+
+  // 권한: 농장주와 수의사만 등록/수정/상태변경 버튼 노출
+  const userRole = useAuthStore((s) => s.user?.role);
+  const canEdit = userRole === 'farmer' || userRole === 'veterinarian' || userRole === 'government_admin';
 
   const { data, isLoading } = useQuery({
     queryKey: ['farm-animals', farmId],
@@ -143,18 +156,36 @@ export function FarmAnimalDrawer({ farmId, farmName, onClose, onAnimalClick }: P
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid #334155',
-              color: '#94a3b8',
-              cursor: 'pointer',
-              fontSize: 14,
-              padding: '4px 10px',
-              borderRadius: 6,
-            }}
-          >✕ 닫기</button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {canEdit && (
+              <button
+                onClick={() => setShowAddForm(true)}
+                style={{
+                  background: 'rgba(16,185,129,0.15)',
+                  border: '1px solid #10b981',
+                  color: '#10b981',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: '4px 12px',
+                  borderRadius: 6,
+                }}
+                title="새 개체 등록"
+              >+ 등록</button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid #334155',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: '4px 10px',
+                borderRadius: 6,
+              }}
+            >✕ 닫기</button>
+          </div>
         </div>
 
         {/* 필터 탭 + 검색 */}
@@ -326,6 +357,54 @@ export function FarmAnimalDrawer({ farmId, farmName, onClose, onAnimalClick }: P
           </span>
         </div>
       </div>
+
+      {/* 등록/수정 폼 오버레이 */}
+      {(showAddForm || editingAnimal) && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={(e) => {
+            // 배경 클릭 시 닫기 (폼 내부 클릭은 전파 중단)
+            if (e.target === e.currentTarget) {
+              setShowAddForm(false);
+              setEditingAnimal(null);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <AnimalFormPanel
+            farmId={farmId}
+            editAnimal={editingAnimal}
+            onClose={() => {
+              setShowAddForm(false);
+              setEditingAnimal(null);
+            }}
+            onSaved={() => {
+              setShowAddForm(false);
+              setEditingAnimal(null);
+              // React Query 캐시 무효화는 form 내부에서 처리됨
+            }}
+          />
+        </div>
+      )}
+
+      {/* 상태 변경 모달 */}
+      {statusChangeAnimal && (
+        <AnimalStatusChangeModal
+          animal={statusChangeAnimal}
+          onClose={() => setStatusChangeAnimal(null)}
+          onChanged={() => setStatusChangeAnimal(null)}
+        />
+      )}
     </>
   );
 }
