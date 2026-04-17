@@ -165,6 +165,13 @@ export async function buildFarmProfile(farmId: string): Promise<FarmProfile | nu
     .orderBy(desc(smaxtecEvents.detectedAt))
     .limit(50);
 
+  // animalId → earTag 룩업 (프롬프트·알람에서 UUID 대신 #번호 표시용)
+  // 전체 farmAnimals 기반 (animalProfiles 50개 제한보다 넓은 커버리지)
+  const animalIdToEarTag: Record<string, string> = {};
+  for (const a of farmAnimals) {
+    if (a.earTag) animalIdToEarTag[a.animalId] = a.earTag;
+  }
+
   // 개별 동물 프로파일 빌드 (최대 50개)
   const profileIds = farmAnimals.slice(0, 50).map((a) => a.animalId);
   const animalProfiles = (
@@ -215,6 +222,7 @@ export async function buildFarmProfile(farmId: string): Promise<FarmProfile | nu
     farmHealthScore: null, // Intelligence Loop에서 계산
     todayActions: [],
     eventTimeline,
+    animalIdToEarTag,
   };
 }
 

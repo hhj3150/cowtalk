@@ -672,9 +672,12 @@ function buildFarmContext(profile: FarmProfile): string {
       .slice(0, 10);
     if (critical.length > 0) {
       lines.push(`\n### 긴급 알람`);
+      const lookup = profile.animalIdToEarTag ?? {};
       for (const e of critical) {
         const label = ALARM_LABELS[e.type] ?? e.type;
-        lines.push(`- **${label}** [${e.severity}] (${e.animalId.slice(0, 8)})`);
+        const tag = lookup[e.animalId];
+        const idDisplay = tag ? `#${tag}` : `(${e.animalId.slice(0, 8)})`;
+        lines.push(`- **${label}** [${e.severity}] ${idDisplay}`);
       }
     }
   }

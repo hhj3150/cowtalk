@@ -303,11 +303,13 @@ async function buildVetDashboard(): Promise<DashboardData> {
   const urgentAnimals = await db.select({
     eventId: smaxtecEvents.eventId,
     animalId: smaxtecEvents.animalId,
+    earTag: animals.earTag,
     farmId: smaxtecEvents.farmId,
     eventType: smaxtecEvents.eventType,
     severity: smaxtecEvents.severity,
     detectedAt: smaxtecEvents.detectedAt,
   }).from(smaxtecEvents)
+    .leftJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
     .where(and(
       gt(smaxtecEvents.detectedAt, oneDayAgo),
       sql`${smaxtecEvents.severity} IN ('high', 'critical')`,
@@ -420,7 +422,7 @@ async function buildVetDashboard(): Promise<DashboardData> {
     todayActions: urgentAnimals.slice(0, 5).map((evt, idx) => ({
       priority: idx + 1,
       action: `[긴급] ${formatEventAction(evt.eventType, evt.severity)}`,
-      target: `개체 ${evt.animalId.slice(0, 8)}`,
+      target: evt.earTag ? `개체 #${evt.earTag}` : `개체 ${evt.animalId.slice(0, 8)}`,
       urgency: evt.severity as 'high' | 'critical',
     })),
     alerts: [],

@@ -250,14 +250,14 @@
 
 ```bash
 # Railway 서버 pre-warm (시연 15분 전)
-curl -s https://cowtalk-v5-production.up.railway.app/api/health | jq .
+curl -s https://cowtalk-server-production.up.railway.app/api/health | jq .
 
 # 시스템 상태 확인
-curl -s https://cowtalk-v5-production.up.railway.app/api/admin/system \
+curl -s https://cowtalk-server-production.up.railway.app/api/admin/system \
   -H "Authorization: Bearer $TOKEN" | jq .
 
 # AI 피드백 시드 (D-7에 1회 실행)
-curl -X POST https://cowtalk-v5-production.up.railway.app/api/admin/seed-feedback \
+curl -X POST https://cowtalk-server-production.up.railway.app/api/admin/seed-feedback \
   -H "Authorization: Bearer $TOKEN"
 ```
 

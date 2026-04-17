@@ -150,6 +150,8 @@ export interface FarmProfile {
   readonly todayActions: readonly string[];
   // 최근 30일 이벤트 타임라인 (시간순, 질병 패턴 분석용)
   readonly eventTimeline?: readonly FarmEventTimelineEntry[];
+  // animalId → earTag 룩업 (프롬프트에서 UUID 대신 #번호 표시용)
+  readonly animalIdToEarTag?: Readonly<Record<string, string>>;
 }
 
 export interface FarmEventTimelineEntry {
