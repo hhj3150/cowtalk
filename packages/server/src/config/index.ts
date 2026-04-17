@@ -51,6 +51,14 @@ const envSchema = z.object({
   // OpenWeatherMap API
   OPENWEATHER_API_KEY: z.string().optional(),
 
+  // OpenAI TTS (음성 합성) — 팅커벨 음성 답변
+  // 키 발급: platform.openai.com → API keys (Audio 권한만 부여 권장)
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_TTS_MODEL: z.enum(['tts-1', 'tts-1-hd']).default('tts-1'),
+  OPENAI_TTS_VOICE: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).default('nova'),
+  OPENAI_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(4000).default(500), // 비용 절감 — 응답 앞 500자만 합성
+  OPENAI_TTS_FORMAT: z.enum(['mp3', 'opus', 'aac', 'flac']).default('mp3'),
+
   // Web Push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

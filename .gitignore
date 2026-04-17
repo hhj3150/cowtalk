@@ -48,3 +48,15 @@ package-lock 2.json
 
 # 전달용 버전 복사본 (원본은 docs/에 유지)
 docs/delivery/
+
+# === 보안: API 키 저장용 개인 폴더·파일 (절대 커밋 금지) ===
+오픈AI key/
+openai-key/
+keys/
+*.key
+sk-*.txt
+sk-*.pdf
+sk-*.hwpx
+sk-*.docx
+# 루트에 sk로 시작하는 모든 파일 (API 키 추정)
+/sk.*

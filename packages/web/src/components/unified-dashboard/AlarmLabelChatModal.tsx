@@ -7,6 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useVoiceInput } from '@web/hooks/useVoiceInput';
+import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { MicButton } from '@web/components/common/MicButton';
 import { apiGet } from '@web/api/client';
 import { getEventContext, streamLabelChat, submitLabel, getAnimalEvents, getLabelHistory, submitFollowUp, getAnimalInfo, submitObservation, getObservations, saveConversationRecord } from '@web/api/label-chat.api';
@@ -1209,6 +1210,14 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
   }, []);
   const voice = useVoiceInput(handleVoiceResult);
 
+  // OpenAI Nova 음성 출력 — 라벨링 모달은 기본 OFF (긴 진단 대화는 화면이 더 효과적)
+  const voiceOutput = useVoiceOutput({
+    voice: 'nova',
+    maxChars: 500,
+    initialVoiceMode: false,
+    storageKey: 'cowtalk:label-chat:voice-mode',
+  });
+
   // 센서 이상 여부 확인 (이벤트 없어도 z-score 기반 이상 감지)
   useEffect(() => {
     apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
@@ -1338,6 +1347,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
           sensorSummary ? `\n--- 실시간 센서 데이터 ---\n${sensorSummary}` : '',
         ].filter(Boolean).join('\n');
 
+    let accumulatedAnswer = '';
     const cancel = streamLabelChat(
       {
         question: input.trim(),
@@ -1348,6 +1358,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
         eventContext: eventContextStr,
       },
       (chunk) => {
+        accumulatedAnswer += chunk;
         setMessages((prev) => {
           const updated = [...prev];
           const last = updated[updated.length - 1];
@@ -1357,7 +1368,13 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
           return updated;
         });
       },
-      () => setIsStreaming(false),
+      () => {
+        setIsStreaming(false);
+        // 음성 모드 ON일 때 자동 재생
+        if (voiceOutput.voiceMode && accumulatedAnswer.trim()) {
+          void voiceOutput.speakText(accumulatedAnswer).catch(() => { /* silent */ });
+        }
+      },
       (err) => {
         setIsStreaming(false);
         const errMsg = err?.message ?? 'AI 응답 오류';
@@ -1955,6 +1972,44 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 disabled={isStreaming || !canChat}
                 size={34}
               />
+
+              {/* 음성 답변 토글 — Nova 음성 ON/OFF */}
+              <button
+                type="button"
+                onClick={voiceOutput.toggleVoiceMode}
+                disabled={!canChat}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: '50%',
+                  background: voiceOutput.voiceMode ? 'var(--ct-primary)' : 'var(--ct-bg)',
+                  color: voiceOutput.voiceMode ? '#ffffff' : 'var(--ct-text-secondary)',
+                  border: '1px solid var(--ct-border)',
+                  cursor: canChat ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  transition: 'all 0.2s',
+                }}
+                title={voiceOutput.voiceMode ? '음성 답변 ON — 클릭하여 끄기' : '음성 답변 OFF — 클릭하여 켜기'}
+                aria-label={voiceOutput.voiceMode ? '음성 답변 끄기' : '음성 답변 켜기'}
+                aria-pressed={voiceOutput.voiceMode}
+              >
+                {voiceOutput.voiceMode ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <line x1="23" y1="9" x2="17" y2="15"/>
+                    <line x1="17" y1="9" x2="23" y2="15"/>
+                  </svg>
+                )}
+              </button>
               <input
                 ref={inputRef}
                 type="text"

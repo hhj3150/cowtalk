@@ -55,6 +55,7 @@ import { xaiRouter } from './routes/xai.routes.js';
 import { paymentRouter } from './routes/payment.routes.js';
 import { treatmentsRouter } from './routes/treatments.routes.js';
 import { diagnosisRouter } from './routes/diagnosis.routes.js';
+import { audioRouter } from './routes/audio.routes.js';
 
 export function createApiRouter(): Router {
   const api = Router();
@@ -115,6 +116,7 @@ export function createApiRouter(): Router {
   api.use('/payments', paymentRouter);
   api.use('/treatments', treatmentsRouter);
   api.use('/diagnosis', diagnosisRouter);
+  api.use('/audio', audioRouter);
 
   return api;
 }

@@ -8,6 +8,7 @@ import { useFarmStore } from '@web/stores/farm.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
+import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 // ── 타입 ──
 
 interface TinkerbellMessage {
@@ -411,6 +412,14 @@ export function TinkerbellAssistant({
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
+  // OpenAI Nova 음성 출력 (브라우저 TTS 대체) — 기본 ON, 토글 가능
+  const voiceOutput = useVoiceOutput({
+    voice: 'nova',
+    maxChars: 500,
+    initialVoiceMode: true,
+    storageKey: 'cowtalk:tinkerbell:voice-mode',
+  });
+
   const isQuarantineMode = user?.role === 'quarantine_officer';
   const suggestions = animalContext
     ? ['이 소 지금 수정해도 돼?', '체온이 왜 높아?', '다음에 뭘 해야 해?', '이 소 번식 이력 분석해줘']
@@ -568,7 +577,19 @@ export function TinkerbellAssistant({
       setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
       setState('speaking');
-      speak(answer, () => setState('idle'));
+
+      // 음성 출력: voiceMode가 ON이면 OpenAI Nova 사용, 실패 시 브라우저 TTS fallback.
+      // OFF면 무음 (사용자가 명시적으로 끔).
+      if (voiceOutput.voiceMode) {
+        voiceOutput.speakText(answer)
+          .then(() => setState('idle'))
+          .catch(() => {
+            // OpenAI 실패 — 브라우저 TTS로 fallback
+            speak(answer, () => setState('idle'));
+          });
+      } else {
+        setState('idle');
+      }
     } catch (err) {
       setStreamText('');
       const fetchErr = err as { message?: string; name?: string };
@@ -1052,16 +1073,46 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* 말하는 중 중지 */}
-            {state === 'speaking' && (
+            {/* 말하는 중 중지 — OpenAI 또는 브라우저 TTS 모두 정지 */}
+            {(state === 'speaking' || voiceOutput.isPlaying) && (
               <button type="button"
-                onClick={() => { stopSpeaking(); setState('idle'); }}
+                onClick={() => { voiceOutput.stopSpeaking(); stopSpeaking(); setState('idle'); }}
                 style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: '#ef444420', border: '1px solid #ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 title="말하기 중지"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
               </button>
             )}
+
+            {/* 음성 모드 토글 — ON: OpenAI Nova 음성 / OFF: 무음 */}
+            <button type="button"
+              onClick={voiceOutput.toggleVoiceMode}
+              style={{
+                width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                background: voiceOutput.voiceMode ? `${color}25` : 'rgba(255,255,255,0.06)',
+                border: voiceOutput.voiceMode ? `1px solid ${color}` : '1px solid var(--ct-border, #334155)',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              title={voiceOutput.voiceMode ? '음성 답변 ON (Nova) — 클릭하여 끄기' : '음성 답변 OFF — 클릭하여 켜기'}
+              aria-label={voiceOutput.voiceMode ? '음성 답변 끄기' : '음성 답변 켜기'}
+              aria-pressed={voiceOutput.voiceMode}
+            >
+              {voiceOutput.voiceMode ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ct-text-muted, #94a3b8)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <line x1="23" y1="9" x2="17" y2="15"/>
+                  <line x1="17" y1="9" x2="23" y2="15"/>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1498,10 +1549,10 @@ export function TinkerbellAssistant({
           </svg>
         </button>
 
-        {/* 말하는 중 → 중지 버튼 */}
-        {state === 'speaking' && (
+        {/* 말하는 중 → 중지 버튼 (OpenAI 또는 브라우저 TTS 모두 정지) */}
+        {(state === 'speaking' || voiceOutput.isPlaying) && (
           <button
-            onClick={() => { stopSpeaking(); setState('idle'); }}
+            onClick={() => { voiceOutput.stopSpeaking(); stopSpeaking(); setState('idle'); }}
             style={{
               width: 40,
               height: 40,
@@ -1522,6 +1573,41 @@ export function TinkerbellAssistant({
             </svg>
           </button>
         )}
+
+        {/* 음성 모드 토글 — ON: OpenAI Nova / OFF: 무음 */}
+        <button
+          onClick={voiceOutput.toggleVoiceMode}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            background: voiceOutput.voiceMode ? `${color}25` : 'rgba(255,255,255,0.06)',
+            border: voiceOutput.voiceMode ? `1px solid ${color}` : '1px solid var(--ct-border, #334155)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            transition: 'all 0.2s',
+          }}
+          title={voiceOutput.voiceMode ? '음성 답변 ON (Nova) — 클릭하여 끄기' : '음성 답변 OFF — 클릭하여 켜기'}
+          aria-label={voiceOutput.voiceMode ? '음성 답변 끄기' : '음성 답변 켜기'}
+          aria-pressed={voiceOutput.voiceMode}
+        >
+          {voiceOutput.voiceMode ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ct-text-muted, #94a3b8)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <line x1="23" y1="9" x2="17" y2="15"/>
+              <line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+          )}
+        </button>
       </div>
       )}
 

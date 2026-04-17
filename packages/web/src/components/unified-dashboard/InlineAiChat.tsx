@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useVoiceInput } from '@web/hooks/useVoiceInput';
+import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { MicButton } from '@web/components/common/MicButton';
 import axios from 'axios';
 
@@ -136,6 +137,14 @@ export function InlineAiChat(): React.JSX.Element {
   const accessToken = useAuthStore((s) => s.accessToken);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
+  // OpenAI Nova 음성 출력 — 기본 OFF (인라인 채팅은 데스크톱 조회 위주)
+  const voiceOutput = useVoiceOutput({
+    voice: 'nova',
+    maxChars: 500,
+    initialVoiceMode: false,
+    storageKey: 'cowtalk:inline-chat:voice-mode',
+  });
+
   const handleVoiceResult = useCallback((text: string) => {
     handleSend(text);
   }, []);
@@ -188,6 +197,11 @@ export function InlineAiChat(): React.JSX.Element {
 
       setMessages([...newMessages, { role: 'assistant', content: finalText }]);
       setStreamingText('');
+
+      // 음성 모드 ON일 때 자동 재생 (실패해도 무시 — 텍스트는 이미 표시됨)
+      if (voiceOutput.voiceMode) {
+        void voiceOutput.speakText(finalText).catch(() => { /* silent fallback */ });
+      }
     } catch {
       setMessages([...newMessages, { role: 'assistant', content: '응답을 받지 못했습니다. 다시 시도해 주세요.' }]);
       setStreamingText('');
@@ -318,6 +332,37 @@ export function InlineAiChat(): React.JSX.Element {
           disabled={isStreaming}
           size={34}
         />
+
+        {/* 음성 답변 토글 — Nova 음성 ON/OFF */}
+        <button
+          type="button"
+          onClick={voiceOutput.toggleVoiceMode}
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all"
+          style={{
+            background: voiceOutput.voiceMode ? 'var(--ct-primary)' : 'var(--ct-bg)',
+            color: voiceOutput.voiceMode ? '#ffffff' : 'var(--ct-text-secondary)',
+            border: '1px solid var(--ct-border)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+          title={voiceOutput.voiceMode ? '음성 답변 ON — 클릭하여 끄기' : '음성 답변 OFF — 클릭하여 켜기'}
+          aria-label={voiceOutput.voiceMode ? '음성 답변 끄기' : '음성 답변 켜기'}
+          aria-pressed={voiceOutput.voiceMode}
+        >
+          {voiceOutput.voiceMode ? (
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+          ) : (
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <line x1="23" y1="9" x2="17" y2="15"/>
+              <line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+          )}
+        </button>
         <input
           ref={inputRef}
           type="text"
