@@ -52,10 +52,23 @@ audioRouter.post('/speak', async (req, res) => {
     }
 
     // OpenAI API 호출 실패는 502 (외부 의존)
+    // 진단 편의: OpenAI 상태코드 추출 (메시지 형식: "OpenAI TTS 실패 (HTTP 401)")
     if (msg.includes('OpenAI TTS')) {
+      const statusMatch = /HTTP (\d{3})/.exec(msg);
+      const upstreamStatus = statusMatch?.[1];
+      const hint =
+        upstreamStatus === '401' ? 'API 키 인증 실패 — Railway OPENAI_API_KEY 값 확인'
+        : upstreamStatus === '403' ? 'API 키 권한 부족 — OpenAI 대시보드에서 Audio 권한 확인'
+        : upstreamStatus === '429' ? '요청 한도 초과 — credit 잔액 또는 rate limit 확인'
+        : upstreamStatus === '400' ? '요청 형식 오류 — 입력 텍스트 확인'
+        : '일시 장애 — 잠시 후 다시 시도';
       res.status(502).json({
         success: false,
-        error: { code: 'TTS_UPSTREAM_ERROR', message: '음성 서비스 일시 장애 — 잠시 후 다시 시도해주세요' },
+        error: {
+          code: 'TTS_UPSTREAM_ERROR',
+          message: `음성 서비스 오류 (OpenAI HTTP ${upstreamStatus ?? '?'}): ${hint}`,
+          upstreamStatus,
+        },
       });
       return;
     }
