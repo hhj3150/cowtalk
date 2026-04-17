@@ -5,7 +5,15 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
-import { animalQuerySchema, createAnimalSchema } from '@cowtalk/shared';
+import { animalQuerySchema, createAnimalSchema, updateAnimalSchema, changeAnimalStatusSchema, assignSensorSchema } from '@cowtalk/shared';
+import {
+  createAnimal as mdmCreateAnimal,
+  updateAnimal as mdmUpdateAnimal,
+  changeAnimalStatus as mdmChangeStatus,
+  assignSensor as mdmAssignSensor,
+  deleteAnimal as mdmDeleteAnimal,
+} from '../../services/animal/animal-mdm.service.js';
+import { z } from 'zod';
 import type { Role } from '@cowtalk/shared';
 import { getAnimalDetail } from '../../serving/dashboard.service.js';
 import { getDb } from '../../config/database.js';
@@ -157,13 +165,196 @@ animalRouter.get('/:animalId', requirePermission('animal', 'read'), async (req: 
   }
 });
 
-animalRouter.post('/', requirePermission('animal', 'create'), validate({ body: createAnimalSchema }), (_req, res) => {
-  res.json({ success: true, data: null });
-});
+// GET /animals/traceability-check/:traceNo — 등록 전 이력제 API 조회 (폼 자동채움)
+// 12자리 검증 + EKAPE 조회 + 기존 CowTalk 등록 여부 확인
+animalRouter.get(
+  '/traceability-check/:traceNo',
+  requirePermission('animal', 'read'),
+  validate({ params: z.object({ traceNo: z.string().regex(/^\d{12}$/, '12자리 숫자') }) }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const traceNo = String(req.params.traceNo);
+      const db = getDb();
 
-animalRouter.patch('/:animalId', requirePermission('animal', 'update'), (_req, res) => {
-  res.json({ success: true, data: null });
-});
+      // 이미 CowTalk에 등록된 개체인지 확인
+      const [existing] = await db
+        .select({
+          animalId: animals.animalId,
+          earTag: animals.earTag,
+          farmId: animals.farmId,
+          farmName: farms.name,
+        })
+        .from(animals)
+        .leftJoin(farms, eq(animals.farmId, farms.farmId))
+        .where(and(eq(animals.traceId, traceNo), sql`${animals.deletedAt} IS NULL`))
+        .limit(1);
+
+      if (existing) {
+        res.json({
+          success: true,
+          data: {
+            alreadyRegistered: true,
+            existing,
+            message: `이력번호 ${traceNo}은 이미 '${existing.farmName}'의 ${existing.earTag}번으로 등록되어 있습니다`,
+          },
+        });
+        return;
+      }
+
+      // EKAPE 실시간 조회
+      try {
+        const conn = await getTraceConnector();
+        const trace = await conn.fetchByTraceId(traceNo);
+        res.json({
+          success: true,
+          data: {
+            alreadyRegistered: false,
+            ekapeData: trace,
+          },
+        });
+      } catch (ekapeErr) {
+        // EKAPE 호출 실패 — 그래도 form에서 수동 입력 가능하도록 soft error
+        res.json({
+          success: true,
+          data: {
+            alreadyRegistered: false,
+            ekapeData: null,
+            ekapeError: ekapeErr instanceof Error ? ekapeErr.message : '이력제 서버 응답 없음',
+          },
+        });
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /animals — 동물 생성 (farmer, veterinarian)
+animalRouter.post(
+  '/',
+  requirePermission('animal', 'create'),
+  validate({ body: createAnimalSchema }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } });
+        return;
+      }
+      const parsed = createAnimalSchema.parse(req.body);
+      const created = await mdmCreateAnimal(
+        parsed,
+        req.user.userId,
+        req.user.role,
+        req.user.farmIds ?? [],
+      );
+      res.status(201).json({ success: true, data: created });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PATCH /animals/:animalId — 동물 수정 (부분 업데이트)
+animalRouter.patch(
+  '/:animalId',
+  requirePermission('animal', 'update'),
+  validate({ body: updateAnimalSchema, params: z.object({ animalId: z.string().uuid() }) }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } });
+        return;
+      }
+      const parsed = updateAnimalSchema.parse(req.body);
+      const updated = await mdmUpdateAnimal(
+        String(req.params.animalId),
+        parsed,
+        req.user.userId,
+        req.user.role,
+        req.user.farmIds ?? [],
+      );
+      res.json({ success: true, data: updated });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// DELETE /animals/:animalId — 소프트 삭제 (등록 실수 취소용)
+animalRouter.delete(
+  '/:animalId',
+  requirePermission('animal', 'delete'),
+  validate({ params: z.object({ animalId: z.string().uuid() }) }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } });
+        return;
+      }
+      await mdmDeleteAnimal(
+        String(req.params.animalId),
+        req.user.userId,
+        req.user.role,
+        req.user.farmIds ?? [],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /animals/:animalId/status — 상태 변경 (sold/dead/culled/transferred)
+animalRouter.post(
+  '/:animalId/status',
+  requirePermission('animal', 'update'),
+  validate({ body: changeAnimalStatusSchema, params: z.object({ animalId: z.string().uuid() }) }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } });
+        return;
+      }
+      const parsed = changeAnimalStatusSchema.parse(req.body);
+      const updated = await mdmChangeStatus(
+        String(req.params.animalId),
+        parsed,
+        req.user.userId,
+        req.user.role,
+        req.user.farmIds ?? [],
+      );
+      res.json({ success: true, data: updated });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /animals/:animalId/sensor — 센서 매핑 (deviceId:null 이면 해제)
+animalRouter.post(
+  '/:animalId/sensor',
+  requirePermission('animal', 'update'),
+  validate({ body: assignSensorSchema, params: z.object({ animalId: z.string().uuid() }) }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다' } });
+        return;
+      }
+      const parsed = assignSensorSchema.parse(req.body);
+      const updated = await mdmAssignSensor(
+        String(req.params.animalId),
+        parsed.deviceId,
+        req.user.userId,
+        req.user.role,
+        req.user.farmIds ?? [],
+      );
+      res.json({ success: true, data: updated });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // GET /animals/:animalId/interpretation — AI 해석 (별도 비동기 로드)
 animalRouter.get('/:animalId/interpretation', requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {

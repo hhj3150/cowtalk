@@ -81,14 +81,46 @@ export const animalQuerySchema = paginationSchema.extend({
   search: z.string().max(100).optional(),
 });
 
+// 이력제번호 검증: 12자리 숫자 (예: 002132665191)
+const traceIdRegex = /^\d{12}$/;
+
 export const createAnimalSchema = z.object({
   farmId: z.string().uuid(),
   earTag: z.string().min(1).max(50),
+  traceId: z.string().regex(traceIdRegex, '이력제번호는 12자리 숫자여야 합니다').optional(),
   name: z.string().max(100).optional(),
   breed: z.enum(['holstein', 'jersey', 'hanwoo', 'brown_swiss', 'simmental', 'mixed', 'other']),
+  breedType: z.enum(['dairy', 'beef']).optional(), // 지정 안 하면 breed로부터 자동 결정
   sex: z.enum(['female', 'male']),
   birthDate: z.coerce.date().optional(),
   parity: z.number().int().min(0).default(0),
+  currentDeviceId: z.string().max(100).optional(), // smaXtec 센서 serial
+});
+
+// PATCH /animals/:animalId — 모든 필드 선택적 (부분 업데이트)
+export const updateAnimalSchema = z.object({
+  earTag: z.string().min(1).max(50).optional(),
+  traceId: z.string().regex(traceIdRegex, '이력제번호는 12자리 숫자여야 합니다').optional().nullable(),
+  name: z.string().max(100).optional().nullable(),
+  breed: z.enum(['holstein', 'jersey', 'hanwoo', 'brown_swiss', 'simmental', 'mixed', 'other']).optional(),
+  breedType: z.enum(['dairy', 'beef']).optional(),
+  sex: z.enum(['female', 'male']).optional(),
+  birthDate: z.coerce.date().optional().nullable(),
+  parity: z.number().int().min(0).optional(),
+  currentDeviceId: z.string().max(100).optional().nullable(),
+});
+
+// POST /animals/:animalId/status — 상태 변경 (active/sold/dead/culled/transferred)
+export const changeAnimalStatusSchema = z.object({
+  status: z.enum(['active', 'sold', 'dead', 'culled', 'transferred']),
+  reason: z.string().max(500).optional(),       // 처분 사유
+  occurredAt: z.coerce.date().optional(),        // 처분 일자 (미기재 시 now)
+  destinationFarmId: z.string().uuid().optional(), // transferred 경우 이동 목적지
+});
+
+// POST /animals/:animalId/sensor — 센서 매핑 변경
+export const assignSensorSchema = z.object({
+  deviceId: z.string().max(100).nullable(), // null = 센서 해제
 });
 
 // === 센서 데이터 ===
