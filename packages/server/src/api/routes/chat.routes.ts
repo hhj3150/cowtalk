@@ -88,13 +88,19 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     dashboardContext?: string;
   };
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-store, no-transform, must-revalidate');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');       // nginx/일부 프록시에 버퍼링 금지 지시
+  res.setHeader('Content-Encoding', 'identity');  // gzip/brotli 비활성 (SSE 스트리밍 유지)
   res.flushHeaders();
 
-  // SSE keep-alive (프록시 타임아웃 방지 — 10초 간격)
-  const keepAlive = setInterval(() => { res.write(':\n\n'); }, 10000);
+  // 즉시 첫 바이트 전송 — 프록시가 헤더만 받고 body 타임아웃 내는 걸 방지
+  // (주석 줄은 SSE에서 무시되지만 TCP 레벨에서 데이터가 흘렀음을 증명)
+  res.write(': stream-open\n\n');
+
+  // SSE keep-alive (프록시 타임아웃 방지 — 5초 간격, 기존 10초는 일부 CDN에서 부족)
+  const keepAlive = setInterval(() => { res.write(':\n\n'); }, 5000);
   req.on('close', () => { clearInterval(keepAlive); });
 
   const chatRequest = {
