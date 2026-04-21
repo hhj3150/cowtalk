@@ -607,9 +607,20 @@ export function TinkerbellAssistant({
       // OFF면 무음 (사용자가 명시적으로 끔).
       if (voiceOutput.voiceMode) {
         voiceOutput.speakText(answer)
-          .then(() => setState('idle'))
-          .catch(() => {
-            // OpenAI 실패 — 브라우저 TTS로 fallback
+          .then(() => {
+            // useVoiceOutput이 내부에서 set한 에러를 화면에 노출 (진단 목적)
+            const ttsErr = voiceOutput.error;
+            if (ttsErr) {
+              console.warn('[Tinkerbell TTS]', ttsErr.code, ttsErr.message);
+              setVoiceError(`🔊 ${ttsErr.message} (${ttsErr.code})`);
+            }
+            setState('idle');
+          })
+          .catch((err) => {
+            // OpenAI 실패 — 에러 가시화 후 브라우저 TTS fallback
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error('[Tinkerbell TTS] 실패:', msg, err);
+            setVoiceError(`🔊 TTS 실패: ${msg}`);
             speak(answer, () => setState('idle'));
           });
       } else {
