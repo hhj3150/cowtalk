@@ -124,12 +124,39 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
       setError(null);
       setIsSynthesizing(true);
 
+      // 에러를 state만 업데이트하지 않고 throw도 함 — 호출자가 .catch로 잡아 UI 노출 가능
+      const raiseAndThrow = (voError: VoiceOutputError): never => {
+        console.error('[useVoiceOutput]', voError.code, voError.message);
+        setError(voError);
+        throw Object.assign(new Error(voError.message), { code: voError.code });
+      };
+
       try {
-        const result = await speak({
-          text: trimmed,
-          voice: options.voice,
-          maxChars: options.maxChars,
-        });
+        let result;
+        try {
+          result = await speak({
+            text: trimmed,
+            voice: options.voice,
+            maxChars: options.maxChars,
+          });
+        } catch (err) {
+          const status = (err as { response?: { status?: number }; status?: number })?.response?.status
+            ?? (err as { status?: number })?.status;
+          if (status === 503) {
+            raiseAndThrow({ code: 'not-configured', message: '음성 기능이 아직 활성화되지 않았습니다 (Railway OPENAI_API_KEY 미설정)' });
+          } else if (status === 502) {
+            const body = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+            raiseAndThrow({ code: 'upstream-error', message: body ?? '음성 서비스 일시 장애' });
+          } else if (status === 401) {
+            raiseAndThrow({ code: 'upstream-error', message: 'TTS 인증 실패 (HTTP 401)' });
+          } else {
+            raiseAndThrow({
+              code: 'unknown',
+              message: `TTS 요청 실패: ${err instanceof Error ? err.message : String(err)}${status ? ` (HTTP ${String(status)})` : ''}`,
+            });
+          }
+          throw err; // unreachable — raiseAndThrow는 throw함
+        }
 
         const url = URL.createObjectURL(result.audioBlob);
         objectUrlRef.current = url;
@@ -142,47 +169,19 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
           setIsPlaying(false);
           cleanup();
         };
-        audio.onerror = () => {
-          setIsPlaying(false);
-          setError({ code: 'unknown', message: '오디오 재생 실패' });
-          cleanup();
-        };
 
         try {
           await audio.play();
         } catch (playErr) {
-          // 모바일 자동재생 차단
           const name = (playErr as { name?: string })?.name ?? '';
           if (name === 'NotAllowedError') {
-            setError({
+            raiseAndThrow({
               code: 'autoplay-blocked',
-              message: '브라우저가 자동재생을 차단했습니다. 화면을 한 번 터치한 후 다시 시도하세요.',
+              message: '브라우저가 자동재생을 차단했습니다. 화면을 한 번 탭한 후 다시 시도하세요.',
             });
           } else {
-            setError({ code: 'unknown', message: '오디오 재생 실패' });
+            raiseAndThrow({ code: 'unknown', message: `오디오 재생 실패: ${name || 'unknown'}` });
           }
-          cleanup();
-        }
-      } catch (err) {
-        const status = (err as { response?: { status?: number } })?.response?.status;
-        if (status === 503) {
-          // 서비스 미설정 — 조용히 실패 (사용자 노출 X, 콘솔만)
-          // eslint-disable-next-line no-console
-          console.warn('[useVoiceOutput] TTS 서비스 미설정');
-          setError({
-            code: 'not-configured',
-            message: '음성 기능이 아직 활성화되지 않았습니다',
-          });
-        } else if (status === 502) {
-          setError({
-            code: 'upstream-error',
-            message: '음성 서비스 일시 장애 — 잠시 후 다시 시도해주세요',
-          });
-        } else {
-          setError({
-            code: 'unknown',
-            message: err instanceof Error ? err.message : '음성 합성 실패',
-          });
         }
       } finally {
         setIsSynthesizing(false);
