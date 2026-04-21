@@ -35,7 +35,14 @@ audioRouter.post('/speak', async (req, res) => {
     res.setHeader('X-TTS-Truncated', String(result.truncated));
     res.setHeader('X-TTS-Original-Length', String(result.originalLength));
     res.setHeader('X-TTS-Synthesized-Length', String(result.synthesizedLength));
-    res.setHeader('Cache-Control', 'private, max-age=3600'); // 클라이언트도 1시간 캐시
+    // CDN/프록시의 바이너리 변조 방지 — 브라우저 NotSupportedError 예방
+    //   no-transform: 중간 프록시가 content encoding을 바꾸지 못하게 (Fastly/Netlify 포함)
+    //   identity: gzip/brotli 비활성 — MP3 원본 그대로 전달 (손상 방지)
+    //   X-Accel-Buffering: nginx 앞단 있을 때 버퍼링 금지
+    res.setHeader('Cache-Control', 'private, max-age=3600, no-transform');
+    res.setHeader('Content-Encoding', 'identity');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('Accept-Ranges', 'none'); // 부분 요청 방지 (일부 브라우저가 range로 바이너리 쪼개 요청 시 파손 방지)
 
     res.send(result.audio);
   } catch (err) {
