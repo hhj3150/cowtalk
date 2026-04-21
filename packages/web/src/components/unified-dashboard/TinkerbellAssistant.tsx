@@ -502,7 +502,12 @@ export function TinkerbellAssistant({
       const controller = new AbortController();
       const fetchTimeout = setTimeout(() => controller.abort(), 90_000);
 
-      const res = await fetch('/api/chat/stream', {
+      // 스트리밍: Netlify 프록시 타임아웃 회피를 위해 Railway 직접 호출 지원
+      // VITE_API_BASE_URL 설정되어 있으면 절대 URL, 아니면 상대 경로(기존 방식)
+      const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+      const streamUrl = `${apiBase}/api/chat/stream`;
+
+      const res = await fetch(streamUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -525,23 +530,33 @@ export function TinkerbellAssistant({
       let errorText = '';
       const startedAt = new Date();
       let firstChunk = true;
+      // 진단용 카운터 — 빈 응답 시 어디까지 왔는지 역추적
+      let dataLineCount = 0;
+      let textEventCount = 0;
+      let toolEventCount = 0;
+      let doneReceived = false;
+      let rawBytes = 0;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        rawBytes += value.byteLength;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
+          dataLineCount++;
           try {
             const parsed = JSON.parse(line.slice(6)) as StreamChunk;
             if (parsed.type === 'done') {
+              doneReceived = true;
               if (parsed.content) fullText = parsed.content;
               break;
             }
             if (parsed.type === 'text') {
+              textEventCount++;
               fullText += parsed.content;
               setStreamText(fullText);
               if (firstChunk) { setState('speaking'); firstChunk = false; }
@@ -550,6 +565,7 @@ export function TinkerbellAssistant({
               errorText = parsed.content;
             }
             if (parsed.type === 'tool_event' && parsed.toolName && parsed.phase) {
+              toolEventCount++;
               setToolActivities((prev) => {
                 if (parsed.phase === 'start') {
                   return [...prev, {
@@ -572,7 +588,16 @@ export function TinkerbellAssistant({
         }
       }
 
-      const answer = fullText || (errorText ? `⚠️ AI 오류: ${errorText}` : '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      const elapsedMs = Date.now() - startedAt.getTime();
+
+      // 빈 응답 진단 — 어디서 끊겼는지 정확히 표시
+      const emptyDiag = `스트림 ${(elapsedMs/1000).toFixed(1)}초 후 종료 — 데이터 ${dataLineCount}개/텍스트 ${textEventCount}개/도구 ${toolEventCount}개/바이트 ${rawBytes}${doneReceived ? '/done 수신' : '/done 미수신'}`;
+      if (!fullText && !errorText) {
+        console.warn('[Tinkerbell] 빈 응답:', emptyDiag);
+      }
+
+      const answer = fullText
+        || (errorText ? `⚠️ AI 오류: ${errorText}` : `서버로부터 응답을 받지 못했습니다 (${emptyDiag}). 잠시 후 다시 시도해 주세요.`);
       setStreamText('');
       setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
