@@ -209,7 +209,7 @@ export async function callClaudeForChatWithTools(
     ? TINKERBELL_TOOLS.filter((t) => allowedToolNames.includes(t.name))
     : [...TINKERBELL_TOOLS];
 
-  logger.info({ role, toolCount: filteredTools.length, total: TINKERBELL_TOOLS.length }, '[ToolUse] 역할별 도구 필터링');
+  logger.info({ role, toolCount: filteredTools.length, total: TINKERBELL_TOOLS.length, model: config.ANTHROPIC_MODEL }, '[ToolUse] 역할별 도구 필터링');
 
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
@@ -224,15 +224,25 @@ export async function callClaudeForChatWithTools(
 
       // 응답 content blocks 처리
       const toolUseBlocks: Anthropic.Messages.ToolUseBlock[] = [];
+      let roundTextLen = 0;
 
       for (const block of response.content) {
         if (block.type === 'text') {
           fullText += block.text;
+          roundTextLen += block.text.length;
           callbacks.onText(block.text);
         } else if (block.type === 'tool_use') {
           toolUseBlocks.push(block);
         }
       }
+
+      logger.info({
+        round: round + 1,
+        stopReason: response.stop_reason,
+        blocks: response.content.length,
+        roundTextLen,
+        toolCalls: toolUseBlocks.length,
+      }, '[ToolUse] 라운드 응답');
 
       // tool_use 없으면 완료
       if (response.stop_reason !== 'tool_use' || toolUseBlocks.length === 0) {
@@ -241,7 +251,16 @@ export async function callClaudeForChatWithTools(
           rounds: round + 1,
           inputTokens: response.usage.input_tokens,
           outputTokens: response.usage.output_tokens,
+          fullTextLen: fullText.length,
         }, '[ToolUse] 대화 완료');
+
+        // 빈 응답 방어 — Claude가 도구도 안 부르고 텍스트도 없이 종료한 경우
+        if (fullText.length === 0) {
+          const reason = `Claude가 빈 응답을 반환했습니다 (stop_reason=${response.stop_reason}, model=${response.model}). 잠시 후 다시 시도해 주세요.`;
+          logger.warn({ stopReason: response.stop_reason, usage: response.usage }, '[ToolUse] 빈 응답 감지 — onError로 전환');
+          callbacks.onError(new Error(reason));
+          return;
+        }
         callbacks.onDone(fullText);
         return;
       }
@@ -285,12 +304,27 @@ export async function callClaudeForChatWithTools(
       messages.push({ role: 'user', content: toolResults });
     }
 
-    // 최대 라운드 초과
-    logger.warn({ rounds: MAX_TOOL_ROUNDS }, '[ToolUse] 최대 도구 호출 횟수 초과');
+    // 최대 라운드 초과 — 텍스트가 누적됐으면 그대로 완료, 없으면 에러
+    logger.warn({ rounds: MAX_TOOL_ROUNDS, fullTextLen: fullText.length }, '[ToolUse] 최대 도구 호출 횟수 초과');
+    if (fullText.length === 0) {
+      callbacks.onError(new Error(`도구 호출 ${MAX_TOOL_ROUNDS}회를 초과했지만 답변이 생성되지 않았습니다. 질문을 단순화해 주세요.`));
+      return;
+    }
     callbacks.onDone(fullText);
   } catch (error) {
-    logger.error({ error }, '[ToolUse] 대화 실패');
-    callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    // Anthropic SDK 에러는 status/message 상세 포함
+    const errObj = error as { status?: number; message?: string; name?: string; error?: unknown };
+    logger.error({
+      error,
+      status: errObj.status,
+      message: errObj.message,
+      name: errObj.name,
+      model: config.ANTHROPIC_MODEL,
+    }, '[ToolUse] 대화 실패');
+    const detail = errObj.status
+      ? `[Claude ${errObj.status}] ${errObj.message ?? 'unknown'} (model=${config.ANTHROPIC_MODEL})`
+      : errObj.message ?? String(error);
+    callbacks.onError(error instanceof Error ? error : new Error(detail));
   }
 }
 

@@ -139,7 +139,8 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
         },
         onError: (error) => {
           clearInterval(keepAlive);
-          const errorMsg = `AI service unavailable: ${error.message}`;
+          // error.message가 이미 상세 정보(status, model 등)를 포함 — 그대로 노출
+          const errorMsg = error.message || 'AI 서비스 오류';
           res.write(`data: ${JSON.stringify({ type: 'error', content: errorMsg })}\n\n`);
           res.end();
         },
