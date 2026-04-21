@@ -605,22 +605,14 @@ export function TinkerbellAssistant({
 
       // 음성 출력: voiceMode가 ON이면 OpenAI Nova 사용, 실패 시 브라우저 TTS fallback.
       // OFF면 무음 (사용자가 명시적으로 끔).
+      // 에러는 Console에만 기록 — 사용자 화면에 배너는 노출하지 않음
+      // (브라우저 TTS로 자동 fallback되어 소리는 나오므로 배너는 혼란만 야기)
       if (voiceOutput.voiceMode) {
         voiceOutput.speakText(answer)
-          .then(() => {
-            // useVoiceOutput이 내부에서 set한 에러를 화면에 노출 (진단 목적)
-            const ttsErr = voiceOutput.error;
-            if (ttsErr) {
-              console.warn('[Tinkerbell TTS]', ttsErr.code, ttsErr.message);
-              setVoiceError(`🔊 ${ttsErr.message} (${ttsErr.code})`);
-            }
-            setState('idle');
-          })
+          .then(() => setState('idle'))
           .catch((err) => {
-            // OpenAI 실패 — 에러 가시화 후 브라우저 TTS fallback
             const msg = err instanceof Error ? err.message : String(err);
-            console.error('[Tinkerbell TTS] 실패:', msg, err);
-            setVoiceError(`🔊 TTS 실패: ${msg}`);
+            console.warn('[Tinkerbell TTS] OpenAI 실패, 브라우저 TTS로 대체:', msg);
             speak(answer, () => setState('idle'));
           });
       } else {
