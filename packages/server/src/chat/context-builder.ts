@@ -6,6 +6,7 @@
 import type { Role, BreedingPipelineData } from '@cowtalk/shared';
 import { eq, and, isNull, ilike, or } from 'drizzle-orm';
 import { buildAnimalProfile, buildFarmProfile, buildGlobalContext } from '../pipeline/profile-builder.js';
+import { romanizeIfHangul } from '../lib/romanize-hangul.js';
 import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
 import { getDb } from '../config/database.js';
 import { animals, farms } from '../db/schema.js';
@@ -162,21 +163,26 @@ async function findFarmByName(question: string): Promise<string | null> {
 
   if (!farmNameCandidate) return null;
 
-  logger.debug({ farmNameCandidate }, 'Searching farm by fuzzy name');
+  // 한글이면 로마자 변환본도 함께 검색 ("술탄" → "sultan")
+  const romanized = romanizeIfHangul(farmNameCandidate);
+  logger.debug({ farmNameCandidate, romanized }, 'Searching farm by fuzzy name');
 
   const db = getDb();
   try {
-    // 농장명 또는 대표자명으로 퍼지 검색
+    // 농장명 또는 대표자명으로 퍼지 검색 — 원본 + 로마자 변환본 모두 시도
+    const nameVariants = [farmNameCandidate, ...(romanized ? [romanized] : [])];
+    const orClauses = nameVariants.flatMap((v) => [
+      ilike(farms.name, `%${v}%`),
+      ilike(farms.ownerName, `%${v}%`),
+    ]);
+
     const results = await db
       .select({ farmId: farms.farmId, name: farms.name })
       .from(farms)
       .where(
         and(
           isNull(farms.deletedAt),
-          or(
-            ilike(farms.name, `%${farmNameCandidate}%`),
-            ilike(farms.ownerName, `%${farmNameCandidate}%`),
-          ),
+          or(...orClauses),
         ),
       )
       .limit(5);

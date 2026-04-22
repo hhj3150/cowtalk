@@ -7,7 +7,8 @@ import {
   pregnancyChecks, sensorDailyAgg, sensorHourlyAgg, healthEvents, treatments,
   type TreatmentDetails,
 } from '../../db/schema.js';
-import { eq, and, desc, gte, ilike, inArray, isNull } from 'drizzle-orm';
+import { eq, and, desc, gte, ilike, inArray, isNull, or } from 'drizzle-orm';
+import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
 import {
   getBreedingAdvice,
@@ -286,8 +287,21 @@ async function queryFarmSummary(input: Record<string, unknown>): Promise<unknown
     const rows = await db.select({ farmId: farms.farmId, name: farms.name }).from(farms).where(eq(farms.farmId, farmId)).limit(1);
     targetFarm = rows[0];
   } else if (farmName) {
-    const rows = await db.select({ farmId: farms.farmId, name: farms.name }).from(farms).where(ilike(farms.name, `%${farmName}%`)).limit(5);
-    if (rows.length === 0) return { error: `'${farmName}' 농장을 찾을 수 없습니다.` };
+    // 한글 농장명이면 로마자 변환본도 함께 검색 ("술탄" → "sultan")
+    const romanized = romanizeIfHangul(farmName);
+    const variants = [farmName, ...(romanized ? [romanized] : [])];
+    const clauses = variants.map((v) => ilike(farms.name, `%${v}%`));
+    const rows = await db
+      .select({ farmId: farms.farmId, name: farms.name })
+      .from(farms)
+      .where(clauses.length === 1 ? clauses[0]! : or(...clauses))
+      .limit(5);
+    if (rows.length === 0) {
+      const hint = romanized
+        ? `'${farmName}' (로마자: '${romanized}')로 농장을 찾을 수 없습니다. 한글 원본 또는 다른 변형을 시도하세요.`
+        : `'${farmName}' 농장을 찾을 수 없습니다. 한글 이름이라면 로마자(예: "sultan"), 영문이라면 한글로 시도하세요.`;
+      return { error: hint };
+    }
     if (rows.length > 1) return { message: '여러 농장이 검색됨', farms: rows };
     targetFarm = rows[0];
   } else {

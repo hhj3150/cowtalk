@@ -35,12 +35,12 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
   },
   {
     name: 'query_farm_summary',
-    description: '농장 요약 정보 조회. 농장명, 두수, 활성 알림 수, 번식 KPI(수태율, 발정탐지율)를 반환한다.',
+    description: '농장 요약 정보 조회. 농장명, 두수, 활성 알림 수, 번식 KPI(수태율, 발정탐지율)를 반환한다. 농장명은 한글/영문 모두 지원 — 서버가 자동 로마자 변환("술탄"↔"sultan") 후 OR 검색한다. 첫 시도가 실패하면 반대 언어 표기 또는 핵심 음절(예: "술탄")만으로 재시도하라.',
     input_schema: {
       type: 'object' as const,
       properties: {
         farmId: { type: 'string', description: '농장 ID' },
-        farmName: { type: 'string', description: '농장 이름 (부분 일치 검색)' },
+        farmName: { type: 'string', description: '농장 이름 (부분 일치, 한글/영문 모두 가능)' },
       },
     },
   },
