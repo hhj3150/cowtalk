@@ -524,25 +524,35 @@ export default function UnifiedDashboard(): React.JSX.Element {
   useSocketAlarmSync();
   const navigate = useNavigate();
 
+  // Phase 3 — 로그인 직후 첫 페인트를 빠르게: 크리티컬 3개만 즉시, 나머지는 800ms 뒤 지연 로드
+  // 크리티컬: useUnifiedDashboard, useLiveAlarms, useDashboardFarms (메인 KPI/알람/농장목록)
+  // 그 외 16개 차트/지도/분석 쿼리는 첫 렌더 이후 순차 로드 → 초기 API 부하 5배 감소
+  const [deferredReady, setDeferredReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDeferredReady(true), 800);
+    return () => clearTimeout(t);
+  }, []);
+  const deferOpt = useMemo(() => ({ enabled: deferredReady }), [deferredReady]);
+
   const { data, isLoading, error, refetch } = useUnifiedDashboard();
   const { data: alarmsData } = useLiveAlarms();
-  const { data: rankingData } = useFarmRanking();
-  const { data: alertTrendData } = useAlertTrend();
-  const { data: herdCompData } = useHerdComposition();
-  const { data: tempDistData } = useTemperatureDistribution();
-  const { data: timelineData } = useEventTimeline();
-  const { data: vitalData } = useVitalMonitor();
-  const { data: mapData } = useFarmMapMarkers();
-  const { data: epidemicData } = useEpidemicIntelligence();
-  const { data: healthScoresData } = useFarmHealthScores();
-  const { data: healthAlertsData } = useHealthAlertsSummary();
-  const { data: fertilityMgmtData } = useFertilityManagement();
-  const { data: sovereignStats } = useSovereignAiStats();
   const { data: farmsData } = useDashboardFarms();
+  const { data: rankingData } = useFarmRanking(deferOpt);
+  const { data: alertTrendData } = useAlertTrend(14, deferOpt);
+  const { data: herdCompData } = useHerdComposition(deferOpt);
+  const { data: tempDistData } = useTemperatureDistribution(deferOpt);
+  const { data: timelineData } = useEventTimeline(24, deferOpt);
+  const { data: vitalData } = useVitalMonitor(30, deferOpt);
+  const { data: mapData } = useFarmMapMarkers(deferOpt);
+  const { data: epidemicData } = useEpidemicIntelligence(deferOpt);
+  const { data: healthScoresData } = useFarmHealthScores(deferOpt);
+  const { data: healthAlertsData } = useHealthAlertsSummary(deferOpt);
+  const { data: fertilityMgmtData } = useFertilityManagement(deferOpt);
+  const { data: sovereignStats } = useSovereignAiStats(deferOpt);
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
-  const { data: sovereignAlarmData, isLoading: sovereignLoading } = useSovereignAlarms(selectedFarmId);
-  const { data: breedingPipelineData } = useBreedingPipeline();
+  const { data: sovereignAlarmData, isLoading: sovereignLoading } = useSovereignAlarms(selectedFarmId, deferOpt);
+  const { data: breedingPipelineData } = useBreedingPipeline(deferOpt);
   const queryClient = useQueryClient();
   const handleSovereignLabelChange = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['sovereign-alarms', selectedFarmId] });

@@ -61,33 +61,39 @@ export function useLiveAlarms() {
   });
 }
 
-export function useFarmRanking() {
+// 지연 로드 지원 — dashboard에서 enabled=deferredReady로 크리티컬 경로 후 순차화
+interface DeferOpt { readonly enabled?: boolean }
+
+export function useFarmRanking(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['farm-ranking', ...queryKey],
     queryFn: () => api.getFarmRanking(farmId, farmIds),
     staleTime: ALARM_STALE_TIME,
     refetchInterval: ALARM_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useHealthAlertsSummary() {
+export function useHealthAlertsSummary(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['health-alerts-summary', ...queryKey],
     queryFn: () => api.fetchHealthAlertsSummary(farmId, farmIds),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useFertilityManagement() {
+export function useFertilityManagement(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['fertility-management', ...queryKey],
     queryFn: () => api.fetchFertilityManagement(farmId, farmIds),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
@@ -101,7 +107,7 @@ export function useDashboardFarms() {
 
 // ── Phase 2: 강화 차트 훅 ──
 
-export function useAiBriefing() {
+export function useAiBriefing(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   const role = useAuthStore((s) => s.user?.role ?? 'government_admin');
 
@@ -110,10 +116,11 @@ export function useAiBriefing() {
     queryFn: () => api.fetchAiBriefing(farmId, role, farmIds),
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useAlertTrend(days = 14) {
+export function useAlertTrend(days = 14, opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
@@ -121,10 +128,11 @@ export function useAlertTrend(days = 14) {
     queryFn: () => api.fetchAlertTrend(farmId, days, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useHerdComposition() {
+export function useHerdComposition(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
@@ -132,6 +140,7 @@ export function useHerdComposition() {
     queryFn: () => api.fetchHerdComposition(farmId, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
@@ -144,7 +153,7 @@ export function useFarmComparison(farmIds?: string[]) {
   });
 }
 
-export function useTemperatureDistribution() {
+export function useTemperatureDistribution(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
@@ -152,10 +161,11 @@ export function useTemperatureDistribution() {
     queryFn: () => api.fetchTemperatureDistribution(farmId, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useEventTimeline(hours = 24) {
+export function useEventTimeline(hours = 24, opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
@@ -163,10 +173,11 @@ export function useEventTimeline(hours = 24) {
     queryFn: () => api.fetchEventTimeline(farmId, hours, farmIds),
     staleTime: ALARM_STALE_TIME,
     refetchInterval: ALARM_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useVitalMonitor(days = 30) {
+export function useVitalMonitor(days = 30, opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
 
   return useQuery({
@@ -174,10 +185,11 @@ export function useVitalMonitor(days = 30) {
     queryFn: () => api.fetchVitalMonitor(farmId, days, farmIds),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useFarmMapMarkers() {
+export function useFarmMapMarkers(opt?: DeferOpt) {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
@@ -204,28 +216,31 @@ export function useFarmMapMarkers() {
     },
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
 // ── 역학 감시 ──
 
-export function useEpidemicIntelligence() {
+export function useEpidemicIntelligence(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['epidemic-intelligence', ...queryKey],
     queryFn: () => api.fetchEpidemicIntelligence(farmId, farmIds),
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
+    enabled: opt?.enabled ?? true,
   });
 }
 
-export function useFarmHealthScores() {
+export function useFarmHealthScores(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
     queryKey: ['farm-health-scores', ...queryKey],
     queryFn: () => api.fetchFarmHealthScores(farmId, farmIds),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
+    enabled: opt?.enabled ?? true,
   });
 }
 
@@ -279,7 +294,7 @@ export function useSaveFarmProfit() {
 
 // ── 번식성적 커맨드센터 ──
 
-export function useBreedingPipeline() {
+export function useBreedingPipeline(opt?: DeferOpt) {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
   return useQuery({
@@ -287,6 +302,7 @@ export function useBreedingPipeline() {
     queryFn: () => api.fetchBreedingPipeline(selectedFarmId ?? undefined),
     staleTime: CHART_STALE_TIME,
     refetchInterval: CHART_STALE_TIME,
+    enabled: opt?.enabled ?? true,
   });
 }
 
@@ -307,11 +323,11 @@ export function useInseminationRoute(date?: string) {
 
 import { getSovereignAlarms } from '@web/api/unified-dashboard.api';
 
-export function useSovereignAlarms(farmId: string | null) {
+export function useSovereignAlarms(farmId: string | null, opt?: DeferOpt) {
   return useQuery({
     queryKey: ['sovereign-alarms', farmId],
     queryFn: () => getSovereignAlarms(farmId!, 30),
-    enabled: !!farmId,
+    enabled: !!farmId && (opt?.enabled ?? true),
     staleTime: 5 * 60_000, // 5분 캐시
     retry: 1,
   });
@@ -321,11 +337,12 @@ export function useSovereignAlarms(farmId: string | null) {
 
 import { getSovereignStats } from '@web/api/label-chat.api';
 
-export function useSovereignAiStats() {
+export function useSovereignAiStats(opt?: DeferOpt) {
   return useQuery({
     queryKey: ['sovereign-ai-stats'],
     queryFn: () => getSovereignStats(),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
+    enabled: opt?.enabled ?? true,
   });
 }
