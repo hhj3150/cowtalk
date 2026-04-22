@@ -4,6 +4,11 @@
 // 각 커넥터 독립 실행 (하나 실패해도 나머지 정상)
 
 import { logger } from '../lib/logger.js';
+import {
+  getEventLoopStats,
+  getMemoryStats,
+  resetEventLoopStats,
+} from '../lib/event-loop-monitor.js';
 import { syncHanwooSemenFromPublicApi } from '../services/breeding/semen-seed.service.js';
 import { runBreedingReminders } from '../services/breeding/breeding-reminder.service.js';
 import { runTreatmentOutcomeCheck } from '../services/vet/treatment-outcome.service.js';
@@ -170,7 +175,15 @@ export class PipelineOrchestrator {
 
     this.state = { ...this.state, isCycleRunning: true };
     const since = this.state.lastRealtimeRun;
-    logger.info({ since }, '[Pipeline] Running realtime cycle');
+
+    // 사이클 시작 시점의 스냅샷 — 끝날 때 비교하여 event loop 영향 관찰
+    const cycleStart = Date.now();
+    const memBefore = getMemoryStats();
+    resetEventLoopStats(); // 이 사이클 구간의 lag만 측정
+    logger.info(
+      { since, memBeforeMB: memBefore.heapUsedMB, rssMB: memBefore.rssMB },
+      '[Pipeline] Running realtime cycle',
+    );
 
     try {
       // 1. Ingest
@@ -203,6 +216,23 @@ export class PipelineOrchestrator {
     } catch (error) {
       logger.error({ err: error }, '[Pipeline] Realtime cycle error');
     } finally {
+      // 사이클 종료 지표 — 얼마나 event loop을 막았는지 기록
+      const cycleElapsedMs = Date.now() - cycleStart;
+      const memAfter = getMemoryStats();
+      const loopStats = getEventLoopStats();
+      logger.info(
+        {
+          cycleElapsedMs,
+          loopP99Ms: loopStats?.p99Ms ?? 0,
+          loopMaxMs: loopStats?.maxMs ?? 0,
+          loopMeanMs: loopStats?.meanMs ?? 0,
+          heapBeforeMB: memBefore.heapUsedMB,
+          heapAfterMB: memAfter.heapUsedMB,
+          heapDeltaMB: Math.round((memAfter.heapUsedMB - memBefore.heapUsedMB) * 10) / 10,
+          rssMB: memAfter.rssMB,
+        },
+        '[Pipeline] Realtime cycle complete — event loop impact recorded',
+      );
       this.state = { ...this.state, isCycleRunning: false };
     }
   }

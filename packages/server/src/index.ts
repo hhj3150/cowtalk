@@ -7,6 +7,7 @@ import { logger } from './lib/logger.js';
 import { closeDb } from './config/database.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
 import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
+import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
 import { startReportCleanup, stopReportCleanup } from './services/report/cleanup.js';
 import { seedSemenCatalog } from './services/breeding/semen-seed.service.js';
 import { createSocketServer } from './realtime/socket-server.js';
@@ -43,6 +44,9 @@ const httpServer = createServer(app);
 
 // Socket.IO 서버 초기화
 createSocketServer(httpServer);
+
+// Event loop lag 측정 시작 — 서버 가동 직후부터 누적 (서버 부팅 전에 시작해야 초기 히스토그램 포함)
+startEventLoopMonitor();
 
 const server = httpServer.listen(config.PORT, () => {
   logger.info({ port: config.PORT, env: config.NODE_ENV }, `CowTalk v5.0 server listening (HTTP + WebSocket)`);

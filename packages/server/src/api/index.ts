@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import { healthRouter } from './routes/health.routes.js';
+import { debugRouter } from './routes/debug.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { farmRouter } from './routes/farm.routes.js';
 import { animalRouter } from './routes/animal.routes.js';
@@ -64,6 +65,7 @@ export function createApiRouter(): Router {
   api.use('/public', publicStatsRouter);
 
   api.use('/health', healthRouter);
+  api.use('/debug', debugRouter);
   api.use('/auth', authRouter);
   api.use('/farms', farmRouter);
   api.use('/animals', animalRouter);
