@@ -18,6 +18,7 @@ import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farms, feedback } from '../../db/schema.js';
 import { eq, desc, count, sql, ilike, or } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 
 export const quarantineDashboardRouter = Router();
 
@@ -193,10 +194,14 @@ quarantineDashboardRouter.get('/cases', async (req, res, next) => {
       .leftJoin(feedback, eq(smaxtecEvents.eventId, feedback.alertId))
       .where(
         search
-          ? or(
-              ilike(farms.name, `%${search}%`),
-              ilike(smaxtecEvents.eventType, `%${search}%`),
-            )
+          ? (() => {
+              const romanized = romanizeIfHangul(search);
+              const nameVariants = romanized ? [search, romanized] : [search];
+              return or(
+                ...nameVariants.map((v) => ilike(farms.name, `%${v}%`)),
+                ilike(smaxtecEvents.eventType, `%${search}%`),
+              );
+            })()
           : undefined,
       )
       .orderBy(desc(smaxtecEvents.detectedAt))

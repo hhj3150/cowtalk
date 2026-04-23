@@ -1,9 +1,10 @@
 // Farm Repository
 
-import { eq, and, isNull, ilike, sql } from 'drizzle-orm';
+import { eq, and, isNull, ilike, or, sql } from 'drizzle-orm';
 import { getDb } from '../../config/database';
 import { farms } from '../schema';
 import { buildPaginatedResult } from './base.repo';
+import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 import type { PaginationParams, PaginatedResult } from '@cowtalk/shared';
 
 type FarmRow = typeof farms.$inferSelect;
@@ -25,7 +26,10 @@ export async function findFarms(params: FarmQueryParams): Promise<PaginatedResul
     conditions.push(eq(farms.status, params.status));
   }
   if (params.search) {
-    conditions.push(ilike(farms.name, `%${params.search}%`));
+    const romanized = romanizeIfHangul(params.search);
+    const variants = romanized ? [params.search, romanized] : [params.search];
+    const nameClauses = variants.map((v) => ilike(farms.name, `%${v}%`));
+    conditions.push(nameClauses.length === 1 ? nameClauses[0]! : or(...nameClauses)!);
   }
 
   const where = and(...conditions);
