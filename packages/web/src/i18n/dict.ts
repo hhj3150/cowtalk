@@ -69,6 +69,12 @@ const ko: Dict = {
   'verdict.too_late.label': '뒤늦은 감지',
   'verdict.too_late.desc': '더 빨리 감지됐어야 했습니다',
 
+  // 결과 (outcome) 옵션
+  'outcome.resolved': '해결됨',
+  'outcome.ongoing': '진행 중',
+  'outcome.worsened': '악화됨',
+  'outcome.no_action': '조치 불필요',
+
   // 이벤트 타입 라벨 (대시보드/모달 공통)
   'event.heat': '발정',
   'event.estrus': '발정',
@@ -146,6 +152,11 @@ const en: Dict = {
   'verdict.too_late.label': 'Late Detection',
   'verdict.too_late.desc': 'Should have been detected sooner',
 
+  'outcome.resolved': 'Resolved',
+  'outcome.ongoing': 'Ongoing',
+  'outcome.worsened': 'Worsened',
+  'outcome.no_action': 'No action needed',
+
   'event.heat': 'Heat',
   'event.estrus': 'Estrus',
   'event.calving': 'Calving',
@@ -220,6 +231,11 @@ const uz: Dict = {
   'verdict.unclear.desc': 'Hozircha tekshirish qiyin',
   'verdict.too_late.label': "Kech aniqlash",
   'verdict.too_late.desc': 'Tezroq aniqlanishi kerak edi',
+
+  'outcome.resolved': 'Hal qilindi',
+  'outcome.ongoing': 'Davom etmoqda',
+  'outcome.worsened': "Yomonlashdi",
+  'outcome.no_action': 'Chora kerak emas',
 
   'event.heat': 'Qizishish',
   'event.estrus': 'Qizishish',
@@ -296,6 +312,11 @@ const ru: Dict = {
   'verdict.too_late.label': 'Позднее обнаружение',
   'verdict.too_late.desc': 'Следовало обнаружить раньше',
 
+  'outcome.resolved': 'Решено',
+  'outcome.ongoing': 'В процессе',
+  'outcome.worsened': 'Ухудшилось',
+  'outcome.no_action': 'Меры не требуются',
+
   'event.heat': 'Охота',
   'event.estrus': 'Охота',
   'event.calving': 'Отёл',
@@ -370,6 +391,11 @@ const mn: Dict = {
   'verdict.unclear.desc': 'Одоохондоо шалгахад хэцүү',
   'verdict.too_late.label': 'Хожим илрүүлэлт',
   'verdict.too_late.desc': 'Илүү эрт илрүүлэх ёстой байсан',
+
+  'outcome.resolved': 'Шийдэгдсэн',
+  'outcome.ongoing': 'Үргэлжилж байгаа',
+  'outcome.worsened': 'Муудсан',
+  'outcome.no_action': 'Арга хэмжээ шаардлагагүй',
 
   'event.heat': 'Хөөцөлдөх',
   'event.estrus': 'Хөөцөлдөх',

@@ -10,6 +10,7 @@ import { useVoiceInput } from '@web/hooks/useVoiceInput';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { MicButton } from '@web/components/common/MicButton';
 import { apiGet } from '@web/api/client';
+import { useT } from '@web/i18n/useT';
 import { getEventContext, streamLabelChat, submitLabel, getAnimalEvents, getLabelHistory, submitFollowUp, getAnimalInfo, submitObservation, getObservations, saveConversationRecord } from '@web/api/label-chat.api';
 import type { AnimalEvent, AnimalInfo, LabelWithFollowUps, SubmitFollowUpRequest, ClinicalObservation, SubmitObservationRequest, ExtractedRecordClient } from '@web/api/label-chat.api';
 import type { EventContext, LabelVerdict, LabelOutcome } from '@cowtalk/shared';
@@ -25,21 +26,26 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: '#22c55e',
 };
 
-const VERDICT_OPTIONS: readonly { readonly value: LabelVerdict; readonly label: string; readonly color: string; readonly desc: string }[] = [
-  { value: 'confirmed', label: '확인', color: '#22c55e', desc: 'AI 예측이 정확했습니다' },
-  { value: 'modified', label: '수정', color: '#eab308', desc: '이벤트는 있었으나 유형이 다릅니다' },
-  { value: 'false_positive', label: '오탐', color: '#ef4444', desc: '실제로는 이상이 없었습니다' },
-  { value: 'missed', label: '미탐', color: '#8b5cf6', desc: '다른 이상을 놓쳤습니다' },
+// VERDICT_OPTIONS / OUTCOME_OPTIONS / EVENT_TYPE_LABELS 는 i18n으로 전환되어
+// 컴포넌트 내부에서 t() 함수를 사용해 동적으로 생성. value/color는 그대로 유지.
+
+const VERDICT_META: readonly { readonly value: LabelVerdict; readonly color: string; readonly labelKey: string; readonly descKey: string }[] = [
+  { value: 'confirmed',      color: '#22c55e', labelKey: 'verdict.confirmed.label',       descKey: 'verdict.confirmed.desc' },
+  { value: 'modified',       color: '#eab308', labelKey: 'verdict.partially.label',       descKey: 'verdict.partially.desc' },
+  { value: 'false_positive', color: '#ef4444', labelKey: 'verdict.false_positive.label',  descKey: 'verdict.false_positive.desc' },
+  { value: 'missed',         color: '#8b5cf6', labelKey: 'verdict.too_late.label',        descKey: 'verdict.too_late.desc' },
 ];
 
-const OUTCOME_OPTIONS: readonly { readonly value: LabelOutcome; readonly label: string }[] = [
-  { value: 'resolved', label: '해결됨' },
-  { value: 'ongoing', label: '진행 중' },
-  { value: 'worsened', label: '악화됨' },
-  { value: 'no_action', label: '조치 불필요' },
+const OUTCOME_META: readonly { readonly value: LabelOutcome; readonly labelKey: string }[] = [
+  { value: 'resolved',  labelKey: 'outcome.resolved' },
+  { value: 'ongoing',   labelKey: 'outcome.ongoing' },
+  { value: 'worsened',  labelKey: 'outcome.worsened' },
+  { value: 'no_action', labelKey: 'outcome.no_action' },
 ];
 
-const EVENT_TYPE_LABELS: Record<string, string> = {
+// generateSuggestedQuestions(module-level, 한국어 질문 hardcoded)에서만 사용하는
+// 한국어 라벨 fallback. JSX의 사용자 표시용은 t('event.<key>')로 대체됨.
+const EVENT_TYPE_LABELS_KO: Record<string, string> = {
   temperature_high: '고체온',
   clinical_condition: '임상 이상',
   rumination_decrease: '반추 저하',
@@ -146,7 +152,7 @@ function generateSuggestedQuestions(
     }
 
     // 매핑되지 않은 이벤트 타입 — 범용 이벤트 질문
-    const typeLabel = EVENT_TYPE_LABELS[eventType] ?? eventType;
+    const typeLabel = EVENT_TYPE_LABELS_KO[eventType] ?? eventType;
     return [
       `이 ${typeLabel} 알람의 원인으로 뭐가 의심돼?`,
       `${earTag}번 소의 최근 이력을 보고 현재 상태를 분석해줘`,
@@ -242,10 +248,11 @@ function ChatBubble({ message }: {
 
 // ── EventSelector ──
 
-function EventSelector({ events, selectedId, onSelect }: {
+function EventSelector({ events, selectedId, onSelect, eventTypeLabel }: {
   readonly events: readonly AnimalEvent[];
   readonly selectedId: string | null;
   readonly onSelect: (eventId: string) => void;
+  readonly eventTypeLabel: (et: string) => string;
 }): React.JSX.Element {
   return (
     <div style={{
@@ -288,7 +295,7 @@ function EventSelector({ events, selectedId, onSelect }: {
             }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ct-text)' }}>
-                {EVENT_TYPE_LABELS[evt.eventType] ?? evt.eventType}
+                {eventTypeLabel(evt.eventType)}
               </div>
               <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
                 {timeStr}
@@ -326,6 +333,13 @@ function LabelForm({ context: _context, onSubmit, isSubmitting }: {
   }) => void;
   readonly isSubmitting: boolean;
 }): React.JSX.Element {
+  const t = useT();
+  const VERDICT_OPTIONS = React.useMemo(() => VERDICT_META.map((m) => ({
+    value: m.value, color: m.color, label: t(m.labelKey), desc: t(m.descKey),
+  })), [t]);
+  const OUTCOME_OPTIONS = React.useMemo(() => OUTCOME_META.map((m) => ({
+    value: m.value, label: t(m.labelKey),
+  })), [t]);
   const [verdict, setVerdict] = useState<LabelVerdict | null>(null);
   const [actualDiagnosis, setActualDiagnosis] = useState('');
   const [actionTaken, setActionTaken] = useState('');
@@ -793,6 +807,11 @@ function FollowUpForm({ labelId, eventId, animalId, onSubmit, isSubmitting: subm
 function FollowUpTimeline({ labelHistory }: {
   readonly labelHistory: readonly LabelWithFollowUps[];
 }): React.JSX.Element {
+  const t = useT();
+  const VERDICT_OPTIONS = React.useMemo(() => VERDICT_META.map((m) => ({
+    value: m.value, color: m.color, label: t(m.labelKey), desc: t(m.descKey),
+  })), [t]);
+
   if (labelHistory.length === 0) return <></>;
 
   const statusColor = (s: string): string => {
@@ -1201,6 +1220,14 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelStreamRef = useRef<(() => void) | null>(null);
 
+  // i18n — 컴포넌트 본체에서는 eventTypeLabel만 사용 (sub-components는 자체 useT)
+  const t = useT();
+  const eventTypeLabel = useCallback((eventType: string): string => {
+    const localized = t(`event.${eventType}`);
+    // 키가 dict에 없으면 t()는 키 자체 반환 — 그 경우 raw eventType 표시
+    return localized === `event.${eventType}` ? eventType : localized;
+  }, [t]);
+
   const handleVoiceResult = useCallback((text: string) => {
     setInput(text);
     setTimeout(() => {
@@ -1270,7 +1297,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
         setMessages([{
           id: 'system-0',
           role: 'system',
-          content: `${ctx.farmName} | ${ctx.earTag} | ${EVENT_TYPE_LABELS[ctx.eventType] ?? ctx.eventType} (${ctx.severity}) — AI와 대화하며 현장 확인 결과를 레이블링하세요.`,
+          content: `${ctx.farmName} | ${ctx.earTag} | ${eventTypeLabel(ctx.eventType)} (${ctx.severity}) — AI와 대화하며 현장 확인 결과를 레이블링하세요.`,
         }]);
       }).catch(() => {});
 
@@ -1643,7 +1670,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 {context ? (
                   <>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ct-text-secondary)', marginBottom: 2 }}>
-                      {EVENT_TYPE_LABELS[context.eventType] ?? context.eventType}
+                      {eventTypeLabel(context.eventType)}
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
                       {context.farmName} | {new Date(context.detectedAt).toLocaleString('ko-KR')}
@@ -1705,6 +1732,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 events={events}
                 selectedId={selectedEventId}
                 onSelect={setSelectedEventId}
+                eventTypeLabel={eventTypeLabel}
               />
             ) : (
               <div style={{
