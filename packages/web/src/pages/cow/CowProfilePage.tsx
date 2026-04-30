@@ -222,8 +222,9 @@ export default function CowProfilePage(): React.JSX.Element {
     setLoading(true);
     setLoadError(null);
 
-    const controller = new AbortController();
-    const { signal } = controller;
+    // SPA navigation 후 fetch가 abort되지 않도록 AbortController 제거.
+    // 대신 cancelled flag로 unmount 시 setState만 차단 (React 18 표준 패턴).
+    let cancelled = false;
 
     // 타임아웃 래퍼 — 5초 초과 시 null 반환
     function withTimeout<T>(promise: Promise<T>, ms = 5000): Promise<T | null> {
@@ -242,7 +243,7 @@ export default function CowProfilePage(): React.JSX.Element {
       }),
       withTimeout(apiGet<{ events: readonly EventItem[] }>(`/label-chat/events/${id}`), 10000).catch(() => ({ events: [] as readonly EventItem[] })),
     ]).then(([p, evts]) => {
-      if (signal.aborted) return;
+      if (cancelled) return;
 
       if (p === '__NOT_FOUND__') {
         setLoadError('not_found');
@@ -267,7 +268,7 @@ export default function CowProfilePage(): React.JSX.Element {
       `/unified-dashboard/animal/${id}/sensor-chart?days=7`
     ), 15000)
       .then((sensorData) => {
-        if (signal.aborted || !sensorData?.metrics) return;
+        if (cancelled || !sensorData?.metrics) return;
         const getLatest = (key: string): number | null => {
           const pts = sensorData.metrics[key];
           return pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
@@ -308,7 +309,7 @@ export default function CowProfilePage(): React.JSX.Element {
     // 보조 데이터 — 비동기 지연 로딩 (로딩 상태 차단 안 함)
     withTimeout(apiGet<unknown>(`/animals/${id}/breeding-history`), 10000)
       .then((raw) => {
-        if (signal.aborted || !raw) return;
+        if (cancelled || !raw) return;
         // 배열이면 그대로, 객체면 flat 변환
         if (Array.isArray(raw)) {
           setBreeding(raw as BreedingEvent[]);
@@ -325,18 +326,18 @@ export default function CowProfilePage(): React.JSX.Element {
       .catch(() => {});
 
     withTimeout(apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`), 10000)
-      .then((data) => { if (!signal.aborted && data) setHealthPred(data); })
+      .then((data) => { if (!cancelled && data) setHealthPred(data); })
       .catch(() => {});
 
     withTimeout(apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`), 10000)
-      .then((data) => { if (!signal.aborted && data) setEstrusPred(data); })
+      .then((data) => { if (!cancelled && data) setEstrusPred(data); })
       .catch(() => {});
 
     withTimeout(apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`), 10000)
-      .then((data) => { if (!signal.aborted && data) setCalvingPred(data); })
+      .then((data) => { if (!cancelled && data) setCalvingPred(data); })
       .catch(() => {});
 
-    return () => { controller.abort(); };
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading) {
