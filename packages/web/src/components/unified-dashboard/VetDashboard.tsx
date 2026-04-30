@@ -329,6 +329,8 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
   const farmParam = selectedFarmIds.length > 0 ? `&farmIds=${selectedFarmIds.join(',')}` : '';
 
   // 기존 drilldown 데이터 (긴급 개체 + 농장별 그룹핑)
+  // 변경: 8개 type을 8회 병렬 호출 → 1회 통합 호출 (eventTypes 콤마 파라미터)
+  // 이유: 8개 동시 호출이 DB 풀을 마비시켜 발정 드릴다운 클릭 시 timeout 발생.
   const load = useCallback(() => {
     setLoading(true);
     const healthTypes = [
@@ -337,17 +339,12 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
       'calving_detection', 'calving_confirmation',
     ];
 
-    Promise.all(
-      healthTypes.map((t) =>
-        apiGet<{ items: readonly HealthAnimal[]; total: number }>(
-          `/unified-dashboard/drilldown?eventType=${t}${farmParam}&limit=200`,
-        ).catch(() => ({ items: [], total: 0 })),
-      ),
-    ).then((results) => {
-      const allAnimals: HealthAnimal[] = [];
-      for (const r of results) {
-        allAnimals.push(...r.items);
-      }
+    apiGet<{ items: readonly HealthAnimal[]; total: number }>(
+      `/unified-dashboard/drilldown?eventTypes=${healthTypes.join(',')}${farmParam}&limit=200`,
+      undefined,
+      { timeout: 30_000 },
+    ).then((result) => {
+      const allAnimals: HealthAnimal[] = [...result.items];
 
       const farmMap = new Map<string, FarmHealthSummary>();
       for (const a of allAnimals) {
