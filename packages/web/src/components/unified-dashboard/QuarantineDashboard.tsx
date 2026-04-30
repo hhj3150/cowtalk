@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPatch } from '@web/api/client';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { QuarantineActionModal } from '@web/components/quarantine/QuarantineActionModal';
 
 // ── 타입 ─────────────────────────────────────────────────────────────
 
@@ -258,6 +259,7 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<'overview' | 'national' | 'actions' | 'metrics'>('overview');
   const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
   const [completingAction, setCompletingAction] = useState<string | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ farmId: string; farmName: string } | null>(null);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -544,6 +546,26 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
                       <div style={{ fontSize: 20, fontWeight: 900, color: riskColor }}>{farm.riskScore}</div>
                       <div style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>위험점수</div>
                     </div>
+                    {/* 조치 발령 버튼 (방역관 권한 — server-side에서 권한 체크) */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setActionTarget({ farmId: farm.farmId, farmName: farm.farmName }); }}
+                      title="방역조치 발령"
+                      style={{
+                        flexShrink: 0,
+                        padding: '6px 10px',
+                        background: riskColor,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      🚨 조치
+                    </button>
                   </div>
                 );
               })}
@@ -968,6 +990,21 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
             ))}
           </div>
         </div>
+      )}
+
+      {/* 방역조치 발령 모달 */}
+      {actionTarget && (
+        <QuarantineActionModal
+          farmId={actionTarget.farmId}
+          farmName={actionTarget.farmName}
+          onClose={() => setActionTarget(null)}
+          onSuccess={() => {
+            // 발령 후 actionQueue 갱신 (성공 화면이 닫힐 때 자동으로 onClose 호출됨)
+            apiGet<readonly ActionQueueItem[]>('/quarantine/action-queue')
+              .then((aq) => setActionQueue(aq ?? []))
+              .catch(() => {});
+          }}
+        />
       )}
 
       {/* CSS 애니메이션 */}

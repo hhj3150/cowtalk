@@ -5,8 +5,9 @@
 // PATCH  /quarantine-action/:id        — 상태 변경
 
 import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 import {
   createQuarantineAction,
   getQuarantineAction,
@@ -18,6 +19,9 @@ import { logger } from '../../lib/logger.js';
 export const quarantineActionRouter = Router();
 
 quarantineActionRouter.use(authenticate);
+
+// 발령·수정 권한: 방역관 + 행정관 + 수의사. 농장주는 조회만.
+const canIssueAction = requireRole('quarantine_officer', 'government_admin', 'veterinarian');
 
 // ===========================
 // POST /quarantine-action — 조치 생성
@@ -34,7 +38,7 @@ const createSchema = z.object({
   notes: z.string().optional(),
 });
 
-quarantineActionRouter.post('/', async (req, res, next) => {
+quarantineActionRouter.post('/', canIssueAction, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = createSchema.parse(req.body);
     logger.info({ farmId: input.farmId, actionType: input.actionType }, '[QuarantineAction] 생성 요청');
@@ -101,9 +105,10 @@ const patchSchema = z.object({
   assignedTo: z.string().uuid().optional(),
 });
 
-quarantineActionRouter.patch('/:id', async (req, res, next) => {
+quarantineActionRouter.patch('/:id', canIssueAction, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const id = req.params.id ?? '';
+    const idParam = req.params.id;
+    const id = typeof idParam === 'string' ? idParam : '';
     const patch = patchSchema.parse(req.body);
 
     const data = await updateQuarantineAction(id, patch);

@@ -39,3 +39,23 @@ export function optionalAuth(
   }
   next();
 }
+
+/**
+ * 역할 가드 — authenticate 뒤에 사용. req.user.role이 허용 목록에 없으면 403.
+ *   router.post('/...', authenticate, requireRole('quarantine_officer', 'government_admin'), handler);
+ */
+export function requireRole(
+  ...allowed: readonly string[]
+): (req: Request, res: Response, next: NextFunction) => void {
+  return (req, res, next) => {
+    const role = req.user?.role;
+    if (!role || !allowed.includes(role)) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: `이 작업은 ${allowed.join('/')} 역할만 수행할 수 있습니다` },
+      });
+      return;
+    }
+    next();
+  };
+}
