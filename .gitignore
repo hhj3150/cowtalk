@@ -9,6 +9,8 @@ dist/
 .env
 .env.local
 .env.production
+# packages/web/.env.production은 public Railway URL만 담고 있어 추적 (Netlify 빌드 inject용)
+!packages/web/.env.production
 
 # IDE
 .vscode/
