@@ -225,6 +225,9 @@ export const smaxtecEvents = pgTable('smaxtec_events', {
   index('smaxtec_events_farm_id_idx').on(table.farmId),
   index('smaxtec_events_event_type_idx').on(table.eventType),
   index('smaxtec_events_detected_at_idx').on(table.detectedAt),
+  // 드릴다운 가속 (event_type + detected_at DESC) — 0019 migration
+  index('smaxtec_events_event_type_detected_at_idx').on(table.eventType, table.detectedAt),
+  index('smaxtec_events_farm_event_detected_idx').on(table.farmId, table.eventType, table.detectedAt),
 ]);
 
 // ======================================================================
