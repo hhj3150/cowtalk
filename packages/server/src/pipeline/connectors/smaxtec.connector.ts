@@ -67,16 +67,19 @@ export interface SmaxtecRawEvent {
   readonly data?: Record<string, unknown>;
 }
 
-/** smaXtec Data API raw response item */
+/** smaXtec Data API raw response item — value can be null (smaXtec sends NaN for gaps) */
 export interface SmaxtecSensorMetricRaw {
   readonly metric: string;
   readonly unit: string;
-  readonly data: readonly (readonly [string, number])[];
+  readonly data: readonly (readonly [string, number | null])[];
 }
 
 export interface SmaxtecSensorData {
   readonly animal_id: string;
-  readonly metrics: Record<string, readonly { readonly ts: number; readonly value: number }[]>;
+  readonly metrics: Record<
+    string,
+    readonly { readonly ts: number; readonly value: number | null }[]
+  >;
 }
 
 /** smaXtec 커넥터가 반환하는 통합 데이터 */
@@ -152,7 +155,18 @@ export class SmaxtecApiClient {
         throw new Error(`smaXtec ${String(res.status)} ${path}: ${text.slice(0, 200)}`);
       }
 
-      return (await res.json()) as T;
+      // smaXtec data API가 결측치를 JSON에 NaN 리터럴로 박아 보내는 경우가 있어
+      // (특히 우즈벡 timezone +05:00 응답에서 관측됨) 표준 JSON.parse가 실패한다.
+      // text() → NaN/Infinity → null 치환 후 파싱.
+      const text = await res.text();
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        const sanitized = text
+          .replace(/(?<=[\s,\[:])-?Infinity(?=[\s,\]}])/g, 'null')
+          .replace(/(?<=[\s,\[:])NaN(?=[\s,\]}])/g, 'null');
+        return JSON.parse(sanitized) as T;
+      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`smaXtec 요청 타임아웃 (60s): ${path}`);
@@ -198,13 +212,16 @@ export class SmaxtecApiClient {
     );
 
     // Normalize raw array → {metrics: {temp: [{ts, value}]}}
-    const normalized: Record<string, { ts: number; value: number }[]> = {};
+    // value는 number | null (smaXtec이 결측치를 NaN으로 보내면 request()가 null로 치환).
+    const normalized: Record<string, { ts: number; value: number | null }[]> = {};
     if (Array.isArray(raw)) {
       for (const item of raw) {
-        normalized[item.metric] = item.data.map(([tsStr, value]: readonly [string, number]) => ({
-          ts: new Date(tsStr).getTime() / 1000,
-          value,
-        }));
+        normalized[item.metric] = item.data.map(
+          ([tsStr, value]: readonly [string, number | null]) => ({
+            ts: new Date(tsStr).getTime() / 1000,
+            value,
+          }),
+        );
       }
     }
 

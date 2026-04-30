@@ -299,8 +299,15 @@ export class PipelineOrchestrator {
           const metricData = data.metrics[metric];
           if (!metricData || metricData.length === 0) continue;
 
-          // 최근 6시간 데이터만 필터
-          const recentData = metricData.filter((d) => d.ts * 1000 > from.getTime());
+          // 최근 6시간 데이터만 필터 + 결측치(null/NaN) 제거
+          // smaXtec이 결측치를 NaN 리터럴로 보내는 경우가 있어 connector에서 null로 치환됨.
+          const recentData = metricData.filter(
+            (d): d is { ts: number; value: number } =>
+              d.value !== null &&
+              d.value !== undefined &&
+              Number.isFinite(d.value) &&
+              d.ts * 1000 > from.getTime(),
+          );
           if (recentData.length === 0) continue;
 
           const values = recentData.map((d) => ({
