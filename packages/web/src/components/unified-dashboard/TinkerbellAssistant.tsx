@@ -523,6 +523,14 @@ export function TinkerbellAssistant({
         throw new Error(`HTTP ${res.status}`);
       }
 
+      // Netlify Edge가 timeout 시 'Inactivity Timeout' HTML을 캐시해서 SSE 응답으로 반환하는
+      // 케이스 방어. content-type이 HTML이거나 응답이 '<'로 시작하면 캐시된 가짜 응답.
+      const contentType = res.headers.get('content-type') ?? '';
+      const cacheStatus = res.headers.get('cache-status') ?? '';
+      if (contentType.includes('html') || cacheStatus.includes('hit')) {
+        throw new Error(`SSE 캐시 충돌 (content-type=${contentType}, cache=${cacheStatus}) — 잠시 후 재시도해 주세요`);
+      }
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -536,11 +544,21 @@ export function TinkerbellAssistant({
       let toolEventCount = 0;
       let doneReceived = false;
       let rawBytes = 0;
+      let firstByteChecked = false;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         rawBytes += value.byteLength;
+
+        // 첫 byte가 '<'면 HTML 응답 (Netlify Edge timeout HTML) — 즉시 throw
+        if (!firstByteChecked && value.byteLength > 0) {
+          firstByteChecked = true;
+          if (value[0] === 0x3C /* '<' */) {
+            throw new Error('SSE 응답이 HTML입니다 (Netlify Edge 캐시 충돌) — 잠시 후 다시 시도해 주세요');
+          }
+        }
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
