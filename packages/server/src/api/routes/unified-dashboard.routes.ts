@@ -335,10 +335,12 @@ unifiedDashboardRouter.get('/fertility-management', async (req: Request, res: Re
 unifiedDashboardRouter.get('/drilldown', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const eventType = req.query.eventType as string;
+    // eventTypes: 콤마 구분 다중 타입 — VetDashboard가 8타입을 8회 호출하던 것을 1회로 통합
+    const eventTypesParam = req.query.eventTypes as string | undefined;
     const farmId = (req.query.farmId as string | undefined) ?? null;
 
-    if (!eventType) {
-      res.status(400).json({ success: false, error: 'eventType is required' });
+    if (!eventType && !eventTypesParam) {
+      res.status(400).json({ success: false, error: 'eventType or eventTypes is required' });
       return;
     }
 
@@ -347,17 +349,26 @@ unifiedDashboardRouter.get('/drilldown', async (req: Request, res: Response, nex
 
     // eventType=ALL → 모든 이벤트 유형, HEALTH_ALL → 건강 관련, SEVERITY_* → 심각도 필터
     const healthTypes = ['health_warning', 'health_alert', 'temperature_high', 'temperature_low', 'rumination_decrease', 'activity_decrease', 'ph_low', 'drinking_decrease', 'clinical_condition', 'health_general'];
-    const typeFilter = eventType === 'ALL'
-      ? undefined
-      : eventType === 'HEALTH_ALL'
-        ? sql`${smaxtecEvents.eventType} IN (${sql.raw(healthTypes.map((t) => `'${t}'`).join(','))})`
-        : eventType === 'SEVERITY_CRITICAL'
-          ? eq(smaxtecEvents.severity, 'critical')
-          : eventType === 'SEVERITY_HIGH'
-            ? sql`${smaxtecEvents.severity} IN ('high', 'medium')`
-            : eventType.startsWith('DATE_')
-              ? undefined // 날짜 필터는 별도 처리
-              : eq(smaxtecEvents.eventType, eventType);
+
+    // eventTypes 다중 타입 우선 처리 — DB 라벨 안전 화이트리스트 검증 후 IN 절 생성
+    const ALLOWED_TYPE_RE = /^[a-z_]+$/;
+    const requestedTypes = eventTypesParam
+      ? eventTypesParam.split(',').map((s) => s.trim()).filter((s) => s.length > 0 && ALLOWED_TYPE_RE.test(s))
+      : null;
+
+    const typeFilter = requestedTypes && requestedTypes.length > 0
+      ? sql`${smaxtecEvents.eventType} IN (${sql.raw(requestedTypes.map((t) => `'${t}'`).join(','))})`
+      : eventType === 'ALL'
+        ? undefined
+        : eventType === 'HEALTH_ALL'
+          ? sql`${smaxtecEvents.eventType} IN (${sql.raw(healthTypes.map((t) => `'${t}'`).join(','))})`
+          : eventType === 'SEVERITY_CRITICAL'
+            ? eq(smaxtecEvents.severity, 'critical')
+            : eventType === 'SEVERITY_HIGH'
+              ? sql`${smaxtecEvents.severity} IN ('high', 'medium')`
+              : eventType.startsWith('DATE_')
+                ? undefined // 날짜 필터는 별도 처리
+                : eq(smaxtecEvents.eventType, eventType);
 
     // 오늘 발생한 해당 유형의 이벤트를 농장명 + 동물 귀표번호와 함께 조회
     const rows = await db.select({
@@ -413,7 +424,15 @@ unifiedDashboardRouter.get('/drilldown', async (req: Request, res: Response, nex
       if (plan) actionPlans[et] = plan;
     }
 
-    res.json({ success: true, data: { eventType, total: items.length, items, actionPlans } });
+    res.json({
+      success: true,
+      data: {
+        eventType: eventType || (requestedTypes ? requestedTypes.join(',') : ''),
+        total: items.length,
+        items,
+        actionPlans,
+      },
+    });
   } catch (error) {
     logger.error({ error }, 'Unified dashboard drilldown failed');
     next(error);
