@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet } from '@web/api/client';
+import { apiGetWithRetry, describeColdPathError } from '@web/api/client';
 import { AnimalTimelineModal } from './AnimalTimelineModal';
 
 // ── 타입 ──
@@ -317,17 +317,30 @@ function ActionPlanPanel({ plan }: { readonly plan: VetActionPlan }): React.JSX.
 export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimalClick, onSovereignClick }: Props): React.JSX.Element {
   const [data, setData] = useState<DrilldownResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; raw: string } | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'list' | 'actions'>('list');
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setRetryAttempt(0);
+
     const params = new URLSearchParams({ eventType });
     if (farmId) params.set('farmId', farmId);
 
-    apiGet<DrilldownResponse>(`/unified-dashboard/drilldown?${params.toString()}`)
+    // 콜드패스 재시도: 8s → 15s → 30s 점진 timeout (503/타임아웃만, 4xx 즉시 throw)
+    apiGetWithRetry<DrilldownResponse>(
+      `/unified-dashboard/drilldown?${params.toString()}`,
+      undefined,
+      { onAttempt: ({ attempt }) => { if (!cancelled) setRetryAttempt(attempt); } },
+    )
       .then((result) => {
+        if (cancelled) return;
         // 프론트엔드 안전장치: 같은 귀표번호+이벤트타입 중복 제거 (최신 유지)
         const seen = new Set<string>();
         const deduplicatedItems = result.items.filter((item) => {
@@ -340,10 +353,16 @@ export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimal
         setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
+        if (cancelled) return;
+        setError({
+          message: describeColdPathError(err),
+          raw: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        });
         setLoading(false);
       });
-  }, [eventType, farmId]);
+
+    return () => { cancelled = true; };
+  }, [eventType, farmId, retryNonce]);
 
   // ESC 키로 닫기
   useEffect(() => {
@@ -487,20 +506,58 @@ export function TodoDrilldownModal({ eventType, label, farmId, onClose, onAnimal
           {/* 본문 */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {loading && (
-              <div className="flex items-center justify-center py-12">
-                <div
-                  className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
-                  style={{ borderColor: 'var(--ct-primary)', borderTopColor: 'transparent' }}
-                />
-                <span className="ml-3 text-sm" style={{ color: 'var(--ct-text-secondary)' }}>
-                  데이터 조회 중...
-                </span>
+              <div className="flex flex-col items-center justify-center gap-2 py-12">
+                <div className="flex items-center">
+                  <div
+                    className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
+                    style={{ borderColor: 'var(--ct-primary)', borderTopColor: 'transparent' }}
+                  />
+                  <span className="ml-3 text-sm" style={{ color: 'var(--ct-text-secondary)' }}>
+                    {retryAttempt === 0
+                      ? '데이터 조회 중...'
+                      : `서버 응답이 늦어 재시도 중... (${retryAttempt}/2)`}
+                  </span>
+                </div>
+                {retryAttempt > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
+                    콜드 스타트 중일 수 있습니다. 잠시만 기다려 주세요.
+                  </span>
+                )}
               </div>
             )}
 
             {error && (
-              <div className="rounded-lg px-4 py-3 text-sm" style={{ background: '#fef2f2', color: '#dc2626' }}>
-                오류: {error}
+              <div
+                className="rounded-lg px-4 py-4"
+                style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}
+              >
+                <div style={{ fontSize: 13, color: 'var(--ct-text)', marginBottom: 10, lineHeight: 1.6 }}>
+                  ⚠️ {error.message}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRetryNonce((n) => n + 1)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                  style={{ background: 'var(--ct-primary)', cursor: 'pointer' }}
+                >
+                  다시 시도
+                </button>
+                {import.meta.env.DEV && (
+                  <pre
+                    style={{
+                      marginTop: 10,
+                      padding: 8,
+                      background: 'rgba(0,0,0,0.3)',
+                      color: '#fca5a5',
+                      fontSize: 10,
+                      borderRadius: 6,
+                      overflow: 'auto',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {error.raw}
+                  </pre>
+                )}
               </div>
             )}
 
