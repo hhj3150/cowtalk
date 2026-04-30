@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet } from '@web/api/client';
+import { apiGetWithRetry } from '@web/api/client';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useFarmHealthScores, useVetRoute, useEpidemicIntelligence } from '@web/hooks/useUnifiedDashboard';
 import { TransitionRiskCard } from '@web/components/breeding/TransitionRiskCard';
@@ -339,10 +339,8 @@ export function VetDashboard({ onFarmClick }: Props): React.JSX.Element {
       'calving_detection', 'calving_confirmation',
     ];
 
-    apiGet<{ items: readonly HealthAnimal[]; total: number }>(
+    apiGetWithRetry<{ items: readonly HealthAnimal[]; total: number }>(
       `/unified-dashboard/drilldown?eventTypes=${healthTypes.join(',')}${farmParam}&limit=200`,
-      undefined,
-      { timeout: 30_000 },
     ).then((result) => {
       const allAnimals: HealthAnimal[] = [...result.items];
 
