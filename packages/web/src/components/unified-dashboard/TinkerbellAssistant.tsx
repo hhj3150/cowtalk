@@ -231,15 +231,25 @@ function speak(text: string, onEnd?: () => void): void {
     .slice(0, 800);
 
   // 텍스트에서 언어 자동 감지 (비율 기반 — 주 언어 판별)
-  const letters = cleanText.replace(/[^a-zA-Z가-힣а-яА-ЯЁё]/g, '');
+  // 5개 지원: ko / en / ru / mn(키릴 + Өө/Үү) / uz(라틴 + 아포스트로피·특유 단어)
+  const letters = cleanText.replace(/[^a-zA-Z가-힣а-яА-ЯЁёӨөҮү]/g, '');
   const koCount = (letters.match(/[가-힣]/g) ?? []).length;
   const cyCount = (letters.match(/[а-яА-ЯЁё]/g) ?? []).length;
   const enCount = (letters.match(/[a-zA-Z]/g) ?? []).length;
+  const mnSpecific = (cleanText.match(/[ӨөҮү]/g) ?? []).length; // 몽골어 특유 모음
   const total = koCount + cyCount + enCount || 1;
+
+  // 우즈벡어 라틴 표기 시그널: 아포스트로피(o' g' 등) + 특유 어휘
+  const uzbekSignal = /(\bo'|\bg'|sigir|qoramol|veterinar|ferma|so'g'|bo'g')/i.test(cleanText);
 
   let detectedLang = 'en-US';
   if (koCount / total > 0.3) detectedLang = 'ko-KR';
-  else if (cyCount / total > 0.3) detectedLang = 'ru-RU';
+  else if (cyCount / total > 0.3) {
+    // 키릴인데 Ө/Ү 포함이면 몽골어, 아니면 러시아어
+    detectedLang = mnSpecific > 0 ? 'mn-MN' : 'ru-RU';
+  } else if (uzbekSignal) {
+    detectedLang = 'uz-UZ';
+  }
 
   const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = detectedLang;

@@ -26,14 +26,31 @@ export interface VoiceError {
   readonly message: string;
 }
 
+export interface StartListeningOptions {
+  /** STT BCP-47 언어 태그. 미지정 시 navigator.language → 5개 언어 매핑. */
+  readonly lang?: string;
+}
+
 export interface UseVoiceInputReturn {
   readonly isListening: boolean;
   readonly transcript: string;
   readonly isSupported: boolean;
   readonly error: VoiceError | null;
-  readonly startListening: () => Promise<void>;
+  readonly startListening: (options?: StartListeningOptions) => Promise<void>;
   readonly stopListening: () => void;
   readonly dismissError: () => void;
+}
+
+/** 브라우저 언어 → STT BCP-47 매핑 (5개 언어 + 기본 ko-KR) */
+function detectSttLang(): string {
+  if (typeof navigator === 'undefined') return 'ko-KR';
+  const raw = (navigator.language || 'ko').toLowerCase();
+  if (raw.startsWith('ko')) return 'ko-KR';
+  if (raw.startsWith('en')) return 'en-US';
+  if (raw.startsWith('uz')) return 'uz-UZ';
+  if (raw.startsWith('ru')) return 'ru-RU';
+  if (raw.startsWith('mn')) return 'mn-MN';
+  return 'ko-KR';
 }
 
 const ERROR_MESSAGES: Readonly<Record<VoiceErrorCode, string>> = {
@@ -88,7 +105,7 @@ export function useVoiceInput(onResult: (text: string) => void): UseVoiceInputRe
 
   const dismissError = useCallback(() => setError(null), []);
 
-  const startListening = useCallback(async () => {
+  const startListening = useCallback(async (options?: StartListeningOptions) => {
     setError(null);
 
     if (!isSupported) {
@@ -99,6 +116,7 @@ export function useVoiceInput(onResult: (text: string) => void): UseVoiceInputRe
       raiseError('not-secure');
       return;
     }
+    const sttLang = options?.lang ?? detectSttLang();
 
     // 1) 권한 상태 사전 확인. denied면 즉시 안내, prompt면 getUserMedia로 먼저 권한 획득
     try {
@@ -139,7 +157,7 @@ export function useVoiceInput(onResult: (text: string) => void): UseVoiceInputRe
     }
 
     const recognition = new SpeechRecognitionClass();
-    recognition.lang = 'ko-KR';
+    recognition.lang = sttLang;
     recognition.continuous = false;
     recognition.interimResults = true;
 
