@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { initErrorReporter } from '@web/lib/error-reporter';
+import { LangProvider } from '@web/i18n/useT';
 import 'leaflet/dist/leaflet.css';
 import './index.css';
 
@@ -15,7 +16,9 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <App />
+    <LangProvider>
+      <App />
+    </LangProvider>
   </React.StrictMode>,
 );
 

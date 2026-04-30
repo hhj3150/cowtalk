@@ -9,6 +9,8 @@ import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
+import { useT, type TFunction } from '@web/i18n/useT';
+import { LangSwitcher } from '@web/i18n/LangSwitcher';
 // ── 타입 ──
 
 interface TinkerbellMessage {
@@ -334,14 +336,18 @@ interface DashboardContext {
   readonly animalCount: number;
 }
 
-function getContextualSuggestions(ctx?: DashboardContext, role?: string): readonly string[] {
+function getContextualSuggestions(
+  t: TFunction,
+  ctx?: DashboardContext,
+  role?: string,
+): readonly string[] {
   // 방역관 전용 suggestions
   if (role === 'quarantine_officer') {
     return [
-      '전국 발열 현황 알려줘',
-      '위험 농장 TOP 5',
-      '오늘 방역 조치 대기 건수',
-      '클러스터 발생 현황',
+      t('tb.sugg.quarantine.fever_status'),
+      t('tb.sugg.quarantine.top5_risk'),
+      t('tb.sugg.quarantine.actions_pending'),
+      t('tb.sugg.quarantine.cluster_status'),
     ];
   }
 
@@ -349,18 +355,18 @@ function getContextualSuggestions(ctx?: DashboardContext, role?: string): readon
 
   if (ctx) {
     if (ctx.criticalCount > 0) {
-      base.push(`긴급 알람 ${ctx.criticalCount}건 상세 알려줘`);
+      base.push(t('tb.sugg.dyn.critical_count', { count: ctx.criticalCount }));
     }
     if (ctx.healthIssues > 0) {
-      base.push(`건강 이상 ${ctx.healthIssues}두 원인 분석해줘`);
+      base.push(t('tb.sugg.dyn.health_count', { count: ctx.healthIssues }));
     }
-    base.push('오늘 가장 먼저 해야 할 일은?');
-    base.push('팅커벨 학습 현황 알려줘');
-    base.push('발정 감지된 소 알려줘');
+    base.push(t('tb.sugg.general.first_action'));
+    base.push(t('tb.sugg.general.tb_learning'));
+    base.push(t('tb.sugg.general.estrus_detected'));
   } else {
-    base.push('오늘 긴급한 소 알려줘');
-    base.push('전체 농장 현황 요약');
-    base.push('팅커벨 학습 현황 알려줘');
+    base.push(t('tb.sugg.general.urgent_today'));
+    base.push(t('tb.sugg.general.farm_summary'));
+    base.push(t('tb.sugg.general.tb_learning'));
   }
 
   return base.slice(0, 4);
@@ -430,10 +436,16 @@ export function TinkerbellAssistant({
     storageKey: 'cowtalk:tinkerbell:voice-mode',
   });
 
+  const t = useT();
   const isQuarantineMode = user?.role === 'quarantine_officer';
   const suggestions = animalContext
-    ? ['이 소 지금 수정해도 돼?', '체온이 왜 높아?', '다음에 뭘 해야 해?', '이 소 번식 이력 분석해줘']
-    : getContextualSuggestions(dashboardContext, user?.role);
+    ? [
+        t('tb.sugg.animal.inseminate_now'),
+        t('tb.sugg.animal.why_fever'),
+        t('tb.sugg.animal.next_action'),
+        t('tb.sugg.animal.breeding_history'),
+      ]
+    : getContextualSuggestions(t, dashboardContext, user?.role);
 
   // 음성 인식 지원 여부
   const hasSpeechRecognition = typeof window !== 'undefined' &&
@@ -625,7 +637,7 @@ export function TinkerbellAssistant({
       }
 
       const answer = fullText
-        || (errorText ? `⚠️ AI 오류: ${errorText}` : `서버로부터 응답을 받지 못했습니다 (${emptyDiag}). 잠시 후 다시 시도해 주세요.`);
+        || (errorText ? `⚠️ ${t('common.error')}: ${errorText}` : `${t('tb.err.no_response')}\n(${emptyDiag})`);
       setStreamText('');
       setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
@@ -650,12 +662,15 @@ export function TinkerbellAssistant({
       setStreamText('');
       const fetchErr = err as { message?: string; name?: string };
       const isAbort = fetchErr.name === 'AbortError';
+      const isCacheConflict = fetchErr.message?.includes('캐시 충돌') || fetchErr.message?.includes('HTML');
       const isNetworkError = fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError');
       const errorContent = isAbort
-        ? 'AI 응답이 지연되고 있습니다. 질문을 다시 시도해 주세요.'
+        ? t('tb.err.no_response')
+        : isCacheConflict
+        ? t('tb.err.cache_conflict')
         : isNetworkError
-        ? '인터넷 연결을 확인해 주세요. 네트워크 오류가 발생했습니다.'
-        : '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+        ? t('tb.err.network')
+        : t('tb.err.server');
 
       const errorMsg: TinkerbellMessage = {
         role: 'assistant',
@@ -665,7 +680,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats]);
+  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -1058,10 +1073,13 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
+            {/* 언어 선택자 — 외국 방문객을 위한 즉시 전환 */}
+            <LangSwitcher compact />
+
             {/* 마이크 버튼 */}
             <button type="button"
               onClick={() => {
-                if (!hasSpeechRecognition) { setVoiceError('이 브라우저는 음성 인식을 지원하지 않습니다.'); return; }
+                if (!hasSpeechRecognition) { setVoiceError(t('voice.err.not_supported')); return; }
                 if (state === 'listening') { stopListening(); } else { unlockTts(); void startListening(); }
               }}
               disabled={state === 'thinking'}
@@ -1091,12 +1109,7 @@ export function TinkerbellAssistant({
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
               onFocus={() => setIsExpanded(true)}
-              placeholder={
-                state === 'listening' ? '듣는 중...' :
-                state === 'thinking' ? '답변 생성 중...' :
-                isQuarantineMode ? '방역 현황을 질문하세요...' :
-                animalContext ? '이 개체에 대해 질문하세요...' : '팅커벨에게 물어보세요...'
-              }
+              placeholder={t('tb.placeholder.input')}
               disabled={state === 'thinking' || state === 'listening'}
               style={{
                 flex: 1,

@@ -9,6 +9,7 @@
 //    의 모든 error 값을 한국어 메시지로 매핑한다
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useT } from '@web/i18n/useT';
 
 export type VoiceErrorCode =
   | 'not-supported'       // Web Speech API 미지원 (Firefox, 일부 모바일)
@@ -53,16 +54,16 @@ function detectSttLang(): string {
   return 'ko-KR';
 }
 
-const ERROR_MESSAGES: Readonly<Record<VoiceErrorCode, string>> = {
-  'not-supported': '이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.',
-  'not-secure': '음성 인식은 HTTPS 연결이 필요합니다.',
-  'permission-denied': '마이크 권한이 차단되어 있습니다. 브라우저 주소창의 자물쇠 아이콘 → 사이트 설정 → 마이크를 허용으로 바꿔주세요.',
-  'no-speech': '음성이 감지되지 않았습니다. 마이크 가까이에서 다시 말씀해 주세요.',
-  'audio-capture': '마이크를 찾을 수 없습니다. 장치 연결을 확인해 주세요.',
-  'network': '음성 인식 서버 통신에 실패했습니다. 인터넷 연결을 확인해 주세요.',
-  'aborted': '음성 입력이 중단되었습니다.',
-  'language-not-supported': '한국어 음성 인식을 지원하지 않습니다.',
-  'unknown': '음성 인식 중 알 수 없는 오류가 발생했습니다.',
+const ERROR_KEY: Readonly<Record<VoiceErrorCode, string>> = {
+  'not-supported': 'voice.err.not_supported',
+  'not-secure': 'voice.err.not_secure',
+  'permission-denied': 'voice.err.permission_denied',
+  'no-speech': 'voice.err.no_speech',
+  'audio-capture': 'voice.err.audio_capture',
+  'network': 'voice.err.network',
+  'aborted': 'voice.err.aborted',
+  'language-not-supported': 'voice.err.lang_not_supported',
+  'unknown': 'voice.err.unknown',
 };
 
 function isSecureContext(): boolean {
@@ -74,6 +75,7 @@ function isSecureContext(): boolean {
 }
 
 export function useVoiceInput(onResult: (text: string) => void): UseVoiceInputReturn {
+  const t = useT();
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<VoiceError | null>(null);
@@ -97,11 +99,11 @@ export function useVoiceInput(onResult: (text: string) => void): UseVoiceInputRe
   }, []);
 
   const raiseError = useCallback((code: VoiceErrorCode) => {
-    setError({ code, message: ERROR_MESSAGES[code] });
+    setError({ code, message: t(ERROR_KEY[code]) });
     setIsListening(false);
     setTranscript('');
     transcriptRef.current = '';
-  }, []);
+  }, [t]);
 
   const dismissError = useCallback(() => setError(null), []);
 
