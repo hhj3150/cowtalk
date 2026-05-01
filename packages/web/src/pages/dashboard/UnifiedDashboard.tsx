@@ -978,7 +978,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 농장 순위 + 역학 지도 ── */}
           {(isVisible('farm_ranking') || isVisible('epidemic_map')) && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 12, alignItems: 'start' }}>
-            {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => selectFarm(fid)} />}
+            {isVisible('farm_ranking') && <FarmRankingWidget rankings={rankings} onFarmClick={(fid) => { selectFarm(fid); navigate(`/farm/${fid}`); }} />}
             {isVisible('epidemic_map') && <EpidemicMapWidget onClusterClick={(id) => setEpidemicClusterId(id)} />}
           </div>
           )}
