@@ -110,7 +110,7 @@ function buildSolapiAuthHeader(apiKey: string, apiSecret: string): string {
 // ===========================
 
 function applyVariables(template: string, variables: AlimtalkVariable): string {
-  return template.replace(/\#\{(\w+)\}/g, (_, key: string) => variables[key] ?? `(${key})`);
+  return template.replace(/#\{(\w+)\}/g, (_, key: string) => variables[key] ?? `(${key})`);
 }
 
 // ===========================

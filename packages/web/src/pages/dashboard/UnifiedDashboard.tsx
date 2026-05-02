@@ -611,20 +611,14 @@ export default function UnifiedDashboard(): React.JSX.Element {
     const root = document.documentElement;
     const prev = root.getAttribute('data-theme');
     root.setAttribute('data-theme', 'dark');
-    return () => { prev ? root.setAttribute('data-theme', prev) : root.removeAttribute('data-theme'); };
+    return () => {
+      if (prev) {
+        root.setAttribute('data-theme', prev);
+      } else {
+        root.removeAttribute('data-theme');
+      }
+    };
   }, []);
-
-  if (error) {
-    return (
-      <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: 24 }}>
-        <ErrorFallback error={error as Error} onRetry={() => { refetch(); }} />
-      </div>
-    );
-  }
-
-  const lastUpdated = data?.lastUpdated
-    ? new Date(data.lastUpdated).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : '--';
 
   // 역할별 알람 필터
   const ROLE_ALARM_FILTER: Record<string, readonly string[]> = {
@@ -658,6 +652,18 @@ export default function UnifiedDashboard(): React.JSX.Element {
     ).length;
     return { completed, total };
   }, [todoItems, completedTodos]);
+
+  if (error) {
+    return (
+      <div data-theme="dark" style={{ background: 'var(--ct-bg)', color: 'var(--ct-text)', minHeight: '100vh', padding: 24 }}>
+        <ErrorFallback error={error as Error} onRetry={() => { refetch(); }} />
+      </div>
+    );
+  }
+
+  const lastUpdated = data?.lastUpdated
+    ? new Date(data.lastUpdated).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '--';
 
   return (
     <div style={{

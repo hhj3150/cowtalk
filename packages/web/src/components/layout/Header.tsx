@@ -47,7 +47,7 @@ export function Header({ onMenuClick, onChatClick }: Props): React.JSX.Element {
   const user = useAuthStore((s) => s.user);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const toggleNotificationDrawer = useNotificationStore((s) => s.toggleDrawer);
-  const { lastUpdated: _lastUpdated, refresh: _refresh } = useAutoRefresh();
+  useAutoRefresh();
   const { logout } = useAuth();
 
   const roleLabel = ROLE_LABELS[user?.role ?? 'farmer'] ?? '사용자';

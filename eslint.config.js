@@ -3,34 +3,18 @@ import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
+import globals from 'globals';
 
 const nodeGlobals = {
-  process: 'readonly',
-  console: 'readonly',
-  __dirname: 'readonly',
-  __filename: 'readonly',
-  Buffer: 'readonly',
-  setTimeout: 'readonly',
-  setInterval: 'readonly',
-  clearTimeout: 'readonly',
-  clearInterval: 'readonly',
+  ...globals.node,
+  ...globals.es2024,
   fetch: 'readonly',
   AbortController: 'readonly',
-  URLSearchParams: 'readonly',
-  URL: 'readonly',
 };
 
 const browserGlobals = {
-  window: 'readonly',
-  document: 'readonly',
-  navigator: 'readonly',
-  console: 'readonly',
-  fetch: 'readonly',
-  setTimeout: 'readonly',
-  setInterval: 'readonly',
-  clearTimeout: 'readonly',
-  clearInterval: 'readonly',
-  HTMLElement: 'readonly',
+  ...globals.browser,
+  ...globals.es2024,
   React: 'readonly',
 };
 
@@ -55,6 +39,7 @@ export default [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      'no-undef': 'off',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'no-console': ['warn', { allow: ['info', 'warn', 'error'] }],
@@ -83,6 +68,7 @@ export default [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactHooksPlugin.configs.recommended.rules,
+      'no-undef': 'off',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'react/react-in-jsx-scope': 'off',

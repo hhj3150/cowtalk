@@ -163,8 +163,8 @@ export class SmaxtecApiClient {
         return JSON.parse(text) as T;
       } catch {
         const sanitized = text
-          .replace(/(?<=[\s,\[:])-?Infinity(?=[\s,\]}])/g, 'null')
-          .replace(/(?<=[\s,\[:])NaN(?=[\s,\]}])/g, 'null');
+          .replace(/(?<=[\s,[:])-?Infinity(?=[\s,\]}])/g, 'null')
+          .replace(/(?<=[\s,[:])NaN(?=[\s,\]}])/g, 'null');
         return JSON.parse(sanitized) as T;
       }
     } catch (err) {

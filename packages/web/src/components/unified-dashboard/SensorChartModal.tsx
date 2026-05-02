@@ -591,10 +591,20 @@ function SyncPanel({
   readonly onHover: (ts: number | null) => void;
 }): React.JSX.Element {
   const cfg = METRIC_CONFIG[metricKey];
-  if (!cfg || data.length === 0) return <></>;
 
   const chartData = useMemo(() => data.map((p) => ({ ts: p.ts * 1000, value: p.value })), [data]);
   const values = useMemo(() => chartData.map((d) => d.value), [chartData]);
+  const relevantMarkers = useMemo(() =>
+    eventMarkers.filter((m) => {
+      const t = new Date(m.detectedAt).getTime();
+      return t >= timeRange.from && t <= timeRange.to;
+    }), [eventMarkers, timeRange]);
+  const handleMouseMove = useCallback((state: { activeLabel?: string | number }) => {
+    if (state.activeLabel != null) onHover(Number(state.activeLabel));
+  }, [onHover]);
+
+  if (!cfg || data.length === 0) return <></>;
+
   const latest = values[values.length - 1] ?? 0;
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -608,16 +618,6 @@ function SyncPanel({
   const syncValue = syncTs !== null ? findValueAtTs(data, syncTs) : null;
   const displayValue = syncValue ?? latest;
   const isAbnormal = displayValue < cfg.normalMin || displayValue > cfg.normalMax;
-
-  const relevantMarkers = useMemo(() =>
-    eventMarkers.filter((m) => {
-      const t = new Date(m.detectedAt).getTime();
-      return t >= timeRange.from && t <= timeRange.to;
-    }), [eventMarkers, timeRange]);
-
-  const handleMouseMove = useCallback((state: { activeLabel?: string | number }) => {
-    if (state.activeLabel != null) onHover(Number(state.activeLabel));
-  }, [onHover]);
 
   return (
     <div style={{ background: 'var(--ct-bg)', border: '1px solid var(--ct-border)', borderRadius: 10, padding: '8px 8px 2px' }}>

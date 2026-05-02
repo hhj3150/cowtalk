@@ -801,7 +801,7 @@ animalRouter.get('/:animalId/vaccine-history', requirePermission('animal', 'read
           publicVaccinations = traceData.vaccinations;
           publicInspections = traceData.inspections;
         }
-      } catch (err) {
+      } catch {
         // 공공데이터 실패해도 로컬 데이터는 반환
         publicVaccinations = [];
         publicInspections = [];

@@ -19,15 +19,30 @@ export function AnimalCompare({ initialAnimalIds = [] }: Props): React.JSX.Eleme
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // 각 개체 데이터 로드
-  const animalQueries = animalIds.map((id) => ({
-    id,
-    query: useQuery({
-      queryKey: ['animal', 'detail', id],
-      queryFn: () => animalApi.getAnimalDetail(id),
-      enabled: Boolean(id),
-    }),
-  }));
+  // 각 개체 데이터 로드 (최대 3마리 — hook 순서 보장 위해 고정 호출)
+  const id0 = animalIds[0] ?? '';
+  const id1 = animalIds[1] ?? '';
+  const id2 = animalIds[2] ?? '';
+  const query0 = useQuery({
+    queryKey: ['animal', 'detail', id0],
+    queryFn: () => animalApi.getAnimalDetail(id0),
+    enabled: Boolean(id0),
+  });
+  const query1 = useQuery({
+    queryKey: ['animal', 'detail', id1],
+    queryFn: () => animalApi.getAnimalDetail(id1),
+    enabled: Boolean(id1),
+  });
+  const query2 = useQuery({
+    queryKey: ['animal', 'detail', id2],
+    queryFn: () => animalApi.getAnimalDetail(id2),
+    enabled: Boolean(id2),
+  });
+  const animalQueries = [
+    { id: id0, query: query0 },
+    { id: id1, query: query1 },
+    { id: id2, query: query2 },
+  ].filter((entry) => entry.id);
 
   function handleAdd(): void {
     const trimmed = addInput.trim();

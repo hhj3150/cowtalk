@@ -268,6 +268,8 @@ export async function upsertDailySnapshot(
       metrics: snapshot.metrics,
     })
     .onConflictDoUpdate({
+      // drizzle target 타입이 nullable 컬럼 조합을 추론 못하는 알려진 제약
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       target: [epidemicDailySnapshots.date, epidemicDailySnapshots.regionId] as any,
       set: {
         clusterCount: snapshot.clusterCount,

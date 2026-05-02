@@ -9,7 +9,7 @@ import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import {
   farms, animals, smaxtecEvents, breedingEvents,
-  pregnancyChecks, prescriptions, prescriptionItems, drugDatabase,
+  prescriptions, prescriptionItems, drugDatabase,
   vaccineSchedules, sensorDevices, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, gt, and, desc, isNull } from 'drizzle-orm';
@@ -465,96 +465,6 @@ async function buildVetDashboard(): Promise<DashboardData> {
 }
 
 // ===========================
-// 3. 수정사 대시보드 (deprecated, unused)
-// ===========================
-
-// @ts-expect-error - kept for reference, not reachable
-async function buildInseminatorDashboard_deprecated(): Promise<DashboardData> {
-  const db = getDb();
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const estrusEvents = await db.select({
-    eventId: smaxtecEvents.eventId,
-    animalId: smaxtecEvents.animalId,
-    farmId: smaxtecEvents.farmId,
-    farmName: farms.name,
-    earTag: animals.earTag,
-    severity: smaxtecEvents.severity,
-    confidence: smaxtecEvents.confidence,
-    detectedAt: smaxtecEvents.detectedAt,
-    stage: smaxtecEvents.stage,
-  }).from(smaxtecEvents)
-    .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
-    .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
-    .where(and(
-      gt(smaxtecEvents.detectedAt, sevenDaysAgo),
-      eq(smaxtecEvents.eventType, 'estrus'),
-    ))
-    .orderBy(desc(smaxtecEvents.detectedAt))
-    .limit(50);
-
-  const now = Date.now();
-  const h24 = 24 * 60 * 60 * 1000;
-  const h48 = 48 * 60 * 60 * 1000;
-  const estrusNow = estrusEvents.filter((e) => now - new Date(e.detectedAt).getTime() < h24);
-  const estrusSoon = estrusEvents.filter((e) => {
-    const age = now - new Date(e.detectedAt).getTime();
-    return age >= h24 && age < h48;
-  });
-  const estrusWatch = estrusEvents.filter((e) => now - new Date(e.detectedAt).getTime() >= h48);
-
-  const [breedingCount] = await db.select({ count: count() }).from(breedingEvents)
-    .where(gt(breedingEvents.eventDate, thirtyDaysAgo));
-
-  const [pregCheckCount] = await db.select({ count: count() }).from(pregnancyChecks)
-    .where(gt(pregnancyChecks.checkDate, thirtyDaysAgo));
-
-  const [calvingSoonCount] = await db.select({ count: count() }).from(smaxtecEvents)
-    .where(and(
-      gt(smaxtecEvents.detectedAt, sevenDaysAgo),
-      eq(smaxtecEvents.eventType, 'calving'),
-    ));
-
-  const totalEstrus = estrusEvents.length;
-  const totalBreeding = (breedingCount?.count ?? 0) as number;
-  const totalPregCheck = (pregCheckCount?.count ?? 0) as number;
-  const calvingSoon = (calvingSoonCount?.count ?? 0) as number;
-
-  return {
-    role: 'inseminator' as Role,
-    timestamp: new Date(),
-    kpis: [
-      { label: '발정 후보', value: totalEstrus, unit: '두', trend: null, severity: totalEstrus > 10 ? 'high' : totalEstrus > 0 ? 'medium' : 'low', drilldownType: 'estrus_candidate' },
-      { label: '수정 적기(NOW)', value: estrusNow.length, unit: '두', trend: null, severity: estrusNow.length > 0 ? 'critical' : 'low' },
-      { label: '임신 재검', value: totalPregCheck, unit: '건', trend: null, severity: null },
-      { label: '분만 임박', value: calvingSoon, unit: '두', trend: null, severity: calvingSoon > 3 ? 'high' : calvingSoon > 0 ? 'medium' : 'low' },
-    ],
-    todayActions: estrusNow.slice(0, 5).map((evt, idx) => ({
-      priority: idx + 1,
-      action: `발정 감지 — 수정 적기 (${evt.farmName})`,
-      target: evt.earTag,
-      urgency: 'critical' as const,
-    })),
-    alerts: [],
-    insights: [{
-      title: '번식 현황',
-      description: `발정 후보 ${totalEstrus}두 (NOW ${estrusNow.length} / SOON ${estrusSoon.length} / WATCH ${estrusWatch.length}). 최근 30일 수정 ${totalBreeding}건, 분만 임박 ${calvingSoon}두.`,
-      source: 'db_aggregate',
-    }],
-    roleData: {
-      estrusNow: estrusNow.map((e) => ({ eventId: e.eventId, animalId: e.animalId, farmId: e.farmId, farmName: e.farmName, earTag: e.earTag, confidence: e.confidence, detectedAt: e.detectedAt, stage: e.stage })),
-      estrusSoon: estrusSoon.map((e) => ({ eventId: e.eventId, animalId: e.animalId, farmId: e.farmId, farmName: e.farmName, earTag: e.earTag, confidence: e.confidence, detectedAt: e.detectedAt, stage: e.stage })),
-      estrusWatch: estrusWatch.map((e) => ({ eventId: e.eventId, animalId: e.animalId, farmId: e.farmId, farmName: e.farmName, earTag: e.earTag, confidence: e.confidence, detectedAt: e.detectedAt, stage: e.stage })),
-      recentBreedings: totalBreeding,
-      conceptionRate: totalBreeding > 0 ? Math.round((totalPregCheck / totalBreeding) * 100) : 0,
-    },
-  };
-}
-
-// ===========================
 // 4. 행정관 대시보드
 // ===========================
 
@@ -709,92 +619,6 @@ async function buildQuarantineOfficerDashboard(): Promise<DashboardData> {
       vaccineRate,
       vaccineDone: doneVaccine,
       vaccineTotal: totalVaccine,
-    },
-  };
-}
-
-// ===========================
-// 6. 사료회사 대시보드 (deprecated, unused)
-// ===========================
-
-// @ts-expect-error - kept for reference, not reachable
-async function buildFeedCompanyDashboard_deprecated(farmIds?: string[]): Promise<DashboardData> {
-  const db = getDb();
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  let targetFarmIds: string[] = [];
-  if (farmIds?.length) {
-    targetFarmIds = farmIds;
-  } else {
-    const allFarms = await db.select({ farmId: farms.farmId }).from(farms).where(eq(farms.status, 'active'));
-    targetFarmIds = allFarms.map((f) => f.farmId);
-  }
-
-  const clientFarmCount = targetFarmIds.length;
-
-  const [ruminationAnomalyCount] = await db.select({ count: count() }).from(smaxtecEvents)
-    .where(and(
-      gt(smaxtecEvents.detectedAt, sevenDaysAgo),
-      sql`${smaxtecEvents.eventType} IN ('rumination_warning', 'drinking_warning', 'feeding_warning')`,
-    ));
-
-  const feedRiskAnimals = await db.select({
-    animalId: smaxtecEvents.animalId,
-    farmId: smaxtecEvents.farmId,
-    eventType: smaxtecEvents.eventType,
-    severity: smaxtecEvents.severity,
-    detectedAt: smaxtecEvents.detectedAt,
-  }).from(smaxtecEvents)
-    .where(and(
-      gt(smaxtecEvents.detectedAt, sevenDaysAgo),
-      sql`${smaxtecEvents.eventType} IN ('rumination_warning', 'drinking_warning', 'feeding_warning')`,
-    ))
-    .orderBy(desc(smaxtecEvents.detectedAt))
-    .limit(20);
-
-  const farmRuminationRanking = await db.select({
-    farmId: smaxtecEvents.farmId,
-    farmName: farms.name,
-    count: count(),
-  }).from(smaxtecEvents)
-    .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
-    .where(and(
-      gt(smaxtecEvents.detectedAt, sevenDaysAgo),
-      sql`${smaxtecEvents.eventType} IN ('rumination_warning', 'drinking_warning', 'feeding_warning')`,
-    ))
-    .groupBy(smaxtecEvents.farmId, farms.name)
-    .orderBy(sql`count(*) DESC`)
-    .limit(10);
-
-  const ruminationAnomalies = (ruminationAnomalyCount?.count ?? 0) as number;
-  const feedRiskCount = feedRiskAnimals.length;
-
-  return {
-    role: 'feed_company' as Role,
-    timestamp: new Date(),
-    kpis: [
-      { label: '고객 농장', value: clientFarmCount, unit: '개', trend: null, severity: null, drilldownType: 'all' },
-      { label: '반추 이상(7일)', value: ruminationAnomalies, unit: '건', trend: null, severity: ruminationAnomalies > 10 ? 'high' : ruminationAnomalies > 0 ? 'medium' : 'low', drilldownType: 'feeding_risk' },
-      { label: '사양 리스크', value: feedRiskCount, unit: '두', trend: null, severity: feedRiskCount > 5 ? 'high' : feedRiskCount > 0 ? 'medium' : 'low' },
-      { label: '영향 농장', value: farmRuminationRanking.length, unit: '개', trend: null, severity: farmRuminationRanking.length > 5 ? 'high' : farmRuminationRanking.length > 0 ? 'medium' : 'low' },
-    ],
-    todayActions: [],
-    alerts: [],
-    insights: [{
-      title: '사양 현황',
-      description: `고객 ${clientFarmCount}개 농장 중 반추/음수 이상 ${ruminationAnomalies}건. 사양 리스크 동물 ${feedRiskCount}두, 영향 농장 ${farmRuminationRanking.length}개.`,
-      source: 'db_aggregate',
-    }],
-    roleData: {
-      farmRuminationRanking: farmRuminationRanking.map((f) => ({ farmId: f.farmId, farmName: f.farmName, anomalyCount: Number(f.count) })),
-      feedRiskAnimals: feedRiskAnimals.map((a) => ({
-        animalId: a.animalId,
-        farmId: a.farmId,
-        eventType: a.eventType,
-        severity: a.severity,
-        detectedAt: a.detectedAt,
-      })),
     },
   };
 }
