@@ -172,6 +172,9 @@ export const chatMessageSchema = z.object({
     content: z.string(),
   })).optional().default([]),
   dashboardContext: z.string().max(5000).optional(),
+  // UI 언어 힌트 (사용자가 LangSwitcher에서 선택한 언어).
+  // 사용자 입력에 명시적 언어 전환 요청이 없으면 이 언어로 응답하라는 신호로 사용된다.
+  uiLang: z.enum(['ko', 'en', 'uz', 'ru', 'mn']).optional(),
 });
 
 // === 내보내기 ===

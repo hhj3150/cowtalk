@@ -9,7 +9,7 @@ import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
-import { useT, type TFunction } from '@web/i18n/useT';
+import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 // ── 타입 ──
 
@@ -36,6 +36,8 @@ function MarkdownText({ text }: { text: string }): React.JSX.Element {
     // **bold** → <strong>
     // *italic* → <em>
     // `code` → <code>
+    // \x00 = 코드블록 sentinel (사용자 입력에 등장 불가능한 NULL 바이트)
+    // eslint-disable-next-line no-control-regex
     const parts = s.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\x00CODE\d+\x00)/);
     return parts.map((part, i) => {
       if (part.startsWith('**') && part.endsWith('**')) {
@@ -58,6 +60,7 @@ function MarkdownText({ text }: { text: string }): React.JSX.Element {
         );
       }
       // 코드블록 플레이스홀더 복원
+      // eslint-disable-next-line no-control-regex
       const codeMatch = /\x00CODE(\d+)\x00/.exec(part);
       if (codeMatch) {
         const code = codeBlocks[Number(codeMatch[1])] ?? '';
@@ -437,6 +440,7 @@ export function TinkerbellAssistant({
   });
 
   const t = useT();
+  const { lang: uiLang } = useLang();
   const isQuarantineMode = user?.role === 'quarantine_officer';
   const suggestions = animalContext
     ? [
@@ -503,6 +507,10 @@ export function TinkerbellAssistant({
       ? `\n\n${formatSovereignContext(sovereignStats)}`
       : '';
 
+    // 다층 타임아웃 변수 — try/catch 양쪽에서 정리 필요
+    let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+
     try {
       const token = useAuthStore.getState().accessToken;
       const payload = {
@@ -518,11 +526,22 @@ export function TinkerbellAssistant({
             ? `현재 대시보드: 총 알람 ${dashboardContext.totalAlarms}건, 긴급 ${dashboardContext.criticalCount}건, 건강이상 ${dashboardContext.healthIssues}두, ${dashboardContext.farmCount}개 농장, ${dashboardContext.animalCount}두 관리 중`
             : undefined,
         conversationHistory: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+        uiLang,
       };
 
-      // 90초 타임아웃 (도구 호출 + Claude 응답 대기)
+      // 다층 타임아웃: 전체 90초 + 첫 바이트 30초 + 무응답 45초 (시연 중 빠른 실패 처리)
       const controller = new AbortController();
-      const fetchTimeout = setTimeout(() => controller.abort(), 90_000);
+      const TOTAL_TIMEOUT_MS = 90_000;
+      const FIRST_BYTE_TIMEOUT_MS = 30_000;
+      const STALL_TIMEOUT_MS = 45_000;
+      fetchTimeout = setTimeout(() => controller.abort(), TOTAL_TIMEOUT_MS);
+      let lastDataAt = Date.now();
+      let firstByteReceived = false;
+      heartbeat = setInterval(() => {
+        const idleMs = Date.now() - lastDataAt;
+        const limit = firstByteReceived ? STALL_TIMEOUT_MS : FIRST_BYTE_TIMEOUT_MS;
+        if (idleMs > limit) controller.abort();
+      }, 5_000);
 
       // 스트리밍: Netlify 프록시 타임아웃 회피를 위해 Railway 직접 호출 지원
       // VITE_API_BASE_URL 설정되어 있으면 절대 URL, 아니면 상대 경로(기존 방식)
@@ -572,6 +591,8 @@ export function TinkerbellAssistant({
         const { value, done } = await reader.read();
         if (done) break;
         rawBytes += value.byteLength;
+        lastDataAt = Date.now();
+        firstByteReceived = true;
 
         // 첫 byte가 '<'면 HTML 응답 (Netlify Edge timeout HTML) — 즉시 throw
         if (!firstByteChecked && value.byteLength > 0) {
@@ -628,6 +649,8 @@ export function TinkerbellAssistant({
         }
       }
 
+      clearInterval(heartbeat);
+      clearTimeout(fetchTimeout);
       const elapsedMs = Date.now() - startedAt.getTime();
 
       // 빈 응답 진단 — 어디서 끊겼는지 정확히 표시
@@ -659,6 +682,8 @@ export function TinkerbellAssistant({
         setState('idle');
       }
     } catch (err) {
+      clearInterval(heartbeat);
+      clearTimeout(fetchTimeout);
       setStreamText('');
       const fetchErr = err as { message?: string; name?: string };
       const isAbort = fetchErr.name === 'AbortError';
@@ -680,7 +705,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t]);
+  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {

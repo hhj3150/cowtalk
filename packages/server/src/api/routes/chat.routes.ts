@@ -60,6 +60,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       animalId?: string;
       conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
       dashboardContext?: string;
+      uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
     };
 
     const result = await handleChatMessage({
@@ -70,6 +71,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       userId: req.user?.userId,
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
       dashboardContext: body.dashboardContext,
+      uiLang: body.uiLang,
     });
 
     res.json({ success: true, data: result });
@@ -86,6 +88,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     animalId?: string;
     conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
     dashboardContext?: string;
+    uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
   };
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -111,6 +114,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     userId: req.user?.userId,
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
+    uiLang: body.uiLang,
   };
 
   try {

@@ -10,6 +10,7 @@ export interface ChatMessageRequest {
   readonly animalId?: string | null;
   readonly conversationHistory?: readonly { role: string; content: string }[];
   readonly dashboardContext?: string;
+  readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
 }
 
 export interface ChatSuggestionsResponse {

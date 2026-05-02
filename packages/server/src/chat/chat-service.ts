@@ -37,12 +37,27 @@ export interface ChatMessageRequest {
   readonly userId?: string;
   readonly conversationHistory: readonly ConversationTurn[];
   readonly dashboardContext?: string;
+  readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
+}
+
+const UI_LANG_NAMES: Readonly<Record<string, string>> = {
+  ko: '한국어',
+  en: '영어 (English)',
+  uz: '우즈벡어 (O\'zbek tili)',
+  ru: '러시아어 (Русский)',
+  mn: '몽골어 (Монгол хэл)',
+};
+
+function buildUiLangDirective(uiLang: string | undefined): string {
+  if (!uiLang) return '';
+  const langName = UI_LANG_NAMES[uiLang] ?? uiLang;
+  return `\n\n## UI 언어 힌트\n사용자가 인터페이스에서 **${langName}**를 선택했습니다. 사용자 메시지에 명시적 언어 전환 요청이 없으면 **${langName}**로 응답하세요. 입력 내용이 다른 언어로 보이더라도 UI 선택을 우선 신호로 간주하세요 (단, "answer in English" 같이 명시 요청이 있으면 그 요청이 최우선).`;
 }
 
 export async function handleChatMessage(
   request: ChatMessageRequest,
 ): Promise<ChatResponse> {
-  const { question, role, farmId, animalId, conversationHistory, dashboardContext } = request;
+  const { question, role, farmId, animalId, conversationHistory, dashboardContext, uiLang } = request;
 
   // 1. 컨텍스트 해결 (실패해도 fallback으로 응답)
   let context: Awaited<ReturnType<typeof resolveContext>>['context'];
@@ -81,7 +96,7 @@ export async function handleChatMessage(
 
   // 3. 역할별 톤 설정
   const roleTone = getRoleTone(role);
-  const systemPrompt = `${SYSTEM_PROMPT}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.\n- 모든 수치는 data_references에 출처를 반드시 기록하세요.`;
+  const systemPrompt = `${SYSTEM_PROMPT}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.\n- 모든 수치는 data_references에 출처를 반드시 기록하세요.${buildUiLangDirective(uiLang)}`;
 
   // 4. Claude API 호출
   const result = await callClaudeForChatJson(systemPrompt, prompt);
@@ -129,7 +144,7 @@ export async function handleChatStream(
   request: ChatMessageRequest,
   callbacks: StreamCallbacks,
 ): Promise<void> {
-  const { question, role, farmId, animalId, conversationHistory, dashboardContext } = request;
+  const { question, role, farmId, animalId, conversationHistory, dashboardContext, uiLang } = request;
 
   // ── 보고서 인텐트 감지 — 파일 생성 후 다운로드 링크 반환 ──
   const reportIntent = detectReportIntent(question);
@@ -231,7 +246,7 @@ export async function handleChatStream(
     /6\.\s*\*\*응답 형식\*\*.*?JSON 형식을 따르세요\./s,
     '6. **자연어 응답**: 사용자가 "몽골어로 답해줘", "answer in English" 같이 특정 언어로 답변을 요청하면 입력 언어와 무관하게 그 언어로만 응답하세요 (이전 턴에서 지정된 언어가 있으면 유지). 명시 요청이 없으면 사용자가 쓴 언어로 답변하세요 — 한국어면 한국어, 영어면 영어, 몽골어(키릴에 Өө/Үү 포함)면 몽골어, 우즈벡어면 우즈벡어, 러시아어면 러시아어. JSON 형식으로 응답하지 마세요.',
   );
-  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.`;
+  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.${buildUiLangDirective(uiLang)}`;
 
   // 스트리밍 답변을 모아서 학습에 활용
   const wrappedCallbacks: StreamCallbacks = {

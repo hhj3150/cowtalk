@@ -36,9 +36,6 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   get_farm_kpis: 'farm',
   query_differential_diagnosis: 'health',
   confirm_treatment_outcome: 'health',
-  generate_report: 'report',
-  send_alert: 'action',
-  submit_admin_notice: 'action',
 };
 
 // ===========================
@@ -66,14 +63,14 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   ],
   government_admin: [
     'query_animal', 'query_farm_summary', 'query_breeding_stats',
-    'query_traceability', 'get_farm_kpis', 'generate_report',
+    'query_traceability', 'get_farm_kpis',
     'query_grade', 'query_auction_prices',
     'query_quarantine_dashboard', 'query_national_situation',
   ],
   quarantine_officer: [
     'query_animal', 'query_animal_events', 'query_farm_summary',
     'query_sensor_data', 'query_traceability', 'get_farm_kpis',
-    'generate_report', 'send_alert', 'query_weather',
+    'query_weather',
     'query_quarantine_dashboard', 'query_national_situation',
   ],
 };
@@ -82,11 +79,8 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
 // 승인 필요 액션 목록
 // ===========================
 
-const APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set([
-  'submit_admin_notice',
-  'send_alert',
-  'generate_report', // 공식 보고서만 — 향후 세분화
-]);
+// 향후 승인 필요 도구가 추가되면 여기 등록 (현재는 모든 등록 도구가 즉시 실행 가능).
+const APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set<string>([]);
 
 // ===========================
 // Gateway 호출 컨텍스트
@@ -171,12 +165,22 @@ export async function executeToolWithGateway(
     return { success: true, result, toolName, domain, executionMs: 0, denied: false, approvalRequired: true };
   }
 
-  // 3. 도구 실행
+  // 3. 도구 실행 (30초 타임아웃)
+  // 외부 API(data.go.kr/EKAPE/smaXtec) 행 방지 — 시연 중 90초 SSE 타임아웃까지 대기 회피
   let resultStatus = 'success';
   let resultText: string;
+  const TOOL_TIMEOUT_MS = 30_000;
 
   try {
-    resultText = await executeTool(toolName, input);
+    resultText = await Promise.race([
+      executeTool(toolName, input),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`도구 '${toolName}' 실행 타임아웃 (${TOOL_TIMEOUT_MS / 1000}초 초과)`)),
+          TOOL_TIMEOUT_MS,
+        ),
+      ),
+    ]);
   } catch (error) {
     resultStatus = 'error';
     resultText = JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
