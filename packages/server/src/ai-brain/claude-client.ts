@@ -304,10 +304,39 @@ export async function callClaudeForChatWithTools(
       messages.push({ role: 'user', content: toolResults });
     }
 
-    // 최대 라운드 초과 — 텍스트가 누적됐으면 그대로 완료, 없으면 에러
-    logger.warn({ rounds: MAX_TOOL_ROUNDS, fullTextLen: fullText.length }, '[ToolUse] 최대 도구 호출 횟수 초과');
+    // 최대 라운드 초과 — 도구 없이 한 번 더 호출해 강제로 텍스트 답변 생성
+    // (특히 영어/우즈벡어/몽골어 응답에서 Claude가 도구 호출에 갇혀 빈 응답을 내는 케이스 방지)
+    logger.warn({ rounds: MAX_TOOL_ROUNDS, fullTextLen: fullText.length }, '[ToolUse] 최대 도구 호출 초과 — 도구 없이 final round 시도');
+    try {
+      const finalResponse = await anthropic.messages.create({
+        model: config.ANTHROPIC_MODEL,
+        max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
+        temperature: 0.7,
+        system: systemPrompt,
+        messages,
+        // tools 미전달 → 강제 텍스트 응답
+      });
+
+      let finalRoundLen = 0;
+      for (const block of finalResponse.content) {
+        if (block.type === 'text') {
+          fullText += block.text;
+          finalRoundLen += block.text.length;
+          callbacks.onText(block.text);
+        }
+      }
+      logger.info({
+        rounds: MAX_TOOL_ROUNDS + 1,
+        finalRoundLen,
+        fullTextLen: fullText.length,
+        stopReason: finalResponse.stop_reason,
+      }, '[ToolUse] final round 완료');
+    } catch (finalErr) {
+      logger.error({ err: finalErr }, '[ToolUse] final round 실패');
+    }
+
     if (fullText.length === 0) {
-      callbacks.onError(new Error(`도구 호출 ${MAX_TOOL_ROUNDS}회를 초과했지만 답변이 생성되지 않았습니다. 질문을 단순화해 주세요.`));
+      callbacks.onError(new Error(`도구 호출 ${MAX_TOOL_ROUNDS}회 + final round 후에도 답변이 생성되지 않았습니다. 질문을 단순화해 주세요.`));
       return;
     }
     callbacks.onDone(fullText);
