@@ -269,23 +269,35 @@ export async function callClaudeForChatWithTools(
       // assistant 메시지 추가 (tool_use blocks 포함)
       messages.push({ role: 'assistant', content: response.content });
 
-      // 각 tool 실행 후 결과 추가 (Gateway 경유 — audit log + role check)
+      // 각 tool 병렬 실행 — 한 라운드의 도구들은 모두 독립적이므로 동시 호출 가능
+      // (직렬 실행 시 도구 13개×2.5s=32s → 병렬 시 가장 느린 하나의 시간만 소요)
       const gatewayContext: ToolCallContext = toolContext ?? { role: 'farmer' };
-      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+
+      // 모든 도구 시작 이벤트를 먼저 발사 (UI 표시 즉시 가능)
       for (const toolBlock of toolUseBlocks) {
         const domain = TOOL_DOMAIN_MAP[toolBlock.name] ?? 'unknown';
-
-        // tool 시작 이벤트
         callbacks.onToolEvent?.({ phase: 'start', toolName: toolBlock.name, toolDomain: domain });
+        logger.info({ tool: toolBlock.name, input: toolBlock.input }, '[ToolUse] 도구 실행 (병렬)');
+      }
 
-        logger.info({ tool: toolBlock.name, input: toolBlock.input }, '[ToolUse] 도구 실행');
-        const gatewayResult = await executeToolWithGateway(
-          toolBlock.name,
-          toolBlock.input as Record<string, unknown>,
-          gatewayContext,
-        );
+      // Promise.all로 병렬 실행
+      const settled = await Promise.all(
+        toolUseBlocks.map((toolBlock) =>
+          executeToolWithGateway(
+            toolBlock.name,
+            toolBlock.input as Record<string, unknown>,
+            gatewayContext,
+          ),
+        ),
+      );
 
-        // tool 결과 이벤트
+      // 결과 이벤트 발사 + tool_result 블록 생성
+      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+      for (let i = 0; i < toolUseBlocks.length; i++) {
+        const toolBlock = toolUseBlocks[i]!;
+        const gatewayResult = settled[i]!;
+        const domain = TOOL_DOMAIN_MAP[toolBlock.name] ?? 'unknown';
+
         callbacks.onToolEvent?.({
           phase: 'result',
           toolName: toolBlock.name,
