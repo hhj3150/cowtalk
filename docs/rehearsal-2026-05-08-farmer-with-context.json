@@ -1,0 +1,68 @@
+[
+  {
+    "lang": "ko",
+    "question": "오늘 할 일 요약해 줘",
+    "elapsedMs": 21015,
+    "firstTextMs": 21015,
+    "answerLen": 1290,
+    "answerPreview": "오늘 가장 먼저 해야 할 일부터 말씀드릴게요.  ---  **지금 당장 — #6번 소 분만 확인**  calving_detection 위급 알람이 떠 있습니다. 지금 바로 축사로 가서 #6번 소 상태를 보세요. 양수가 터졌는지, 발이 나왔는지, 소가 누워서 힘을 주고 있는지 확인하세요. 분만이 시작됐는데 2시간 이상 진전이 없으면 수의사를 불러야 합니다. ",
+    "toolCount": 0,
+    "toolNames": []
+  },
+  {
+    "lang": "en",
+    "question": "What should I do today on the farm?",
+    "elapsedMs": 12805,
+    "firstTextMs": 3677,
+    "answerLen": 83,
+    "answerPreview": "Let me pull up the live data for Sultan Farm before giving you today's action plan.",
+    "toolCount": 12,
+    "toolNames": [
+      "query_farm_summary",
+      "query_animal",
+      "query_animal_events",
+      "query_sensor_data",
+      "query_differential_diagnosis"
+    ]
+  },
+  {
+    "lang": "uz",
+    "question": "Bugun fermada nima qilishim kerak?",
+    "elapsedMs": 11638,
+    "firstTextMs": null,
+    "answerLen": 0,
+    "answerPreview": "",
+    "toolCount": 10,
+    "toolNames": [
+      "query_farm_summary",
+      "query_animal",
+      "query_sensor_data",
+      "query_animal_events"
+    ]
+  },
+  {
+    "lang": "ru",
+    "question": "Что мне нужно сделать сегодня на ферме?",
+    "elapsedMs": 27330,
+    "firstTextMs": 27330,
+    "answerLen": 3322,
+    "answerPreview": "Сейчас на вашей ферме Sultan Farm несколько ситуаций требуют немедленного внимания. Разберём по приоритетам.  ---  **Первое и самое срочное — корова №6, роды**  Сенсор зафиксировал сигнал calving_dete",
+    "toolCount": 0,
+    "toolNames": []
+  },
+  {
+    "lang": "mn",
+    "question": "Өнөөдөр фермд би юу хийх ёстой вэ?",
+    "elapsedMs": 12021,
+    "firstTextMs": null,
+    "answerLen": 0,
+    "answerPreview": "",
+    "toolCount": 10,
+    "toolNames": [
+      "query_farm_summary",
+      "query_animal",
+      "query_animal_events",
+      "query_sensor_data"
+    ]
+  }
+]

@@ -1,0 +1,33 @@
+=== SSE E2E Rehearsal — 4 roles × 5 languages ===
+Target: https://cowtalk-server-production.up.railway.app/api/chat/stream
+Started: 2026-05-07T22:53:51.021Z
+✓ Master login OK
+✓ All role tokens cached
+[farmer/ko] elapsed=28541ms firstText=28540ms detect=ko OK tools=0
+[farmer/en] elapsed=25560ms firstText=25559ms detect=en OK tools=0
+[farmer/uz] elapsed=34642ms firstText=34641ms detect=uz OK tools=0
+[farmer/ru] elapsed=25860ms firstText=25860ms detect=ru OK tools=0
+[farmer/mn] elapsed=44383ms firstText=44382ms detect=mn OK tools=0
+[veterinarian/ko] elapsed=19788ms firstText=19787ms detect=ko OK tools=0
+[veterinarian/en] elapsed=16037ms firstText=16037ms detect=uz MISS tools=0
+[veterinarian/uz] elapsed=20314ms firstText=20314ms detect=uz OK tools=0
+[veterinarian/ru] elapsed=24544ms firstText=24543ms detect=ru OK tools=0
+[veterinarian/mn] elapsed=49490ms firstText=5763ms detect=mn OK tools=9
+[government_admin/ko] elapsed=29328ms firstText=4451ms detect=ko OK tools=1
+[government_admin/en] elapsed=22999ms firstText=3427ms detect=en OK tools=1
+[government_admin/uz] elapsed=41288ms firstText=5424ms detect=uz OK tools=1
+[government_admin/ru] elapsed=34619ms firstText=34512ms detect=ru OK tools=0
+[government_admin/mn] elapsed=47279ms firstText=4678ms detect=mn OK tools=2
+[quarantine_officer/ko] elapsed=29737ms firstText=4816ms detect=ko OK tools=1
+[quarantine_officer/en] elapsed=20438ms firstText=3613ms detect=en OK tools=1
+[quarantine_officer/uz] elapsed=18997ms firstText=18996ms detect=uz OK tools=0
+[quarantine_officer/ru] elapsed=22229ms firstText=22228ms detect=ru OK tools=0
+[quarantine_officer/mn] elapsed=17873ms firstText=17872ms detect=mn OK tools=0
+
+=== Summary ===
+Success: 20/20
+Lang match: 19/20
+Tool calls (≥1): 7/20
+Total latency  avg=28697ms max=49490ms
+First-text TTFB avg=18272ms max=44382ms
+Tools used: {}
