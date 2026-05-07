@@ -185,7 +185,7 @@ export async function callClaudeForChat(
 // 대화용 호출 (스트리밍 + Tool Use)
 // ===========================
 
-const MAX_TOOL_ROUNDS = 3;
+const MAX_TOOL_ROUNDS = 4;
 
 export async function callClaudeForChatWithTools(
   systemPrompt: string,
@@ -308,12 +308,20 @@ export async function callClaudeForChatWithTools(
     // (특히 영어/우즈벡어/몽골어 응답에서 Claude가 도구 호출에 갇혀 빈 응답을 내는 케이스 방지)
     logger.warn({ rounds: MAX_TOOL_ROUNDS, fullTextLen: fullText.length }, '[ToolUse] 최대 도구 호출 초과 — 도구 없이 final round 시도');
     try {
+      // 명시적 wrap-up 지시 추가 — Claude가 더 이상 도구를 부르지 않고 답변하도록 강제
+      const wrapUpMessages: Anthropic.MessageParam[] = [
+        ...messages,
+        {
+          role: 'user',
+          content: '위 도구 결과들을 바탕으로 최종 답변을 지금 작성해 주세요. 더 이상 도구를 호출하지 마세요. 사용자 질문에 대한 직접적이고 완전한 답변만 자연어로 작성하세요.',
+        },
+      ];
       const finalResponse = await anthropic.messages.create({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
         temperature: 0.7,
         system: systemPrompt,
-        messages,
+        messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
       });
 
