@@ -21,14 +21,37 @@ const WAKE_PATTERNS: readonly RegExp[] = [
   /칭커벨/,
 ];
 
+// 답변 중지 키워드 — 사용자가 응답을 끊고 싶을 때
+const DEFAULT_INTERRUPT_PATTERNS: readonly RegExp[] = [
+  /조용히\s*해/,
+  /조용히/,
+  /그만\s*해/,
+  /그만/,
+  /멈춰/,
+  /닥쳐/,
+  /\bstop\b/i,
+  /shut\s*up/i,
+  /be\s*quiet/i,
+];
+
 function matchesWakeWord(text: string): boolean {
   const cleaned = text.trim().toLowerCase();
   return WAKE_PATTERNS.some((re) => re.test(cleaned));
 }
 
+function matchesInterrupt(text: string, extraPatterns?: readonly RegExp[]): boolean {
+  const cleaned = text.trim().toLowerCase();
+  if (DEFAULT_INTERRUPT_PATTERNS.some((re) => re.test(cleaned))) return true;
+  if (extraPatterns && extraPatterns.some((re) => re.test(cleaned))) return true;
+  return false;
+}
+
 interface UseWakeWordOptions {
   readonly enabled: boolean;
   readonly onWake: (heardText: string) => void;
+  /** 사용자가 "조용히 해", "그만", "stop" 등 발화 시 — 답변 끊기 등에 사용 */
+  readonly onInterrupt?: (heardText: string) => void;
+  readonly extraInterruptPatterns?: readonly RegExp[];
   readonly lang?: string;
 }
 
@@ -39,10 +62,18 @@ interface UseWakeWordResult {
   readonly pause: () => void;
 }
 
-export function useWakeWord({ enabled, onWake, lang = 'ko-KR' }: UseWakeWordOptions): UseWakeWordResult {
+export function useWakeWord({
+  enabled,
+  onWake,
+  onInterrupt,
+  extraInterruptPatterns,
+  lang = 'ko-KR',
+}: UseWakeWordOptions): UseWakeWordResult {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const onWakeRef = useRef(onWake);
+  const onInterruptRef = useRef(onInterrupt);
+  const extraPatternsRef = useRef(extraInterruptPatterns);
   const enabledRef = useRef(enabled);
   const restartTimeoutRef = useRef<number | null>(null);
 
@@ -50,6 +81,12 @@ export function useWakeWord({ enabled, onWake, lang = 'ko-KR' }: UseWakeWordOpti
   useEffect(() => {
     onWakeRef.current = onWake;
   }, [onWake]);
+  useEffect(() => {
+    onInterruptRef.current = onInterrupt;
+  }, [onInterrupt]);
+  useEffect(() => {
+    extraPatternsRef.current = extraInterruptPatterns;
+  }, [extraInterruptPatterns]);
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
@@ -99,19 +136,23 @@ export function useWakeWord({ enabled, onWake, lang = 'ko-KR' }: UseWakeWordOpti
       const lastResult = event.results[lastIdx];
       if (!lastResult || !lastResult[0]) return;
       const text = lastResult[0].transcript;
+      const now = Date.now();
+      if (now - lastFiredAt < COOLDOWN_MS) return;
 
+      // wake가 우선 (사용자가 "팅커벨"이라고 부르면 답변 중이라도 끊고 새 질문 모드)
       if (matchesWakeWord(text)) {
-        const now = Date.now();
-        if (now - lastFiredAt < COOLDOWN_MS) return;
         lastFiredAt = now;
-
-        // wake 감지 → recognition 정지하고 콜백 호출
-        try {
-          recognition.stop();
-        } catch {
-          // 무시
-        }
+        try { recognition.stop(); } catch { /* ignore */ }
         onWakeRef.current(text);
+        return;
+      }
+
+      // interrupt 키워드 — 답변 중지만 (재시작은 하지 않음, recognition은 계속 청취)
+      if (onInterruptRef.current && matchesInterrupt(text, extraPatternsRef.current)) {
+        lastFiredAt = now;
+        onInterruptRef.current(text);
+        // recognition은 정지하지 않음 — 사용자가 곧바로 새 명령 줄 수 있도록 청취 유지
+        return;
       }
     };
 
