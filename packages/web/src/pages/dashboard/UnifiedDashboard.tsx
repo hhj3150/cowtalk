@@ -1057,8 +1057,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
         onFarmSelect={(fid) => { setDrawerFarmId(fid); selectFarm(fid); }}
       />
 
-      {/* 팅커벨 AI 어시스턴트 */}
+      {/* 팅커벨 AI 어시스턴트 — 사용자가 있는 곳에 항상 머무름 (피터팬의 팅커벨) */}
       <TinkerbellAssistant
+        alwaysOpen
         openTrigger={tinkerbellTrigger}
         dashboardContext={data ? {
           totalAlarms: alarms.length,

@@ -5,6 +5,7 @@
 import { getDb } from '../config/database.js';
 import { chatConversations, animalEvents, clinicalObservations } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
+import { eq, and, gte, desc } from 'drizzle-orm';
 
 // ── 학습 신호 타입 ──
 
@@ -186,6 +187,110 @@ export async function saveChatConversation(input: {
     // 대화 저장 실패가 응답을 막으면 안 됨
     logger.warn({ err }, '[ChatLearner] Failed to save conversation');
   }
+}
+
+// ──────────────────────────────────────────────────────────
+// 농장별 최근 학습 패턴 — 다음 답변에 주입하여 진화 루프 완성
+// "당신 농장의 지난 30일 패턴: 유방염 5건, 케토시스 2건..."
+// ──────────────────────────────────────────────────────────
+
+export interface FarmLearningSnapshot {
+  readonly windowDays: number;
+  readonly totalConversations: number;
+  readonly diagnosisFrequency: readonly { diagnosis: string; count: number }[];
+  readonly treatmentFrequency: readonly { treatment: string; count: number }[];
+  readonly outcomeBreakdown: readonly { outcome: string; count: number }[];
+  readonly recentBreedingEvents: readonly { eventType: string; count: number }[];
+}
+
+export async function getFarmLearningSnapshot(
+  farmId: string,
+  windowDays: number = 30,
+): Promise<FarmLearningSnapshot | null> {
+  try {
+    const db = getDb();
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+    const rows = await db.select({
+      learningSignals: chatConversations.learningSignals,
+    })
+      .from(chatConversations)
+      .where(and(eq(chatConversations.farmId, farmId), gte(chatConversations.createdAt, since)))
+      .orderBy(desc(chatConversations.createdAt))
+      .limit(500);
+
+    if (rows.length === 0) return null;
+
+    const diagCounts = new Map<string, number>();
+    const treatCounts = new Map<string, number>();
+    const outcomeCounts = new Map<string, number>();
+    const breedingCounts = new Map<string, number>();
+
+    for (const row of rows) {
+      const signals = (row.learningSignals as readonly LearningSignal[] | null) ?? [];
+      for (const s of signals) {
+        if (s.type === 'diagnosis') {
+          diagCounts.set(s.value, (diagCounts.get(s.value) ?? 0) + 1);
+        } else if (s.type === 'treatment') {
+          const meds = s.details.medications as readonly Record<string, unknown>[] | undefined;
+          if (meds && meds.length > 0) {
+            const name = String(meds[0]?.['name'] ?? '약물');
+            treatCounts.set(name, (treatCounts.get(name) ?? 0) + 1);
+          }
+        } else if (s.type === 'outcome') {
+          outcomeCounts.set(s.value, (outcomeCounts.get(s.value) ?? 0) + 1);
+        } else if (s.type === 'breeding') {
+          breedingCounts.set(s.value, (breedingCounts.get(s.value) ?? 0) + 1);
+        }
+      }
+    }
+
+    const sortByCount = <T>(map: Map<string, number>, key: keyof T) => {
+      return [...map.entries()]
+        .map(([k, count]) => ({ [key]: k, count } as unknown as T))
+        .sort((a, b) => (b as { count: number }).count - (a as { count: number }).count)
+        .slice(0, 5);
+    };
+
+    return {
+      windowDays,
+      totalConversations: rows.length,
+      diagnosisFrequency: sortByCount<{ diagnosis: string; count: number }>(diagCounts, 'diagnosis'),
+      treatmentFrequency: sortByCount<{ treatment: string; count: number }>(treatCounts, 'treatment'),
+      outcomeBreakdown: sortByCount<{ outcome: string; count: number }>(outcomeCounts, 'outcome'),
+      recentBreedingEvents: sortByCount<{ eventType: string; count: number }>(breedingCounts, 'eventType'),
+    };
+  } catch (err) {
+    logger.warn({ err, farmId }, '[ChatLearner] Failed to compute farm learning snapshot');
+    return null;
+  }
+}
+
+export function formatFarmLearningContext(snapshot: FarmLearningSnapshot): string {
+  const lines: string[] = [
+    `\n## 이 농장의 최근 ${String(snapshot.windowDays)}일 학습 패턴 (팅커벨 진화 루프)`,
+    `대화 ${String(snapshot.totalConversations)}건에서 추출한 패턴 — 답변 시 참고하세요.`,
+  ];
+
+  if (snapshot.diagnosisFrequency.length > 0) {
+    const items = snapshot.diagnosisFrequency.map((d) => `${d.diagnosis} ${String(d.count)}건`);
+    lines.push(`- 자주 등장한 진단: ${items.join(', ')}`);
+  }
+  if (snapshot.treatmentFrequency.length > 0) {
+    const items = snapshot.treatmentFrequency.map((t) => `${t.treatment} ${String(t.count)}회`);
+    lines.push(`- 자주 사용된 약물: ${items.join(', ')}`);
+  }
+  if (snapshot.outcomeBreakdown.length > 0) {
+    const items = snapshot.outcomeBreakdown.map((o) => `${o.outcome} ${String(o.count)}건`);
+    lines.push(`- 결과 분포: ${items.join(', ')}`);
+  }
+  if (snapshot.recentBreedingEvents.length > 0) {
+    const items = snapshot.recentBreedingEvents.map((b) => `${b.eventType} ${String(b.count)}회`);
+    lines.push(`- 최근 번식 이벤트: ${items.join(', ')}`);
+  }
+
+  lines.push(`→ 같은 농장에서 반복되는 패턴이 있으면 "이 농장에서는 최근 X가 자주 발생했는데" 식으로 자연스럽게 인용하여 답변의 신뢰를 강화하세요.`);
+  return lines.join('\n');
 }
 
 // ── 학습 신호 → 이벤트 자동 기록 ──

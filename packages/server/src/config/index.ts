@@ -47,6 +47,13 @@ const envSchema = z.object({
   ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-5-20251101'),
   ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(4000),
   ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
+  // 채팅 온도 — 임상·번식·방역 답변은 정확도 > 창의성 (0.4 권장)
+  // 도구 결과 종합용 final wrap-up 라운드는 더 낮춤 (0.3)
+  ANTHROPIC_TEMPERATURE_CHAT: z.coerce.number().min(0).max(1).default(0.4),
+  ANTHROPIC_TEMPERATURE_CHAT_FINAL: z.coerce.number().min(0).max(1).default(0.3),
+  // Extended Thinking — 감별진단·번식 추천 같은 복잡 질문에 활성화 (budget=0 비활성)
+  // 1024~16000 토큰 권장. 비용 추가되므로 휴리스틱으로 일부 케이스만.
+  ANTHROPIC_THINKING_BUDGET: z.coerce.number().int().min(0).max(16000).default(2048),
 
   // OpenWeatherMap API
   OPENWEATHER_API_KEY: z.string().optional(),
