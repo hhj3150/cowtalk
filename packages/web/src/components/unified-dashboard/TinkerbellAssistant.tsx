@@ -918,10 +918,8 @@ export function TinkerbellAssistant({
     return () => window.removeEventListener('tinkerbell:onboarded', onOnboarded);
   }, []);
 
-  const handleWakeDetected = useCallback(() => {
-    // 이미 듣고 있거나 말하는 중이면 무시
-    if (state === 'listening' || state === 'thinking' || state === 'speaking') return;
-    // 짧은 효과음 (Web Audio API — 외부 파일 없이 즉시 발생)
+  // 짧은 효과음 (Web Audio API — 외부 파일 없이 즉시 발생)
+  const playWakeChime = useCallback(() => {
     try {
       const AC = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (AC) {
@@ -941,15 +939,37 @@ export function TinkerbellAssistant({
     } catch {
       // 효과음 실패해도 본 흐름엔 영향 없음
     }
+  }, []);
+
+  const handleWakeDetected = useCallback(() => {
+    // 이미 본격 마이크가 듣고 있으면 무시 (마이크 충돌 방지)
+    if (state === 'listening') return;
+    // 답변 중·생각 중이면 먼저 끊기 (Siri 식 barge-in)
+    if (state === 'speaking' || state === 'thinking') {
+      try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
+      try { stopSpeaking(); } catch { /* ignore */ }
+    }
+    playWakeChime();
     // 본격 음성 입력 모드로 진입
     void startListening();
-  }, [state, startListening]);
+  }, [state, startListening, playWakeChime, voiceOutput]);
 
-  // wake word는 alwaysOpen + wake 활성화 + 본격 입력이 아닐 때만 청취
-  const wakeShouldListen = alwaysOpen && wakeEnabled && state === 'idle';
+  // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
+  const handleInterruptDetected = useCallback(() => {
+    if (state === 'speaking' || state === 'thinking') {
+      try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
+      try { stopSpeaking(); } catch { /* ignore */ }
+      setState('idle');
+    }
+  }, [state, voiceOutput]);
+
+  // wake word는 alwaysOpen + wake 활성화 + (본격 입력 아닐 때) 청취
+  // 답변 중·생각 중에도 listening 상태가 아니면 wake/interrupt 청취 가능
+  const wakeShouldListen = alwaysOpen && wakeEnabled && state !== 'listening';
   const { listening: wakeListening, supported: wakeSupported } = useWakeWord({
     enabled: wakeShouldListen,
     onWake: handleWakeDetected,
+    onInterrupt: handleInterruptDetected,
     lang: 'ko-KR',
   });
 
