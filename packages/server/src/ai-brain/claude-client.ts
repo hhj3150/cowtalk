@@ -214,18 +214,19 @@ export async function callClaudeForChat(
 
 const MAX_TOOL_ROUNDS = 4;
 
-// Extended Thinking 트리거 휴리스틱 — 감별진단·번식 추천·왜·원인 키워드 또는 200자 이상 질문
-// 시연 안정성을 위해 보수적으로 — 5~10% 케이스만 활성화 예상
+// Extended Thinking 트리거 휴리스틱 — 진짜 깊은 추론이 필요한 케이스만
+// 일상 대화·짧은 질문에는 절대 활성화하지 않음 (지연 2~5초 발생)
+// 시연 D-4 — 보수적으로: 1~3% 케이스만 활성화
 const DEEP_REASONING_KEYWORDS = [
-  '감별', '감별진단', 'differential',
-  '왜', '원인', '이유', 'why', 'cause',
-  '추천 정액', '수정 적기', '시뮬레이션', '예측',
-  '비교 분석', '권고', 'recommend',
+  '감별진단', 'differential diagnosis',
+  '확산 시뮬레이션', '확산 예측',
+  '근교계수', '유전체 평가',
 ] as const;
 
 export function shouldUseDeepThinking(userMessage: string): boolean {
   if (config.ANTHROPIC_THINKING_BUDGET <= 0) return false;
-  if (userMessage.length >= 200) return true;
+  // 매우 긴 질문(400자+)만 자동 활성화 — 농장주 일상 질문은 보통 100자 미만
+  if (userMessage.length >= 400) return true;
   const lower = userMessage.toLowerCase();
   return DEEP_REASONING_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
 }

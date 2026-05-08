@@ -197,8 +197,13 @@ export async function handleChatStream(
     }
   }
 
-  // 컨텍스트 해결 (실패해도 일반 대화 가능)
+  // 컨텍스트 + 농장 학습 스냅샷을 병렬로 — 첫 토큰 지연을 최대한 줄이기 위함
+  // (resolveContext는 DB N건 + 농장 스냅샷도 chat_conversations 500건이라 순차면 합산 지연)
   let context: Awaited<ReturnType<typeof resolveContext>>['context'];
+  let snapshotPromise: Promise<Awaited<ReturnType<typeof getFarmLearningSnapshot>>> | null = null;
+  if (farmId) {
+    snapshotPromise = getFarmLearningSnapshot(farmId, 30).catch(() => null);
+  }
   try {
     const resolved = await resolveContext(
       question, farmId, animalId, role, dashboardContext,
@@ -209,7 +214,7 @@ export async function handleChatStream(
     context = { type: 'general' } as typeof context;
   }
 
-  // 레이블 컨텍스트 조회 (전부 try-catch — 실패해도 대화는 계속)
+  // 레이블 컨텍스트 — 후보 이벤트 타입을 한 번에 병렬 조회 (직렬 for loop 제거)
   let labelContext: string | undefined;
   try {
     if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
@@ -222,21 +227,24 @@ export async function handleChatStream(
       }
     }
 
-    // 농장 단위 최근 학습 패턴도 항상 주입 (팅커벨 진화 루프)
+    // 농장 단위 최근 학습 패턴 — 4개 이벤트 타입을 병렬로 (가장 풍부한 첫 hit 사용)
     if (!labelContext && farmId) {
       const commonTypes = ['temperature_high', 'rumination_decrease', 'estrus', 'health_general'];
-      for (const eventType of commonTypes) {
-        const summary = await getLabelContextForEventType(eventType, farmId);
+      const results = await Promise.all(
+        commonTypes.map((t) => getLabelContextForEventType(t, farmId).catch(() => null)),
+      );
+      for (let i = 0; i < commonTypes.length; i++) {
+        const summary = results[i];
         if (summary) {
-          labelContext = formatLabelContext(summary, eventType);
+          labelContext = formatLabelContext(summary, commonTypes[i]!);
           break;
         }
       }
     }
 
-    // 농장의 지난 30일 대화 패턴 — "팅커벨이 이 농장을 안다" 효과
-    if (farmId) {
-      const snapshot = await getFarmLearningSnapshot(farmId, 30);
+    // 농장의 지난 30일 대화 패턴 — 위에서 미리 시작한 Promise를 await만
+    if (snapshotPromise) {
+      const snapshot = await snapshotPromise;
       if (snapshot && snapshot.totalConversations >= 3) {
         const farmLearning = formatFarmLearningContext(snapshot);
         labelContext = labelContext ? `${labelContext}\n\n${farmLearning}` : farmLearning;

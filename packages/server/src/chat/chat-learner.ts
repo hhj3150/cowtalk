@@ -203,10 +203,21 @@ export interface FarmLearningSnapshot {
   readonly recentBreedingEvents: readonly { eventType: string; count: number }[];
 }
 
+// 농장 스냅샷 캐시 — 같은 농장의 반복 질문에서 chat_conversations 500건 재조회 방지
+// 60초 TTL — 새 대화가 즉시 반영되진 않지만, 분 단위로는 충분히 신선
+const SNAPSHOT_CACHE_TTL_MS = 60 * 1000;
+const snapshotCache = new Map<string, { snapshot: FarmLearningSnapshot | null; expiresAt: number }>();
+
 export async function getFarmLearningSnapshot(
   farmId: string,
   windowDays: number = 30,
 ): Promise<FarmLearningSnapshot | null> {
+  const cacheKey = `${farmId}:${String(windowDays)}`;
+  const cached = snapshotCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.snapshot;
+  }
+
   try {
     const db = getDb();
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
@@ -219,7 +230,10 @@ export async function getFarmLearningSnapshot(
       .orderBy(desc(chatConversations.createdAt))
       .limit(500);
 
-    if (rows.length === 0) return null;
+    if (rows.length === 0) {
+      snapshotCache.set(cacheKey, { snapshot: null, expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
+      return null;
+    }
 
     const diagCounts = new Map<string, number>();
     const treatCounts = new Map<string, number>();
@@ -252,7 +266,7 @@ export async function getFarmLearningSnapshot(
         .slice(0, 5);
     };
 
-    return {
+    const snapshot: FarmLearningSnapshot = {
       windowDays,
       totalConversations: rows.length,
       diagnosisFrequency: sortByCount<{ diagnosis: string; count: number }>(diagCounts, 'diagnosis'),
@@ -260,9 +274,18 @@ export async function getFarmLearningSnapshot(
       outcomeBreakdown: sortByCount<{ outcome: string; count: number }>(outcomeCounts, 'outcome'),
       recentBreedingEvents: sortByCount<{ eventType: string; count: number }>(breedingCounts, 'eventType'),
     };
+    snapshotCache.set(cacheKey, { snapshot, expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
+    return snapshot;
   } catch (err) {
     logger.warn({ err, farmId }, '[ChatLearner] Failed to compute farm learning snapshot');
     return null;
+  }
+}
+
+// 새 대화 저장 시 해당 농장의 캐시를 무효화 — 즉각 반영이 필요한 경우 사용
+export function invalidateFarmSnapshotCache(farmId: string): void {
+  for (const key of snapshotCache.keys()) {
+    if (key.startsWith(`${farmId}:`)) snapshotCache.delete(key);
   }
 }
 
