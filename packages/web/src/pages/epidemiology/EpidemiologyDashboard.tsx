@@ -1,7 +1,7 @@
 // 방역관 전용 대시보드
 // 6개 KPI + 위험 등급 배너 + 실시간 역학 현황판 + 24h 발열 추이 + 업무 큐
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -14,7 +14,7 @@ import { SituationBoard } from '@web/components/epidemiology/SituationBoard';
 import type { RiskFarm } from '@web/components/epidemiology/SituationBoard';
 import { ActionQueue } from '@web/components/epidemiology/ActionQueue';
 import type { ActionQueueItem } from '@web/components/epidemiology/ActionQueue';
-import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
 import { NationalMiniMap } from '@web/components/epidemiology/NationalMiniMap';
 import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
@@ -145,7 +145,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
   const [selectedFarm, setSelectedFarm] = useState<RiskFarm | null>(null);
   const [farmTab, setFarmTab] = useState<'info' | 'animals'>('info');
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
-  const [tinkerbellTriggerOverride, setTinkerbellTriggerOverride] = useState<string | undefined>(undefined);
+  const setTinkerbellTrigger = useTinkerbellStore((s) => s.setTrigger);
   // 전국 지도 → 시도 → 농장 → 개체 드릴다운
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
   const [showFarmPanel, setShowFarmPanel] = useState(false);
@@ -179,15 +179,16 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
     riskLevel === 'yellow' ? `발열률 ${((kpi?.feverRate ?? 0) * 100).toFixed(1)}%` :
     '이상 징후 없음';
 
-  // 농장 선택 시 팅커벨 AI 자동 브리핑 트리거 (farmId 기반 고유 키)
-  const tinkerbellTrigger = useMemo(() => {
-    if (!selectedFarm) return undefined;
+  // 농장 선택 시 팅커벨 AI 자동 브리핑 — 글로벌 store에 trigger set
+  useEffect(() => {
+    if (!selectedFarm) return;
     const flags = [
       selectedFarm.clusterAlert && '집단발열 발생',
       selectedFarm.legalSuspect && '법정전염병 의심',
     ].filter(Boolean).join(', ');
-    return `[방역관 역학 브리핑 — ${selectedFarm.farmId}] ${selectedFarm.farmName} 농장 역학 상황을 분석해주세요. 건강알림 ${selectedFarm.healthAlertCount ?? selectedFarm.feverCount}건 (발열 ${selectedFarm.feverCount}, 반추↓ ${selectedFarm.ruminationCount ?? 0}), 위험점수 ${selectedFarm.riskScore}점${flags ? ` (${flags})` : ''}. 방역관이 즉시 취해야 할 조치 3가지를 간결하게 알려주세요.`;
-  }, [selectedFarm]);
+    const trigger = `[방역관 역학 브리핑 — ${selectedFarm.farmId}] ${selectedFarm.farmName} 농장 역학 상황을 분석해주세요. 건강알림 ${selectedFarm.healthAlertCount ?? selectedFarm.feverCount}건 (발열 ${selectedFarm.feverCount}, 반추↓ ${selectedFarm.ruminationCount ?? 0}), 위험점수 ${selectedFarm.riskScore}점${flags ? ` (${flags})` : ''}. 방역관이 즉시 취해야 할 조치 3가지를 간결하게 알려주세요.`;
+    setTinkerbellTrigger(trigger);
+  }, [selectedFarm, setTinkerbellTrigger]);
 
   const hourlyData = (dashboard?.hourlyFever24h ?? []).map((d) => ({
     ...d,
@@ -329,7 +330,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
             setDrillFarmId(null);
             setShowFarmPanel(false);
             setSelectedProvince(null);
-            setTinkerbellTriggerOverride(triggerText);
+            setTinkerbellTrigger(triggerText);
           }}
         />
       )}
@@ -456,10 +457,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
           onClose={() => setDrillAnimalId(null)}
           onAiRequest={(triggerText) => {
             setDrillAnimalId(null);
-            // tinkerbellTrigger를 새 값으로 갱신 — TinkerbellAssistant가 열림
-            const updatedTrigger = triggerText;
-            // useMemo 우회: 직접 ref 업데이트 대신 state 사용
-            setTinkerbellTriggerOverride(updatedTrigger);
+            setTinkerbellTrigger(triggerText);
           }}
         />
       )}
@@ -601,7 +599,6 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
         </SectionErrorBoundary>
       </div>
 
-      <TinkerbellAssistant openTrigger={tinkerbellTriggerOverride ?? tinkerbellTrigger} />
     </div>
   );
 }

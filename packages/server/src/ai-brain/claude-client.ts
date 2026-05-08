@@ -30,6 +30,33 @@ export function isClaudeAvailable(): boolean {
 }
 
 // ===========================
+// Prompt Caching 헬퍼
+// 시스템 프롬프트(~10K 토큰)을 캐시하면 반복 호출 시 비용 90%↓ + 지연 단축.
+// TTL 기본 5분 (자동 연장).
+// ===========================
+
+function buildCachedSystem(systemPrompt: string): Anthropic.TextBlockParam[] {
+  return [
+    {
+      type: 'text',
+      text: systemPrompt,
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
+}
+
+// 도구 정의 캐싱 — 마지막 도구에만 cache_control 부착하면 전체 도구 배열이 캐시됨
+function buildCachedTools(tools: readonly Anthropic.Messages.Tool[]): Anthropic.Messages.Tool[] {
+  if (tools.length === 0) return [];
+  const head = tools.slice(0, -1);
+  const last = tools[tools.length - 1]!;
+  return [
+    ...head,
+    { ...last, cache_control: { type: 'ephemeral' } } as Anthropic.Messages.Tool,
+  ];
+}
+
+// ===========================
 // 분석용 호출 (JSON 응답)
 // ===========================
 
@@ -62,7 +89,7 @@ export async function callClaudeForAnalysis(
       model,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_ANALYSIS,
       temperature: 0.3,
-      system: SYSTEM_PROMPT,
+      system: buildCachedSystem(SYSTEM_PROMPT),
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -139,8 +166,8 @@ export async function callClaudeForChat(
     const stream = anthropic.messages.stream({
       model: config.ANTHROPIC_MODEL,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-      temperature: 0.7,
-      system: systemPrompt,
+      temperature: config.ANTHROPIC_TEMPERATURE_CHAT,
+      system: buildCachedSystem(systemPrompt),
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -187,11 +214,33 @@ export async function callClaudeForChat(
 
 const MAX_TOOL_ROUNDS = 4;
 
+// Extended Thinking 트리거 휴리스틱 — 진짜 깊은 추론이 필요한 케이스만
+// 일상 대화·짧은 질문에는 절대 활성화하지 않음 (지연 2~5초 발생)
+// 시연 D-4 — 보수적으로: 1~3% 케이스만 활성화
+const DEEP_REASONING_KEYWORDS = [
+  '감별진단', 'differential diagnosis',
+  '확산 시뮬레이션', '확산 예측',
+  '근교계수', '유전체 평가',
+] as const;
+
+export function shouldUseDeepThinking(userMessage: string): boolean {
+  if (config.ANTHROPIC_THINKING_BUDGET <= 0) return false;
+  // 매우 긴 질문(400자+)만 자동 활성화 — 농장주 일상 질문은 보통 100자 미만
+  if (userMessage.length >= 400) return true;
+  const lower = userMessage.toLowerCase();
+  return DEEP_REASONING_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+}
+
+export interface ChatToolOptions {
+  readonly useDeepThinking?: boolean;
+}
+
 export async function callClaudeForChatWithTools(
   systemPrompt: string,
   prompt: string,
   callbacks: StreamCallbacks,
   toolContext?: ToolCallContext,
+  options?: ChatToolOptions,
 ): Promise<void> {
   const anthropic = getClient();
   if (!anthropic) {
@@ -209,17 +258,31 @@ export async function callClaudeForChatWithTools(
     ? TINKERBELL_TOOLS.filter((t) => allowedToolNames.includes(t.name))
     : [...TINKERBELL_TOOLS];
 
-  logger.info({ role, toolCount: filteredTools.length, total: TINKERBELL_TOOLS.length, model: config.ANTHROPIC_MODEL }, '[ToolUse] 역할별 도구 필터링');
+  // Extended Thinking 활성화 여부 (감별진단 등 복잡 추론용)
+  const useThinking = options?.useDeepThinking === true && config.ANTHROPIC_THINKING_BUDGET > 0;
+  const thinkingParam: { thinking?: { type: 'enabled'; budget_tokens: number } } = useThinking
+    ? { thinking: { type: 'enabled', budget_tokens: config.ANTHROPIC_THINKING_BUDGET } }
+    : {};
+
+  logger.info({
+    role,
+    toolCount: filteredTools.length,
+    total: TINKERBELL_TOOLS.length,
+    model: config.ANTHROPIC_MODEL,
+    thinking: useThinking ? config.ANTHROPIC_THINKING_BUDGET : 0,
+  }, '[ToolUse] 역할별 도구 필터링');
 
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
       const response = await anthropic.messages.create({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-        temperature: 0.7,
-        system: systemPrompt,
+        // Extended Thinking 사용 시 temperature는 1로 강제됨 (Anthropic 제약)
+        temperature: useThinking ? 1 : config.ANTHROPIC_TEMPERATURE_CHAT,
+        ...thinkingParam,
+        system: buildCachedSystem(systemPrompt),
         messages,
-        tools: [...filteredTools],
+        tools: buildCachedTools(filteredTools),
       });
 
       // 응답 content blocks 처리
@@ -331,8 +394,8 @@ export async function callClaudeForChatWithTools(
       const finalResponse = await anthropic.messages.create({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-        temperature: 0.7,
-        system: systemPrompt,
+        temperature: config.ANTHROPIC_TEMPERATURE_CHAT_FINAL,
+        system: buildCachedSystem(systemPrompt),
         messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
       });
@@ -397,8 +460,8 @@ export async function callClaudeForChatJson(
     const response = await anthropic.messages.create({
       model: config.ANTHROPIC_MODEL,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-      temperature: 0.7,
-      system: systemPrompt,
+      temperature: config.ANTHROPIC_TEMPERATURE_CHAT,
+      system: buildCachedSystem(systemPrompt),
       messages: [{ role: 'user', content: prompt }],
     });
 

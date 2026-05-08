@@ -2,7 +2,7 @@
 // 사용자 질문 + 역할 + 관련 프로파일 → Claude 응답
 
 import type { Role, ChatResponse } from '@cowtalk/shared';
-import { callClaudeForChatJson, callClaudeForChatWithTools, type StreamCallbacks } from '../ai-brain/claude-client.js';
+import { callClaudeForChatJson, callClaudeForChatWithTools, shouldUseDeepThinking, type StreamCallbacks } from '../ai-brain/claude-client.js';
 import { SYSTEM_PROMPT } from '../ai-brain/prompts/system-prompt.js';
 import {
   buildConversationPrompt,
@@ -12,7 +12,7 @@ import { resolveContext, type DetectedType } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext } from '../ai-brain/label-context.js';
-import { saveChatConversation } from './chat-learner.js';
+import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
 import { generateReportContent } from '../services/report/aiContentGenerator.js';
@@ -95,8 +95,9 @@ export async function handleChatMessage(
   );
 
   // 3. 역할별 톤 설정
+  // (환각 방지 가드는 SYSTEM_PROMPT 본문에서 이미 강제 — JSON 경로는 data_references 필드 의무만 추가)
   const roleTone = getRoleTone(role);
-  const systemPrompt = `${SYSTEM_PROMPT}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.\n- 모든 수치는 data_references에 출처를 반드시 기록하세요.${buildUiLangDirective(uiLang)}`;
+  const systemPrompt = `${SYSTEM_PROMPT}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## JSON 응답 규칙\n- answer에 등장한 모든 수치·동물번호·농장명을 data_references에 출처와 함께 기록하세요 (예: "423번 체온 41.2°C — query_animal", "전국 발열률 0.8% — query_quarantine_dashboard").\n- 컨텍스트/도구 결과에 없는 값은 절대 답변에 넣지 마세요.${buildUiLangDirective(uiLang)}`;
 
   // 4. Claude API 호출
   const result = await callClaudeForChatJson(systemPrompt, prompt);
@@ -196,8 +197,13 @@ export async function handleChatStream(
     }
   }
 
-  // 컨텍스트 해결 (실패해도 일반 대화 가능)
+  // 컨텍스트 + 농장 학습 스냅샷을 병렬로 — 첫 토큰 지연을 최대한 줄이기 위함
+  // (resolveContext는 DB N건 + 농장 스냅샷도 chat_conversations 500건이라 순차면 합산 지연)
   let context: Awaited<ReturnType<typeof resolveContext>>['context'];
+  let snapshotPromise: Promise<Awaited<ReturnType<typeof getFarmLearningSnapshot>>> | null = null;
+  if (farmId) {
+    snapshotPromise = getFarmLearningSnapshot(farmId, 30).catch(() => null);
+  }
   try {
     const resolved = await resolveContext(
       question, farmId, animalId, role, dashboardContext,
@@ -208,7 +214,7 @@ export async function handleChatStream(
     context = { type: 'general' } as typeof context;
   }
 
-  // 레이블 컨텍스트 조회 (전부 try-catch — 실패해도 대화는 계속)
+  // 레이블 컨텍스트 — 후보 이벤트 타입을 한 번에 병렬 조회 (직렬 for loop 제거)
   let labelContext: string | undefined;
   try {
     if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
@@ -221,15 +227,27 @@ export async function handleChatStream(
       }
     }
 
-    // 농장 단위 최근 학습 패턴도 항상 주입 (팅커벨 진화 루프)
+    // 농장 단위 최근 학습 패턴 — 4개 이벤트 타입을 병렬로 (가장 풍부한 첫 hit 사용)
     if (!labelContext && farmId) {
       const commonTypes = ['temperature_high', 'rumination_decrease', 'estrus', 'health_general'];
-      for (const eventType of commonTypes) {
-        const summary = await getLabelContextForEventType(eventType, farmId);
+      const results = await Promise.all(
+        commonTypes.map((t) => getLabelContextForEventType(t, farmId).catch(() => null)),
+      );
+      for (let i = 0; i < commonTypes.length; i++) {
+        const summary = results[i];
         if (summary) {
-          labelContext = formatLabelContext(summary, eventType);
+          labelContext = formatLabelContext(summary, commonTypes[i]!);
           break;
         }
+      }
+    }
+
+    // 농장의 지난 30일 대화 패턴 — 위에서 미리 시작한 Promise를 await만
+    if (snapshotPromise) {
+      const snapshot = await snapshotPromise;
+      if (snapshot && snapshot.totalConversations >= 3) {
+        const farmLearning = formatFarmLearningContext(snapshot);
+        labelContext = labelContext ? `${labelContext}\n\n${farmLearning}` : farmLearning;
       }
     }
   } catch {
@@ -246,7 +264,8 @@ export async function handleChatStream(
     /6\.\s*\*\*응답 형식\*\*.*?JSON 형식을 따르세요\./s,
     '6. **자연어 응답**: 사용자가 "몽골어로 답해줘", "answer in English" 같이 특정 언어로 답변을 요청하면 입력 언어와 무관하게 그 언어로만 응답하세요 (이전 턴에서 지정된 언어가 있으면 유지). 명시 요청이 없으면 사용자가 쓴 언어로 답변하세요 — 한국어면 한국어, 영어면 영어, 몽골어(키릴에 Өө/Үү 포함)면 몽골어, 우즈벡어면 우즈벡어, 러시아어면 러시아어. JSON 형식으로 응답하지 마세요.',
   );
-  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}\n\n## 환각 방지\n- 데이터에 포함되지 않은 수치를 절대 만들어내지 마세요.\n- 확인되지 않은 사항은 "데이터 없음"으로 명시하세요.${buildUiLangDirective(uiLang)}`;
+  // 환각 방지 가드는 SYSTEM_PROMPT 본문이 이미 강제 (스트리밍은 별도 추가 없음)
+  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}${buildUiLangDirective(uiLang)}`;
 
   // 스트리밍 답변을 모아서 학습에 활용
   const wrappedCallbacks: StreamCallbacks = {
@@ -272,13 +291,26 @@ export async function handleChatStream(
     onToolEvent: callbacks.onToolEvent,
   };
 
+  // Extended Thinking — 감별진단·번식 추천·복잡 추론 케이스에 자동 활성화
+  // 휴리스틱으로 5~10% 케이스만 (시연 안정성 우선)
+  const useDeepThinking = shouldUseDeepThinking(question);
+  if (useDeepThinking) {
+    logger.info({ questionLen: question.length }, '[Chat] Extended Thinking 활성화');
+  }
+
   // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회
   // Gateway 경유: audit log + role-based access control
-  await callClaudeForChatWithTools(systemPrompt, prompt, wrappedCallbacks, {
-    userId: request.userId,
-    role,
-    farmId: farmId ?? undefined,
-  });
+  await callClaudeForChatWithTools(
+    systemPrompt,
+    prompt,
+    wrappedCallbacks,
+    {
+      userId: request.userId,
+      role,
+      farmId: farmId ?? undefined,
+    },
+    { useDeepThinking },
+  );
 }
 
 // ===========================

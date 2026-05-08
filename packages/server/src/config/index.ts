@@ -47,6 +47,13 @@ const envSchema = z.object({
   ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-5-20251101'),
   ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(4000),
   ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
+  // 채팅 온도 — 임상·번식·방역 답변은 정확도 > 창의성 (0.4 권장)
+  // 도구 결과 종합용 final wrap-up 라운드는 더 낮춤 (0.3)
+  ANTHROPIC_TEMPERATURE_CHAT: z.coerce.number().min(0).max(1).default(0.4),
+  ANTHROPIC_TEMPERATURE_CHAT_FINAL: z.coerce.number().min(0).max(1).default(0.3),
+  // Extended Thinking — 감별진단·번식 추천 같은 복잡 질문에 활성화 (budget=0 비활성)
+  // 1024~16000 토큰 권장. 비용 추가되므로 휴리스틱으로 일부 케이스만.
+  ANTHROPIC_THINKING_BUDGET: z.coerce.number().int().min(0).max(16000).default(2048),
 
   // OpenWeatherMap API
   OPENWEATHER_API_KEY: z.string().optional(),
@@ -54,10 +61,13 @@ const envSchema = z.object({
   // OpenAI TTS (음성 합성) — 팅커벨 음성 답변
   // 키 발급: platform.openai.com → API keys (Audio 권한만 부여 권장)
   OPENAI_API_KEY: z.string().optional(),
-  OPENAI_TTS_MODEL: z.enum(['tts-1', 'tts-1-hd']).default('tts-1'),
+  // tts-1-hd가 자연성·발음 명료도 모두 우월 (비용 2배지만 시연·현장 가치 ↑)
+  OPENAI_TTS_MODEL: z.enum(['tts-1', 'tts-1-hd']).default('tts-1-hd'),
   OPENAI_TTS_VOICE: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).default('nova'),
-  OPENAI_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(4000).default(500), // 비용 절감 — 응답 앞 500자만 합성
+  OPENAI_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(4000).default(800),
   OPENAI_TTS_FORMAT: z.enum(['mp3', 'opus', 'aac', 'flac']).default('mp3'),
+  // TTS 속도: 1.0=기본, 0.85=차분, 1.1=빠름. 자연 대화에는 0.95~1.05 권장
+  OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4.0).default(1.0),
 
   // Web Push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),

@@ -7,7 +7,7 @@ import { apiGet } from '@web/api/client';
 import { SensorChartInline } from '@web/components/sensor/SensorChartInline';
 import { DryOffModal } from '@web/components/cow/DryOffModal';
 import { BreedingTimeline } from '@web/components/cow/BreedingTimeline';
-import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
 import { TraceSection } from '@web/components/trace/TraceSection';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { FarmSemenInventory } from '@web/components/breeding/FarmSemenInventory';
@@ -198,7 +198,7 @@ export default function CowProfilePage(): React.JSX.Element {
   const [calvingPred, setCalvingPred] = useState<{ calvingRisk: string; reasons: string[]; recommendation: string } | null>(null);
   const [showDryOff, setShowDryOff] = useState(false);
   const [showPregnancyCheck, setShowPregnancyCheck] = useState(false);
-  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+  const setTinkerbellTrigger = useTinkerbellStore((s) => s.setTrigger);
   const [farmAnimalIds, setFarmAnimalIds] = useState<readonly string[]>([]);
 
   // 농장 내 개체 목록 — 프로필 로드 후 비동기 조회 (◀▶ 이동 버튼용)
@@ -933,11 +933,6 @@ export default function CowProfilePage(): React.JSX.Element {
           </SectionErrorBoundary>
         </div>
       </div>
-
-      {/* 팅커벨 AI — 우측 하단 플로팅 버튼 */}
-      <SectionErrorBoundary label="AI 어시스턴트">
-        <TinkerbellAssistant openTrigger={tinkerbellTrigger} />
-      </SectionErrorBoundary>
 
       {/* 임신감정 모달 */}
       {showPregnancyCheck && profile && (

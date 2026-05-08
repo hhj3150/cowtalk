@@ -9,6 +9,7 @@ import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
+import { useWakeWord } from '@web/hooks/useWakeWord';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 // ── 타입 ──
@@ -890,6 +891,68 @@ export function TinkerbellAssistant({
     askTinkerbell(text);
   }, [inputText, askTinkerbell]);
 
+  // ── Wake Word "팅커벨" — Siri/Alexa 스타일 상시 청취 ──
+  // alwaysOpen 모드 + 사용자가 wake 활성화 시: 마이크가 항상 듣고 있다가
+  // "팅커벨" 호출 → 자동으로 본격 음성 입력 모드 진입
+  const [wakeEnabled, setWakeEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cowtalk:tinkerbell:wake-enabled');
+      return saved === null ? true : saved === '1'; // 기본 ON
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('cowtalk:tinkerbell:wake-enabled', wakeEnabled ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [wakeEnabled]);
+
+  // onboarding 카드에서 권한을 막 받으면 wake word 즉시 활성화
+  useEffect(() => {
+    const onOnboarded = () => setWakeEnabled(true);
+    window.addEventListener('tinkerbell:onboarded', onOnboarded);
+    return () => window.removeEventListener('tinkerbell:onboarded', onOnboarded);
+  }, []);
+
+  const handleWakeDetected = useCallback(() => {
+    // 이미 듣고 있거나 말하는 중이면 무시
+    if (state === 'listening' || state === 'thinking' || state === 'speaking') return;
+    // 짧은 효과음 (Web Audio API — 외부 파일 없이 즉시 발생)
+    try {
+      const AC = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AC) {
+        const ctx = new AC();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.22);
+      }
+    } catch {
+      // 효과음 실패해도 본 흐름엔 영향 없음
+    }
+    // 본격 음성 입력 모드로 진입
+    void startListening();
+  }, [state, startListening]);
+
+  // wake word는 alwaysOpen + wake 활성화 + 본격 입력이 아닐 때만 청취
+  const wakeShouldListen = alwaysOpen && wakeEnabled && state === 'idle';
+  const { listening: wakeListening, supported: wakeSupported } = useWakeWord({
+    enabled: wakeShouldListen,
+    onWake: handleWakeDetected,
+    lang: 'ko-KR',
+  });
+
   // 상태별 색상 — 팅커벨 테마 (요정의 빛)
   const stateColors: Record<TinkerbellState, string> = {
     idle: '#a78bfa',      // 보라빛 (요정 대기)
@@ -1126,6 +1189,39 @@ export function TinkerbellAssistant({
                 <line x1="12" y1="19" x2="12" y2="23" />
               </svg>
             </button>
+
+            {/* Wake Word "팅커벨" 토글 — 항상 듣기 ON/OFF */}
+            {wakeSupported && (
+              <button type="button"
+                onClick={() => setWakeEnabled((v) => !v)}
+                aria-pressed={wakeEnabled}
+                style={{
+                  height: 34, padding: '0 10px', borderRadius: 17, flexShrink: 0,
+                  background: wakeEnabled
+                    ? (wakeListening ? 'rgba(167,139,250,0.18)' : 'rgba(167,139,250,0.10)')
+                    : 'rgba(255,255,255,0.04)',
+                  border: wakeEnabled
+                    ? `1px solid ${color}80`
+                    : '1px solid var(--ct-border, #334155)',
+                  color: wakeEnabled ? color : 'var(--ct-text-muted, #94a3b8)',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  transition: 'all 0.2s',
+                }}
+                title={wakeEnabled
+                  ? (wakeListening ? '"팅커벨"이라고 부르면 즉시 듣기 시작' : '호출 대기 중...')
+                  : '"팅커벨" 호출 비활성. 클릭해서 켜기'}
+              >
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: wakeEnabled && wakeListening ? '#34d399' : (wakeEnabled ? '#fbbf24' : '#64748b'),
+                  boxShadow: wakeEnabled && wakeListening ? '0 0 6px #34d399' : 'none',
+                }} />
+                <span>팅커벨</span>
+              </button>
+            )}
 
             {/* 텍스트 입력 */}
             <input
