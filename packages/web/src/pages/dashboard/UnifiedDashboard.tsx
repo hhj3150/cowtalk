@@ -57,7 +57,7 @@ import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dash
 import { FarmAnimalDrawer } from '@web/components/unified-dashboard/FarmAnimalDrawer';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
-import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
 import { VetDashboard } from '@web/components/unified-dashboard/VetDashboard';
 import { QuarantineDashboard } from '@web/components/unified-dashboard/QuarantineDashboard';
 import { GovAdminDashboard } from '@web/components/unified-dashboard/GovAdminDashboard';
@@ -594,7 +594,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const [sensorChartAnimalId, setSensorChartAnimalId] = useState<string | null>(null);
   const [epidemicClusterId, setEpidemicClusterId] = useState<string | null>(null);
   const [inseminationAnimalId, setInseminationAnimalId] = useState<string | null>(null);
-  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+  // 팅커벨은 AppShell에 글로벌 인스턴스 1개. 페이지에서는 store에 trigger·context set만.
+  const setTinkerbellTrigger = useTinkerbellStore((s) => s.setTrigger);
+  const setTinkerbellDashboardContext = useTinkerbellStore((s) => s.setDashboardContext);
 
   const handleTodoClick = (item: TodoItem): void => {
     // eventType이 있으면 직접 사용 (정확한 드릴다운), 없으면 카테고리 매핑 (fallback)
@@ -629,6 +631,20 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const allAlarms = alarmsData?.alarms ?? [];
   const alarms = roleAlarmFilter ? allAlarms.filter((a) => roleAlarmFilter.includes(a.eventType)) : allAlarms;
   const rankings = rankingData?.rankings ?? [];
+
+  // 데이터 변할 때마다 글로벌 팅커벨 store에 dashboardContext 동기화
+  useEffect(() => {
+    if (data) {
+      setTinkerbellDashboardContext({
+        totalAlarms: alarms.length,
+        criticalCount: alarms.filter((a) => a.severity === 'critical').length,
+        healthIssues: data.herdOverview?.healthIssues ?? 0,
+        farmCount: data.totalFarms ?? 146,
+        animalCount: data.herdOverview?.totalAnimals ?? 7143,
+      });
+    }
+    return () => setTinkerbellDashboardContext(undefined);
+  }, [data, alarms, setTinkerbellDashboardContext]);
 
   // 농장 지도 마커 데이터 변환
   const allFarmMapMarkers = React.useMemo(
@@ -1057,18 +1073,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
         onFarmSelect={(fid) => { setDrawerFarmId(fid); selectFarm(fid); }}
       />
 
-      {/* 팅커벨 AI 어시스턴트 — 사용자가 있는 곳에 항상 머무름 (피터팬의 팅커벨) */}
-      <TinkerbellAssistant
-        alwaysOpen
-        openTrigger={tinkerbellTrigger}
-        dashboardContext={data ? {
-          totalAlarms: alarms.length,
-          criticalCount: alarms.filter((a) => a.severity === 'critical').length,
-          healthIssues: data.herdOverview?.healthIssues ?? 0,
-          farmCount: data.totalFarms ?? 146,
-          animalCount: data.herdOverview?.totalAnimals ?? 7143,
-        } : undefined}
-      />
     </div>
   );
 }

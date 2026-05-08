@@ -911,6 +911,13 @@ export function TinkerbellAssistant({
     }
   }, [wakeEnabled]);
 
+  // onboarding 카드에서 권한을 막 받으면 wake word 즉시 활성화
+  useEffect(() => {
+    const onOnboarded = () => setWakeEnabled(true);
+    window.addEventListener('tinkerbell:onboarded', onOnboarded);
+    return () => window.removeEventListener('tinkerbell:onboarded', onOnboarded);
+  }, []);
+
   const handleWakeDetected = useCallback(() => {
     // 이미 듣고 있거나 말하는 중이면 무시
     if (state === 'listening' || state === 'thinking' || state === 'speaking') return;

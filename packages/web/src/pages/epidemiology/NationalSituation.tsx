@@ -2,7 +2,7 @@
 // NationalMiniMap 공용 컴포넌트 + 시군구 드릴다운 + 주간 추이 차트
 // 드릴다운: 시도 → 시군구 → 농장 → 개체 → AI
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { RiskLevelBadge } from '@web/components/epidemiology/RiskLevelBadge';
@@ -10,7 +10,7 @@ import type { RiskLevel } from '@web/components/epidemiology/RiskLevelBadge';
 import { NationalMiniMap } from '@web/components/epidemiology/NationalMiniMap';
 import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
-import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
 import { apiGet } from '@web/api/client';
 
 // ===========================
@@ -56,7 +56,7 @@ export default function NationalSituation(): React.JSX.Element {
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
   const [drillFarmName, setDrillFarmName] = useState<string>('');
-  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+  const setTinkerbellTrigger = useTinkerbellStore((s) => s.setTrigger);
 
   // 시군구 상세
   const { data: districtData, isLoading: districtLoading } = useQuery({
@@ -92,8 +92,6 @@ export default function NationalSituation(): React.JSX.Element {
     setDrillAnimalId(null);
     setDrillFarmId(null);
   }
-
-  const effectiveTrigger = useMemo(() => tinkerbellTrigger, [tinkerbellTrigger]);
 
   return (
     <div className="space-y-6">
@@ -214,8 +212,6 @@ export default function NationalSituation(): React.JSX.Element {
         />
       )}
 
-      {/* 팅커벨 AI */}
-      <TinkerbellAssistant openTrigger={effectiveTrigger} />
     </div>
   );
 }

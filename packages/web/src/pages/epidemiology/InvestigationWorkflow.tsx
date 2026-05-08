@@ -7,7 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiGet, apiPost, apiPatch } from '@web/api/client';
 import { AnimalDrilldownPanel } from '@web/components/epidemiology/AnimalDrilldownPanel';
-import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
 
 // ===========================
 // 타입
@@ -237,7 +237,7 @@ export default function InvestigationWorkflow(): React.JSX.Element {
   const [selectedAnimal, setSelectedAnimal] = useState<string | null>(null);
   const [drillAnimalId, setDrillAnimalId] = useState<string | null>(null);
   const [drillFarmId, setDrillFarmId] = useState<string | null>(null);
-  const [tinkerbellTrigger, setTinkerbellTrigger] = useState<string | undefined>(undefined);
+  const setTinkerbellTrigger = useTinkerbellStore((s) => s.setTrigger);
   const [showReportForm, setShowReportForm] = useState(false);
   const [newReportType, setNewReportType] = useState<KahisReportType>('initial');
   const [newDiseaseIdx, setNewDiseaseIdx] = useState(0);
@@ -761,8 +761,6 @@ export default function InvestigationWorkflow(): React.JSX.Element {
         />
       )}
 
-      {/* 팅커벨 AI */}
-      <TinkerbellAssistant openTrigger={tinkerbellTrigger} />
     </div>
   );
 }

@@ -13,6 +13,9 @@ import { DrilldownOverlay } from '@web/components/drilldown/DrilldownOverlay';
 import { NotificationDrawer } from '@web/components/notification/NotificationDrawer';
 import { OfflineBanner } from '@web/components/common/OfflineBanner';
 import { SkipNavLink } from '@web/components/common/SkipNavLink';
+import { TinkerbellAssistant } from '@web/components/unified-dashboard/TinkerbellAssistant';
+import { TinkerbellOnboarding } from '@web/components/unified-dashboard/TinkerbellOnboarding';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
 import { countPending } from '@web/lib/offline-queue';
 
 export function AppShell(): React.JSX.Element {
@@ -91,6 +94,18 @@ export function AppShell(): React.JSX.Element {
         onClose={() => setQuickRecordOpen(false)}
         onQueued={handleQueued}
       />
+
+      {/* 글로벌 팅커벨 — 모든 인증 페이지에서 항상 곁에 (alwaysOpen + wake word) */}
+      <GlobalTinkerbell />
+
+      {/* 첫 방문 시 마이크 권한 onboarding (한 번만) */}
+      <TinkerbellOnboarding />
     </div>
   );
+}
+
+function GlobalTinkerbell(): React.JSX.Element {
+  const trigger = useTinkerbellStore((s) => s.trigger);
+  const dashboardContext = useTinkerbellStore((s) => s.dashboardContext);
+  return <TinkerbellAssistant alwaysOpen openTrigger={trigger} dashboardContext={dashboardContext} />;
 }
