@@ -107,6 +107,8 @@ function truncateToSentence(text: string, maxChars: number): string {
 // 기호·단위·약어를 한글 발음으로 풀고, 줄바꿈을 자연스러운 호흡으로 바꾼다.
 
 // 영어 축산 약어 → 한글 발음 (자주 쓰이는 것만)
+// 원칙: "검사"·"점수" 등 한국어 단어가 뒤따르기 쉬운 약어는 음역(씨엠티)이
+// 풀이(캘리포니아 유방염 검사)보다 자연스러움 — "CMT 검사" → "씨엠티 검사".
 const ABBREV_MAP: ReadonlyArray<[RegExp, string]> = [
   [/\bTMR\b/g, '티엠알'],
   [/\bDIM\b/g, '착유 일수'],
@@ -114,21 +116,21 @@ const ABBREV_MAP: ReadonlyArray<[RegExp, string]> = [
   [/\bSCC\b/g, '체세포수'],
   [/\bMUN\b/g, '유중 요소태 질소'],
   [/\bDHI\b/g, '디에이치아이'],
-  [/\bTHI\b/g, '온습도 지수'],
+  [/\bTHI\b/g, '티에이치아이'],
   [/\bSARA\b/g, '아급성 반추위 산증'],
-  [/\bBHB\b/g, '베타하이드록시뷰티르산'],
+  [/\bBHB\b/g, '비에이치비'],
   [/\bNEB\b/g, '에너지 음성 균형'],
   [/\bHPAI\b/g, '고병원성 조류 인플루엔자'],
-  [/\bCMT\b/g, '캘리포니아 유방염 검사'],
+  [/\bCMT\b/g, '씨엠티'],
   [/\bIM\b/g, '근육 주사'],
   [/\bIV\b/g, '정맥 주사'],
   [/\bAI\b/g, '인공 수정'],
   [/\bPCR\b/g, '피시알'],
-  [/\bKAHIS\b/g, '국가 동물 방역 통합 시스템'],
+  [/\bKAHIS\b/g, '카이스'],
   [/\bWOAH\b/g, '세계 동물 보건 기구'],
   [/\bR0\b/g, '기초 감염 재생산 지수'],
-  [/\bNDF\b/g, '중성 세제 불용성 섬유'],
-  [/\bDCAD\b/g, '음이온 양이온 차이'],
+  [/\bNDF\b/g, '엔디에프'],
+  [/\bDCAD\b/g, '디캐드'],
   [/\bFCR\b/g, '사료 효율'],
 ];
 
@@ -137,13 +139,15 @@ function naturalizeUnitsAndSymbols(text: string): string {
   return text
     // 온도: 38.5°C, 38.5℃ → "38.5도"
     .replace(/(\d+(?:\.\d+)?)\s*[°℃]C?/g, '$1도')
-    // 분/일, kg/일, L/일 같은 슬래시 단위
-    .replace(/(\d+)kg\s*\/\s*일/g, '$1킬로그램')
-    .replace(/(\d+)L\s*\/\s*일/g, '$1리터')
-    .replace(/(\d+)분\s*\/\s*일/g, '$1분')
-    // 일반 슬래시 (수/분 같은 분수형이 아닌 일반 슬래시)는 "또는"
-    .replace(/\s\/\s/g, ' 또는 ')
-    // 화살표 → "그래서" 또는 단순 쉼표
+    // "단위/일" 형태는 "매일 단위" 식으로 자연화
+    .replace(/(\d+)\s*kg\s*\/\s*일/g, '하루 $1킬로그램')
+    .replace(/(\d+)\s*L\s*\/\s*일/g, '하루 $1리터')
+    .replace(/(\d+)\s*분\s*\/\s*일/g, '하루 $1분')
+    .replace(/(\d+)\s*회\s*\/\s*일/g, '하루 $1회')
+    // 일반 슬래시 — "A / B / C" 같은 단순 구분은 쉼표
+    // (분수 1/2 같은 건 거의 등장하지 않으므로 쉼표가 안전)
+    .replace(/\s+\/\s+/g, ', ')
+    // 화살표 → 자연 호흡(쉼표)
     .replace(/\s*→\s*/g, ', ')
     .replace(/\s*=>\s*/g, ', ')
     // 대시·하이픈을 자연 호흡으로
@@ -152,12 +156,12 @@ function naturalizeUnitsAndSymbols(text: string): string {
     // 괄호 안 짧은 부연은 쉼표로 (2~25자 한글/숫자 위주)
     .replace(/\s*\(([가-힣A-Za-z0-9\s.,]{2,25})\)/g, ', $1')
     // 단순 단위
-    .replace(/(\d+)L\b/g, '$1리터')
-    .replace(/(\d+)mL\b/g, '$1밀리리터')
-    .replace(/(\d+)mg\b/g, '$1밀리그램')
-    .replace(/(\d+)kg\b/g, '$1킬로그램')
-    .replace(/(\d+)cm\b/g, '$1센티미터')
-    .replace(/(\d+)km\b/g, '$1킬로미터');
+    .replace(/(\d+)\s*L\b/g, '$1리터')
+    .replace(/(\d+)\s*mL\b/g, '$1밀리리터')
+    .replace(/(\d+)\s*mg\b/g, '$1밀리그램')
+    .replace(/(\d+)\s*kg\b/g, '$1킬로그램')
+    .replace(/(\d+)\s*cm\b/g, '$1센티미터')
+    .replace(/(\d+)\s*km\b/g, '$1킬로미터');
 }
 
 function expandAbbreviations(text: string): string {
