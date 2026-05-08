@@ -102,10 +102,86 @@ function truncateToSentence(text: string, maxChars: number): string {
   return text.slice(0, maxChars).trim() + '...';
 }
 
-// === 마크다운 제거 (TTS는 ** ## - 같은 기호를 그대로 읽음) ===
+// === TTS 자연어 전처리 — 마크다운 제거 + 자연 발화로 변환 ===
+// 원칙: 사람이 친구에게 말하듯 흘러가는 음성을 만든다.
+// 기호·단위·약어를 한글 발음으로 풀고, 줄바꿈을 자연스러운 호흡으로 바꾼다.
+
+// 영어 축산 약어 → 한글 발음 (자주 쓰이는 것만)
+const ABBREV_MAP: ReadonlyArray<[RegExp, string]> = [
+  [/\bTMR\b/g, '티엠알'],
+  [/\bDIM\b/g, '착유 일수'],
+  [/\bBCS\b/g, '체형 점수'],
+  [/\bSCC\b/g, '체세포수'],
+  [/\bMUN\b/g, '유중 요소태 질소'],
+  [/\bDHI\b/g, '디에이치아이'],
+  [/\bTHI\b/g, '온습도 지수'],
+  [/\bSARA\b/g, '아급성 반추위 산증'],
+  [/\bBHB\b/g, '베타하이드록시뷰티르산'],
+  [/\bNEB\b/g, '에너지 음성 균형'],
+  [/\bHPAI\b/g, '고병원성 조류 인플루엔자'],
+  [/\bCMT\b/g, '캘리포니아 유방염 검사'],
+  [/\bIM\b/g, '근육 주사'],
+  [/\bIV\b/g, '정맥 주사'],
+  [/\bAI\b/g, '인공 수정'],
+  [/\bPCR\b/g, '피시알'],
+  [/\bKAHIS\b/g, '국가 동물 방역 통합 시스템'],
+  [/\bWOAH\b/g, '세계 동물 보건 기구'],
+  [/\bR0\b/g, '기초 감염 재생산 지수'],
+  [/\bNDF\b/g, '중성 세제 불용성 섬유'],
+  [/\bDCAD\b/g, '음이온 양이온 차이'],
+  [/\bFCR\b/g, '사료 효율'],
+];
+
+// 단위·기호 자연 발음
+function naturalizeUnitsAndSymbols(text: string): string {
+  return text
+    // 온도: 38.5°C, 38.5℃ → "38.5도"
+    .replace(/(\d+(?:\.\d+)?)\s*[°℃]C?/g, '$1도')
+    // 분/일, kg/일, L/일 같은 슬래시 단위
+    .replace(/(\d+)kg\s*\/\s*일/g, '$1킬로그램')
+    .replace(/(\d+)L\s*\/\s*일/g, '$1리터')
+    .replace(/(\d+)분\s*\/\s*일/g, '$1분')
+    // 일반 슬래시 (수/분 같은 분수형이 아닌 일반 슬래시)는 "또는"
+    .replace(/\s\/\s/g, ' 또는 ')
+    // 화살표 → "그래서" 또는 단순 쉼표
+    .replace(/\s*→\s*/g, ', ')
+    .replace(/\s*=>\s*/g, ', ')
+    // 대시·하이픈을 자연 호흡으로
+    .replace(/—/g, ', ')
+    .replace(/\s--\s/g, ', ')
+    // 괄호 안 짧은 부연은 쉼표로 (2~25자 한글/숫자 위주)
+    .replace(/\s*\(([가-힣A-Za-z0-9\s.,]{2,25})\)/g, ', $1')
+    // 단순 단위
+    .replace(/(\d+)L\b/g, '$1리터')
+    .replace(/(\d+)mL\b/g, '$1밀리리터')
+    .replace(/(\d+)mg\b/g, '$1밀리그램')
+    .replace(/(\d+)kg\b/g, '$1킬로그램')
+    .replace(/(\d+)cm\b/g, '$1센티미터')
+    .replace(/(\d+)km\b/g, '$1킬로미터');
+}
+
+function expandAbbreviations(text: string): string {
+  let out = text;
+  for (const [re, replacement] of ABBREV_MAP) {
+    out = out.replace(re, replacement);
+  }
+  return out;
+}
+
+// 줄바꿈을 자연스러운 호흡으로
+function naturalizeBreaks(text: string): string {
+  return text
+    .replace(/\n{2,}/g, '. ')   // 빈 줄 = 문장 종료
+    .replace(/\n/g, ', ')        // 단일 줄바꿈 = 짧은 호흡
+    .replace(/,\s*\./g, '.')     // ", ." 정리
+    .replace(/\.\s*\./g, '.')    // ".." 정리
+    .replace(/,\s*,/g, ',')      // ",," 정리
+    .replace(/\s+/g, ' ')        // 다중 공백 정리
+    .trim();
+}
 
 function stripMarkdownForTts(text: string): string {
-  return text
+  let out = text
     .replace(/```[\s\S]*?```/g, '') // 코드 블록 제거
     .replace(/`([^`]+)`/g, '$1')     // 인라인 코드
     .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
@@ -114,9 +190,18 @@ function stripMarkdownForTts(text: string): string {
     .replace(/^[-*]\s+/gm, '')          // 리스트 - *
     .replace(/^\d+\.\s+/gm, '')         // 번호 리스트
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 링크
-    .replace(/🔴|🟡|🟢|🔵|⚠️|✅|❌|🛡️|✓|×/g, '') // 이모지 (TTS 부자연)
-    .replace(/\n{3,}/g, '\n\n')         // 과도한 빈 줄
-    .trim();
+    // 이모지·픽토그램 광범위 제거 (TTS에서 부자연)
+    .replace(/[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}]|[\u{2300}-\u{23FF}]|[\u{1F000}-\u{1F2FF}]/gu, '')
+    .replace(/✓|×|✔|✗/g, '');
+
+  // 단위·기호 자연 발음
+  out = naturalizeUnitsAndSymbols(out);
+  // 영어 약어 → 한글 발음
+  out = expandAbbreviations(out);
+  // 줄바꿈을 자연 호흡으로
+  out = naturalizeBreaks(out);
+
+  return out;
 }
 
 // === 메인: synthesize ===
@@ -171,6 +256,7 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
       input: finalText,
       voice,
       response_format: format,
+      speed: config.OPENAI_TTS_SPEED,
     }),
   });
 
