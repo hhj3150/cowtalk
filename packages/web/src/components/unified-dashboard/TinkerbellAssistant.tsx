@@ -966,7 +966,7 @@ export function TinkerbellAssistant({
   // wake word는 alwaysOpen + wake 활성화 + (본격 입력 아닐 때) 청취
   // 답변 중·생각 중에도 listening 상태가 아니면 wake/interrupt 청취 가능
   const wakeShouldListen = alwaysOpen && wakeEnabled && state !== 'listening';
-  const { listening: wakeListening, supported: wakeSupported } = useWakeWord({
+  const { listening: wakeListening, supported: wakeSupported, platformLimitation } = useWakeWord({
     enabled: wakeShouldListen,
     onWake: handleWakeDetected,
     onInterrupt: handleInterruptDetected,
@@ -1210,7 +1210,7 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* Wake Word "팅커벨" 토글 — 항상 듣기 ON/OFF */}
+            {/* Wake Word "팅커벨" 토글 — iOS는 미지원이라 비활성 안내, Android/데스크톱은 정상 동작 */}
             {wakeSupported && (
               <button type="button"
                 onClick={() => setWakeEnabled((v) => !v)}
@@ -1231,7 +1231,11 @@ export function TinkerbellAssistant({
                   transition: 'all 0.2s',
                 }}
                 title={wakeEnabled
-                  ? (wakeListening ? '"팅커벨"이라고 부르면 즉시 듣기 시작' : '호출 대기 중...')
+                  ? (wakeListening
+                      ? (isMobile
+                          ? '"팅커벨"이라고 부르면 즉시 듣기 시작 — 화면이 꺼지면 청취가 멈춥니다'
+                          : '"팅커벨"이라고 부르면 즉시 듣기 시작')
+                      : '호출 대기 중...')
                   : '"팅커벨" 호출 비활성. 클릭해서 켜기'}
               >
                 <span style={{
@@ -1241,6 +1245,25 @@ export function TinkerbellAssistant({
                 }} />
                 <span>팅커벨</span>
               </button>
+            )}
+            {/* iOS Safari/Chrome — wake word 미지원, 마이크 버튼 안내 */}
+            {!wakeSupported && platformLimitation === 'ios' && (
+              <span
+                style={{
+                  height: 34, padding: '0 10px', borderRadius: 17, flexShrink: 0,
+                  background: 'rgba(251,191,36,0.10)',
+                  border: '1px solid rgba(251,191,36,0.35)',
+                  color: '#fbbf24',
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  whiteSpace: 'nowrap',
+                }}
+                title="iOS는 음성 호출이 제한됩니다. 마이크 버튼을 눌러 질문하세요."
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} />
+                마이크 버튼
+              </span>
             )}
 
             {/* 텍스트 입력 */}
