@@ -58,8 +58,20 @@ interface UseWakeWordOptions {
 interface UseWakeWordResult {
   readonly listening: boolean;
   readonly supported: boolean;
+  /** iOS Safari/Chrome에서는 SpeechRecognition continuous가 사실상 불가 — wake word가 작동하지 않음 */
+  readonly platformLimitation: 'ios' | null;
   readonly resume: () => void;
   readonly pause: () => void;
+}
+
+// iOS는 WebKit 기반 (Safari, Chrome iOS, Edge iOS 모두) — SpeechRecognition continuous 미지원에 가까움
+function detectIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ 는 platform이 MacIntel + 멀티터치
+  if (navigator.platform === 'MacIntel' && (navigator as { maxTouchPoints?: number }).maxTouchPoints && (navigator as { maxTouchPoints: number }).maxTouchPoints > 1) return true;
+  return false;
 }
 
 export function useWakeWord({
@@ -91,7 +103,10 @@ export function useWakeWord({
     enabledRef.current = enabled;
   }, [enabled]);
 
-  const supported = typeof window !== 'undefined' &&
+  const isIOS = detectIOS();
+  const platformLimitation: 'ios' | null = isIOS ? 'ios' : null;
+  // iOS는 WebKit이 SpeechRecognition continuous를 사실상 지원하지 않으므로 supported=false
+  const supported = !isIOS && typeof window !== 'undefined' &&
     Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
 
   const stopRecognition = useCallback(() => {
@@ -203,6 +218,21 @@ export function useWakeWord({
     };
   }, [enabled, supported, startRecognition, stopRecognition]);
 
+  // 탭 백그라운드 시 wake recognition 일시 정지, 복귀 시 재개
+  // (배터리·CPU 절약 + 모바일 백그라운드 마이크 권한 회피)
+  useEffect(() => {
+    if (!supported) return;
+    const onVis = () => {
+      if (document.hidden) {
+        stopRecognition();
+      } else if (enabledRef.current) {
+        startRecognition();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [supported, startRecognition, stopRecognition]);
+
   const resume = useCallback(() => {
     if (enabledRef.current) {
       startRecognition();
@@ -213,5 +243,5 @@ export function useWakeWord({
     stopRecognition();
   }, [stopRecognition]);
 
-  return { listening, supported, resume, pause };
+  return { listening, supported, platformLimitation, resume, pause };
 }

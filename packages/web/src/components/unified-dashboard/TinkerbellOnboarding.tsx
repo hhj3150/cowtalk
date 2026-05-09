@@ -13,11 +13,20 @@ const WAKE_KEY = 'cowtalk:tinkerbell:wake-enabled';
 
 type PermState = 'unknown' | 'prompt' | 'granted' | 'denied';
 
+function detectIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  if (navigator.platform === 'MacIntel' && (navigator as { maxTouchPoints?: number }).maxTouchPoints && (navigator as { maxTouchPoints: number }).maxTouchPoints > 1) return true;
+  return false;
+}
+
 export function TinkerbellOnboarding(): React.JSX.Element | null {
   const [visible, setVisible] = useState(false);
   const [permState, setPermState] = useState<PermState>('unknown');
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const isIOS = detectIOS();
 
   useEffect(() => {
     let cancelled = false;
@@ -147,16 +156,27 @@ export function TinkerbellOnboarding(): React.JSX.Element | null {
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700 }}>팅커벨이 곁에서 들어줄까요?</div>
+            <div style={{ fontSize: 17, fontWeight: 700 }}>
+              {isIOS ? '팅커벨에게 음성으로 말해요' : '팅커벨이 곁에서 들어줄까요?'}
+            </div>
             <div style={{ fontSize: 12, color: 'var(--ct-text-muted, #94a3b8)', marginTop: 2 }}>
-              피터팬의 팅커벨처럼 — 부르면 바로 응답해요
+              {isIOS ? 'iPhone/iPad는 마이크 버튼을 눌러 질문' : '피터팬의 팅커벨처럼 — 부르면 바로 응답해요'}
             </div>
           </div>
         </div>
 
         <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ct-text-secondary, #cbd5e1)', marginBottom: 16 }}>
-          <strong>"팅커벨"</strong>이라고 부르면 음성 마이크가 자동으로 켜져 질문을 받아요.
-          외양간에서, 운전 중에, 손이 자유롭지 않을 때 편하게 쓸 수 있어요.
+          {isIOS ? (
+            <>
+              iPhone/iPad는 브라우저 정책상 <strong>"팅커벨" 호명</strong>이 작동하지 않아요.
+              화면 하단의 <strong>마이크 버튼</strong>을 누른 뒤 질문하시면 음성으로 답해드려요.
+            </>
+          ) : (
+            <>
+              <strong>"팅커벨"</strong>이라고 부르면 음성 마이크가 자동으로 켜져 질문을 받아요.
+              외양간에서, 운전 중에, 손이 자유롭지 않을 때 편하게 쓸 수 있어요.
+            </>
+          )}
         </div>
 
         <div style={{
