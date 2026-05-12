@@ -38,13 +38,45 @@ interface TinkerbellMessage {
   readonly timestamp: Date;
 }
 
+// Artifacts: SVG 코드블록을 안전하게 렌더링 (XSS 방지)
+// 허용: 표준 SVG 태그·속성, viewBox, fill, stroke 등
+// 차단: <script>, on* 이벤트 핸들러, javascript: URL, <foreignObject> 안의 HTML 스크립트
+function sanitizeSvg(rawSvg: string): string {
+  let svg = rawSvg.trim();
+  // <script> 태그 제거 (중첩 케이스 포함)
+  svg = svg.replace(/<script[\s\S]*?<\/script>/gi, '');
+  svg = svg.replace(/<script[^>]*\/?>/gi, '');
+  // 이벤트 핸들러 속성 제거 (onclick, onmouseover, onload, on... 일체)
+  svg = svg.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');
+  svg = svg.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '');
+  svg = svg.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
+  // javascript: URL 제거
+  svg = svg.replace(/javascript\s*:/gi, '');
+  // foreignObject (HTML 스크립트 임베드 통로) 제거
+  svg = svg.replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '');
+  // 반응형: 최상위 <svg> 의 width/height 속성 제거 → 컨테이너 폭에 맞게 스케일
+  svg = svg.replace(/(<svg\b[^>]*?)\swidth\s*=\s*"[^"]*"/i, '$1');
+  svg = svg.replace(/(<svg\b[^>]*?)\sheight\s*=\s*"[^"]*"/i, '$1');
+  // <svg> 에 style 강제 추가 (이미 style 속성 있으면 그대로 두고, 없으면 추가)
+  if (!/<svg\b[^>]*\sstyle\s*=/.test(svg)) {
+    svg = svg.replace(/<svg\b/i, '<svg style="width:100%;height:auto;display:block"');
+  }
+  return svg;
+}
+
+interface CodeBlockEntry {
+  readonly content: string;
+  readonly lang: string;
+}
+
 // ── 경량 Markdown 렌더러 ──
-// 외부 라이브러리 없이 핵심 패턴만 지원
+// 외부 라이브러리 없이 핵심 패턴만 지원 + SVG artifact 렌더링
 function MarkdownText({ text }: { text: string }): React.JSX.Element {
-  // 코드블록 보호: ```...``` → 플레이스홀더로 치환 후 처리
-  const codeBlocks: string[] = [];
-  const protected1 = text.replace(/```[\s\S]*?```/g, (match) => {
-    codeBlocks.push(match.slice(3, -3).replace(/^\w*\n/, ''));
+  // 코드블록 보호: ```lang\n...``` → 플레이스홀더로 치환 후 처리.
+  // 언어 식별자 추출 (svg / json / 기타) — SVG는 인라인 렌더로 분기
+  const codeBlocks: CodeBlockEntry[] = [];
+  const protected1 = text.replace(/```([a-z]*)\n?([\s\S]*?)```/gi, (_match, lang: string, body: string) => {
+    codeBlocks.push({ content: body, lang: (lang ?? '').toLowerCase() });
     return `\x00CODE${codeBlocks.length - 1}\x00`;
   });
 
@@ -82,7 +114,27 @@ function MarkdownText({ text }: { text: string }): React.JSX.Element {
       // eslint-disable-next-line no-control-regex
       const codeMatch = /\x00CODE(\d+)\x00/.exec(part);
       if (codeMatch) {
-        const code = codeBlocks[Number(codeMatch[1])] ?? '';
+        const entry = codeBlocks[Number(codeMatch[1])];
+        if (!entry) return part;
+        // SVG artifact — 인라인 렌더 (sanitize)
+        if (entry.lang === 'svg') {
+          const clean = sanitizeSvg(entry.content);
+          return (
+            <div key={i} style={{
+              margin: '6px 0',
+              padding: 8,
+              background: 'rgba(0,0,0,0.2)',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <div
+                style={{ width: '100%', overflow: 'hidden' }}
+                // SVG는 sanitize 후 dangerouslySetInnerHTML 로 인라인 — script/on*/javascript: 제거됨
+                dangerouslySetInnerHTML={{ __html: clean }}
+              />
+            </div>
+          );
+        }
         return (
           <pre key={i} style={{
             background: 'rgba(0,0,0,0.3)',
@@ -94,7 +146,7 @@ function MarkdownText({ text }: { text: string }): React.JSX.Element {
             margin: '4px 0',
             whiteSpace: 'pre-wrap',
           }}>
-            {code}
+            {entry.content}
           </pre>
         );
       }
