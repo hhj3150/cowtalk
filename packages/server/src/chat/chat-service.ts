@@ -11,7 +11,7 @@ import {
 import { resolveContext, type DetectedType } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
-import { getLabelContextForEventType, formatLabelContext } from '../ai-brain/label-context.js';
+import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
@@ -73,21 +73,25 @@ export async function handleChatMessage(
     context = { type: 'general' } as typeof context;
   }
 
-  // 2. 레이블 컨텍스트 조회 (집단지성 — 실패 무시)
+  // 2. 레이블 컨텍스트 조회 (계층 집단지성 — 실패 무시)
   let labelContext: string | undefined;
   try {
     if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
       const primaryEvent = context.profile.activeEvents[0];
       if (primaryEvent) {
-        const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
-        if (summary) {
-          labelContext = formatLabelContext(summary, primaryEvent.type);
+        const hierarchical = await getHierarchicalLabelContext(primaryEvent.type, farmId);
+        const formatted = formatHierarchicalLabelContext(hierarchical, primaryEvent.type);
+        if (formatted) {
+          labelContext = formatted;
         }
       }
     }
   } catch {
     // 레이블 조회 실패는 비치명적
   }
+  // 미사용 import 제거 방지 — getLabelContextForEventType/formatLabelContext는 다른 모듈에서 호출 가능
+  void getLabelContextForEventType;
+  void formatLabelContext;
 
   // 3. 프롬프트 빌드
   const prompt = buildConversationPrompt(
@@ -214,29 +218,34 @@ export async function handleChatStream(
     context = { type: 'general' } as typeof context;
   }
 
-  // 레이블 컨텍스트 — 후보 이벤트 타입을 한 번에 병렬 조회 (직렬 for loop 제거)
+  // 레이블 컨텍스트 — 계층 집계 (이 농장 → 이 시도 → 국가).
+  // 데이터가 쌓일수록 그 지역·그 농장에 특화된 답변이 나오도록 4단계로 조회.
   let labelContext: string | undefined;
   try {
     if (context.type === 'animal' && context.profile.activeEvents.length > 0) {
       const primaryEvent = context.profile.activeEvents[0];
       if (primaryEvent) {
-        const summary = await getLabelContextForEventType(primaryEvent.type, farmId);
-        if (summary) {
-          labelContext = formatLabelContext(summary, primaryEvent.type);
+        const hierarchical = await getHierarchicalLabelContext(primaryEvent.type, farmId);
+        const formatted = formatHierarchicalLabelContext(hierarchical, primaryEvent.type);
+        if (formatted) {
+          labelContext = formatted;
         }
       }
     }
 
-    // 농장 단위 최근 학습 패턴 — 4개 이벤트 타입을 병렬로 (가장 풍부한 첫 hit 사용)
+    // 농장 단위 최근 학습 패턴 — 후보 이벤트 타입 중 데이터가 있는 첫 항목.
+    // 계층 집계로 농장 → 시도 → 국가 모두 포함.
     if (!labelContext && farmId) {
       const commonTypes = ['temperature_high', 'rumination_decrease', 'estrus', 'health_general'];
       const results = await Promise.all(
-        commonTypes.map((t) => getLabelContextForEventType(t, farmId).catch(() => null)),
+        commonTypes.map((t) => getHierarchicalLabelContext(t, farmId).catch(() => null)),
       );
       for (let i = 0; i < commonTypes.length; i++) {
-        const summary = results[i];
-        if (summary) {
-          labelContext = formatLabelContext(summary, commonTypes[i]!);
+        const ctx = results[i];
+        if (!ctx) continue;
+        const formatted = formatHierarchicalLabelContext(ctx, commonTypes[i]!);
+        if (formatted) {
+          labelContext = formatted;
           break;
         }
       }
