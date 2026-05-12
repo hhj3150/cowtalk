@@ -307,6 +307,16 @@ const WAKE_GREETINGS: Readonly<Record<string, { text: string; lang: string }>> =
   mn: { text: 'За, доктор Ха', lang: 'mn-MN' },
 };
 
+// AI 생각 시간 음성 필러 — 사용자가 질문 보낸 직후 즉각 발화.
+// 응답 생성(5~15초) 동안 무음이 되지 않도록 자연스러운 acknowledgement.
+const THINKING_FILLERS: Readonly<Record<string, { text: string; lang: string }>> = {
+  ko: { text: '잠시만요', lang: 'ko-KR' },
+  uz: { text: "Bir daqiqa", lang: 'uz-UZ' },
+  en: { text: 'One moment', lang: 'en-US' },
+  ru: { text: 'Минуточку', lang: 'ru-RU' },
+  mn: { text: 'Хүлээгээрэй', lang: 'mn-MN' },
+};
+
 // Chrome TTS 15초 끊김 방지: 문장 단위로 분할하여 순차 재생
 function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
   const sentences = text.split(/(?<=[.!?。]\s)/);
@@ -606,6 +616,13 @@ export function TinkerbellAssistant({
     setState('thinking');
     setStreamText('');
     setToolActivities([]);
+
+    // 음성 모드: AI 응답 생성 동안 무음이 되지 않도록 즉시 짧은 필러 발화.
+    // SpeechSynthesis는 외부 API 없이 0ms 시작 → 체감 응답성 향상.
+    if (voiceOutput.voiceMode) {
+      const filler = THINKING_FILLERS[uiLang] ?? THINKING_FILLERS.ko!;
+      speakImmediate(filler.text, filler.lang);
+    }
 
     // 학습 현황 질문 감지 → 소버린 통계 컨텍스트 주입
     const isLearningQuery = /학습|배웠|소버린|정확도|오탐|레이블|지식.*강화/i.test(question);
