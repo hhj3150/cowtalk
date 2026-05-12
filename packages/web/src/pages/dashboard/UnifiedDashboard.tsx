@@ -770,7 +770,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <FarmMapWidget
               markers={farmMapMarkers}
               selectedFarmId={selectedFarmId}
-              onFarmClick={(fid) => navigate(`/farm/${fid}`)}
+              onFarmClick={(fid) => selectFarm(fid)}
               totalHeadOverride={data?.herdOverview?.totalAnimals}
             />
           </SectionErrorBoundary>
