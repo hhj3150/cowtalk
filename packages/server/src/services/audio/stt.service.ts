@@ -1,0 +1,84 @@
+// OpenAI Whisper — 오디오 바이너리 → 텍스트 전사
+// 사용처: /api/audio/transcribe (audio.routes.ts)
+//
+// iOS Safari Web Speech API 한계 우회용. MediaRecorder로 녹음 → 서버로 업로드 → Whisper 전사.
+// Whisper는 우즈벡어·한국어·러시아어·몽골어·영어 모두 지원.
+
+import { config } from '../../config/index.js';
+import { logger } from '../../lib/logger.js';
+
+export interface TranscribeOptions {
+  readonly audio: Buffer;
+  readonly contentType: string;          // 예: 'audio/webm' / 'audio/mp4' / 'audio/m4a'
+  readonly language?: string;            // ISO-639-1 ('ko', 'uz', 'ru', 'en', 'mn') — 정확도 향상
+  readonly prompt?: string;              // 도메인 단어 힌트 (예: '한우 술탄팜 발정 분만')
+}
+
+export interface TranscribeResult {
+  readonly text: string;
+  readonly language?: string;
+  readonly duration?: number;
+}
+
+const WHISPER_MODEL = 'whisper-1';
+const MAX_BYTES = 25 * 1024 * 1024; // OpenAI Whisper 한도 25MB
+
+export async function transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
+  const apiKey = config.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY 미설정 — Whisper STT 사용 불가');
+  }
+
+  if (opts.audio.length === 0) {
+    throw new Error('빈 오디오 데이터');
+  }
+  if (opts.audio.length > MAX_BYTES) {
+    throw new Error(`오디오 크기가 너무 큼 (${opts.audio.length} bytes, 한도 25MB)`);
+  }
+
+  // FormData 구성 — Node 18+ 글로벌 FormData/Blob 사용
+  const ext = inferExt(opts.contentType);
+  const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
+  const form = new FormData();
+  form.append('file', blob, `recording.${ext}`);
+  form.append('model', WHISPER_MODEL);
+  if (opts.language) form.append('language', opts.language);
+  if (opts.prompt) form.append('prompt', opts.prompt);
+  form.append('response_format', 'json');
+
+  const startedAt = Date.now();
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    logger.error({ status: response.status, errBody: errBody.slice(0, 200) }, '[stt.service] Whisper 호출 실패');
+    throw new Error(`OpenAI Whisper 실패 (HTTP ${response.status})`);
+  }
+
+  const data = await response.json() as { text?: string; language?: string; duration?: number };
+  const elapsed = Date.now() - startedAt;
+  logger.info({ elapsed, lang: data.language, textLen: (data.text ?? '').length, audioBytes: opts.audio.length }, '[stt.service] Whisper 전사 완료');
+
+  return {
+    text: (data.text ?? '').trim(),
+    language: data.language,
+    duration: data.duration,
+  };
+}
+
+function inferExt(contentType: string): string {
+  const ct = contentType.toLowerCase();
+  if (ct.includes('webm')) return 'webm';
+  if (ct.includes('ogg')) return 'ogg';
+  if (ct.includes('mp4') || ct.includes('m4a')) return 'm4a';
+  if (ct.includes('wav')) return 'wav';
+  if (ct.includes('mpeg') || ct.includes('mp3')) return 'mp3';
+  if (ct.includes('flac')) return 'flac';
+  return 'webm'; // 기본값 — iOS Safari MediaRecorder는 audio/mp4, Android는 audio/webm
+}
