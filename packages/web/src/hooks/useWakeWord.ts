@@ -104,10 +104,11 @@ export function useWakeWord({
   }, [enabled]);
 
   const isIOS = detectIOS();
-  // iOS는 continuous=true가 작동하지 않으므로 rolling 재시작 패턴으로 우회 (아래 startRecognition 참조).
-  // SpeechRecognition 자체가 있으면 supported=true. UI에선 platformLimitation으로 안내만 표시.
+  // iOS WebKit은 SpeechRecognition continuous를 사실상 지원하지 않고, 짧은 세션을 롤링 재시작하면
+  // 매번 마이크 인디케이터가 깜빡이고 "마이크 허용됨" OS 알림이 사용자를 방해한다.
+  // → iOS는 wake word 비활성화. 대신 마이크 버튼 한 번 탭하여 명시적으로 듣기 시작.
   const platformLimitation: 'ios' | null = isIOS ? 'ios' : null;
-  const supported = typeof window !== 'undefined' &&
+  const supported = !isIOS && typeof window !== 'undefined' &&
     Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
 
   const stopRecognition = useCallback(() => {
