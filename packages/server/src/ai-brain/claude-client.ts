@@ -235,6 +235,8 @@ export interface ChatToolOptions {
   readonly useDeepThinking?: boolean;
   /** Vision: 첨부 이미지를 첫 user message의 content blocks 앞에 image 블록으로 삽입 */
   readonly images?: readonly { data: string; mimeType: ImageMediaType }[];
+  /** Files: 첨부 PDF — Claude 네이티브 document block (base64) */
+  readonly pdfs?: readonly { data: string; filename?: string }[];
 }
 
 export async function callClaudeForChatWithTools(
@@ -252,12 +254,19 @@ export async function callClaudeForChatWithTools(
 
   let fullText = '';
 
-  // Vision: 이미지가 있으면 content blocks 형태로 첫 user message 구성
-  // [image, image, ..., text] 순서 — Anthropic 권장 (이미지가 텍스트 컨텍스트보다 먼저 인식됨)
+  // Vision + Files: 이미지·PDF가 있으면 content blocks 형태로 첫 user message 구성.
+  // 순서: [document(pdf), document(pdf), ..., image, image, ..., text] — Anthropic 권장
+  const hasImages = !!(options?.images && options.images.length > 0);
+  const hasPdfs = !!(options?.pdfs && options.pdfs.length > 0);
   const initialUserContent: string | Anthropic.MessageParam['content'] =
-    options?.images && options.images.length > 0
+    hasImages || hasPdfs
       ? [
-          ...options.images.map((img) => ({
+          ...(options?.pdfs ?? []).map((pdf) => ({
+            type: 'document' as const,
+            source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: pdf.data },
+            ...(pdf.filename ? { title: pdf.filename } : {}),
+          })),
+          ...(options?.images ?? []).map((img) => ({
             type: 'image' as const,
             source: { type: 'base64' as const, media_type: img.mimeType, data: img.data },
           })),

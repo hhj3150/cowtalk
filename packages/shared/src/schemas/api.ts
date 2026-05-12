@@ -170,6 +170,18 @@ const chatImageSchema = z.object({
   mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
 });
 
+// Files: 첨부 문서 — PDF는 Claude API 네이티브 (document block). Excel·CSV는 서버에서 텍스트로 파싱.
+const chatDocumentSchema = z.object({
+  data: z.string().min(1).max(15_000_000), // base64 max ~10MB raw
+  mimeType: z.enum([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls (legacy)
+    'text/csv',
+  ]),
+  filename: z.string().min(1).max(255).optional(),
+});
+
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
   farmId: z.string().uuid().optional(),
@@ -184,6 +196,8 @@ export const chatMessageSchema = z.object({
   uiLang: z.enum(['ko', 'en', 'uz', 'ru', 'mn']).optional(),
   // Vision: 사용자가 첨부한 이미지 (소 사진·진단서 등). Claude Vision으로 분석.
   images: z.array(chatImageSchema).max(5).optional(),
+  // Files: 사용자가 첨부한 문서 (PDF·Excel·CSV). PDF는 Claude 네이티브, 나머지는 서버에서 텍스트로.
+  documents: z.array(chatDocumentSchema).max(3).optional(),
 });
 
 // === 내보내기 ===

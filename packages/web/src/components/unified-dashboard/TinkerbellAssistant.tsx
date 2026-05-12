@@ -31,10 +31,19 @@ interface AttachedImage {
   readonly mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 }
 
+// Files: 첨부 문서 (PDF/Excel/CSV)
+interface AttachedDocument {
+  readonly base64: string; // base64 인코딩 (data URL prefix 제외)
+  readonly mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv';
+  readonly filename: string;
+  readonly sizeBytes: number;
+}
+
 interface TinkerbellMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
   readonly images?: readonly AttachedImage[];
+  readonly documents?: readonly AttachedDocument[];
   readonly timestamp: Date;
 }
 
@@ -580,6 +589,7 @@ export function TinkerbellAssistant({
   });
   const [streamText, setStreamText] = useState(''); // 실시간 스트리밍 중인 텍스트
   const [pendingImages, setPendingImages] = useState<readonly AttachedImage[]>([]); // 다음 전송에 첨부될 이미지
+  const [pendingDocuments, setPendingDocuments] = useState<readonly AttachedDocument[]>([]); // 다음 전송에 첨부될 문서
   const [toolActivities, setToolActivities] = useState<readonly ToolActivity[]>([]); // 도구 호출 상태
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
@@ -665,16 +675,19 @@ export function TinkerbellAssistant({
 
   // AI에 질문 전송 (fetch ReadableStream 실시간 스트리밍)
   const askTinkerbell = useCallback(async (question: string) => {
-    // Vision: 전송 시점의 이미지 스냅샷을 메시지에 함께 첨부 (UI에 표시)
+    // Vision + Files: 전송 시점의 첨부 스냅샷을 메시지에 함께 보관 (UI 표시)
     const attachedImagesSnapshot = pendingImages;
+    const attachedDocumentsSnapshot = pendingDocuments;
     const userMsg: TinkerbellMessage = {
       role: 'user',
       content: question,
       timestamp: new Date(),
       images: attachedImagesSnapshot.length > 0 ? attachedImagesSnapshot : undefined,
+      documents: attachedDocumentsSnapshot.length > 0 ? attachedDocumentsSnapshot : undefined,
     };
     setMessages((prev) => [...prev, userMsg]);
-    setPendingImages([]); // 전송 후 첨부 해제
+    setPendingImages([]);
+    setPendingDocuments([]);
     setState('thinking');
     setStreamText('');
     setToolActivities([]);
@@ -712,6 +725,14 @@ export function TinkerbellAssistant({
           ? attachedImagesSnapshot.map((img) => ({
               data: img.dataUrl.split(',')[1] ?? '',
               mimeType: img.mimeType,
+            }))
+          : undefined,
+        // Files: 첨부 문서 (PDF/Excel/CSV)
+        documents: attachedDocumentsSnapshot.length > 0
+          ? attachedDocumentsSnapshot.map((d) => ({
+              data: d.base64,
+              mimeType: d.mimeType,
+              filename: d.filename,
             }))
           : undefined,
       };
@@ -892,7 +913,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages]);
+  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -1177,56 +1198,107 @@ export function TinkerbellAssistant({
     }
   }, []);
 
-  // Vision: 이미지 첨부 핸들러
+  // 첨부 핸들러 — 이미지(Vision)와 문서(PDF/Excel/CSV) 둘 다 처리
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const handleImageAttach = useCallback(async (files: FileList | null) => {
+
+  const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+  const DOC_MIMES = new Set([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'text/csv',
+  ]);
+  const MAX_IMG_BYTES = 5 * 1024 * 1024;
+  const MAX_DOC_BYTES = 10 * 1024 * 1024;
+  const MAX_IMG = 5;
+  const MAX_DOC = 3;
+
+  const handleFileAttach = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const accepted: AttachedImage[] = [];
-    const allowedMime = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
-    const MAX_IMAGES = 5;
-    const MAX_BYTES = 5 * 1024 * 1024; // 5MB per image
+    const newImages: AttachedImage[] = [];
+    const newDocs: AttachedDocument[] = [];
+
+    const guessMime = (f: File): string => {
+      if (f.type) return f.type;
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+      if (ext === 'pdf') return 'application/pdf';
+      if (ext === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (ext === 'xls') return 'application/vnd.ms-excel';
+      if (ext === 'csv') return 'text/csv';
+      return '';
+    };
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i]!;
-      if (pendingImages.length + accepted.length >= MAX_IMAGES) break;
-      if (!allowedMime.has(f.type)) {
-        setVoiceError(`지원하지 않는 파일 형식: ${f.type || '알 수 없음'} (JPEG/PNG/GIF/WebP만)`);
+      const mime = guessMime(f);
+
+      if (IMAGE_MIMES.has(mime)) {
+        if (pendingImages.length + newImages.length >= MAX_IMG) continue;
+        if (f.size > MAX_IMG_BYTES) {
+          setVoiceError(`이미지 너무 큼 (${(f.size / 1024 / 1024).toFixed(1)}MB) — 5MB 이하`);
+          continue;
+        }
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result ?? ''));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(f);
+          });
+          newImages.push({ dataUrl, mimeType: mime as AttachedImage['mimeType'] });
+        } catch { setVoiceError(`이미지 읽기 실패: ${f.name}`); }
         continue;
       }
-      if (f.size > MAX_BYTES) {
-        setVoiceError(`파일이 너무 큼 (${(f.size / 1024 / 1024).toFixed(1)}MB) — 5MB 이하만 첨부 가능`);
+
+      if (DOC_MIMES.has(mime)) {
+        if (pendingDocuments.length + newDocs.length >= MAX_DOC) continue;
+        if (f.size > MAX_DOC_BYTES) {
+          setVoiceError(`문서 너무 큼 (${(f.size / 1024 / 1024).toFixed(1)}MB) — 10MB 이하`);
+          continue;
+        }
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result ?? ''));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(f);
+          });
+          const base64 = dataUrl.split(',')[1] ?? '';
+          newDocs.push({
+            base64,
+            mimeType: mime as AttachedDocument['mimeType'],
+            filename: f.name,
+            sizeBytes: f.size,
+          });
+        } catch { setVoiceError(`문서 읽기 실패: ${f.name}`); }
         continue;
       }
-      try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result ?? ''));
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(f);
-        });
-        accepted.push({ dataUrl, mimeType: f.type as AttachedImage['mimeType'] });
-      } catch {
-        setVoiceError(`파일 읽기 실패: ${f.name}`);
-      }
+
+      setVoiceError(`지원하지 않는 파일: ${f.name} (이미지 / PDF / Excel / CSV만)`);
     }
-    if (accepted.length > 0) {
-      setPendingImages((prev) => [...prev, ...accepted].slice(0, MAX_IMAGES));
-    }
-  }, [pendingImages.length]);
+
+    if (newImages.length > 0) setPendingImages((prev) => [...prev, ...newImages].slice(0, MAX_IMG));
+    if (newDocs.length > 0) setPendingDocuments((prev) => [...prev, ...newDocs].slice(0, MAX_DOC));
+  }, [pendingImages.length, pendingDocuments.length]);
 
   const removePendingImage = useCallback((idx: number) => {
     setPendingImages((prev) => prev.filter((_, i) => i !== idx));
   }, []);
+  const removePendingDocument = useCallback((idx: number) => {
+    setPendingDocuments((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
 
-  // 텍스트 입력 전송 — 텍스트 비어도 이미지 있으면 "이 사진 분석해줘" 기본 질문으로 전송
+  // 텍스트 입력 전송 — 텍스트 비어도 첨부(이미지/문서)가 있으면 자동 기본 질문
   const handleTextSubmit = useCallback(() => {
     const text = inputText.trim();
     const hasImages = pendingImages.length > 0;
-    if (!text && !hasImages) return;
+    const hasDocs = pendingDocuments.length > 0;
+    if (!text && !hasImages && !hasDocs) return;
     setInputText('');
     unlockTts();
-    askTinkerbell(text || '이 사진 분석해 주세요');
-  }, [inputText, askTinkerbell, pendingImages.length]);
+    const defaultQ = hasDocs ? '이 문서 분석해 주세요' : '이 사진 분석해 주세요';
+    askTinkerbell(text || defaultQ);
+  }, [inputText, askTinkerbell, pendingImages.length, pendingDocuments.length]);
 
   // ── Wake Word "팅커벨" — Siri/Alexa 스타일 상시 청취 ──
   // alwaysOpen 모드 + 사용자가 wake 활성화 시: 마이크가 항상 듣고 있다가
@@ -1529,6 +1601,32 @@ export function TinkerbellAssistant({
                       ))}
                     </div>
                   )}
+                  {/* Files: 사용자가 첨부한 문서 — 카드 형태 */}
+                  {msg.role === 'user' && msg.documents && msg.documents.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      {msg.documents.map((doc, i) => {
+                        const icon = doc.mimeType === 'application/pdf' ? '📄'
+                          : doc.mimeType === 'text/csv' ? '📊' : '📑';
+                        return (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 10px',
+                            background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            color: 'var(--ct-text, #f1f5f9)',
+                            maxWidth: 200,
+                          }}>
+                            <span style={{ fontSize: 14 }}>{icon}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {doc.filename}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div style={{
                     padding: '9px 13px',
                     borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
@@ -1652,6 +1750,61 @@ export function TinkerbellAssistant({
             </div>
           )}
 
+          {/* Files: 첨부 문서 미리보기 (PDF/Excel/CSV) */}
+          {pendingDocuments.length > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: 6,
+              padding: '8px 14px',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+              flexShrink: 0,
+              overflowX: 'auto',
+              background: 'var(--ct-card, #1e293b)',
+              flexWrap: 'wrap',
+            }}>
+              {pendingDocuments.map((doc, i) => {
+                const icon = doc.mimeType === 'application/pdf' ? '📄'
+                  : doc.mimeType === 'text/csv' ? '📊' : '📑';
+                const sizeKb = (doc.sizeBytes / 1024).toFixed(0);
+                return (
+                  <div key={i} style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 10px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    color: 'var(--ct-text, #f1f5f9)',
+                    maxWidth: 220,
+                  }}>
+                    <span style={{ fontSize: 14 }}>{icon}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {doc.filename}
+                    </span>
+                    <span style={{ color: 'var(--ct-text-muted, #94a3b8)', fontSize: 10 }}>{sizeKb}KB</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingDocument(i)}
+                      aria-label="문서 삭제"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--ct-text-muted, #94a3b8)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        padding: 0,
+                        lineHeight: 1,
+                      }}
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Vision: 첨부 이미지 미리보기 (입력 바 위에 row) */}
           {pendingImages.length > 0 && (
             <div style={{
@@ -1695,14 +1848,14 @@ export function TinkerbellAssistant({
             </div>
           )}
 
-          {/* 숨겨진 파일 input */}
+          {/* 숨겨진 파일 input — 이미지 + PDF + Excel + CSV */}
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
+            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,.pdf,.xlsx,.xls,.csv"
             multiple
             style={{ display: 'none' }}
-            onChange={(e) => { void handleImageAttach(e.target.files); e.target.value = ''; }}
+            onChange={(e) => { void handleFileAttach(e.target.files); e.target.value = ''; }}
           />
 
           {/* 입력 바 — 항상 표시 (Claude 스타일). flexShrink:0 으로 메시지 영역이 밀어내도 보존 */}
@@ -1736,26 +1889,25 @@ export function TinkerbellAssistant({
 
             {/* 언어 선택자: 입력 바 폭 확보 위해 alwaysOpen(모바일+데스크탑 사이드바) 모두 헤더로 이동 */}
 
-            {/* Vision: 이미지 첨부 버튼 (카메라/클립) */}
+            {/* Vision + Files: 첨부 버튼 (이미지·PDF·Excel·CSV) — 클립 아이콘 */}
             <button type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={state === 'thinking' || pendingImages.length >= 5}
-              aria-label="사진 첨부"
-              title={pendingImages.length >= 5 ? '최대 5장' : '사진 첨부 (소·진단서·검정성적표 등)'}
+              disabled={state === 'thinking'}
+              aria-label="파일 첨부"
+              title="사진·PDF·Excel·CSV 첨부 (소·진단서·검정성적·CMT 사진 등)"
               style={{
                 width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
                 background: 'rgba(255,255,255,0.07)',
                 border: '1px solid var(--ct-border, #334155)',
-                cursor: state === 'thinking' || pendingImages.length >= 5 ? 'not-allowed' : 'pointer',
+                cursor: state === 'thinking' ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                opacity: state === 'thinking' || pendingImages.length >= 5 ? 0.5 : 1,
+                opacity: state === 'thinking' ? 0.5 : 1,
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                 stroke="var(--ct-text-muted, #94a3b8)" strokeWidth="2"
                 strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                <circle cx="12" cy="13" r="4" />
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
             </button>
 
