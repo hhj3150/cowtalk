@@ -914,10 +914,13 @@ export function TinkerbellAssistant({
             setVoiceError('음성을 인식하지 못했습니다. 다시 시도해 주세요.');
           }
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn('[Tinkerbell] Whisper 실패:', msg);
+          const e = err as { response?: { status?: number; data?: { error?: { code?: string; message?: string } } }; message?: string };
+          const status = e?.response?.status;
+          const apiErr = e?.response?.data?.error;
+          const detail = apiErr ? `${apiErr.code ?? ''} ${apiErr.message ?? ''}`.trim() : (e?.message ?? '');
+          console.warn('[Tinkerbell] Whisper 실패:', { status, blobType: blob.type, blobSize: blob.size, detail });
           setState('idle');
-          setVoiceError('음성 인식 서버 오류. 다시 시도해 주세요.');
+          setVoiceError(`음성 인식 실패 (${status ?? 'NET'}): ${detail.slice(0, 120)}`);
         }
       };
 

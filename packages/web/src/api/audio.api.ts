@@ -52,17 +52,41 @@ export interface TranscribeResult {
 /**
  * 녹음한 오디오 Blob을 서버로 전송하여 Whisper로 전사한다.
  * iOS Safari에서 가장 신뢰성 있는 STT 경로.
+ *
+ * Netlify 프록시가 audio/* 바이너리를 변조할 위험이 있어 Railway 백엔드를 직접 호출한다
+ * (팅커벨 SSE도 동일 패턴 — netlify.toml 주석 참조).
  */
 export async function transcribeAudio(audioBlob: Blob, language?: string): Promise<TranscribeResult> {
-  const buffer = await audioBlob.arrayBuffer();
   const contentType = audioBlob.type || 'audio/webm';
-  const url = language ? `/audio/transcribe?lang=${encodeURIComponent(language)}` : '/audio/transcribe';
-  const response = await apiClient.post<{ success: boolean; data: TranscribeResult }>(url, buffer, {
-    headers: { 'Content-Type': contentType },
-    timeout: 30_000,
-    transformRequest: [(data) => data],
+  const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
+  const root = apiBase ? `${apiBase}/api` : '/api';
+  const url = language ? `${root}/audio/transcribe?lang=${encodeURIComponent(language)}` : `${root}/audio/transcribe`;
+
+  // axios 대신 fetch 직접 — axios의 자동 헤더/변환을 우회하여 바이너리 그대로 전송
+  const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': contentType,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: audioBlob,
+    credentials: 'omit',
   });
-  return response.data.data;
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const errBody = await res.json() as { error?: { code?: string; message?: string } };
+      detail = `${errBody?.error?.code ?? ''} ${errBody?.error?.message ?? ''}`.trim();
+    } catch { /* ignore */ }
+    const err = new Error(detail || `HTTP ${res.status}`) as Error & { response?: { status: number; data?: unknown } };
+    err.response = { status: res.status, data: { error: { message: detail } } };
+    throw err;
+  }
+
+  const data = await res.json() as { success: boolean; data: TranscribeResult };
+  return data.data;
 }
 
 export interface VoicesResponse {

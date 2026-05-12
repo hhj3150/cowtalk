@@ -99,18 +99,25 @@ audioRouter.post(
   async (req, res) => {
     try {
       const audio = req.body as Buffer;
+      const contentType = req.headers['content-type'] ?? 'audio/webm';
+      logger.info({
+        contentType,
+        bytes: Buffer.isBuffer(audio) ? audio.length : 0,
+        isBuffer: Buffer.isBuffer(audio),
+        bodyType: typeof req.body,
+      }, '[audio.routes] transcribe 수신');
+
       if (!Buffer.isBuffer(audio) || audio.length === 0) {
-        res.status(400).json({ success: false, error: { code: 'EMPTY_AUDIO', message: '오디오 본문이 비어 있습니다' } });
+        res.status(400).json({ success: false, error: { code: 'EMPTY_AUDIO', message: `오디오 본문이 비어 있거나 raw parser가 처리 못 함 (type=${contentType}, isBuffer=${Buffer.isBuffer(audio)})` } });
         return;
       }
       const lang = typeof req.query.lang === 'string' ? req.query.lang.toLowerCase() : undefined;
       const allowed = new Set(['ko', 'uz', 'en', 'ru', 'mn']);
       const language = lang && allowed.has(lang) ? lang : undefined;
-      const contentType = req.headers['content-type'] ?? 'audio/webm';
 
       const result = await transcribe({
         audio,
-        contentType,
+        contentType: contentType as string,
         language,
         prompt: '한우 젖소 발정 분만 임신 건강 술탄팜 CowTalk',
       });
