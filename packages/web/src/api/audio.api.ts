@@ -41,6 +41,30 @@ export async function speak(request: SpeakRequest): Promise<SpeakResult> {
   };
 }
 
+// === Whisper STT (iOS Safari Web Speech API 한계 우회용) ===
+
+export interface TranscribeResult {
+  readonly text: string;
+  readonly language?: string;
+  readonly duration?: number;
+}
+
+/**
+ * 녹음한 오디오 Blob을 서버로 전송하여 Whisper로 전사한다.
+ * iOS Safari에서 가장 신뢰성 있는 STT 경로.
+ */
+export async function transcribeAudio(audioBlob: Blob, language?: string): Promise<TranscribeResult> {
+  const buffer = await audioBlob.arrayBuffer();
+  const contentType = audioBlob.type || 'audio/webm';
+  const url = language ? `/audio/transcribe?lang=${encodeURIComponent(language)}` : '/audio/transcribe';
+  const response = await apiClient.post<{ success: boolean; data: TranscribeResult }>(url, buffer, {
+    headers: { 'Content-Type': contentType },
+    timeout: 30_000,
+    transformRequest: [(data) => data],
+  });
+  return response.data.data;
+}
+
 export interface VoicesResponse {
   readonly voices: ReadonlyArray<{ id: TtsVoice; label: string; recommended: boolean }>;
   readonly models: ReadonlyArray<{ id: TtsModel; label: string; costPer1MChars: number }>;

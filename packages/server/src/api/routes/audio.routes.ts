@@ -1,10 +1,12 @@
-// 오디오 API — TTS (텍스트→음성)
+// 오디오 API — TTS (텍스트→음성) + STT (음성→텍스트, Whisper)
 // POST /api/audio/speak — 텍스트를 받아 mp3 바이너리 반환
+// POST /api/audio/transcribe — 오디오 바이너리를 받아 텍스트 반환 (iOS Safari Web Speech API 한계 우회)
 
-import { Router } from 'express';
+import { Router, raw } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { synthesize, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
+import { transcribe } from '../../services/audio/stt.service.js';
 import { logger } from '../../lib/logger.js';
 
 export const audioRouter = Router();
@@ -86,6 +88,53 @@ audioRouter.post('/speak', async (req, res) => {
     });
   }
 });
+
+// POST /api/audio/transcribe — Whisper STT
+// Content-Type: audio/webm | audio/mp4 | audio/wav 등 (브라우저 MediaRecorder가 자동 결정)
+// Query: lang (ko|uz|en|ru|mn) — 정확도 향상용 힌트
+// Body: raw audio buffer (최대 25MB)
+audioRouter.post(
+  '/transcribe',
+  raw({ type: ['audio/*', 'application/octet-stream'], limit: '25mb' }),
+  async (req, res) => {
+    try {
+      const audio = req.body as Buffer;
+      if (!Buffer.isBuffer(audio) || audio.length === 0) {
+        res.status(400).json({ success: false, error: { code: 'EMPTY_AUDIO', message: '오디오 본문이 비어 있습니다' } });
+        return;
+      }
+      const lang = typeof req.query.lang === 'string' ? req.query.lang.toLowerCase() : undefined;
+      const allowed = new Set(['ko', 'uz', 'en', 'ru', 'mn']);
+      const language = lang && allowed.has(lang) ? lang : undefined;
+      const contentType = req.headers['content-type'] ?? 'audio/webm';
+
+      const result = await transcribe({
+        audio,
+        contentType,
+        language,
+        prompt: '한우 젖소 발정 분만 임신 건강 술탄팜 CowTalk',
+      });
+
+      res.json({ success: true, data: result });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err, msg }, '[audio.routes] transcribe failed');
+      if (msg.includes('OPENAI_API_KEY')) {
+        res.status(503).json({ success: false, error: { code: 'STT_NOT_CONFIGURED', message: '음성 인식이 아직 설정되지 않았습니다' } });
+        return;
+      }
+      if (msg.includes('Whisper')) {
+        const statusMatch = /HTTP (\d{3})/.exec(msg);
+        res.status(502).json({
+          success: false,
+          error: { code: 'STT_UPSTREAM_ERROR', message: msg, upstreamStatus: statusMatch?.[1] },
+        });
+        return;
+      }
+      res.status(400).json({ success: false, error: { code: 'STT_FAILED', message: msg } });
+    }
+  },
+);
 
 // GET /api/audio/voices — 사용 가능한 음성 목록 (UI에서 선택 옵션 표시용)
 audioRouter.get('/voices', (_req, res) => {

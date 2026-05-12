@@ -12,6 +12,17 @@ import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { useWakeWord } from '@web/hooks/useWakeWord';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
+import { transcribeAudio } from '@web/api/audio.api';
+
+// iOS Safari 감지 — Web Speech API가 불안정하므로 MediaRecorder + Whisper STT로 우회
+function isIOSDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ 는 platform이 MacIntel + 멀티터치
+  if (navigator.platform === 'MacIntel' && (navigator as { maxTouchPoints?: number }).maxTouchPoints && (navigator as { maxTouchPoints: number }).maxTouchPoints > 1) return true;
+  return false;
+}
 // ── 타입 ──
 
 interface TinkerbellMessage {
@@ -838,8 +849,111 @@ export function TinkerbellAssistant({
     void askTinkerbell(pending);
   }, [messages, state, askTinkerbell]);
 
+  // iOS Whisper 경로용 — MediaRecorder 상태 추적
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // iOS Safari: MediaRecorder + Whisper STT 경로
+  // Web Speech API가 iOS에서 불안정한 문제를 우회. 녹음 → 서버 업로드 → 텍스트 반환.
+  // 사용자가 마이크 버튼 다시 누르거나 5초 무음 시 자동 정지.
+  const startListeningWhisper = useCallback(async () => {
+    setVoiceError(null);
+    stopSpeaking();
+    unlockTts();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      // iOS Safari는 audio/mp4 지원, Android는 audio/webm 선호. 자동 협상.
+      let mimeType = '';
+      const preferred = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+      for (const m of preferred) {
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
+          mimeType = m;
+          break;
+        }
+      }
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      mediaChunksRef.current = [];
+
+      recorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        // 스트림 정리
+        if (mediaStreamRef.current) {
+          for (const track of mediaStreamRef.current.getTracks()) track.stop();
+          mediaStreamRef.current = null;
+        }
+        const chunks = mediaChunksRef.current;
+        mediaChunksRef.current = [];
+        if (chunks.length === 0) {
+          setState('idle');
+          return;
+        }
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size < 800) {
+          // 너무 짧음 (0.3초 미만 정도) — 무시
+          setState('idle');
+          return;
+        }
+        // Whisper 전사 (UI 언어 힌트로 정확도 향상)
+        setState('thinking');
+        try {
+          const result = await transcribeAudio(blob, uiLang);
+          const text = (result.text ?? '').trim();
+          if (text) {
+            const cleaned = cleanSttTranscript(text);
+            askTinkerbell(cleaned);
+          } else {
+            setState('idle');
+            setVoiceError('음성을 인식하지 못했습니다. 다시 시도해 주세요.');
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn('[Tinkerbell] Whisper 실패:', msg);
+          setState('idle');
+          setVoiceError('음성 인식 서버 오류. 다시 시도해 주세요.');
+        }
+      };
+
+      recorder.start();
+      setState('listening');
+      setTranscript('');
+
+      // 자동 정지: 6초 후 자동 종료 (시연 발화 평균 ~3초, 여유 100%)
+      window.setTimeout(() => {
+        if (recorder.state === 'recording') {
+          try { recorder.stop(); } catch { /* ignore */ }
+        }
+      }, 6000);
+    } catch (err) {
+      const name = (err as { name?: string })?.name ?? '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setVoiceError('마이크 권한을 허용해야 음성으로 질문할 수 있습니다.');
+      } else if (name === 'NotFoundError') {
+        setVoiceError('마이크를 찾을 수 없습니다.');
+      } else {
+        setVoiceError('마이크 접근 중 오류가 발생했습니다.');
+      }
+      setState('idle');
+    }
+  }, [uiLang, askTinkerbell]);
+
   // 음성 인식 시작 (권한 체크 + 에러 메시지 포함)
-  const startListening = useCallback(async () => {
+  // iOS Safari 중요: await 체인이 사용자 제스처 컨텍스트를 끊으므로
+  // recognition.start()를 동기적으로 먼저 호출해야 한다. 권한 거부는 onerror로 잡힌다.
+  const startListening = useCallback(() => {
+    // iOS는 Web Speech API 불안정 → MediaRecorder + Whisper로 우회
+    if (isIOSDevice()) {
+      void startListeningWhisper();
+      return;
+    }
+
     setVoiceError(null);
 
     if (!hasSpeechRecognition) {
@@ -857,37 +971,7 @@ export function TinkerbellAssistant({
     }
 
     stopSpeaking();
-    // iOS Safari: 사용자 제스처 직후에 TTS 잠금 해제
     unlockTts();
-
-    // 마이크 권한 사전 확인 — denied면 바로 안내, prompt면 getUserMedia로 요청
-    try {
-      const permApi = (navigator as { permissions?: { query: (p: { name: PermissionName }) => Promise<PermissionStatus> } }).permissions;
-      if (permApi?.query) {
-        const status = await permApi.query({ name: 'microphone' as PermissionName });
-        if (status.state === 'denied') {
-          setVoiceError('마이크 권한이 차단되어 있습니다. 주소창의 자물쇠 아이콘을 눌러 마이크를 허용으로 바꿔주세요.');
-          return;
-        }
-      }
-    } catch {
-      // permissions API 미지원 — 무시하고 진행
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      for (const track of stream.getTracks()) track.stop();
-    } catch (err) {
-      const name = (err as { name?: string })?.name ?? '';
-      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        setVoiceError('마이크 권한을 허용해야 음성으로 질문할 수 있습니다.');
-      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-        setVoiceError('마이크를 찾을 수 없습니다. 장치 연결을 확인해 주세요.');
-      } else {
-        setVoiceError('마이크 접근 중 오류가 발생했습니다.');
-      }
-      return;
-    }
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
@@ -977,10 +1061,13 @@ export function TinkerbellAssistant({
     }
   }, [hasSpeechRecognition, askTinkerbell, uiLang]);
 
-  // 음성 인식 중지
+  // 음성 인식 중지 — Web Speech API + MediaRecorder 양쪽 대응
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try { recognitionRef.current.stop(); } catch { /* ignore */ }
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
     }
   }, []);
 
