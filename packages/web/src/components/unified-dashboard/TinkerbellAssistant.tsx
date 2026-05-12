@@ -1182,7 +1182,8 @@ export function TinkerbellAssistant({
     }
   }, []);
 
-  // wake 인사("네, 하원장님")는 세션당 1회만. 이후엔 chime + 곧장 듣기로 자연스럽게.
+  // wake 인사("네, 하원장님")는 세션당 1회만. 인사말과 듣기는 병렬로 — 인사말이 끝날 때까지
+  // 기다리면 사용자가 인사 도중 말한 첫 단어를 놓쳐 답변이 엉키므로, 듣기를 즉시 시작.
   const wakeGreetedRef = useRef(false);
   const handleWakeDetected = useCallback(() => {
     // 이미 본격 마이크가 듣고 있으면 무시 (마이크 충돌 방지)
@@ -1194,17 +1195,15 @@ export function TinkerbellAssistant({
     }
     playWakeChime();
 
+    // 첫 호명일 때만 인사말 발화 (병렬 — 듣기를 블로킹하지 않음)
     if (!wakeGreetedRef.current) {
-      // 첫 호명: 인사말 발화 → 끝나면 듣기
       wakeGreetedRef.current = true;
       const greeting = WAKE_GREETINGS[uiLang] ?? WAKE_GREETINGS.ko!;
-      speakImmediate(greeting.text, greeting.lang, () => {
-        void startListening();
-      });
-    } else {
-      // 이후 호명: chime만 울리고 바로 듣기 (자연스러운 대화 흐름)
-      void startListening();
+      speakImmediate(greeting.text, greeting.lang);
     }
+
+    // 듣기는 항상 즉시 시작 — 인사 끝날 때까지 기다리지 않음
+    void startListening();
   }, [state, startListening, playWakeChime, voiceOutput, uiLang]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
