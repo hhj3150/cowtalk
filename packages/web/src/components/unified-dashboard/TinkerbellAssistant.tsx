@@ -307,15 +307,7 @@ const WAKE_GREETINGS: Readonly<Record<string, { text: string; lang: string }>> =
   mn: { text: 'За, доктор Ха', lang: 'mn-MN' },
 };
 
-// AI 생각 시간 음성 필러 — 사용자가 질문 보낸 직후 즉각 발화.
-// 응답 생성(5~15초) 동안 무음이 되지 않도록 자연스러운 acknowledgement.
-const THINKING_FILLERS: Readonly<Record<string, { text: string; lang: string }>> = {
-  ko: { text: '잠시만요', lang: 'ko-KR' },
-  uz: { text: "Bir daqiqa", lang: 'uz-UZ' },
-  en: { text: 'One moment', lang: 'en-US' },
-  ru: { text: 'Минуточку', lang: 'ru-RU' },
-  mn: { text: 'Хүлээгээрэй', lang: 'mn-MN' },
-};
+// (THINKING_FILLERS 제거 — 사용자 피드백: "잠시만요" 필러가 어색하고 응답이 늦으면 더 부각됨)
 
 // Chrome TTS 15초 끊김 방지: 문장 단위로 분할하여 순차 재생
 function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
@@ -617,12 +609,7 @@ export function TinkerbellAssistant({
     setStreamText('');
     setToolActivities([]);
 
-    // 음성 모드: AI 응답 생성 동안 무음이 되지 않도록 즉시 짧은 필러 발화.
-    // SpeechSynthesis는 외부 API 없이 0ms 시작 → 체감 응답성 향상.
-    if (voiceOutput.voiceMode) {
-      const filler = THINKING_FILLERS[uiLang] ?? THINKING_FILLERS.ko!;
-      speakImmediate(filler.text, filler.lang);
-    }
+    // (필러 제거됨 — 응답이 곧장 오는 게 자연스럽다는 사용자 피드백)
 
     // 학습 현황 질문 감지 → 소버린 통계 컨텍스트 주입
     const isLearningQuery = /학습|배웠|소버린|정확도|오탐|레이블|지식.*강화/i.test(question);
@@ -1195,6 +1182,8 @@ export function TinkerbellAssistant({
     }
   }, []);
 
+  // wake 인사("네, 하원장님")는 세션당 1회만. 이후엔 chime + 곧장 듣기로 자연스럽게.
+  const wakeGreetedRef = useRef(false);
   const handleWakeDetected = useCallback(() => {
     // 이미 본격 마이크가 듣고 있으면 무시 (마이크 충돌 방지)
     if (state === 'listening') return;
@@ -1203,13 +1192,19 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
     }
-    // 짧은 chime + 인사말("네, 하원장님") 즉각 발화. 인사말 종료 후 본격 듣기 시작.
-    // 인사말이 실패해도 안전망 타임아웃(2.5초) 안에 듣기가 시작됨.
     playWakeChime();
-    const greeting = WAKE_GREETINGS[uiLang] ?? WAKE_GREETINGS.ko!;
-    speakImmediate(greeting.text, greeting.lang, () => {
+
+    if (!wakeGreetedRef.current) {
+      // 첫 호명: 인사말 발화 → 끝나면 듣기
+      wakeGreetedRef.current = true;
+      const greeting = WAKE_GREETINGS[uiLang] ?? WAKE_GREETINGS.ko!;
+      speakImmediate(greeting.text, greeting.lang, () => {
+        void startListening();
+      });
+    } else {
+      // 이후 호명: chime만 울리고 바로 듣기 (자연스러운 대화 흐름)
       void startListening();
-    });
+    }
   }, [state, startListening, playWakeChime, voiceOutput, uiLang]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
