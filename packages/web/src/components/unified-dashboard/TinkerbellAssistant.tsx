@@ -194,13 +194,107 @@ const DOMAIN_ICONS: Record<string, string> = {
 
 // ── 음성 합성 (TTS) ──
 
-// iOS Safari에서 TTS를 사용하려면 사용자 제스처 직후에 한 번 호출해야 함
+// iOS Safari/Android Chrome에서 음성 재생을 위한 사용자 제스처 잠금 해제.
+// 두 가지를 모두 unlock 해야 함:
+//   1) window.speechSynthesis (브라우저 TTS fallback)
+//   2) HTMLAudioElement (OpenAI Nova MP3 재생) — iOS Safari가 자동재생 차단
+// 한 번 unlock되면 같은 페이지 세션 동안 유지됨.
+let __audioUnlocked = false;
+let __silentAudio: HTMLAudioElement | null = null;
 function unlockTts(): void {
-  if (!('speechSynthesis' in window)) return;
-  const dummy = new SpeechSynthesisUtterance('');
-  dummy.volume = 0;
-  window.speechSynthesis.speak(dummy);
+  // SpeechSynthesis unlock
+  if ('speechSynthesis' in window) {
+    try {
+      const dummy = new SpeechSynthesisUtterance('');
+      dummy.volume = 0;
+      window.speechSynthesis.speak(dummy);
+    } catch { /* ignore */ }
+  }
+  // HTMLAudioElement unlock — 1프레임짜리 무음 MP3를 같은 제스처 안에서 재생
+  if (!__audioUnlocked) {
+    try {
+      // 1프레임 무음 MP3 (base64). 길이 ~0.05초, 용량 ~100바이트
+      const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzAwAAAAAAJlRYWFgAAAAcAAAATGF2ZjU3LjU2LjEwMQBUUE9TAAAABQAAADAAAAD/+5DEAAAAAAAAAAAAAAAAAAAAAABYaW5nAAAADwAAAAEAAAEgAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAAA8TEFNRTMuMTAwAaUAAAAALDoAABRGJAJEQQAB9AAAASBO2sLZAAAAAP/7kMQAA8AAAaQAAAAgAAA0gAAABExBTUUzLjEwMFVVVVVVVVVV';
+      __silentAudio = new Audio(SILENT_MP3);
+      __silentAudio.volume = 0;
+      const p = __silentAudio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => { __audioUnlocked = true; }).catch(() => { /* ignore */ });
+      } else {
+        __audioUnlocked = true;
+      }
+    } catch { /* ignore */ }
+  }
 }
+
+// 짧은 인사말 즉시 발화 — 외부 API 없이 브라우저 SpeechSynthesis로 0ms 시작.
+// Wake word 인식 직후 사용자에게 즉각 "듣고 있어요" 신호.
+function speakImmediate(text: string, lang: string, onEnd?: () => void): void {
+  if (!('speechSynthesis' in window)) { onEnd?.(); return; }
+  try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = lang;
+  utt.rate = 1.1;
+  utt.pitch = 1.1;
+  utt.volume = 1.0;
+
+  // 해당 언어 음성 선택 (여성 우선)
+  try {
+    const voices = window.speechSynthesis.getVoices();
+    const prefix = (lang.split('-')[0] ?? '').toLowerCase();
+    const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
+    if (langVoices.length > 0) {
+      const female = /female|woman|여|yuna|siri|samantha|karen|victoria|tessa|milena|anna|elena|google.*female/i;
+      const male = /male|man|남|daniel|alex|thomas|jorge|ivan|dmitri|google.*male/i;
+      utt.voice = langVoices.find((v) => female.test(v.name) && !male.test(v.name))
+        ?? langVoices.find((v) => !male.test(v.name))
+        ?? langVoices[0]!;
+    }
+  } catch { /* ignore */ }
+
+  let ended = false;
+  const fire = (): void => { if (!ended) { ended = true; onEnd?.(); } };
+  utt.onend = fire;
+  utt.onerror = fire;
+  // 안전망: 2.5초 안에 onend가 안 와도 다음으로 진행
+  window.setTimeout(fire, 2500);
+
+  try { window.speechSynthesis.speak(utt); } catch { fire(); }
+}
+
+// STT 결과 정규화 — 사용자 발음이 엉키거나 반복돼도 의도를 보존.
+// 1) 연속 공백 압축
+// 2) 같은 단어 즉시 반복 ("팅커벨 팅커벨 팅커벨" → "팅커벨")
+// 3) 같은 음절 길게 반복 ("아아아아 그게" → "아 그게")
+// 4) 발화 끝의 잡음 문자 제거
+export function cleanSttTranscript(raw: string): string {
+  if (!raw) return raw;
+  let s = raw.replace(/\s+/g, ' ').trim();
+
+  // 같은 단어 즉시 반복 (3회 이상이면 1회로) — 한/영/우즈벡 라틴 모두 적용
+  // 예: "the the the cow" → "the cow", "이 이 이 개체" → "이 개체"
+  s = s.replace(/\b(\S+)(\s+\1\b){1,}/giu, '$1');
+
+  // 한 글자 모음 반복 ("아아아", "어어어") — 한 글자로 압축
+  s = s.replace(/([가-힣])\1{2,}/g, '$1');
+  // 라틴 모음 길게 반복 ("aaaa", "ooooo") — 1글자 (단, "oo", "ee"는 단어로 유효할 수 있어 3개 이상만)
+  s = s.replace(/([aeiouAEIOU])\1{2,}/g, '$1');
+
+  // 끝의 마침표/물음표/쉼표 외 잡문자 정리
+  s = s.replace(/[^\S\r\n]+$/, '');
+
+  return s.trim();
+}
+
+// Wake 인사말 — uiLang 기반 다국어 (사용자 호칭: 하원장님)
+const WAKE_GREETINGS: Readonly<Record<string, { text: string; lang: string }>> = {
+  ko: { text: '네, 하원장님', lang: 'ko-KR' },
+  uz: { text: "Xo'p, doktor Ha", lang: 'uz-UZ' },
+  en: { text: 'Yes, Doctor Ha', lang: 'en-US' },
+  ru: { text: 'Да, доктор Ха', lang: 'ru-RU' },
+  mn: { text: 'За, доктор Ха', lang: 'mn-MN' },
+};
 
 // Chrome TTS 15초 끊김 방지: 문장 단위로 분할하여 순차 재생
 function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
@@ -797,9 +891,16 @@ export function TinkerbellAssistant({
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
-    // 다국어 음성 인식: 브라우저 언어 기반 + 한국어 우선
-    const browserLang = navigator.language ?? 'ko-KR';
-    recognition.lang = browserLang.startsWith('ko') ? 'ko-KR' : browserLang;
+    // 다국어 음성 인식: 사용자 UI 언어(uiLang) 우선 → 브라우저 언어 → 한국어
+    const UI_LANG_TO_STT: Record<string, string> = {
+      ko: 'ko-KR',
+      en: 'en-US',
+      uz: 'uz-UZ',
+      ru: 'ru-RU',
+      mn: 'mn-MN',
+    };
+    const sttLang = UI_LANG_TO_STT[uiLang] ?? (navigator.language || 'ko-KR');
+    recognition.lang = sttLang;
     recognition.continuous = false;
     recognition.interimResults = true;
 
@@ -828,9 +929,11 @@ export function TinkerbellAssistant({
     };
 
     recognition.onend = () => {
-      const finalText = transcriptRef.current.trim();
-      if (finalText) {
-        askTinkerbell(finalText);
+      const rawText = transcriptRef.current.trim();
+      if (rawText) {
+        // 발음 엉킴·반복 정규화 — 한국어/우즈벡어 음성 인식이 자주 만드는 잡음 제거
+        const cleaned = cleanSttTranscript(rawText);
+        askTinkerbell(cleaned);
       } else {
         setState('idle');
       }
@@ -872,7 +975,7 @@ export function TinkerbellAssistant({
         setVoiceError('음성 인식을 시작할 수 없습니다.');
       }
     }
-  }, [hasSpeechRecognition, askTinkerbell]);
+  }, [hasSpeechRecognition, askTinkerbell, uiLang]);
 
   // 음성 인식 중지
   const stopListening = useCallback(() => {
@@ -949,10 +1052,14 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
     }
+    // 짧은 chime + 인사말("네, 하원장님") 즉각 발화. 인사말 종료 후 본격 듣기 시작.
+    // 인사말이 실패해도 안전망 타임아웃(2.5초) 안에 듣기가 시작됨.
     playWakeChime();
-    // 본격 음성 입력 모드로 진입
-    void startListening();
-  }, [state, startListening, playWakeChime, voiceOutput]);
+    const greeting = WAKE_GREETINGS[uiLang] ?? WAKE_GREETINGS.ko!;
+    speakImmediate(greeting.text, greeting.lang, () => {
+      void startListening();
+    });
+  }, [state, startListening, playWakeChime, voiceOutput, uiLang]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
   const handleInterruptDetected = useCallback(() => {
@@ -1011,6 +1118,9 @@ export function TinkerbellAssistant({
           background: 'var(--ct-card, #1e293b)',
           borderTop: `1px solid ${color}40`,
           boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+          boxSizing: 'border-box',
+          maxWidth: '100vw',
+          overflowX: 'hidden',
         }}>
 
           {/* 메시지 영역 — 펼쳐졌을 때만 표시 */}
@@ -1161,8 +1271,10 @@ export function TinkerbellAssistant({
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            padding: '10px 14px 10px',
+            gap: isMobile ? 6 : 8,
+            padding: isMobile ? '8px 10px' : '10px 14px 10px',
+            minWidth: 0,
+            boxSizing: 'border-box',
           }}>
             {/* 팅커벨 아이콘 + 상태 표시 (클릭 시 메시지 토글) */}
             <button type="button"
@@ -1181,8 +1293,8 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* 언어 선택자 — 외국 방문객을 위한 즉시 전환 */}
-            <LangSwitcher compact />
+            {/* 언어 선택자 — 외국 방문객을 위한 즉시 전환. 모바일은 폭 부족으로 헤더 등 다른 곳에 두는 게 좋아 여기선 데스크톱만 */}
+            {!isMobile && <LangSwitcher compact />}
 
             {/* 마이크 버튼 */}
             <button type="button"
@@ -1210,8 +1322,9 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* Wake Word "팅커벨" 토글 — iOS는 미지원이라 비활성 안내, Android/데스크톱은 정상 동작 */}
-            {wakeSupported && (
+            {/* Wake Word "팅커벨" 토글 — iOS는 미지원이라 비활성 안내, Android/데스크톱은 정상 동작.
+                 모바일은 폭이 좁아서 wake 버튼 숨김(마이크 버튼으로 충분). */}
+            {wakeSupported && !isMobile && (
               <button type="button"
                 onClick={() => setWakeEnabled((v) => !v)}
                 aria-pressed={wakeEnabled}
@@ -1246,8 +1359,8 @@ export function TinkerbellAssistant({
                 <span>팅커벨</span>
               </button>
             )}
-            {/* iOS Safari/Chrome — wake word 미지원, 마이크 버튼 안내 */}
-            {!wakeSupported && platformLimitation === 'ios' && (
+            {/* iOS Safari/Chrome — wake word 미지원, 마이크 버튼 안내. 모바일은 폭 양보. */}
+            {!wakeSupported && platformLimitation === 'ios' && !isMobile && (
               <span
                 style={{
                   height: 34, padding: '0 10px', borderRadius: 17, flexShrink: 0,
@@ -1277,13 +1390,16 @@ export function TinkerbellAssistant({
               disabled={state === 'thinking' || state === 'listening'}
               style={{
                 flex: 1,
+                minWidth: 0,
+                width: '100%',
                 background: 'rgba(255,255,255,0.06)',
                 border: '1px solid var(--ct-border, #334155)',
                 borderRadius: 24,
-                padding: '9px 16px',
-                fontSize: 13,
+                padding: isMobile ? '8px 12px' : '9px 16px',
+                fontSize: isMobile ? 16 : 13,
                 color: 'var(--ct-text, #f1f5f9)',
                 outline: 'none',
+                boxSizing: 'border-box',
               }}
             />
 
