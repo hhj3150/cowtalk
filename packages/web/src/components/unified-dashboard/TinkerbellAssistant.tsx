@@ -500,8 +500,10 @@ export function TinkerbellAssistant({
 }: TinkerbellAssistantProps): React.JSX.Element {
   const [state, setState] = useState<TinkerbellState>('idle');
   const [isOpen, setIsOpen] = useState(alwaysOpen);
-  const [isExpanded, setIsExpanded] = useState(false); // alwaysOpen 모드: 메시지 영역 펼침
+  const [isExpanded, setIsExpanded] = useState(false); // alwaysOpen 모드 모바일: 메시지 영역 펼침
   const [isMinimized, setIsMinimized] = useState(false);
+  // 데스크탑 alwaysOpen 모드에서 사이드바 표시 여부 — 기본 닫힘, 호출/클릭 시 열림
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly TinkerbellMessage[]>(() => {
     try {
@@ -1193,6 +1195,8 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
     }
+    // 데스크탑에서 호명 시 사이드바 자동 펼침
+    if (!isMobile) setDesktopSidebarOpen(true);
     playWakeChime();
 
     // 첫 호명일 때만 인사말 발화 (병렬 — 듣기를 블로킹하지 않음)
@@ -1204,7 +1208,7 @@ export function TinkerbellAssistant({
 
     // 듣기는 항상 즉시 시작 — 인사 끝날 때까지 기다리지 않음
     void startListening();
-  }, [state, startListening, playWakeChime, voiceOutput, uiLang]);
+  }, [state, startListening, playWakeChime, voiceOutput, uiLang, isMobile]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
   const handleInterruptDetected = useCallback(() => {
@@ -1245,17 +1249,52 @@ export function TinkerbellAssistant({
   // ── alwaysOpen 모드 — Claude AI처럼 항상 고정 (데스크탑=우측 사이드바, 모바일=하단 바) ──
   const SIDEBAR_WIDTH = 380;
 
-  // 데스크탑 alwaysOpen 시 본문 우측 여백 확보 (사이드바와 겹치지 않도록)
+  // 데스크탑 alwaysOpen + 사이드바 열림 시에만 본문 우측 여백 확보
   useEffect(() => {
-    if (!alwaysOpen || isMobile) return;
+    if (!alwaysOpen || isMobile || !desktopSidebarOpen) return;
     const prev = document.body.style.paddingRight;
     document.body.style.paddingRight = `${SIDEBAR_WIDTH}px`;
     return () => { document.body.style.paddingRight = prev; };
-  }, [alwaysOpen, isMobile]);
+  }, [alwaysOpen, isMobile, desktopSidebarOpen]);
 
   if (alwaysOpen) {
+    // 데스크탑: 사이드바 닫힘 상태면 플로팅 버튼만 표시
+    if (!isMobile && !desktopSidebarOpen) {
+      return (
+        <button
+          type="button"
+          onClick={() => setDesktopSidebarOpen(true)}
+          aria-label="팅커벨 열기"
+          title="팅커벨에게 물어보기 (또는 '팅커벨' 호명)"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            background: `linear-gradient(135deg, ${color}, #7c3aed)`,
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: `0 6px 20px ${color}60`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9990,
+            transition: 'transform 0.2s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+        >
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="white" stroke="none">
+            <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+          </svg>
+        </button>
+      );
+    }
+
     const bottomOffset = isMobile ? 60 : 0;
-    // 데스크탑은 항상 펼침 상태 유지 (사이드바는 메시지+입력이 모두 보이는 게 자연)
+    // 데스크탑 사이드바 열림: 항상 펼침 / 모바일: isExpanded 토글
     const sidebarExpanded = isMobile ? isExpanded : true;
 
     // 컨테이너 위치·크기 — 데스크탑 우측 사이드바 vs 모바일 하단 바
@@ -1297,6 +1336,42 @@ export function TinkerbellAssistant({
 
         {/* 채팅 패널 — 데스크탑: 우측 사이드바 / 모바일: 하단 바 */}
         <div style={containerStyle}>
+          {/* 데스크탑 사이드바 헤더 — 제목 + 닫기 버튼 */}
+          {!isMobile && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 14px',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              flexShrink: 0,
+              background: `linear-gradient(135deg, ${color}15, transparent)`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>🧚</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text, #f1f5f9)' }}>
+                  팅커벨 AI
+                </span>
+                <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDesktopSidebarOpen(false)}
+                aria-label="팅커벨 닫기"
+                title="닫기"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--ct-text-muted, #94a3b8)',
+                  cursor: 'pointer',
+                  fontSize: 18,
+                  padding: '2px 8px',
+                  lineHeight: 1,
+                }}
+              >✕</button>
+            </div>
+          )}
+
 
           {/* 메시지 영역 — 데스크탑 사이드바는 항상 펼침, 모바일은 토글 */}
           {sidebarExpanded && (
