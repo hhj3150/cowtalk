@@ -29,6 +29,12 @@ import fs from 'fs';
 // 대화 메시지 (JSON 응답)
 // ===========================
 
+/** Vision: 사용자가 첨부한 이미지 (base64) */
+export interface ChatImage {
+  readonly data: string; // base64 인코딩된 이미지 데이터
+  readonly mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+}
+
 export interface ChatMessageRequest {
   readonly question: string;
   readonly role: Role;
@@ -38,6 +44,7 @@ export interface ChatMessageRequest {
   readonly conversationHistory: readonly ConversationTurn[];
   readonly dashboardContext?: string;
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
+  readonly images?: readonly ChatImage[]; // Vision: 첨부 이미지 (최대 5장)
 }
 
 const UI_LANG_NAMES: Readonly<Record<string, string>> = {
@@ -309,6 +316,7 @@ export async function handleChatStream(
 
   // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회
   // Gateway 경유: audit log + role-based access control
+  // Vision: 사용자가 첨부한 이미지를 Claude Vision API에 전달
   await callClaudeForChatWithTools(
     systemPrompt,
     prompt,
@@ -318,7 +326,7 @@ export async function handleChatStream(
       role,
       farmId: farmId ?? undefined,
     },
-    { useDeepThinking },
+    { useDeepThinking, images: request.images },
   );
 }
 

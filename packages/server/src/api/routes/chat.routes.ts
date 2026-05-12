@@ -61,6 +61,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
       dashboardContext?: string;
       uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
+      images?: Array<{ data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }>;
     };
 
     const result = await handleChatMessage({
@@ -72,6 +73,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
       dashboardContext: body.dashboardContext,
       uiLang: body.uiLang,
+      images: body.images,
     });
 
     res.json({ success: true, data: result });
@@ -89,6 +91,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
     dashboardContext?: string;
     uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
+    images?: Array<{ data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }>;
   };
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -115,6 +118,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,
+    images: body.images,
   };
 
   try {

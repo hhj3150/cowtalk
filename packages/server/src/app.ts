@@ -45,7 +45,8 @@ export function createApp(): express.Express {
   app.use('/api/auth/register', authRateLimit);
 
   // --- Body Parsing ---
-  app.use(express.json({ limit: '10mb' }));
+  // 50mb — Vision 첨부 이미지(최대 5장 × base64 ~7.5MB) 수용
+  app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   // --- Request Logging + Audit Logging ---

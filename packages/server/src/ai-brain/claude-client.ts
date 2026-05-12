@@ -233,6 +233,8 @@ export function shouldUseDeepThinking(userMessage: string): boolean {
 
 export interface ChatToolOptions {
   readonly useDeepThinking?: boolean;
+  /** Vision: 첨부 이미지를 첫 user message의 content blocks 앞에 image 블록으로 삽입 */
+  readonly images?: readonly { data: string; mimeType: ImageMediaType }[];
 }
 
 export async function callClaudeForChatWithTools(
@@ -249,7 +251,21 @@ export async function callClaudeForChatWithTools(
   }
 
   let fullText = '';
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
+
+  // Vision: 이미지가 있으면 content blocks 형태로 첫 user message 구성
+  // [image, image, ..., text] 순서 — Anthropic 권장 (이미지가 텍스트 컨텍스트보다 먼저 인식됨)
+  const initialUserContent: string | Anthropic.MessageParam['content'] =
+    options?.images && options.images.length > 0
+      ? [
+          ...options.images.map((img) => ({
+            type: 'image' as const,
+            source: { type: 'base64' as const, media_type: img.mimeType, data: img.data },
+          })),
+          { type: 'text' as const, text: prompt },
+        ]
+      : prompt;
+
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: initialUserContent }];
 
   // 역할별 도구 필터링 — Claude에 허용된 도구만 전달 (토큰 절약 + 보안)
   const role = toolContext?.role ?? 'farmer';
