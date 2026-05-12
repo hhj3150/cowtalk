@@ -298,6 +298,19 @@ export async function callClaudeForChatWithTools(
   }, '[ToolUse] 역할별 도구 필터링');
 
   try {
+    // Anthropic 네이티브 web_search 도구 추가 — Claude가 실시간 외부 정보 필요 시 자동 호출.
+    // 비용 통제: max_uses 3회/요청 한도. AI가 명시적으로 검색 필요한 경우에만 호출.
+    const webSearchTool = {
+      type: 'web_search_20250305' as const,
+      name: 'web_search',
+      max_uses: 3,
+    } as unknown as Anthropic.Messages.Tool;
+
+    const toolsWithWebSearch: Anthropic.Messages.Tool[] = [
+      ...buildCachedTools(filteredTools),
+      webSearchTool,
+    ];
+
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
       const response = await anthropic.messages.create({
         model: config.ANTHROPIC_MODEL,
@@ -307,7 +320,7 @@ export async function callClaudeForChatWithTools(
         ...thinkingParam,
         system: buildCachedSystem(systemPrompt),
         messages,
-        tools: buildCachedTools(filteredTools),
+        tools: toolsWithWebSearch,
       });
 
       // 응답 content blocks 처리
