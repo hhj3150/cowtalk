@@ -104,9 +104,10 @@ export function useWakeWord({
   }, [enabled]);
 
   const isIOS = detectIOS();
+  // iOS는 continuous=true가 작동하지 않으므로 rolling 재시작 패턴으로 우회 (아래 startRecognition 참조).
+  // SpeechRecognition 자체가 있으면 supported=true. UI에선 platformLimitation으로 안내만 표시.
   const platformLimitation: 'ios' | null = isIOS ? 'ios' : null;
-  // iOS는 WebKit이 SpeechRecognition continuous를 사실상 지원하지 않으므로 supported=false
-  const supported = !isIOS && typeof window !== 'undefined' &&
+  const supported = typeof window !== 'undefined' &&
     Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
 
   const stopRecognition = useCallback(() => {
@@ -139,7 +140,9 @@ export function useWakeWord({
 
     const recognition = new SR();
     recognition.lang = lang;
-    recognition.continuous = true;
+    // iOS WebKit은 continuous=true가 무시되거나 즉시 종료됨 → false로 두고 onend에서 즉시 재시작(rolling).
+    // Android/데스크톱은 continuous=true가 정상 동작.
+    recognition.continuous = !isIOS;
     recognition.interimResults = true;
 
     let lastFiredAt = 0;
@@ -184,12 +187,15 @@ export function useWakeWord({
     recognition.onend = () => {
       recognitionRef.current = null;
       setListening(false);
-      // 활성 상태면 자동 재시작 (continuous는 일정 시간 지나면 자동 종료됨)
+      // 활성 상태면 자동 재시작.
+      // iOS는 세션 자체가 짧으므로(continuous 미지원) 빠르게 재시작 → "rolling" 청취.
+      // Android/데스크톱은 continuous 종료 후 일정 시간 뒤 재시작.
       if (enabledRef.current) {
+        const delay = isIOS ? 60 : 500;
         restartTimeoutRef.current = window.setTimeout(() => {
           restartTimeoutRef.current = null;
           startRecognition();
-        }, 500);
+        }, delay);
       }
     };
 
@@ -204,19 +210,43 @@ export function useWakeWord({
       // 이미 시작된 상태일 수 있음 — 무시
       recognitionRef.current = null;
     }
-  }, [supported, lang]);
+  }, [supported, lang, isIOS]);
 
-  // enabled 토글에 따라 시작/정지
+  // enabled 토글에 따라 시작/정지.
+  // iOS는 첫 recognition.start()가 사용자 제스처 안에서만 허용되므로,
+  // 페이지 어느 곳이든 첫 터치/클릭 시 시작 (이후 재시작은 onend 핸들러 안에서 처리).
   useEffect(() => {
-    if (enabled && supported) {
-      startRecognition();
-    } else {
+    if (!enabled || !supported) {
       stopRecognition();
+      return;
     }
+
+    if (!isIOS) {
+      // 데스크톱/Android: 즉시 시작 (제스처 불필요)
+      startRecognition();
+      return () => { stopRecognition(); };
+    }
+
+    // iOS: 첫 사용자 제스처를 기다림
+    // 이미 한번 시작했으면 다시 대기할 필요 없음 (onend 재시작이 처리)
+    if (recognitionRef.current) return;
+
+    const kick = (): void => {
+      document.removeEventListener('touchstart', kick);
+      document.removeEventListener('click', kick);
+      if (enabledRef.current && !recognitionRef.current) {
+        startRecognition();
+      }
+    };
+    document.addEventListener('touchstart', kick, { once: true, passive: true });
+    document.addEventListener('click', kick, { once: true });
+
     return () => {
+      document.removeEventListener('touchstart', kick);
+      document.removeEventListener('click', kick);
       stopRecognition();
     };
-  }, [enabled, supported, startRecognition, stopRecognition]);
+  }, [enabled, supported, isIOS, startRecognition, stopRecognition]);
 
   // 탭 백그라운드 시 wake recognition 일시 정지, 복귀 시 재개
   // (배터리·CPU 절약 + 모바일 백그라운드 마이크 권한 회피)

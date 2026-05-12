@@ -1021,6 +1021,28 @@ export function TinkerbellAssistant({
     return () => window.removeEventListener('tinkerbell:onboarded', onOnboarded);
   }, []);
 
+  // iOS Safari: 페이지 어느 곳이든 첫 사용자 제스처 시 TTS·Audio 자동 잠금해제.
+  // 사용자가 "팅커벨"이라 외쳤을 때 인사말과 응답 음성이 무음이 되지 않도록 사전 준비.
+  useEffect(() => {
+    let unlocked = false;
+    const onFirstGesture = (): void => {
+      if (unlocked) return;
+      unlocked = true;
+      try { unlockTts(); } catch { /* ignore */ }
+      document.removeEventListener('touchstart', onFirstGesture);
+      document.removeEventListener('click', onFirstGesture);
+      document.removeEventListener('keydown', onFirstGesture);
+    };
+    document.addEventListener('touchstart', onFirstGesture, { once: true, passive: true });
+    document.addEventListener('click', onFirstGesture, { once: true });
+    document.addEventListener('keydown', onFirstGesture, { once: true });
+    return () => {
+      document.removeEventListener('touchstart', onFirstGesture);
+      document.removeEventListener('click', onFirstGesture);
+      document.removeEventListener('keydown', onFirstGesture);
+    };
+  }, []);
+
   // 짧은 효과음 (Web Audio API — 외부 파일 없이 즉시 발생)
   const playWakeChime = useCallback(() => {
     try {
