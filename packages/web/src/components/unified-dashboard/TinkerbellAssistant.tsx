@@ -227,6 +227,75 @@ function unlockTts(): void {
   }
 }
 
+// 짧은 인사말 즉시 발화 — 외부 API 없이 브라우저 SpeechSynthesis로 0ms 시작.
+// Wake word 인식 직후 사용자에게 즉각 "듣고 있어요" 신호.
+function speakImmediate(text: string, lang: string, onEnd?: () => void): void {
+  if (!('speechSynthesis' in window)) { onEnd?.(); return; }
+  try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = lang;
+  utt.rate = 1.1;
+  utt.pitch = 1.1;
+  utt.volume = 1.0;
+
+  // 해당 언어 음성 선택 (여성 우선)
+  try {
+    const voices = window.speechSynthesis.getVoices();
+    const prefix = (lang.split('-')[0] ?? '').toLowerCase();
+    const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
+    if (langVoices.length > 0) {
+      const female = /female|woman|여|yuna|siri|samantha|karen|victoria|tessa|milena|anna|elena|google.*female/i;
+      const male = /male|man|남|daniel|alex|thomas|jorge|ivan|dmitri|google.*male/i;
+      utt.voice = langVoices.find((v) => female.test(v.name) && !male.test(v.name))
+        ?? langVoices.find((v) => !male.test(v.name))
+        ?? langVoices[0]!;
+    }
+  } catch { /* ignore */ }
+
+  let ended = false;
+  const fire = (): void => { if (!ended) { ended = true; onEnd?.(); } };
+  utt.onend = fire;
+  utt.onerror = fire;
+  // 안전망: 2.5초 안에 onend가 안 와도 다음으로 진행
+  window.setTimeout(fire, 2500);
+
+  try { window.speechSynthesis.speak(utt); } catch { fire(); }
+}
+
+// STT 결과 정규화 — 사용자 발음이 엉키거나 반복돼도 의도를 보존.
+// 1) 연속 공백 압축
+// 2) 같은 단어 즉시 반복 ("팅커벨 팅커벨 팅커벨" → "팅커벨")
+// 3) 같은 음절 길게 반복 ("아아아아 그게" → "아 그게")
+// 4) 발화 끝의 잡음 문자 제거
+export function cleanSttTranscript(raw: string): string {
+  if (!raw) return raw;
+  let s = raw.replace(/\s+/g, ' ').trim();
+
+  // 같은 단어 즉시 반복 (3회 이상이면 1회로) — 한/영/우즈벡 라틴 모두 적용
+  // 예: "the the the cow" → "the cow", "이 이 이 개체" → "이 개체"
+  s = s.replace(/\b(\S+)(\s+\1\b){1,}/giu, '$1');
+
+  // 한 글자 모음 반복 ("아아아", "어어어") — 한 글자로 압축
+  s = s.replace(/([가-힣])\1{2,}/g, '$1');
+  // 라틴 모음 길게 반복 ("aaaa", "ooooo") — 1글자 (단, "oo", "ee"는 단어로 유효할 수 있어 3개 이상만)
+  s = s.replace(/([aeiouAEIOU])\1{2,}/g, '$1');
+
+  // 끝의 마침표/물음표/쉼표 외 잡문자 정리
+  s = s.replace(/[^\S\r\n]+$/, '');
+
+  return s.trim();
+}
+
+// Wake 인사말 — uiLang 기반 다국어 (사용자 호칭: 하원장님)
+const WAKE_GREETINGS: Readonly<Record<string, { text: string; lang: string }>> = {
+  ko: { text: '네, 하원장님', lang: 'ko-KR' },
+  uz: { text: "Xo'p, doktor Ha", lang: 'uz-UZ' },
+  en: { text: 'Yes, Doctor Ha', lang: 'en-US' },
+  ru: { text: 'Да, доктор Ха', lang: 'ru-RU' },
+  mn: { text: 'За, доктор Ха', lang: 'mn-MN' },
+};
+
 // Chrome TTS 15초 끊김 방지: 문장 단위로 분할하여 순차 재생
 function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
   const sentences = text.split(/(?<=[.!?。]\s)/);
@@ -860,9 +929,11 @@ export function TinkerbellAssistant({
     };
 
     recognition.onend = () => {
-      const finalText = transcriptRef.current.trim();
-      if (finalText) {
-        askTinkerbell(finalText);
+      const rawText = transcriptRef.current.trim();
+      if (rawText) {
+        // 발음 엉킴·반복 정규화 — 한국어/우즈벡어 음성 인식이 자주 만드는 잡음 제거
+        const cleaned = cleanSttTranscript(rawText);
+        askTinkerbell(cleaned);
       } else {
         setState('idle');
       }
@@ -981,10 +1052,14 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
     }
+    // 짧은 chime + 인사말("네, 하원장님") 즉각 발화. 인사말 종료 후 본격 듣기 시작.
+    // 인사말이 실패해도 안전망 타임아웃(2.5초) 안에 듣기가 시작됨.
     playWakeChime();
-    // 본격 음성 입력 모드로 진입
-    void startListening();
-  }, [state, startListening, playWakeChime, voiceOutput]);
+    const greeting = WAKE_GREETINGS[uiLang] ?? WAKE_GREETINGS.ko!;
+    speakImmediate(greeting.text, greeting.lang, () => {
+      void startListening();
+    });
+  }, [state, startListening, playWakeChime, voiceOutput, uiLang]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
   const handleInterruptDetected = useCallback(() => {
