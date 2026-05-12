@@ -13,6 +13,7 @@ import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
 import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
+import { detectSkill } from '../services/skills/skills-registry.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
@@ -302,8 +303,13 @@ export async function handleChatStream(
     /6\.\s*\*\*응답 형식\*\*.*?JSON 형식을 따르세요\./s,
     '6. **자연어 응답**: 사용자가 "몽골어로 답해줘", "answer in English" 같이 특정 언어로 답변을 요청하면 입력 언어와 무관하게 그 언어로만 응답하세요 (이전 턴에서 지정된 언어가 있으면 유지). 명시 요청이 없으면 사용자가 쓴 언어로 답변하세요 — 한국어면 한국어, 영어면 영어, 몽골어(키릴에 Өө/Үү 포함)면 몽골어, 우즈벡어면 우즈벡어, 러시아어면 러시아어. JSON 형식으로 응답하지 마세요.',
   );
+  // Skills: 사용자 질문이 정형 워크플로 트리거에 매치되면 해당 SOP를 시스템 프롬프트에 추가
+  const activeSkill = detectSkill(question);
+  if (activeSkill) {
+    logger.info({ skillId: activeSkill.id, title: activeSkill.title }, '[Chat] Skill 활성화');
+  }
   // 환각 방지 가드는 SYSTEM_PROMPT 본문이 이미 강제 (스트리밍은 별도 추가 없음)
-  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}${buildUiLangDirective(uiLang)}`;
+  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}${buildUiLangDirective(uiLang)}${activeSkill?.systemAddendum ?? ''}`;
 
   // 스트리밍 답변을 모아서 학습에 활용
   const wrappedCallbacks: StreamCallbacks = {
