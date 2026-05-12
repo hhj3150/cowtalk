@@ -62,6 +62,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       dashboardContext?: string;
       uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
       images?: Array<{ data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }>;
+      documents?: Array<{ data: string; mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv'; filename?: string }>;
     };
 
     const result = await handleChatMessage({
@@ -74,6 +75,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       dashboardContext: body.dashboardContext,
       uiLang: body.uiLang,
       images: body.images,
+      documents: body.documents,
     });
 
     res.json({ success: true, data: result });
@@ -92,6 +94,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     dashboardContext?: string;
     uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
     images?: Array<{ data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }>;
+    documents?: Array<{ data: string; mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv'; filename?: string }>;
   };
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -119,6 +122,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,
     images: body.images,
+    documents: body.documents,
   };
 
   try {

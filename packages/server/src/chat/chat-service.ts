@@ -12,6 +12,7 @@ import { resolveContext, type DetectedType } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
+import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
@@ -35,6 +36,13 @@ export interface ChatImage {
   readonly mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 }
 
+/** Files: 사용자가 첨부한 문서 (PDF·Excel·CSV) */
+export interface ChatDocument {
+  readonly data: string; // base64 인코딩
+  readonly mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv';
+  readonly filename?: string;
+}
+
 export interface ChatMessageRequest {
   readonly question: string;
   readonly role: Role;
@@ -45,6 +53,7 @@ export interface ChatMessageRequest {
   readonly dashboardContext?: string;
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
   readonly images?: readonly ChatImage[]; // Vision: 첨부 이미지 (최대 5장)
+  readonly documents?: readonly ChatDocument[]; // Files: 첨부 문서 (PDF/Excel/CSV, 최대 3개)
 }
 
 const UI_LANG_NAMES: Readonly<Record<string, string>> = {
@@ -270,9 +279,22 @@ export async function handleChatStream(
     // 레이블 조회 실패는 비치명적
   }
 
+  // Files: 첨부 문서 파싱 (PDF는 Claude 네이티브, Excel·CSV는 텍스트로 prompt에 주입)
+  let parsedDocuments: ParsedDocument[] = [];
+  let textDocumentsBlock = '';
+  if (request.documents && request.documents.length > 0) {
+    parsedDocuments = await Promise.all(request.documents.map((d) => parseDocument(d)));
+    const textParts = parsedDocuments
+      .filter((p) => p.textContent)
+      .map((p) => `### 첨부 문서: ${p.filename}\n\n${p.textContent}`);
+    if (textParts.length > 0) {
+      textDocumentsBlock = `\n\n## 첨부 문서 (Excel/CSV — 텍스트 변환)\n\n${textParts.join('\n\n---\n\n')}`;
+    }
+  }
+
   const prompt = buildConversationPrompt(
     question, role, context, conversationHistory, { streaming: true, labelContext },
-  );
+  ) + textDocumentsBlock;
 
   const roleTone = getRoleTone(role);
   // 스트리밍: JSON 강제 제거, 자연어 텍스트 응답
@@ -317,6 +339,11 @@ export async function handleChatStream(
   // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회
   // Gateway 경유: audit log + role-based access control
   // Vision: 사용자가 첨부한 이미지를 Claude Vision API에 전달
+  // Files: PDF는 Claude 네이티브 document block, Excel·CSV는 prompt에 텍스트로 이미 주입됨
+  const pdfs = parsedDocuments
+    .filter((p) => p.pdfBase64)
+    .map((p) => ({ data: p.pdfBase64!, filename: p.filename }));
+
   await callClaudeForChatWithTools(
     systemPrompt,
     prompt,
@@ -326,7 +353,7 @@ export async function handleChatStream(
       role,
       farmId: farmId ?? undefined,
     },
-    { useDeepThinking, images: request.images },
+    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );
 }
 
