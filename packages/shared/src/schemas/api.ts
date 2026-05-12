@@ -163,6 +163,13 @@ export const createFeedbackSchema = z.object({
 
 // === CowTalk Chat ===
 
+// Vision: 첨부 이미지 — base64 데이터 + MIME 타입. Claude Vision API에 직접 전달.
+// 5MB 한도(Claude 사양). 한 메시지에 최대 5장 (자비스급 분석에 충분).
+const chatImageSchema = z.object({
+  data: z.string().min(1).max(7_500_000), // base64 length ~ 5MB raw * 1.34
+  mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+});
+
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
   farmId: z.string().uuid().optional(),
@@ -175,6 +182,8 @@ export const chatMessageSchema = z.object({
   // UI 언어 힌트 (사용자가 LangSwitcher에서 선택한 언어).
   // 사용자 입력에 명시적 언어 전환 요청이 없으면 이 언어로 응답하라는 신호로 사용된다.
   uiLang: z.enum(['ko', 'en', 'uz', 'ru', 'mn']).optional(),
+  // Vision: 사용자가 첨부한 이미지 (소 사진·진단서 등). Claude Vision으로 분석.
+  images: z.array(chatImageSchema).max(5).optional(),
 });
 
 // === 내보내기 ===

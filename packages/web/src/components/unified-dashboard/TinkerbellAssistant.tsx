@@ -25,9 +25,16 @@ function isIOSDevice(): boolean {
 }
 // ── 타입 ──
 
+// Vision: 첨부 이미지 — 메시지 표시용 (data URL) + API 전송용 (base64 + mimeType)
+interface AttachedImage {
+  readonly dataUrl: string;  // 'data:image/jpeg;base64,...' 형식 (UI 미리보기)
+  readonly mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+}
+
 interface TinkerbellMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
+  readonly images?: readonly AttachedImage[];
   readonly timestamp: Date;
 }
 
@@ -520,6 +527,7 @@ export function TinkerbellAssistant({
     }
   });
   const [streamText, setStreamText] = useState(''); // 실시간 스트리밍 중인 텍스트
+  const [pendingImages, setPendingImages] = useState<readonly AttachedImage[]>([]); // 다음 전송에 첨부될 이미지
   const [toolActivities, setToolActivities] = useState<readonly ToolActivity[]>([]); // 도구 호출 상태
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
@@ -605,8 +613,16 @@ export function TinkerbellAssistant({
 
   // AI에 질문 전송 (fetch ReadableStream 실시간 스트리밍)
   const askTinkerbell = useCallback(async (question: string) => {
-    const userMsg: TinkerbellMessage = { role: 'user', content: question, timestamp: new Date() };
+    // Vision: 전송 시점의 이미지 스냅샷을 메시지에 함께 첨부 (UI에 표시)
+    const attachedImagesSnapshot = pendingImages;
+    const userMsg: TinkerbellMessage = {
+      role: 'user',
+      content: question,
+      timestamp: new Date(),
+      images: attachedImagesSnapshot.length > 0 ? attachedImagesSnapshot : undefined,
+    };
     setMessages((prev) => [...prev, userMsg]);
+    setPendingImages([]); // 전송 후 첨부 해제
     setState('thinking');
     setStreamText('');
     setToolActivities([]);
@@ -639,6 +655,13 @@ export function TinkerbellAssistant({
             : undefined,
         conversationHistory: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
         uiLang,
+        // Vision: 첨부 이미지 — data URL에서 base64만 추출하여 서버로 전송
+        images: attachedImagesSnapshot.length > 0
+          ? attachedImagesSnapshot.map((img) => ({
+              data: img.dataUrl.split(',')[1] ?? '',
+              mimeType: img.mimeType,
+            }))
+          : undefined,
       };
 
       // 다층 타임아웃: 전체 90초 + 첫 바이트 30초 + 무응답 45초 (시연 중 빠른 실패 처리)
@@ -817,7 +840,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang]);
+  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -1102,15 +1125,56 @@ export function TinkerbellAssistant({
     }
   }, []);
 
-  // 텍스트 입력 전송
+  // Vision: 이미지 첨부 핸들러
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleImageAttach = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const accepted: AttachedImage[] = [];
+    const allowedMime = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+    const MAX_IMAGES = 5;
+    const MAX_BYTES = 5 * 1024 * 1024; // 5MB per image
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]!;
+      if (pendingImages.length + accepted.length >= MAX_IMAGES) break;
+      if (!allowedMime.has(f.type)) {
+        setVoiceError(`지원하지 않는 파일 형식: ${f.type || '알 수 없음'} (JPEG/PNG/GIF/WebP만)`);
+        continue;
+      }
+      if (f.size > MAX_BYTES) {
+        setVoiceError(`파일이 너무 큼 (${(f.size / 1024 / 1024).toFixed(1)}MB) — 5MB 이하만 첨부 가능`);
+        continue;
+      }
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ''));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(f);
+        });
+        accepted.push({ dataUrl, mimeType: f.type as AttachedImage['mimeType'] });
+      } catch {
+        setVoiceError(`파일 읽기 실패: ${f.name}`);
+      }
+    }
+    if (accepted.length > 0) {
+      setPendingImages((prev) => [...prev, ...accepted].slice(0, MAX_IMAGES));
+    }
+  }, [pendingImages.length]);
+
+  const removePendingImage = useCallback((idx: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  // 텍스트 입력 전송 — 텍스트 비어도 이미지 있으면 "이 사진 분석해줘" 기본 질문으로 전송
   const handleTextSubmit = useCallback(() => {
     const text = inputText.trim();
-    if (!text) return;
+    const hasImages = pendingImages.length > 0;
+    if (!text && !hasImages) return;
     setInputText('');
-    // iOS Safari: 사용자 제스처 직후에 TTS 잠금 해제
     unlockTts();
-    askTinkerbell(text);
-  }, [inputText, askTinkerbell]);
+    askTinkerbell(text || '이 사진 분석해 주세요');
+  }, [inputText, askTinkerbell, pendingImages.length]);
 
   // ── Wake Word "팅커벨" — Siri/Alexa 스타일 상시 청취 ──
   // alwaysOpen 모드 + 사용자가 wake 활성화 시: 마이크가 항상 듣고 있다가
@@ -1400,6 +1464,19 @@ export function TinkerbellAssistant({
                   alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
                   maxWidth: '88%',
                 }}>
+                  {/* Vision: 사용자가 첨부한 이미지 — 메시지 버블 위에 thumbnail */}
+                  {msg.role === 'user' && msg.images && msg.images.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 4, justifyContent: 'flex-end' }}>
+                      {msg.images.map((img, i) => (
+                        <img
+                          key={i}
+                          src={img.dataUrl}
+                          alt={`첨부 ${i + 1}`}
+                          style={{ width: 90, height: 90, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }}
+                        />
+                      ))}
+                    </div>
+                  )}
                   <div style={{
                     padding: '9px 13px',
                     borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
@@ -1523,6 +1600,59 @@ export function TinkerbellAssistant({
             </div>
           )}
 
+          {/* Vision: 첨부 이미지 미리보기 (입력 바 위에 row) */}
+          {pendingImages.length > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: 6,
+              padding: '8px 14px',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+              flexShrink: 0,
+              overflowX: 'auto',
+              background: 'var(--ct-card, #1e293b)',
+            }}>
+              {pendingImages.map((img, i) => (
+                <div key={i} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img
+                    src={img.dataUrl}
+                    alt={`첨부 ${i + 1}`}
+                    style={{ width: 56, height: 56, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePendingImage(i)}
+                    aria-label="이미지 삭제"
+                    style={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -6,
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.7)',
+                      color: 'white',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      lineHeight: 1,
+                      padding: 0,
+                    }}
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 숨겨진 파일 input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => { void handleImageAttach(e.target.files); e.target.value = ''; }}
+          />
+
           {/* 입력 바 — 항상 표시 (Claude 스타일). flexShrink:0 으로 메시지 영역이 밀어내도 보존 */}
           <div style={{
             display: 'flex',
@@ -1553,6 +1683,29 @@ export function TinkerbellAssistant({
             </button>
 
             {/* 언어 선택자: 입력 바 폭 확보 위해 alwaysOpen(모바일+데스크탑 사이드바) 모두 헤더로 이동 */}
+
+            {/* Vision: 이미지 첨부 버튼 (카메라/클립) */}
+            <button type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={state === 'thinking' || pendingImages.length >= 5}
+              aria-label="사진 첨부"
+              title={pendingImages.length >= 5 ? '최대 5장' : '사진 첨부 (소·진단서·검정성적표 등)'}
+              style={{
+                width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid var(--ct-border, #334155)',
+                cursor: state === 'thinking' || pendingImages.length >= 5 ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                opacity: state === 'thinking' || pendingImages.length >= 5 ? 0.5 : 1,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="var(--ct-text-muted, #94a3b8)" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+            </button>
 
             {/* 마이크 버튼 */}
             <button type="button"
