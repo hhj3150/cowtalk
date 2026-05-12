@@ -1444,7 +1444,7 @@ export function TinkerbellAssistant({
             </div>
           )}
 
-          {/* 입력 바 — 항상 표시 (Claude 스타일) */}
+          {/* 입력 바 — 항상 표시 (Claude 스타일). flexShrink:0 으로 메시지 영역이 밀어내도 보존 */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -1452,6 +1452,9 @@ export function TinkerbellAssistant({
             padding: isMobile ? '8px 10px' : '10px 14px 10px',
             minWidth: 0,
             boxSizing: 'border-box',
+            flexShrink: 0,
+            borderTop: isMobile ? 'none' : '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--ct-card, #1e293b)',
           }}>
             {/* 팅커벨 아이콘 + 상태 표시 (클릭 시 메시지 토글) */}
             <button type="button"
