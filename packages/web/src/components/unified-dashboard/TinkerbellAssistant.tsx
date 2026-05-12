@@ -1336,39 +1336,43 @@ export function TinkerbellAssistant({
 
         {/* 채팅 패널 — 데스크탑: 우측 사이드바 / 모바일: 하단 바 */}
         <div style={containerStyle}>
-          {/* 데스크탑 사이드바 헤더 — 제목 + 닫기 버튼 */}
+          {/* 데스크탑 사이드바 헤더 — 제목 + 언어 선택 + 닫기 */}
           {!isMobile && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '12px 14px',
+              padding: '10px 14px',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               flexShrink: 0,
               background: `linear-gradient(135deg, ${color}15, transparent)`,
+              gap: 8,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <span style={{ fontSize: 16 }}>🧚</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text, #f1f5f9)' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text, #f1f5f9)', whiteSpace: 'nowrap' }}>
                   팅커벨 AI
                 </span>
-                <span style={{ fontSize: 10, color, fontWeight: 600 }}>{stateLabels[state]}</span>
+                <span style={{ fontSize: 10, color, fontWeight: 600, whiteSpace: 'nowrap' }}>{stateLabels[state]}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setDesktopSidebarOpen(false)}
-                aria-label="팅커벨 닫기"
-                title="닫기"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--ct-text-muted, #94a3b8)',
-                  cursor: 'pointer',
-                  fontSize: 18,
-                  padding: '2px 8px',
-                  lineHeight: 1,
-                }}
-              >✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <LangSwitcher compact />
+                <button
+                  type="button"
+                  onClick={() => setDesktopSidebarOpen(false)}
+                  aria-label="팅커벨 닫기"
+                  title="닫기"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--ct-text-muted, #94a3b8)',
+                    cursor: 'pointer',
+                    fontSize: 18,
+                    padding: '2px 8px',
+                    lineHeight: 1,
+                  }}
+                >✕</button>
+              </div>
             </div>
           )}
 
@@ -1548,8 +1552,7 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* 언어 선택자 — 외국 방문객을 위한 즉시 전환. 모바일은 폭 부족으로 헤더 등 다른 곳에 두는 게 좋아 여기선 데스크톱만 */}
-            {!isMobile && <LangSwitcher compact />}
+            {/* 언어 선택자: 입력 바 폭 확보 위해 alwaysOpen(모바일+데스크탑 사이드바) 모두 헤더로 이동 */}
 
             {/* 마이크 버튼 */}
             <button type="button"
@@ -1577,9 +1580,9 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* Wake Word "팅커벨" 토글 — iOS는 미지원이라 비활성 안내, Android/데스크톱은 정상 동작.
-                 모바일은 폭이 좁아서 wake 버튼 숨김(마이크 버튼으로 충분). */}
-            {wakeSupported && !isMobile && (
+            {/* Wake Word "팅커벨" 토글 — 입력 바 폭 확보 위해 alwaysOpen 사이드바에서는 헤더로 이동.
+                 alwaysOpen=false 인 비-사이드바 환경에서만 입력 바에 표시 */}
+            {wakeSupported && !isMobile && !alwaysOpen && (
               <button type="button"
                 onClick={() => setWakeEnabled((v) => !v)}
                 aria-pressed={wakeEnabled}
