@@ -873,81 +873,103 @@ export function TinkerbellAssistant({
 
   // iOS Safari: MediaRecorder + Whisper STT 경로
   // Web Speech API가 iOS에서 불안정한 문제를 우회. 녹음 → 서버 업로드 → 텍스트 반환.
-  // 사용자가 마이크 버튼 다시 누르거나 5초 무음 시 자동 정지.
+  // 단계별 콘솔 로그 + 시각 진단 메시지를 강화 (개발자도구 없이도 사용자가 원인 파악 가능).
   const startListeningWhisper = useCallback(async () => {
     setVoiceError(null);
     stopSpeaking();
     unlockTts();
+    console.log('[Whisper] 1) 시작 — getUserMedia 요청');
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('[Whisper] 2) 스트림 획득 — tracks:', stream.getTracks().length);
       mediaStreamRef.current = stream;
 
-      // iOS Safari는 audio/mp4 지원, Android는 audio/webm 선호. 자동 협상.
+      // iOS Safari MediaRecorder는 'audio/mp4' 만 지원, Android는 'audio/webm' 선호.
+      // iOS Safari 16+ 는 isTypeSupported('audio/mp4')=true 인데 실제로 빈 파일을 생성하는 버그가 있음.
+      // → 명시 mimeType 없이 기본값으로 두면 iOS가 가장 안정적인 포맷을 자동 선택.
       let mimeType = '';
-      const preferred = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+      const preferred = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
       for (const m of preferred) {
         if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
           mimeType = m;
           break;
         }
       }
+      console.log('[Whisper] 3) MediaRecorder mimeType:', mimeType || '(브라우저 기본)');
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       mediaChunksRef.current = [];
 
       recorder.ondataavailable = (e: BlobEvent) => {
-        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          mediaChunksRef.current.push(e.data);
+          console.log('[Whisper] 4) chunk 도착:', e.data.size, 'bytes (총', mediaChunksRef.current.length, ')');
+        }
       };
 
       recorder.onstop = async () => {
-        // 스트림 정리
+        console.log('[Whisper] 5) recorder.onstop fired');
         if (mediaStreamRef.current) {
           for (const track of mediaStreamRef.current.getTracks()) track.stop();
           mediaStreamRef.current = null;
         }
         const chunks = mediaChunksRef.current;
         mediaChunksRef.current = [];
+        console.log('[Whisper] 6) 총 chunk:', chunks.length, 'bytes:', chunks.reduce((s, c) => s + c.size, 0));
         if (chunks.length === 0) {
           setState('idle');
+          setVoiceError('녹음 데이터 없음 — iOS MediaRecorder 호환성 문제일 수 있습니다. Safari 새로고침 또는 Android 권장.');
           return;
         }
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
         if (blob.size < 800) {
-          // 너무 짧음 (0.3초 미만 정도) — 무시
           setState('idle');
+          setVoiceError(`녹음 너무 짧음 (${blob.size} bytes). 마이크 버튼 누른 후 1초 이상 말씀해 주세요.`);
           return;
         }
-        // Whisper 전사 (UI 언어 힌트로 정확도 향상)
         setState('thinking');
+        console.log('[Whisper] 7) Whisper 전사 요청 — blob:', blob.size, 'bytes,', blob.type);
         try {
           const result = await transcribeAudio(blob, uiLang);
+          console.log('[Whisper] 8) 전사 완료 — text:', result.text);
           const text = (result.text ?? '').trim();
           if (text) {
             const cleaned = cleanSttTranscript(text);
             askTinkerbell(cleaned);
           } else {
             setState('idle');
-            setVoiceError('음성을 인식하지 못했습니다. 다시 시도해 주세요.');
+            setVoiceError('음성을 인식하지 못했습니다 (빈 텍스트). 다시 시도해 주세요.');
           }
         } catch (err) {
           const e = err as { response?: { status?: number; data?: { error?: { code?: string; message?: string } } }; message?: string };
           const status = e?.response?.status;
           const apiErr = e?.response?.data?.error;
           const detail = apiErr ? `${apiErr.code ?? ''} ${apiErr.message ?? ''}`.trim() : (e?.message ?? '');
-          console.warn('[Tinkerbell] Whisper 실패:', { status, blobType: blob.type, blobSize: blob.size, detail });
+          console.warn('[Whisper] 8) 전사 실패:', { status, blobType: blob.type, blobSize: blob.size, detail });
           setState('idle');
-          setVoiceError(`음성 인식 실패 (${status ?? 'NET'}): ${detail.slice(0, 120)}`);
+          setVoiceError(`음성 인식 실패 (${status ?? 'NET'}): ${detail.slice(0, 200)}`);
         }
       };
 
-      recorder.start();
+      // iOS Safari는 timeslice 없으면 ondataavailable이 onstop 때만 호출됨.
+      // 1초 timeslice로 chunk가 도착하는지 실시간 확인 가능 + 데이터 손실 방지.
+      recorder.start(1000);
+      console.log('[Whisper] 4) recorder.start(1000) — state:', recorder.state);
       setState('listening');
       setTranscript('');
 
-      // 자동 정지: 6초 후 자동 종료 (시연 발화 평균 ~3초, 여유 100%)
+      // 1.5초 안에 ondataavailable이 안 오면 MediaRecorder가 깨진 것.
+      window.setTimeout(() => {
+        if (mediaChunksRef.current.length === 0 && recorder.state === 'recording') {
+          console.warn('[Whisper] 4!) 1.5초 chunk 0개 — MediaRecorder 호환성 문제 가능');
+        }
+      }, 1500);
+
+      // 자동 정지: 6초 후 (사용자가 다시 마이크 누르면 stopListening이 즉시 정지)
       window.setTimeout(() => {
         if (recorder.state === 'recording') {
+          console.log('[Whisper] 4.5) 6초 자동 정지');
           try { recorder.stop(); } catch { /* ignore */ }
         }
       }, 6000);
