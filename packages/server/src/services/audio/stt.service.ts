@@ -57,8 +57,30 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
-    logger.error({ status: response.status, errBody: errBody.slice(0, 200) }, '[stt.service] Whisper 호출 실패');
-    throw new Error(`OpenAI Whisper 실패 (HTTP ${response.status})`);
+    logger.error({
+      status: response.status,
+      errBody: errBody.slice(0, 400),
+      audioBytes: opts.audio.length,
+      contentType: opts.contentType,
+      ext,
+    }, '[stt.service] Whisper 호출 실패');
+    // OpenAI 에러 본문에서 메시지 추출 시도 (JSON 또는 raw)
+    let upstreamDetail = '';
+    try {
+      const parsed = JSON.parse(errBody) as { error?: { message?: string; code?: string; type?: string } };
+      upstreamDetail = parsed.error?.message ?? parsed.error?.code ?? '';
+    } catch {
+      upstreamDetail = errBody.slice(0, 200);
+    }
+    // 401/403은 키 권한, 400은 포맷, 413은 크기, 429는 한도
+    const hint =
+      response.status === 401 ? '키 인증 실패 — OPENAI_API_KEY 또는 권한 확인'
+      : response.status === 403 ? '키 권한 부족 — Audio/Whisper 스코프 필요'
+      : response.status === 400 ? `요청 형식 오류 — ${upstreamDetail || '오디오 디코드 실패'}`
+      : response.status === 413 ? '오디오 크기 초과 (25MB 한도)'
+      : response.status === 429 ? '요청 한도 초과 — credit 또는 rate limit 확인'
+      : upstreamDetail || '일시 장애';
+    throw new Error(`OpenAI Whisper 실패 (HTTP ${response.status}): ${hint}`);
   }
 
   const data = await response.json() as { text?: string; language?: string; duration?: number };
