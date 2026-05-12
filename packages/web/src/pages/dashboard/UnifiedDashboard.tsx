@@ -1,6 +1,6 @@
 // 통합 대시보드 — AI 강화 + 동적 차트 + 실시간 운영 (다크 테마)
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useUnifiedDashboard,
@@ -54,7 +54,7 @@ import { EpidemicMapWidget } from '@web/components/epidemic/EpidemicMapWidget';
 import { ClusterDetailModal } from '@web/components/epidemic/ClusterDetailModal';
 import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonitorChart';
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
-import { FarmAnimalDrawer } from '@web/components/unified-dashboard/FarmAnimalDrawer';
+import { FarmAnimalListPanel } from '@web/components/unified-dashboard/FarmAnimalListPanel';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
@@ -564,19 +564,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
 
-  // ── 목장-개체 드로어 ──
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerFarmId, setDrawerFarmId] = useState<string | null>(null);
-  const isFirstRender = useRef(true);
-
-  // 목장 선택 시 자동으로 드로어 오픈 (초기 로드 제외)
-  useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return; }
-    if (selectedFarmId) {
-      setDrawerFarmId(selectedFarmId);
-      setDrawerOpen(true);
-    }
-  }, [selectedFarmId]);
+  // 목장 선택 시 인라인 패널(FarmAnimalListPanel)이 selectedFarmId로 자동 표시됨
 
   // 로그인 시 전체 목장 모드로 시작 (개별 농장 클릭 시 해당 농장 대시보드로 전환)
   // user.farmIds가 1개인 경우에만 해당 농장 자동 선택
@@ -787,6 +775,22 @@ export default function UnifiedDashboard(): React.JSX.Element {
             />
           </SectionErrorBoundary>
           )}
+
+          {/* ── 선택 농장 개체 목록 (인라인) ── */}
+          {selectedFarmId && (() => {
+            const farm = (farmsData?.farms ?? []).find((f) => f.farmId === selectedFarmId);
+            const farmName = farm?.name ?? '선택한 농장';
+            const farmHead = farm?.currentHeadCount ?? null;
+            return (
+              <SectionErrorBoundary label="농장 개체 목록">
+                <FarmAnimalListPanel
+                  farmId={selectedFarmId}
+                  farmName={farmName}
+                  farmHeadCount={farmHead}
+                />
+              </SectionErrorBoundary>
+            );
+          })()}
 
           {/* ── 오늘 할 일 + 실시간 알람 (핵심 운영 패널) ── */}
           {(isVisible('todo_list') || isVisible('live_alarm_feed')) && (
@@ -1063,15 +1067,6 @@ export default function UnifiedDashboard(): React.JSX.Element {
           </div>
         </div>
       )}
-
-      {/* 목장-개체 트리 드로어 */}
-      <FarmAnimalDrawer
-        isOpen={drawerOpen}
-        selectedFarmId={drawerFarmId}
-        farms={farmsData?.farms ?? []}
-        onClose={() => setDrawerOpen(false)}
-        onFarmSelect={(fid) => { setDrawerFarmId(fid); selectFarm(fid); }}
-      />
 
     </div>
   );

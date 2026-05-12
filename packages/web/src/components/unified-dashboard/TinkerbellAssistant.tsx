@@ -194,12 +194,37 @@ const DOMAIN_ICONS: Record<string, string> = {
 
 // ── 음성 합성 (TTS) ──
 
-// iOS Safari에서 TTS를 사용하려면 사용자 제스처 직후에 한 번 호출해야 함
+// iOS Safari/Android Chrome에서 음성 재생을 위한 사용자 제스처 잠금 해제.
+// 두 가지를 모두 unlock 해야 함:
+//   1) window.speechSynthesis (브라우저 TTS fallback)
+//   2) HTMLAudioElement (OpenAI Nova MP3 재생) — iOS Safari가 자동재생 차단
+// 한 번 unlock되면 같은 페이지 세션 동안 유지됨.
+let __audioUnlocked = false;
+let __silentAudio: HTMLAudioElement | null = null;
 function unlockTts(): void {
-  if (!('speechSynthesis' in window)) return;
-  const dummy = new SpeechSynthesisUtterance('');
-  dummy.volume = 0;
-  window.speechSynthesis.speak(dummy);
+  // SpeechSynthesis unlock
+  if ('speechSynthesis' in window) {
+    try {
+      const dummy = new SpeechSynthesisUtterance('');
+      dummy.volume = 0;
+      window.speechSynthesis.speak(dummy);
+    } catch { /* ignore */ }
+  }
+  // HTMLAudioElement unlock — 1프레임짜리 무음 MP3를 같은 제스처 안에서 재생
+  if (!__audioUnlocked) {
+    try {
+      // 1프레임 무음 MP3 (base64). 길이 ~0.05초, 용량 ~100바이트
+      const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzAwAAAAAAJlRYWFgAAAAcAAAATGF2ZjU3LjU2LjEwMQBUUE9TAAAABQAAADAAAAD/+5DEAAAAAAAAAAAAAAAAAAAAAABYaW5nAAAADwAAAAEAAAEgAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAAA8TEFNRTMuMTAwAaUAAAAALDoAABRGJAJEQQAB9AAAASBO2sLZAAAAAP/7kMQAA8AAAaQAAAAgAAA0gAAABExBTUUzLjEwMFVVVVVVVVVV';
+      __silentAudio = new Audio(SILENT_MP3);
+      __silentAudio.volume = 0;
+      const p = __silentAudio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => { __audioUnlocked = true; }).catch(() => { /* ignore */ });
+      } else {
+        __audioUnlocked = true;
+      }
+    } catch { /* ignore */ }
+  }
 }
 
 // Chrome TTS 15초 끊김 방지: 문장 단위로 분할하여 순차 재생
@@ -797,9 +822,16 @@ export function TinkerbellAssistant({
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
-    // 다국어 음성 인식: 브라우저 언어 기반 + 한국어 우선
-    const browserLang = navigator.language ?? 'ko-KR';
-    recognition.lang = browserLang.startsWith('ko') ? 'ko-KR' : browserLang;
+    // 다국어 음성 인식: 사용자 UI 언어(uiLang) 우선 → 브라우저 언어 → 한국어
+    const UI_LANG_TO_STT: Record<string, string> = {
+      ko: 'ko-KR',
+      en: 'en-US',
+      uz: 'uz-UZ',
+      ru: 'ru-RU',
+      mn: 'mn-MN',
+    };
+    const sttLang = UI_LANG_TO_STT[uiLang] ?? (navigator.language || 'ko-KR');
+    recognition.lang = sttLang;
     recognition.continuous = false;
     recognition.interimResults = true;
 
@@ -872,7 +904,7 @@ export function TinkerbellAssistant({
         setVoiceError('음성 인식을 시작할 수 없습니다.');
       }
     }
-  }, [hasSpeechRecognition, askTinkerbell]);
+  }, [hasSpeechRecognition, askTinkerbell, uiLang]);
 
   // 음성 인식 중지
   const stopListening = useCallback(() => {
@@ -1011,6 +1043,9 @@ export function TinkerbellAssistant({
           background: 'var(--ct-card, #1e293b)',
           borderTop: `1px solid ${color}40`,
           boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+          boxSizing: 'border-box',
+          maxWidth: '100vw',
+          overflowX: 'hidden',
         }}>
 
           {/* 메시지 영역 — 펼쳐졌을 때만 표시 */}
@@ -1161,8 +1196,10 @@ export function TinkerbellAssistant({
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            padding: '10px 14px 10px',
+            gap: isMobile ? 6 : 8,
+            padding: isMobile ? '8px 10px' : '10px 14px 10px',
+            minWidth: 0,
+            boxSizing: 'border-box',
           }}>
             {/* 팅커벨 아이콘 + 상태 표시 (클릭 시 메시지 토글) */}
             <button type="button"
@@ -1181,8 +1218,8 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* 언어 선택자 — 외국 방문객을 위한 즉시 전환 */}
-            <LangSwitcher compact />
+            {/* 언어 선택자 — 외국 방문객을 위한 즉시 전환. 모바일은 폭 부족으로 헤더 등 다른 곳에 두는 게 좋아 여기선 데스크톱만 */}
+            {!isMobile && <LangSwitcher compact />}
 
             {/* 마이크 버튼 */}
             <button type="button"
@@ -1210,8 +1247,9 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* Wake Word "팅커벨" 토글 — iOS는 미지원이라 비활성 안내, Android/데스크톱은 정상 동작 */}
-            {wakeSupported && (
+            {/* Wake Word "팅커벨" 토글 — iOS는 미지원이라 비활성 안내, Android/데스크톱은 정상 동작.
+                 모바일은 폭이 좁아서 wake 버튼 숨김(마이크 버튼으로 충분). */}
+            {wakeSupported && !isMobile && (
               <button type="button"
                 onClick={() => setWakeEnabled((v) => !v)}
                 aria-pressed={wakeEnabled}
@@ -1246,8 +1284,8 @@ export function TinkerbellAssistant({
                 <span>팅커벨</span>
               </button>
             )}
-            {/* iOS Safari/Chrome — wake word 미지원, 마이크 버튼 안내 */}
-            {!wakeSupported && platformLimitation === 'ios' && (
+            {/* iOS Safari/Chrome — wake word 미지원, 마이크 버튼 안내. 모바일은 폭 양보. */}
+            {!wakeSupported && platformLimitation === 'ios' && !isMobile && (
               <span
                 style={{
                   height: 34, padding: '0 10px', borderRadius: 17, flexShrink: 0,
@@ -1277,13 +1315,16 @@ export function TinkerbellAssistant({
               disabled={state === 'thinking' || state === 'listening'}
               style={{
                 flex: 1,
+                minWidth: 0,
+                width: '100%',
                 background: 'rgba(255,255,255,0.06)',
                 border: '1px solid var(--ct-border, #334155)',
                 borderRadius: 24,
-                padding: '9px 16px',
-                fontSize: 13,
+                padding: isMobile ? '8px 12px' : '9px 16px',
+                fontSize: isMobile ? 16 : 13,
                 color: 'var(--ct-text, #f1f5f9)',
                 outline: 'none',
+                boxSizing: 'border-box',
               }}
             />
 
