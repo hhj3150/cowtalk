@@ -1242,19 +1242,25 @@ export function TinkerbellAssistant({
 
   const color = stateColors[state];
 
-  // ── alwaysOpen 모드 — Claude AI처럼 항상 하단 고정 ──
+  // ── alwaysOpen 모드 — Claude AI처럼 항상 고정 (데스크탑=우측 사이드바, 모바일=하단 바) ──
+  const SIDEBAR_WIDTH = 380;
+
+  // 데스크탑 alwaysOpen 시 본문 우측 여백 확보 (사이드바와 겹치지 않도록)
+  useEffect(() => {
+    if (!alwaysOpen || isMobile) return;
+    const prev = document.body.style.paddingRight;
+    document.body.style.paddingRight = `${SIDEBAR_WIDTH}px`;
+    return () => { document.body.style.paddingRight = prev; };
+  }, [alwaysOpen, isMobile]);
+
   if (alwaysOpen) {
     const bottomOffset = isMobile ? 60 : 0;
+    // 데스크탑은 항상 펼침 상태 유지 (사이드바는 메시지+입력이 모두 보이는 게 자연)
+    const sidebarExpanded = isMobile ? isExpanded : true;
 
-    return (
-      <>
-        <style>{`
-          @keyframes tinkerbell-dot { 0%,80%,100%{opacity:0.2}40%{opacity:1} }
-          @keyframes tb-slide-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        `}</style>
-
-        {/* 하단 고정 채팅창 */}
-        <div style={{
+    // 컨테이너 위치·크기 — 데스크탑 우측 사이드바 vs 모바일 하단 바
+    const containerStyle: React.CSSProperties = isMobile
+      ? {
           position: 'fixed',
           bottom: bottomOffset,
           left: 0,
@@ -1266,18 +1272,44 @@ export function TinkerbellAssistant({
           boxSizing: 'border-box',
           maxWidth: '100vw',
           overflowX: 'hidden',
-        }}>
+        }
+      : {
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: SIDEBAR_WIDTH,
+          zIndex: 9990,
+          background: 'var(--ct-card, #1e293b)',
+          borderLeft: `1px solid ${color}40`,
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.3)',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+        };
 
-          {/* 메시지 영역 — 펼쳐졌을 때만 표시 */}
-          {isExpanded && (
+    return (
+      <>
+        <style>{`
+          @keyframes tinkerbell-dot { 0%,80%,100%{opacity:0.2}40%{opacity:1} }
+          @keyframes tb-slide-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        `}</style>
+
+        {/* 채팅 패널 — 데스크탑: 우측 사이드바 / 모바일: 하단 바 */}
+        <div style={containerStyle}>
+
+          {/* 메시지 영역 — 데스크탑 사이드바는 항상 펼침, 모바일은 토글 */}
+          {sidebarExpanded && (
             <div style={{
-              maxHeight: isMobile ? '40dvh' : '45vh',
+              ...(isMobile
+                ? { maxHeight: '40dvh' }
+                : { flex: 1, minHeight: 0 }),
               overflowY: 'auto',
               padding: '12px 16px 4px',
               display: 'flex',
               flexDirection: 'column',
               gap: 8,
-              animation: 'tb-slide-up 0.2s ease',
+              animation: isMobile ? 'tb-slide-up 0.2s ease' : undefined,
             }}>
               {messages.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--ct-text-muted, #94a3b8)', fontSize: 12 }}>
@@ -1378,7 +1410,7 @@ export function TinkerbellAssistant({
           )}
 
           {/* 추천 질문 — 메시지 없을 때 + 펼쳐진 상태 */}
-          {isExpanded && messages.length === 0 && state === 'idle' && (
+          {sidebarExpanded && messages.length === 0 && state === 'idle' && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '0 16px 8px' }}>
               {suggestions.map((q) => (
                 <button key={q} type="button"
@@ -1610,8 +1642,10 @@ export function TinkerbellAssistant({
           </div>
         </div>
 
-        {/* 하단 채팅창 높이만큼 페이지 하단 여백 확보 */}
-        <div style={{ height: isMobile ? (isExpanded ? 'calc(40vh + 60px)' : '70px') : (isExpanded ? 'calc(45vh + 65px)' : '65px'), pointerEvents: 'none' }} />
+        {/* 모바일 하단 채팅창 높이만큼 페이지 하단 여백 확보 (데스크탑은 body padding-right로 대체) */}
+        {isMobile && (
+          <div style={{ height: isExpanded ? 'calc(40vh + 60px)' : '70px', pointerEvents: 'none' }} />
+        )}
       </>
     );
   }
