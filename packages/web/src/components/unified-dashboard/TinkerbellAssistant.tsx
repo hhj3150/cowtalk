@@ -963,7 +963,9 @@ export function TinkerbellAssistant({
   // 단계별 콘솔 로그 + 시각 진단 메시지를 강화 (개발자도구 없이도 사용자가 원인 파악 가능).
   const startListeningWhisper = useCallback(async () => {
     setVoiceError(null);
+    // 피드백 루프 방지 — 진행 중인 모든 음성 출력 강제 중단 (브라우저 SpeechSynthesis + OpenAI Nova MP3)
     stopSpeaking();
+    try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     unlockTts();
     console.log('[Whisper] 1) 시작 — getUserMedia 요청');
 
@@ -1071,7 +1073,7 @@ export function TinkerbellAssistant({
       }
       setState('idle');
     }
-  }, [uiLang, askTinkerbell]);
+  }, [uiLang, askTinkerbell, voiceOutput]);
 
   // 음성 인식 시작 (권한 체크 + 에러 메시지 포함)
   // iOS Safari 중요: await 체인이 사용자 제스처 컨텍스트를 끊으므로
@@ -1099,7 +1101,9 @@ export function TinkerbellAssistant({
       }
     }
 
+    // 피드백 루프 방지 — 진행 중인 모든 음성 출력 강제 중단
     stopSpeaking();
+    try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     unlockTts();
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1187,7 +1191,7 @@ export function TinkerbellAssistant({
         setVoiceError('음성 인식을 시작할 수 없습니다.');
       }
     }
-  }, [hasSpeechRecognition, askTinkerbell, uiLang]);
+  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput]);
 
   // 음성 인식 중지 — Web Speech API + MediaRecorder 양쪽 대응
   const stopListening = useCallback(() => {
@@ -1408,9 +1412,11 @@ export function TinkerbellAssistant({
     }
   }, [state, voiceOutput]);
 
-  // wake word는 alwaysOpen + wake 활성화 + (본격 입력 아닐 때) 청취
-  // 답변 중·생각 중에도 listening 상태가 아니면 wake/interrupt 청취 가능
-  const wakeShouldListen = alwaysOpen && wakeEnabled && state !== 'listening';
+  // wake word는 alwaysOpen + wake 활성화 + 'idle' 상태에서만 청취.
+  // 'speaking' 중에는 자기 음성을 wake word로 잘못 인식해 피드백 루프 발생 → 정지.
+  // 'thinking' 도 잠시 정지 (응답 시작 직전 안정성).
+  // barge-in("팅커벨"·"조용히 해")은 listening/thinking 동안 잃지만 피드백 방지 우선.
+  const wakeShouldListen = alwaysOpen && wakeEnabled && state === 'idle';
   const { listening: wakeListening, supported: wakeSupported, platformLimitation } = useWakeWord({
     enabled: wakeShouldListen,
     onWake: handleWakeDetected,
