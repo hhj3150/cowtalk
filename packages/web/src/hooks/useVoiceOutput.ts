@@ -70,6 +70,11 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  // 재생 시작 → 완전 종료까지 보장하기 위한 promise resolver.
+  // 피드백 루프 방지: STT/wake word는 isPlaying === false 일 때만 활성화되어야 한다.
+  // audio.play()는 재생 시작 시 resolve하므로, 호출자가 "발화 끝났는지"를 알려면
+  // onended까지 기다려야 한다 (또는 cleanup/오류로 강제 종료).
+  const endResolverRef = useRef<(() => void) | null>(null);
 
   // 언마운트 시 audio 정리
   useEffect(() => {
@@ -86,6 +91,7 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
   }, []);
 
   const cleanup = useCallback(() => {
+    const hadAudio = audioRef.current !== null;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
@@ -94,6 +100,15 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = null;
+    }
+    // pause()는 onended를 fire하지 않으므로 isPlaying을 직접 정리.
+    // 안 하면 barge-in 후 isPlaying이 true로 남아 wake word가 영구 차단됨.
+    if (hadAudio) setIsPlaying(false);
+    // 진행 중인 speakText() 호출자를 즉시 깨움 — 끊긴 발화도 await가 풀려야 다음 흐름 진행.
+    if (endResolverRef.current) {
+      const resolve = endResolverRef.current;
+      endResolverRef.current = null;
+      resolve();
     }
   }, []);
 
@@ -164,8 +179,19 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
         const audio = new Audio(url);
         audioRef.current = audio;
 
+        // 재생 완전 종료까지 기다리는 promise. audio.play()는 재생 시작 시 resolve하므로
+        // 여기서 별도 onended 시점에 resolve하여 호출자가 STT 재개 타이밍을 정확히 잡게 함.
+        const endPromise = new Promise<void>((resolve) => {
+          endResolverRef.current = resolve;
+        });
+
         audio.onplay = () => setIsPlaying(true);
         audio.onended = () => {
+          setIsPlaying(false);
+          cleanup();
+        };
+        audio.onerror = () => {
+          // 재생 오류 시에도 await가 영원히 걸리지 않도록 resolve
           setIsPlaying(false);
           cleanup();
         };
@@ -173,6 +199,12 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
         try {
           await audio.play();
         } catch (playErr) {
+          // play() 실패 시 endResolver 정리
+          if (endResolverRef.current) {
+            const r = endResolverRef.current;
+            endResolverRef.current = null;
+            r();
+          }
           const name = (playErr as { name?: string })?.name ?? '';
           if (name === 'NotAllowedError') {
             raiseAndThrow({
@@ -183,6 +215,12 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
             raiseAndThrow({ code: 'unknown', message: `오디오 재생 실패: ${name || 'unknown'}` });
           }
         }
+
+        // 재생 시작 성공 → 실제 종료까지 await (피드백 루프 방지의 핵심)
+        await endPromise;
+        // 스피커 잔향(echo tail) — 200ms 추가 가드. 이 동안에도 isPlaying은 false이지만
+        // 호출자(askTinkerbell)는 여기서 풀리므로 wake word 재개가 200ms 뒤에 일어남.
+        await new Promise<void>((r) => setTimeout(r, 200));
       } finally {
         setIsSynthesizing(false);
       }

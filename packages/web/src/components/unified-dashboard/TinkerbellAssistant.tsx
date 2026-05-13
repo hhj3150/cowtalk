@@ -10,6 +10,7 @@ import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { useWakeWord } from '@web/hooks/useWakeWord';
+import { MicButton } from '@web/components/common/MicButton';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
@@ -1203,6 +1204,36 @@ export function TinkerbellAssistant({
     }
   }, []);
 
+  // 마이크 버튼 핸들러 (탭/PTT 공용) — 두 인라인 사이트에서 동일 동작.
+  // 탭: 토글 (기존 동작 유지). PTT: 누르는 동안만 ON, 떼면 전송.
+  const handleMicTap = useCallback(() => {
+    if (!hasSpeechRecognition) {
+      setVoiceError(t('voice.err.not_supported'));
+      return;
+    }
+    if (state === 'listening') {
+      stopListening();
+    } else {
+      unlockTts();
+      void startListening();
+    }
+  }, [hasSpeechRecognition, state, stopListening, startListening, t]);
+
+  const handleMicPressStart = useCallback(() => {
+    if (!hasSpeechRecognition) {
+      setVoiceError(t('voice.err.not_supported'));
+      return;
+    }
+    if (state === 'listening') return; // 이미 듣는 중이면 무시
+    unlockTts();
+    void startListening();
+  }, [hasSpeechRecognition, state, startListening, t]);
+
+  const handleMicPressEnd = useCallback(() => {
+    // 떼면 전송 — onend가 transcript를 askTinkerbell로 보냄
+    if (state === 'listening') stopListening();
+  }, [state, stopListening]);
+
   // 첨부 핸들러 — 이미지(Vision)와 문서(PDF/Excel/CSV) 둘 다 처리
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1412,11 +1443,13 @@ export function TinkerbellAssistant({
     }
   }, [state, voiceOutput]);
 
-  // wake word는 alwaysOpen + wake 활성화 + 'idle' 상태에서만 청취.
+  // wake word는 alwaysOpen + wake 활성화 + 'idle' 상태 + TTS 재생 중 아닐 때만 청취.
   // 'speaking' 중에는 자기 음성을 wake word로 잘못 인식해 피드백 루프 발생 → 정지.
   // 'thinking' 도 잠시 정지 (응답 시작 직전 안정성).
+  // voiceOutput.isPlaying 추가 게이팅: state는 audio.play() 성공 시점에 'idle'로 돌아가지만
+  // 실제 스피커는 계속 울리는 갭이 있음 → isPlaying === true 동안에도 wake 차단.
   // barge-in("팅커벨"·"조용히 해")은 listening/thinking 동안 잃지만 피드백 방지 우선.
-  const wakeShouldListen = alwaysOpen && wakeEnabled && state === 'idle';
+  const wakeShouldListen = alwaysOpen && wakeEnabled && state === 'idle' && !voiceOutput.isPlaying;
   const { listening: wakeListening, supported: wakeSupported, platformLimitation } = useWakeWord({
     enabled: wakeShouldListen,
     onWake: handleWakeDetected,
@@ -1918,31 +1951,15 @@ export function TinkerbellAssistant({
               </svg>
             </button>
 
-            {/* 마이크 버튼 */}
-            <button type="button"
-              onClick={() => {
-                if (!hasSpeechRecognition) { setVoiceError(t('voice.err.not_supported')); return; }
-                if (state === 'listening') { stopListening(); } else { unlockTts(); void startListening(); }
-              }}
+            {/* 마이크 버튼 — 탭 = 토글, 길게 = Push-to-Talk */}
+            <MicButton
+              isListening={state === 'listening'}
               disabled={state === 'thinking'}
-              style={{
-                width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-                background: state === 'listening' ? '#ef4444' : 'rgba(255,255,255,0.07)',
-                border: state === 'listening' ? '2px solid #ef4444' : '1px solid var(--ct-border, #334155)',
-                cursor: state === 'thinking' ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'all 0.2s',
-              }}
-              title={state === 'listening' ? '듣기 중지' : '음성 질문'}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                stroke={state === 'listening' ? 'white' : 'var(--ct-text-muted, #94a3b8)'}
-                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-              </svg>
-            </button>
+              size={34}
+              onClick={handleMicTap}
+              onPressStart={handleMicPressStart}
+              onPressEnd={handleMicPressEnd}
+            />
 
             {/* Wake Word "팅커벨" 토글 — 입력 바 폭 확보 위해 alwaysOpen 사이드바에서는 헤더로 이동.
                  alwaysOpen=false 인 비-사이드바 환경에서만 입력 바에 표시 */}
@@ -2442,41 +2459,15 @@ export function TinkerbellAssistant({
         gap: 8,
         alignItems: 'center',
       }}>
-        {/* 마이크 버튼 */}
-          <button
-            onClick={() => {
-              if (!hasSpeechRecognition) {
-                setVoiceError('이 브라우저는 음성 인식을 지원하지 않습니다.');
-                return;
-              }
-              if (state === 'listening') { stopListening(); } else { void startListening(); }
-            }}
+        {/* 마이크 버튼 — 탭 = 토글, 길게 = Push-to-Talk */}
+          <MicButton
+            isListening={state === 'listening'}
             disabled={state === 'thinking'}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              background: state === 'listening' ? '#ef4444' : 'rgba(255,255,255,0.08)',
-              border: state === 'listening' ? '2px solid #ef4444' : '1px solid var(--ct-border, #334155)',
-              cursor: state === 'thinking' ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              transition: 'all 0.2s',
-              animation: state === 'listening' ? 'tinkerbell-pulse-mic 1s ease-in-out infinite' : undefined,
-            }}
-            title={state === 'listening' ? '듣기 중지' : '음성으로 질문하기'}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke={state === 'listening' ? 'white' : 'var(--ct-text-muted, #94a3b8)'}
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            >
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-            </svg>
-          </button>
+            size={40}
+            onClick={handleMicTap}
+            onPressStart={handleMicPressStart}
+            onPressEnd={handleMicPressEnd}
+          />
 
         {/* 텍스트 입력 */}
         <input
