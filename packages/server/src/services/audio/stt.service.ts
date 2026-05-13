@@ -7,6 +7,29 @@
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 
+// 도메인 + 브랜드 어휘 — Whisper prompt 파라미터에 주입하여 인식 정확도 ↑.
+// 코드스위칭 핵심: 브랜드명(CowTalk, smaXtec)과 약어(DIM, SCC, THI, KAHIS, DHI)는
+// 어느 언어든 원형으로 유지되어야 함 — 모든 언어 프롬프트에 라틴 표기로 포함.
+const BRAND_TERMS = 'CowTalk smaXtec KAHIS DHI EKAPE DIM SCC THI KPN';
+
+const DOMAIN_PROMPTS: Readonly<Record<string, string>> = {
+  ko: `${BRAND_TERMS} 팅커벨 한우 젖소 홀스타인 발정 수정 분만 임신 건유 유방염 케토시스 산차 이력제 해돋이목장 우즈베키스탄 카자흐스탄`,
+  en: `${BRAND_TERMS} Tinkerbell Korean cattle Holstein heat insemination calving pregnancy mastitis ketosis traceability Sultan-farm Hae-dot-i Uzbekistan Kazakhstan`,
+  uz: `${BRAND_TERMS} Tinkerbell qoramol sigir mol sutchilik chorvachilik sun'iy urug'lantirish O'zbekiston Qozog'iston Janubiy Koreya`,
+  ru: `${BRAND_TERMS} Тинкербел крупный рогатый скот корова молочное животноводство искусственное осеменение Узбекистан Казахстан Южная Корея`,
+  mn: `${BRAND_TERMS} Тинкербелл үхэр сүүний мал хиймэл хээлтүүлэг Узбекистан Казахстан Өмнөд Солонгос`,
+};
+
+/**
+ * 언어별 도메인 프롬프트를 반환. 미지정 시 한국어 + 영어 통합 프롬프트(코드스위칭 견고).
+ * Whisper는 prompt를 통해 어휘 분포를 학습하므로, 예상되는 모든 언어 어휘를 포함하면
+ * 한국어 발화 중간에 영어 브랜드명이 섞여도 라틴 표기로 정확히 전사된다.
+ */
+export function getDomainPrompt(language?: string): string {
+  const lang = (language ?? 'ko').toLowerCase();
+  return DOMAIN_PROMPTS[lang] ?? `${DOMAIN_PROMPTS.ko ?? BRAND_TERMS} ${DOMAIN_PROMPTS.en ?? ''}`.trim();
+}
+
 export interface TranscribeOptions {
   readonly audio: Buffer;
   readonly contentType: string;          // 예: 'audio/webm' / 'audio/mp4' / 'audio/m4a'

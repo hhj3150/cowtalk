@@ -6,7 +6,7 @@ import { Router, raw } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { synthesize, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
-import { transcribe } from '../../services/audio/stt.service.js';
+import { transcribe, getDomainPrompt } from '../../services/audio/stt.service.js';
 import {
   checkAndIncrementTtsUsage,
   getUserTtsUsage,
@@ -153,7 +153,8 @@ audioRouter.post(
         audio,
         contentType: contentType as string,
         language,
-        prompt: '한우 젖소 발정 분만 임신 건강 술탄팜 CowTalk',
+        // 언어별 도메인 프롬프트 — 코드스위칭(한국어+영어 브랜드명 혼합) 견고화.
+        prompt: getDomainPrompt(language),
       });
 
       res.json({ success: true, data: result });
