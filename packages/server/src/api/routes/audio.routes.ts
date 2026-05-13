@@ -7,6 +7,12 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { synthesize, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
 import { transcribe } from '../../services/audio/stt.service.js';
+import {
+  checkAndIncrementTtsUsage,
+  getUserTtsUsage,
+  estimateTtsCostUsd,
+  getQuotaLimits,
+} from '../../services/audio/tts-quota.service.js';
 import { logger } from '../../lib/logger.js';
 
 export const audioRouter = Router();
@@ -23,6 +29,34 @@ const speakSchema = z.object({
 audioRouter.post('/speak', async (req, res) => {
   try {
     const input = speakSchema.parse(req.body);
+
+    // 쿼터 — 합성 전에 사전 차단. maxChars가 적용된 후 실제 합성 글자수가 줄 수 있지만,
+    // 요청 글자수를 기준으로 계산해야 악성 사용자가 한 번에 4,000자씩 보내는 것을 막을 수 있다.
+    // 트런케이션 후 글자수가 줄어도 환불은 하지 않는다 (Redis race + 복잡성).
+    const userId = req.user?.userId ?? '';
+    const role = req.user?.role;
+    const requestChars = Math.min(input.text.length, input.maxChars ?? input.text.length);
+    const quota = await checkAndIncrementTtsUsage(userId, requestChars, role);
+    if (!quota.allowed) {
+      const limits = getQuotaLimits();
+      const used = quota.limitType === 'daily' ? quota.dailyUsed : quota.monthlyUsed;
+      const limit = quota.limitType === 'daily' ? limits.dailyLimit : limits.monthlyLimit;
+      const periodLabel = quota.limitType === 'daily' ? '일' : '월';
+      res.setHeader('Retry-After', String(quota.retryAfterSeconds ?? 3600));
+      res.status(429).json({
+        success: false,
+        error: {
+          code: 'TTS_QUOTA_EXCEEDED',
+          message: `${periodLabel} TTS 사용량 한도 도달 (${used.toLocaleString()}/${limit.toLocaleString()}자). ${quota.limitType === 'daily' ? '자정' : '다음 달 1일'} 리셋.`,
+          limitType: quota.limitType,
+          dailyUsed: quota.dailyUsed,
+          monthlyUsed: quota.monthlyUsed,
+          retryAfterSeconds: quota.retryAfterSeconds,
+        },
+      });
+      return;
+    }
+
     const result = await synthesize({
       text: input.text,
       voice: input.voice as TtsVoice | undefined,
@@ -142,6 +176,31 @@ audioRouter.post(
     }
   },
 );
+
+// GET /api/audio/usage — 본인 TTS 사용량 조회 (UI에서 잔여 한도 표시용)
+audioRouter.get('/usage', async (req, res) => {
+  const userId = req.user?.userId;
+  if (!userId) {
+    res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: '인증 필요' } });
+    return;
+  }
+  const usage = await getUserTtsUsage(userId);
+  const limits = getQuotaLimits();
+  const role = req.user?.role;
+  const bypass = role === 'government_admin' || role === 'quarantine_officer';
+  res.json({
+    success: true,
+    data: {
+      ...usage,
+      dailyLimit: limits.dailyLimit,
+      monthlyLimit: limits.monthlyLimit,
+      dailyRemaining: bypass ? null : Math.max(0, limits.dailyLimit - usage.dailyChars),
+      monthlyRemaining: bypass ? null : Math.max(0, limits.monthlyLimit - usage.monthlyChars),
+      estimatedMonthlyCostUsd: estimateTtsCostUsd(usage.monthlyChars),
+      bypass,
+    },
+  });
+});
 
 // GET /api/audio/voices — 사용 가능한 음성 목록 (UI에서 선택 옵션 표시용)
 audioRouter.get('/voices', (_req, res) => {

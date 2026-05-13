@@ -68,6 +68,11 @@ const envSchema = z.object({
   OPENAI_TTS_FORMAT: z.enum(['mp3', 'opus', 'aac', 'flac']).default('mp3'),
   // TTS 속도: 1.0=기본, 0.85=차분, 1.1=빠름. 자연 대화에는 0.95~1.05 권장
   OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4.0).default(1.0),
+  // TTS 비용 통제 — 사용자별 일/월 글자 한도. tts-1 기준 $15/1M chars.
+  // 기본 50k/일(=$0.75) × 30일 = 500k/월(=$7.5)/사용자. admin/quarantine_officer는 우회.
+  // 한도 도달 시 429 + Retry-After. Redis 미사용 시 자동 우회(graceful).
+  TTS_DAILY_CHAR_LIMIT: z.coerce.number().int().min(0).default(50000),
+  TTS_MONTHLY_CHAR_LIMIT: z.coerce.number().int().min(0).default(500000),
 
   // Web Push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),

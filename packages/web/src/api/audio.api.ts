@@ -98,3 +98,24 @@ export async function getVoices(): Promise<VoicesResponse> {
   const response = await apiClient.get<{ data: VoicesResponse }>('/audio/voices');
   return response.data.data;
 }
+
+export interface TtsUsage {
+  readonly userId: string;
+  readonly dailyChars: number;
+  readonly monthlyChars: number;
+  readonly dailyRequests: number;
+  readonly monthlyRequests: number;
+  readonly dailyLimit: number;
+  readonly monthlyLimit: number;
+  /** admin/quarantine_officer는 null (한도 없음). */
+  readonly dailyRemaining: number | null;
+  readonly monthlyRemaining: number | null;
+  readonly estimatedMonthlyCostUsd: number;
+  readonly bypass: boolean;
+}
+
+/** 본인 TTS 사용량 + 한도 조회 (UI 잔여 표시용). */
+export async function getMyTtsUsage(): Promise<TtsUsage> {
+  const response = await apiClient.get<{ data: TtsUsage }>('/audio/usage');
+  return response.data.data;
+}

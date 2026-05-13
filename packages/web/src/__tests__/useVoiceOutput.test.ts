@@ -6,7 +6,7 @@
 // 3) cleanup()이 endResolverRef를 깨워서 await가 풀린다 (await 누수 방지)
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 
 vi.mock('@web/api/audio.api', () => ({

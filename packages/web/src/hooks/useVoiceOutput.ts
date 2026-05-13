@@ -13,6 +13,7 @@ export type VoiceOutputErrorCode =
   | 'not-configured'  // 서버에 OPENAI_API_KEY 미설정
   | 'upstream-error'  // OpenAI 일시 장애
   | 'autoplay-blocked' // 브라우저가 자동재생 차단
+  | 'quota-exceeded'  // 사용자별 일/월 TTS 한도 초과
   | 'unknown';
 
 export interface VoiceOutputError {
@@ -159,6 +160,13 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
             ?? (err as { status?: number })?.status;
           if (status === 503) {
             raiseAndThrow({ code: 'not-configured', message: '음성 기능이 아직 활성화되지 않았습니다 (Railway OPENAI_API_KEY 미설정)' });
+          } else if (status === 429) {
+            const body = (err as { response?: { data?: { error?: { message?: string; limitType?: string } } } })?.response?.data?.error;
+            const limit = body?.limitType === 'daily' ? '오늘' : '이번 달';
+            raiseAndThrow({
+              code: 'quota-exceeded',
+              message: body?.message ?? `${limit} 음성 사용량 한도에 도달했습니다.`,
+            });
           } else if (status === 502) {
             const body = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
             raiseAndThrow({ code: 'upstream-error', message: body ?? '음성 서비스 일시 장애' });
