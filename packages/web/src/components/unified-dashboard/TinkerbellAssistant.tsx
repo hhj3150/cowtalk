@@ -674,7 +674,9 @@ export function TinkerbellAssistant({
   }, [isOpen]);
 
   // AI에 질문 전송 (fetch ReadableStream 실시간 스트리밍)
-  const askTinkerbell = useCallback(async (question: string) => {
+  // inputMode: 사용자가 어떻게 물었는지 — 음성으로 물으면 음성으로 답함 (현장 핵심 UX).
+  // 'voice' = 마이크/wake word, 'text' = 입력창/suggestion 클릭
+  const askTinkerbell = useCallback(async (question: string, inputMode: 'voice' | 'text' = 'text') => {
     // Vision + Files: 전송 시점의 첨부 스냅샷을 메시지에 함께 보관 (UI 표시)
     const attachedImagesSnapshot = pendingImages;
     const attachedDocumentsSnapshot = pendingDocuments;
@@ -874,11 +876,11 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
       setState('speaking');
 
-      // 음성 출력: voiceMode가 ON이면 OpenAI Nova 사용, 실패 시 브라우저 TTS fallback.
-      // OFF면 무음 (사용자가 명시적으로 끔).
-      // 에러는 Console에만 기록 — 사용자 화면에 배너는 노출하지 않음
-      // (브라우저 TTS로 자동 fallback되어 소리는 나오므로 배너는 혼란만 야기)
-      if (voiceOutput.voiceMode) {
+      // 음성 출력 결정 — 현장 사용자 핵심 UX:
+      // (1) 음성으로 물었으면 → 항상 음성으로 답한다 (voiceMode 토글과 무관, 손이 바쁜 상황)
+      // (2) 텍스트로 물었으면 → voiceMode 토글이 ON일 때만 음성, 기본은 무음
+      const shouldSpeak = inputMode === 'voice' || voiceOutput.voiceMode;
+      if (shouldSpeak) {
         voiceOutput.speakText(answer)
           .then(() => setState('idle'))
           .catch((err) => {
@@ -1021,7 +1023,7 @@ export function TinkerbellAssistant({
           const text = (result.text ?? '').trim();
           if (text) {
             const cleaned = cleanSttTranscript(text);
-            askTinkerbell(cleaned);
+            askTinkerbell(cleaned, 'voice'); // iOS Whisper 경로 — 음성 입력
           } else {
             setState('idle');
             setVoiceError('음성을 인식하지 못했습니다 (빈 텍스트). 다시 시도해 주세요.');
@@ -1142,9 +1144,8 @@ export function TinkerbellAssistant({
     recognition.onend = () => {
       const rawText = transcriptRef.current.trim();
       if (rawText) {
-        // 발음 엉킴·반복 정규화 — 한국어/우즈벡어 음성 인식이 자주 만드는 잡음 제거
         const cleaned = cleanSttTranscript(rawText);
-        askTinkerbell(cleaned);
+        askTinkerbell(cleaned, 'voice'); // Web Speech API 경로 — 음성 입력
       } else {
         setState('idle');
       }
@@ -1297,7 +1298,7 @@ export function TinkerbellAssistant({
     setInputText('');
     unlockTts();
     const defaultQ = hasDocs ? '이 문서 분석해 주세요' : '이 사진 분석해 주세요';
-    askTinkerbell(text || defaultQ);
+    askTinkerbell(text || defaultQ, 'text'); // 타이핑 입력 — 텍스트 응답 기본
   }, [inputText, askTinkerbell, pendingImages.length, pendingDocuments.length]);
 
   // ── Wake Word "팅커벨" — Siri/Alexa 스타일 상시 청취 ──
