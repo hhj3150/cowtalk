@@ -12,6 +12,7 @@ import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { useWakeWord } from '@web/hooks/useWakeWord';
 import { useVoiceActivityDetector } from '@web/hooks/useVoiceActivityDetector';
 import { MicButton } from '@web/components/common/MicButton';
+import { VoiceWaveform } from '@web/components/common/VoiceWaveform';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
@@ -2496,25 +2497,64 @@ export function TinkerbellAssistant({
             onPressEnd={handleMicPressEnd}
           />
 
-        {/* 텍스트 입력 */}
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
-          placeholder={state === 'listening' ? '듣는 중...' : '팅커벨에게 물어보세요...'}
-          disabled={state === 'thinking' || state === 'listening'}
-          style={{
+        {/* 듣는 중에는 파형, 그 외엔 텍스트 입력 */}
+        {state === 'listening' ? (
+          <div style={{
             flex: 1,
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid var(--ct-border, #334155)',
+            background: 'rgba(239,68,68,0.06)',
+            border: '1px solid rgba(239,68,68,0.4)',
+            borderRadius: 20,
+            padding: '6px 16px',
+            display: 'flex',
+            alignItems: 'center',
+          }}>
+            <VoiceWaveform
+              volume={vad.volume}
+              statusText={!vad.calibrated ? '환경 조정 중...' : (vad.isSpeaking ? '듣는 중...' : '말씀하세요')}
+            />
+          </div>
+        ) : state === 'thinking' ? (
+          <div style={{
+            flex: 1,
+            background: 'rgba(245,158,11,0.06)',
+            border: '1px solid rgba(245,158,11,0.4)',
             borderRadius: 20,
             padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: 'var(--ct-text-muted, #94a3b8)',
             fontSize: 13,
-            color: 'var(--ct-text, #f1f5f9)',
-            outline: 'none',
-          }}
-        />
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#f59e0b',
+              animation: 'mic-pulse 1s ease-in-out infinite',
+            }} />
+            {transcript ? `"${transcript}" 전사 중...` : '생각 중...'}
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
+            placeholder="팅커벨에게 물어보세요..."
+            style={{
+              flex: 1,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid var(--ct-border, #334155)',
+              borderRadius: 20,
+              padding: '10px 16px',
+              fontSize: 13,
+              color: 'var(--ct-text, #f1f5f9)',
+              outline: 'none',
+            }}
+          />
+        )}
 
         {/* 전송 버튼 */}
         <button
