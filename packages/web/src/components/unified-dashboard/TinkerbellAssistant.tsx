@@ -14,6 +14,7 @@ import { useVoiceActivityDetector } from '@web/hooks/useVoiceActivityDetector';
 import { MicButton } from '@web/components/common/MicButton';
 import { VoiceWaveform } from '@web/components/common/VoiceWaveform';
 import { MobileSheetHandle } from '@web/components/common/MobileSheetHandle';
+import { extractCompleteSentences } from '@web/utils/sentence-streamer';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
@@ -671,6 +672,18 @@ export function TinkerbellAssistant({
     if (mobileSheetOpen) setUnreadCount(0);
   }, [mobileSheetOpen]);
 
+  // 스트리밍 TTS 큐 완료 감지 — 스트림 종료 + 큐 비어있음 + 재생 없음 → idle.
+  // streamEndedRef는 askTinkerbell가 fullText를 메시지에 추가할 때 set, 새 호출 시 unset.
+  const streamEndedRef = useRef(false);
+  useEffect(() => {
+    if (state !== 'speaking') return;
+    if (!streamEndedRef.current) return;
+    if (!voiceOutput.queueIdle) return;
+    if (voiceOutput.isPlaying) return;
+    setState('idle');
+    streamEndedRef.current = false;
+  }, [state, voiceOutput.queueIdle, voiceOutput.isPlaying]);
+
   // TTS 보이스 로드 (일부 브라우저는 비동기 로드)
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -819,6 +832,30 @@ export function TinkerbellAssistant({
       let errorText = '';
       const startedAt = new Date();
       let firstChunk = true;
+      // 문장 단위 스트리밍 TTS — 첫 문장이 완성되는 즉시 발화 시작.
+      // shouldSpeak는 EOM 전에 알 수 있음(입력 모드 + 음성 모드).
+      const shouldSpeakStream = inputMode === 'voice' || voiceOutput.voiceMode;
+      // 큐 모드 진입 시 기존 재생/큐 정리 후 시작 (응답마다 큐 리셋)
+      if (shouldSpeakStream) {
+        try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
+      }
+      // 누적 텍스트에서 마지막으로 TTS 큐에 넘긴 인덱스 — 이후 부분만 추출
+      let ttsCarriedRemainder = '';
+      let ttsProcessedIdx = 0;
+      const flushSentences = (force: boolean) => {
+        if (!shouldSpeakStream) return;
+        const newPart = ttsCarriedRemainder + fullText.slice(ttsProcessedIdx);
+        ttsProcessedIdx = fullText.length;
+        const { sentences, remainder } = extractCompleteSentences(newPart);
+        for (const s of sentences) voiceOutput.enqueueSpeech(s);
+        if (force && remainder.trim()) {
+          // 스트림 종료 — 종결 부호 없는 마지막 토막도 발화
+          voiceOutput.enqueueSpeech(remainder.trim());
+          ttsCarriedRemainder = '';
+        } else {
+          ttsCarriedRemainder = remainder;
+        }
+      };
       // 진단용 카운터 — 빈 응답 시 어디까지 왔는지 역추적
       let dataLineCount = 0;
       let textEventCount = 0;
@@ -861,6 +898,8 @@ export function TinkerbellAssistant({
               fullText += parsed.content;
               setStreamText(fullText);
               if (firstChunk) { setState('speaking'); firstChunk = false; }
+              // 새 텍스트 도착할 때마다 완성된 문장만 TTS 큐에 누적 — 체감 레이턴시 ↓
+              flushSentences(false);
             }
             if (parsed.type === 'error') {
               errorText = parsed.content;
@@ -906,11 +945,14 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
       setState('speaking');
 
-      // 음성 출력 결정 — 현장 사용자 핵심 UX:
-      // (1) 음성으로 물었으면 → 항상 음성으로 답한다 (voiceMode 토글과 무관, 손이 바쁜 상황)
-      // (2) 텍스트로 물었으면 → voiceMode 토글이 ON일 때만 음성, 기본은 무음
-      const shouldSpeak = inputMode === 'voice' || voiceOutput.voiceMode;
-      if (shouldSpeak) {
+      // 스트리밍 TTS 사용 중이면 — 마지막 잔여(종결 부호 없는 토막)만 flush, 큐가
+      // 비워질 때까지 'speaking' 유지 후 idle 전환은 queueIdle effect가 담당.
+      if (shouldSpeakStream) {
+        flushSentences(true);
+        // queueIdle + !isPlaying 시 effect가 idle로 전환
+        streamEndedRef.current = true;
+      } else if (voiceOutput.voiceMode && inputMode === 'text') {
+        // 스트림 중에는 voiceMode가 false였지만 끝나서 voiceMode ON이 된 케이스 (드묾)
         voiceOutput.speakText(answer)
           .then(() => setState('idle'))
           .catch((err) => {
@@ -995,7 +1037,9 @@ export function TinkerbellAssistant({
   const vadStopHandlerRef = useRef<(() => void) | null>(null);
   const vad = useVoiceActivityDetector({
     onSilenceTimeout: () => { vadStopHandlerRef.current?.(); },
-    silenceMs: 1000,
+    // 침묵 임계 700ms — 1000ms에서 300ms 단축. 더 빠른 응답이지만 끝맺음 머뭇거림과 충돌 가능.
+    // minSpeechMs 300ms 가드가 발화 첫 머뭇거림(예: "어... 그게...")으로 인한 조기 종료를 방지.
+    silenceMs: 700,
     minSpeechMs: 300,
     calibrationMs: 500,
     thresholdMultiplier: 2.5,

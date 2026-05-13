@@ -28,6 +28,14 @@ export interface UseVoiceOutputReturn {
   readonly voiceMode: boolean;
   readonly toggleVoiceMode: () => void;
   readonly speakText: (text: string) => Promise<void>;
+  /**
+   * 큐 모드 — 문장 단위 스트리밍 TTS 용. enqueueSpeech를 여러 번 호출하면
+   * 순차적으로 재생된다. speakText와 달리 이전 발화를 중단시키지 않고 끝에 이어 붙임.
+   * stopSpeaking 호출 시 큐 전체가 비워지고 현재 재생도 중단.
+   */
+  readonly enqueueSpeech: (text: string) => void;
+  /** 큐가 비어있고 현재 재생도 없는가. 호출자가 '발화 종료' 판단 용. */
+  readonly queueIdle: boolean;
   readonly stopSpeaking: () => void;
   readonly dismissError: () => void;
 }
@@ -77,6 +85,14 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
   // onended까지 기다려야 한다 (또는 cleanup/오류로 강제 종료).
   const endResolverRef = useRef<(() => void) | null>(null);
 
+  // 큐 모드 — 문장 단위 스트리밍 TTS를 위한 sequential queue.
+  // speakText는 호출 즉시 이전을 cleanup하므로 스트리밍과 양립 불가 → 별도 경로.
+  const ttsQueueRef = useRef<string[]>([]);
+  const queueProcessingRef = useRef(false);
+  const queueCancelledRef = useRef(false);
+  // 호출자가 '발화 끝났는지' 알 수 있도록 표시. setState 트리거용.
+  const [queueIdle, setQueueIdle] = useState(true);
+
   // 언마운트 시 audio 정리
   useEffect(() => {
     return () => {
@@ -124,6 +140,9 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
   }, [storageKey, cleanup]);
 
   const stopSpeaking = useCallback(() => {
+    // 큐 강제 비움 + 처리 중인 enqueue 루프 중단 신호
+    ttsQueueRef.current = [];
+    queueCancelledRef.current = true;
     cleanup();
     setIsPlaying(false);
   }, [cleanup]);
@@ -236,6 +255,38 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
     [options.voice, options.maxChars, cleanup],
   );
 
+  // 큐 처리 루프 — 비동기적으로 한 문장씩 재생, stopSpeaking로 중단 가능.
+  const drainQueue = useCallback(async () => {
+    if (queueProcessingRef.current) return;
+    queueProcessingRef.current = true;
+    queueCancelledRef.current = false;
+    setQueueIdle(false);
+    try {
+      while (ttsQueueRef.current.length > 0) {
+        if (queueCancelledRef.current) break;
+        const next = ttsQueueRef.current.shift()!;
+        try {
+          await speakText(next);
+        } catch {
+          if (queueCancelledRef.current) break;
+        }
+      }
+    } finally {
+      queueProcessingRef.current = false;
+      setQueueIdle(true);
+    }
+  }, [speakText]);
+
+  const enqueueSpeech = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    ttsQueueRef.current.push(trimmed);
+    if (!queueProcessingRef.current) {
+      setQueueIdle(false);
+      void drainQueue();
+    }
+  }, [drainQueue]);
+
   return {
     isPlaying,
     isSynthesizing,
@@ -243,6 +294,8 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
     voiceMode,
     toggleVoiceMode,
     speakText,
+    enqueueSpeech,
+    queueIdle,
     stopSpeaking,
     dismissError,
   };
