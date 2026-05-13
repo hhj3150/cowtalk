@@ -10,6 +10,7 @@ import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
 import { useWakeWord } from '@web/hooks/useWakeWord';
+import { useVoiceActivityDetector } from '@web/hooks/useVoiceActivityDetector';
 import { MicButton } from '@web/components/common/MicButton';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
@@ -959,6 +960,19 @@ export function TinkerbellAssistant({
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
+  // VAD — Whisper 경로(iOS)에서 침묵 자동 종료.
+  // Web Speech API 경로는 브라우저 내장 VAD가 이미 처리하므로 미적용.
+  // 농장 환경: 첫 500ms로 noise floor 측정 → threshold = floor × 2.5.
+  // 1초 침묵 + 최소 발화 300ms 이상 시 자동 stop.
+  const vadStopHandlerRef = useRef<(() => void) | null>(null);
+  const vad = useVoiceActivityDetector({
+    onSilenceTimeout: () => { vadStopHandlerRef.current?.(); },
+    silenceMs: 1000,
+    minSpeechMs: 300,
+    calibrationMs: 500,
+    thresholdMultiplier: 2.5,
+  });
+
   // iOS Safari: MediaRecorder + Whisper STT 경로
   // Web Speech API가 iOS에서 불안정한 문제를 우회. 녹음 → 서버 업로드 → 텍스트 반환.
   // 단계별 콘솔 로그 + 시각 진단 메시지를 강화 (개발자도구 없이도 사용자가 원인 파악 가능).
@@ -1000,6 +1014,9 @@ export function TinkerbellAssistant({
 
       recorder.onstop = async () => {
         console.log('[Whisper] 5) recorder.onstop fired');
+        // VAD 정리 — AudioContext 해제 + RAF 중단
+        vad.stop();
+        vadStopHandlerRef.current = null;
         if (mediaStreamRef.current) {
           for (const track of mediaStreamRef.current.getTracks()) track.stop();
           mediaStreamRef.current = null;
@@ -1049,6 +1066,16 @@ export function TinkerbellAssistant({
       setState('listening');
       setTranscript('');
 
+      // VAD 시작 — 침묵 1초 감지 시 recorder.stop() 호출.
+      // 이렇게 하면 사용자가 말을 마치자마자 즉시 전송 → 체감 레이턴시 ↓.
+      vadStopHandlerRef.current = () => {
+        if (recorder.state === 'recording') {
+          console.log('[Whisper] VAD: 침묵 감지 → 자동 정지');
+          try { recorder.stop(); } catch { /* ignore */ }
+        }
+      };
+      vad.startStream(stream);
+
       // 1.5초 안에 ondataavailable이 안 오면 MediaRecorder가 깨진 것.
       window.setTimeout(() => {
         if (mediaChunksRef.current.length === 0 && recorder.state === 'recording') {
@@ -1056,13 +1083,13 @@ export function TinkerbellAssistant({
         }
       }, 1500);
 
-      // 자동 정지: 6초 후 (사용자가 다시 마이크 누르면 stopListening이 즉시 정지)
+      // 안전망: 8초 후 강제 정지 (VAD 실패 시 보호).
       window.setTimeout(() => {
         if (recorder.state === 'recording') {
-          console.log('[Whisper] 4.5) 6초 자동 정지');
+          console.log('[Whisper] 4.5) 8초 안전망 정지 (VAD 미작동 또는 무한 발화)');
           try { recorder.stop(); } catch { /* ignore */ }
         }
-      }, 6000);
+      }, 8000);
     } catch (err) {
       const name = (err as { name?: string })?.name ?? '';
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
