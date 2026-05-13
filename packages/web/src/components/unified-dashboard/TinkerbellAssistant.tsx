@@ -13,6 +13,7 @@ import { useWakeWord } from '@web/hooks/useWakeWord';
 import { useVoiceActivityDetector } from '@web/hooks/useVoiceActivityDetector';
 import { MicButton } from '@web/components/common/MicButton';
 import { VoiceWaveform } from '@web/components/common/VoiceWaveform';
+import { MobileSheetHandle } from '@web/components/common/MobileSheetHandle';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
@@ -575,6 +576,11 @@ export function TinkerbellAssistant({
   const [isMinimized, setIsMinimized] = useState(false);
   // 데스크탑 alwaysOpen 모드에서 사이드바 표시 여부 — 기본 닫힘, 호출/클릭 시 열림
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
+  // 모바일 alwaysOpen 모드: 기본은 FAB만 표시, 탭/스와이프 업 → 바닥시트 펼침.
+  // 화면 차지를 최소화해서 작업 흐름 방해 X (Day 10 — P2-A 패턴).
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  // 시트가 닫혀 있을 때 도착한 AI 응답 개수 (FAB 배지용)
+  const [unreadCount, setUnreadCount] = useState(0);
   const isMobile = useIsMobile();
   const [messages, setMessages] = useState<readonly TinkerbellMessage[]>(() => {
     try {
@@ -643,6 +649,27 @@ export function TinkerbellAssistant({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     if (alwaysOpen && messages.length > 0) setIsExpanded(true);
   }, [messages, alwaysOpen]);
+
+  // 모바일 시트 닫힘 + 새 assistant 메시지 도착 → unread 배지 ++.
+  // 시트가 열리면 즉시 0으로.
+  const lastMessageCountRef = useRef(messages.length);
+  useEffect(() => {
+    const prev = lastMessageCountRef.current;
+    lastMessageCountRef.current = messages.length;
+    if (!alwaysOpen || !isMobile) return;
+    if (mobileSheetOpen) { setUnreadCount(0); return; }
+    // 새로 추가된 메시지 중 assistant 것만 카운트
+    if (messages.length > prev) {
+      const added = messages.slice(prev);
+      const assistantAdded = added.filter((m) => m.role === 'assistant').length;
+      if (assistantAdded > 0) setUnreadCount((c) => c + assistantAdded);
+    }
+  }, [messages, alwaysOpen, isMobile, mobileSheetOpen]);
+
+  // 시트 열릴 때 배지 리셋
+  useEffect(() => {
+    if (mobileSheetOpen) setUnreadCount(0);
+  }, [mobileSheetOpen]);
 
   // TTS 보이스 로드 (일부 브라우저는 비동기 로드)
   useEffect(() => {
@@ -1447,8 +1474,9 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
     }
-    // 데스크탑에서 호명 시 사이드바 자동 펼침
+    // 데스크탑에서 호명 시 사이드바 자동 펼침 / 모바일에서 호명 시 바닥시트 자동 열기
     if (!isMobile) setDesktopSidebarOpen(true);
+    else setMobileSheetOpen(true);
     playWakeChime();
 
     // 첫 호명일 때만 인사말 발화 (병렬 — 듣기를 블로킹하지 않음)
@@ -1515,17 +1543,20 @@ export function TinkerbellAssistant({
 
   if (alwaysOpen) {
     // 데스크탑: 사이드바 닫힘 상태면 플로팅 버튼만 표시
-    if (!isMobile && !desktopSidebarOpen) {
+    // 모바일: 바닥시트 닫힘 상태면 FAB만 표시 (한 손 조작, 작업 흐름 방해 최소화)
+    const showFabOnly = isMobile ? !mobileSheetOpen : !desktopSidebarOpen;
+    if (showFabOnly) {
       return (
         <button
           type="button"
-          onClick={() => setDesktopSidebarOpen(true)}
+          onClick={() => { isMobile ? setMobileSheetOpen(true) : setDesktopSidebarOpen(true); }}
           aria-label="팅커벨 열기"
           title="팅커벨에게 물어보기 (또는 '팅커벨' 호명)"
           style={{
             position: 'fixed',
-            bottom: 24,
-            right: 24,
+            // 모바일: MobileBottomNav(~56px) 위 + 엄지 닿기 좋은 우하단
+            bottom: isMobile ? 72 : 24,
+            right: isMobile ? 16 : 24,
             width: 56,
             height: 56,
             borderRadius: '50%',
@@ -1538,35 +1569,73 @@ export function TinkerbellAssistant({
             justifyContent: 'center',
             zIndex: 9990,
             transition: 'transform 0.2s',
+            // AI가 말하거나 생각 중이면 펄스 — 사용자가 답을 받았다는 신호
+            animation: (state === 'thinking' || state === 'speaking' || voiceOutput.isPlaying)
+              ? 'tb-fab-pulse 1.4s ease-in-out infinite'
+              : undefined,
           }}
           onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
         >
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="white" stroke="none">
+          <style>{`
+            @keyframes tb-fab-pulse {
+              0%, 100% { box-shadow: 0 6px 20px ${color}60; }
+              50% { box-shadow: 0 6px 28px ${color}, 0 0 0 6px ${color}30; }
+            }
+          `}</style>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="white" stroke="none" aria-hidden="true">
             <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
           </svg>
+          {/* 안 읽은 응답 배지 */}
+          {isMobile && unreadCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: -2,
+              right: -2,
+              minWidth: 20,
+              height: 20,
+              padding: '0 5px',
+              borderRadius: 10,
+              background: '#ef4444',
+              color: 'white',
+              fontSize: 11,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '2px solid var(--ct-bg, #0f172a)',
+            }} aria-label={`${unreadCount}개의 새 응답`}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </button>
       );
     }
 
     const bottomOffset = isMobile ? 60 : 0;
-    // 데스크탑 사이드바 열림: 항상 펼침 / 모바일: isExpanded 토글
-    const sidebarExpanded = isMobile ? isExpanded : true;
+    // 모바일은 바닥시트 열림 = 메시지 펼침 (스와이프 다운으로만 닫음). 데스크탑은 항상 펼침.
+    const sidebarExpanded = isMobile ? true : true;
 
-    // 컨테이너 위치·크기 — 데스크탑 우측 사이드바 vs 모바일 하단 바
+    // 컨테이너 위치·크기 — 데스크탑 우측 사이드바 vs 모바일 바닥시트
     const containerStyle: React.CSSProperties = isMobile
       ? {
           position: 'fixed',
           bottom: bottomOffset,
           left: 0,
           right: 0,
+          maxHeight: '85dvh',
           zIndex: 9990,
           background: 'var(--ct-card, #1e293b)',
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
           borderTop: `1px solid ${color}40`,
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+          boxShadow: '0 -8px 32px rgba(0,0,0,0.45)',
           boxSizing: 'border-box',
           maxWidth: '100vw',
           overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          animation: 'tb-sheet-up 0.22s ease-out',
         }
       : {
           position: 'fixed',
@@ -1588,10 +1657,36 @@ export function TinkerbellAssistant({
         <style>{`
           @keyframes tinkerbell-dot { 0%,80%,100%{opacity:0.2}40%{opacity:1} }
           @keyframes tb-slide-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes tb-sheet-up { from{transform:translateY(100%)} to{transform:translateY(0)} }
+          @keyframes tb-backdrop-in { from{opacity:0} to{opacity:1} }
         `}</style>
 
-        {/* 채팅 패널 — 데스크탑: 우측 사이드바 / 모바일: 하단 바 */}
+        {/* 모바일 백드롭 — 시트 외부 영역 어둡게 + 탭으로 닫기 */}
+        {isMobile && (
+          <div
+            onClick={() => setMobileSheetOpen(false)}
+            aria-hidden="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.4)',
+              zIndex: 9989,
+              animation: 'tb-backdrop-in 0.18s ease-out',
+            }}
+          />
+        )}
+
+        {/* 채팅 패널 — 데스크탑: 우측 사이드바 / 모바일: 바닥시트 */}
         <div style={containerStyle}>
+          {/* 모바일 드래그 핸들 — 스와이프 다운으로 시트 닫기 + 시각적 어포던스 */}
+          {isMobile && (
+            <MobileSheetHandle
+              color={color}
+              stateLabel={stateLabels[state]}
+              unread={unreadCount}
+              onClose={() => setMobileSheetOpen(false)}
+            />
+          )}
           {/* 데스크탑 사이드바 헤더 — 제목 + 언어 선택 + 닫기 */}
           {!isMobile && (
             <div style={{

@@ -29,8 +29,6 @@ interface MockCtx {
   close: () => Promise<void>;
 }
 
-let currentAnalyser: MockAnalyser;
-
 function setupAudioMock(): { setRms: (v: number) => void; cleanup: () => void } {
   const analyser: MockAnalyser = {
     fftSize: 1024,
@@ -46,7 +44,6 @@ function setupAudioMock(): { setRms: (v: number) => void; cleanup: () => void } 
       }
     },
   };
-  currentAnalyser = analyser;
 
   const ctx: MockCtx = {
     state: 'running',
