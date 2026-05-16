@@ -136,8 +136,10 @@ function RoleSwitcher(): React.JSX.Element | null {
                 type="button"
                 onClick={() => {
                   // 시뮬레이션 역할 설정 (휘발성). user.role 은 불변.
+                  // FLOW-01: 농장 컨텍스트는 farm.store 구독자가 페르소나별 자동 처리
+                  // (farmer/vet → 첫 농장 / 그 외 → 전체). 여기서 clearSelection 을
+                  // 호출하면 구독자가 방금 선택한 농장을 즉시 덮어쓰므로 호출하지 않는다.
                   setSimulatedRole(role);
-                  useFarmStore.getState().clearSelection();
                   useFarmGroupStore.getState().clearSelection();
                   setOpen(false);
                 }}
