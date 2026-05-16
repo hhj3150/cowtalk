@@ -1,17 +1,19 @@
-// 사이드바 — 아이콘 전용 56px, hover 시 200px 확장 + 메뉴명 표시
+// 사이드바 — 메뉴는 단일 소스(config/sidebar-menu.ts)에서 산출 (FLOW-02 Step2 / 2.5 / 2.6)
+//
+// ⚠️ FLOW-02 Step2.6 노트:
+// - 역할 시뮬레이션은 role-simulation.store(휘발성)를 구독한다. localStorage 직접 읽기 금지.
+// - master 본질 판정 = user.role === 'government_admin' AND user.name 에 'Master Admin' 포함.
+//   → D2O master(하현제)와 실제 government_admin 행정관(예: 최경기행정)을 구분한다.
+//   legacy 오염으로 user.role 이 mutate된 경우는 auth-migration.ts 가 마운트 전 복구.
+// - lucide-react 미설치 → 기존 인라인 SVG 아이콘 컴포넌트로 매핑.
 
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '@web/stores/auth.store';
+import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
 import { fetchNews } from '@web/api/news.api';
 import type { NewsItem, NewsCategory } from '@web/api/news.api';
-import type { Role } from '@cowtalk/shared';
-
-interface MenuItem {
-  readonly label: string;
-  readonly path: string;
-  readonly icon: React.ReactNode;
-}
+import { getMenuForRole, type MenuRole } from '@web/config/sidebar-menu';
 
 function IconDashboard(): React.JSX.Element {
   return (
@@ -25,15 +27,6 @@ function IconMap(): React.JSX.Element {
   return (
     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
-    </svg>
-  );
-}
-
-function IconSettings(): React.JSX.Element {
-  return (
-    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   );
 }
@@ -62,7 +55,6 @@ function IconServer(): React.JSX.Element {
   );
 }
 
-// 방역관 전용 아이콘들
 function IconShield(): React.JSX.Element {
   return (
     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -71,51 +63,10 @@ function IconShield(): React.JSX.Element {
   );
 }
 
-function IconRadar(): React.JSX.Element {
+function IconActivity(): React.JSX.Element {
   return (
     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
-    </svg>
-  );
-}
-
-function IconBeaker(): React.JSX.Element {
-  return (
-    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15m-6.3-11.896A24.01 24.01 0 0112 3.75a24.01 24.01 0 01-.55.046M12 3.75c-.251.023-.501.05-.75.082M3 14.5l.62.827A.75.75 0 004.24 16h15.52a.75.75 0 00.62-1.173L19.8 15m-15.6 0L4.5 14.5" />
-    </svg>
-  );
-}
-
-function IconChartBar(): React.JSX.Element {
-  return (
-    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-    </svg>
-  );
-}
-
-
-function IconDatabase(): React.JSX.Element {
-  return (
-    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-    </svg>
-  );
-}
-
-function IconGlobe(): React.JSX.Element {
-  return (
-    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
-    </svg>
-  );
-}
-
-function IconNetwork(): React.JSX.Element {
-  return (
-    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4.5l2.25-6 4.5 12 2.25-6H21" />
     </svg>
   );
 }
@@ -124,6 +75,30 @@ function IconClipboard(): React.JSX.Element {
   return (
     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+    </svg>
+  );
+}
+
+function IconCalendar(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    </svg>
+  );
+}
+
+function IconStethoscope(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 3v6a4.5 4.5 0 009 0V3M5.25 3H3.75M5.25 3h1.5M14.25 3h1.5M14.25 3h-1.5M9.75 13.5v3a4.5 4.5 0 109 0V15m0 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
+    </svg>
+  );
+}
+
+function IconBell(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
     </svg>
   );
 }
@@ -163,41 +138,25 @@ function IconCard(): React.JSX.Element {
   );
 }
 
-// 공통 메뉴 — 모든 역할 동일 (simple is best)
-const COMMON_MENU: readonly MenuItem[] = [
-  { label: '대시보드', path: '/', icon: <IconDashboard /> },
-  { label: '내 소', path: '/my-cattle', icon: <IconCow /> },
-  { label: '번식 커맨드', path: '/breeding', icon: <IconBreeding /> },
-  { label: '번식 캘린더', path: '/breeding/calendar', icon: <IconBreeding /> },
-  { label: '센서 비교', path: '/sensor/compare', icon: <IconCow /> },
-  { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
-  { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
-  { label: '구독 관리', path: '/subscription', icon: <IconCard /> },
-];
-
-// 관리자 전용 추가 메뉴
-const ADMIN_EXTRA: readonly MenuItem[] = [
-  { label: '목장 관리', path: '/farm-management', icon: <IconBarn /> },
-  { label: '사용자 관리', path: '/admin/users', icon: <IconUsers /> },
-  { label: '시스템 상태', path: '/admin/system', icon: <IconServer /> },
-  { label: 'AI 성능', path: '/ai-performance', icon: <IconAi /> },
-];
-
-// 방역관 전용 메뉴
-const QUARANTINE_MENU: readonly MenuItem[] = [
-  { label: '통합 대시보드', path: '/dashboard', icon: <IconDashboard /> },
-  { label: '방역 대시보드', path: '/epidemiology/dashboard', icon: <IconShield /> },
-  { label: '목장 관리', path: '/farm-management', icon: <IconBarn /> },
-  { label: '지역 지도', path: '/regional-map', icon: <IconMap /> },
-  { label: '반경 분석', path: '/epidemiology/radius', icon: <IconRadar /> },
-  { label: '확산 시뮬레이션', path: '/epidemiology/simulation', icon: <IconBeaker /> },
-  { label: '이동 네트워크', path: '/epidemiology/contact-network', icon: <IconNetwork /> },
-  { label: '역학 조사', path: '/epidemiology/investigation/new', icon: <IconClipboard /> },
-  { label: '조기감지 성과', path: '/epidemiology/metrics', icon: <IconChartBar /> },
-  { label: '전국 방역 현황', path: '/epidemiology/national', icon: <IconGlobe /> },
-  { label: '방역 사례 DB', path: '/epidemiology/cases', icon: <IconDatabase /> },
-  { label: '알림 설정', path: '/notifications', icon: <IconSettings /> },
-];
+// MenuItem.icon 문자열 → 인라인 SVG 아이콘 매핑.
+// (lucide-react 미설치 → 프로젝트 컨벤션인 인라인 SVG 컴포넌트 재사용)
+const ICON_MAP: Record<string, React.ReactNode> = {
+  LayoutDashboard: <IconDashboard />,
+  Cog:             <IconCow />,
+  Heart:           <IconBreeding />,
+  Calendar:        <IconCalendar />,
+  Stethoscope:     <IconStethoscope />,
+  CalendarClock:   <IconClipboard />,
+  Activity:        <IconActivity />,
+  Map:             <IconMap />,
+  ShieldAlert:     <IconShield />,
+  Bell:            <IconBell />,
+  CreditCard:      <IconCard />,
+  Building2:       <IconBarn />,
+  Users:           <IconUsers />,
+  Server:          <IconServer />,
+  Brain:           <IconAi />,
+};
 
 // ── 축산 소식 (API/RSS 연동, 장애 시 정적 폴백) ──
 
@@ -236,18 +195,46 @@ function useNewsItems(): readonly NewsItem[] {
   return items;
 }
 
-const MENU_BY_ROLE: Record<Role, readonly MenuItem[]> = {
-  farmer: COMMON_MENU,
-  veterinarian: COMMON_MENU,
-  government_admin: [...COMMON_MENU, ...ADMIN_EXTRA],
-  quarantine_officer: QUARANTINE_MENU,
-};
+/**
+ * master 본질 + 시뮬레이션 역할 → 메뉴 산출용 MenuRole 결정 (FLOW-02 Step2.6).
+ * - master 본질 + 시뮬레이션 안 함(null) → 'master' (전체 15 메뉴)
+ * - master 본질 + 시뮬레이션 중 → 시뮬레이션 역할
+ * - 비-master → 본 계정 역할
+ *
+ * master 본질 판정은 호출처(Sidebar)에서 `role==='government_admin' && name.includes('Master Admin')`
+ * 로 계산해 boolean 으로 넘긴다 — 실제 government_admin 행정관(예: 최경기행정)과 D2O master 를 구분.
+ */
+export function resolveMenuRole(
+  isMasterEssence: boolean,
+  simulatedRole: MenuRole | null,
+  userRole: MenuRole | undefined,
+): MenuRole {
+  if (isMasterEssence && simulatedRole === null) {
+    return 'master';
+  }
+  return (simulatedRole ?? userRole) ?? 'farmer';
+}
 
 export function Sidebar(): React.JSX.Element {
-  const user = useAuthStore((s) => s.user);
-  const role = user?.role ?? 'farmer';
-  const items = MENU_BY_ROLE[role];
+  const userRole = useAuthStore((s) => s.user?.role);
+  const userName = useAuthStore((s) => s.user?.name);
+  const simulatedRole = useRoleSimulationStore((s) => s.simulatedRole);
+
+  // master 본질 = government_admin 역할 + name 'Master Admin' 포함 (D2O master 식별).
+  // legacy 'cowtalk-master-role' localStorage 키는 더 이상 읽지 않는다.
+  const isMasterEssence = userRole === 'government_admin'
+    && (userName?.includes('Master Admin') ?? false);
+  const menuRole = resolveMenuRole(isMasterEssence, simulatedRole, userRole);
   const newsItems = useNewsItems();
+
+  // 단일 소스(config/sidebar-menu.ts)에서 메뉴 산출.
+  let items = getMenuForRole(menuRole);
+
+  // fallback 안전장치 — 예상치 못한 role 로 메뉴가 비면 사이드바 공백 사고 방지.
+  if (items.length === 0) {
+    console.warn(`[Sidebar] getMenuForRole("${menuRole}") returned empty — 'master' 메뉴로 fallback`);
+    items = getMenuForRole('master');
+  }
 
   return (
     <nav
@@ -269,28 +256,42 @@ export function Sidebar(): React.JSX.Element {
         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ct-text)' }}>CowTalk</span>
       </div>
 
-      {/* 메뉴 */}
+      {/* 메뉴 — 단일 소스 기반 */}
       <div className="flex flex-col gap-0.5 px-2" style={{ flex: '0 0 auto' }}>
-        {items.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === '/'}
-            className={({ isActive }) =>
-              `flex h-9 items-center gap-2.5 rounded-lg px-2.5 transition-all text-xs ${
-                isActive ? 'font-semibold' : ''
-              }`
-            }
-            style={({ isActive }) =>
-              isActive
-                ? { background: 'var(--ct-sidebar-highlight)', color: 'var(--ct-primary)' }
-                : { color: 'var(--ct-text-secondary)' }
-            }
-          >
-            {item.icon}
-            <span className="truncate">{item.label}</span>
-          </NavLink>
-        ))}
+        {items.map((item, idx) => {
+          // group='admin' 첫 항목 앞에 시각적 구분선.
+          const prev = idx > 0 ? items[idx - 1] : undefined;
+          const showAdminDivider = item.group === 'admin' && prev?.group !== 'admin';
+          return (
+            <React.Fragment key={item.id}>
+              {showAdminDivider && (
+                <div
+                  style={{
+                    borderTop: '1px solid var(--ct-border)',
+                    margin: '4px 8px 2px',
+                  }}
+                />
+              )}
+              <NavLink
+                to={item.href}
+                end={item.href === '/'}
+                className={({ isActive }) =>
+                  `flex h-9 items-center gap-2.5 rounded-lg px-2.5 transition-all text-xs ${
+                    isActive ? 'font-semibold' : ''
+                  }`
+                }
+                style={({ isActive }) =>
+                  isActive
+                    ? { background: 'var(--ct-sidebar-highlight)', color: 'var(--ct-primary)' }
+                    : { color: 'var(--ct-text-secondary)' }
+                }
+              >
+                {ICON_MAP[item.icon] ?? <IconDashboard />}
+                <span className="truncate">{item.label}</span>
+              </NavLink>
+            </React.Fragment>
+          );
+        })}
       </div>
 
       {/* 뉴스/소식 피드 */}

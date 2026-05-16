@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAnimalDetail } from '@web/hooks/useAnimal';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { TraceSection } from '@web/components/trace/TraceSection';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
 import { SensorChart } from '@web/components/data/SensorChart';
@@ -60,7 +60,7 @@ const SECTIONS_BY_ROLE: Record<Role, readonly SectionKey[]> = {
 
 export function AnimalDetail({ animalId }: Props): React.JSX.Element {
   const navigate = useNavigate();
-  const role = useAuthStore((s) => s.user?.role) ?? 'farmer';
+  const role = useEffectiveRole() ?? 'farmer';
   const { data, isLoading, error, refetch } = useAnimalDetail(animalId);
 
   if (isLoading) return <LoadingSkeleton lines={8} />;

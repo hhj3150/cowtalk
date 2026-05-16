@@ -1,7 +1,7 @@
 // 동물 훅
 
 import { useQuery } from '@tanstack/react-query';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import * as animalApi from '@web/api/animal.api';
 
 const STALE_TIME = 5 * 60 * 1000;
@@ -21,7 +21,7 @@ export function useAnimalList(params?: {
 }
 
 export function useAnimalDetail(animalId: string | null) {
-  const role = useAuthStore((s) => s.user?.role);
+  const role = useEffectiveRole();
 
   return useQuery({
     queryKey: ['animal', animalId, role],
