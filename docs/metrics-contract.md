@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| 버전 | **0.4** — Decision Log + §10 alert-aggregator (D3 구현, BUG-007 Part 2) |
+| 버전 | **0.5** — §15.1 D5 UI Rendering 강제 (BUG-006: 긍정 라벨 제거 + MetricValue 컴포넌트) |
 | 작성일 | 2026-05-16 |
 | 최근 머지 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) (`6c2d886`) — 수태율 단일 소스 + D5 |
 | 진행 중 | BUG-007 — 두수 단일 소스 (D7) + currentHeadCount 격하 (D8) + active 통일 (D9) + province 집계 (D14) |
@@ -663,7 +663,7 @@ v0.2에서 5개 모두 결정됨 (§0 Decision Log 참조).
 
 ---
 
-## 15. 빈 농장 / 데이터 부족 표시 규칙 (D5 정의)
+## 15. 빈 농장 / 데이터 부족 표시 규칙 (D5 정의 + BUG-006 UI 강제)
 
 **"빈 농장" 조건** (둘 중 하나라도 충족):
 - 활성 센서 0개 (`smaxtecEvents` 최근 30일 0건 AND `sensorDevices` 0행)
@@ -686,8 +686,54 @@ v0.2에서 5개 모두 결정됨 (§0 Decision Log 참조).
 - ❌ `{cr.rate || "정상 운영"}` (없는 데이터를 "정상"으로 표시 = 거짓말)
 
 **적용 PR**:
-- 본 PR: 서버 측 `null` 반환 (fertility-service의 `CRResult.rate: number | null`)
-- UI 가드: 본 PR에서 호출처에 `?? 0` 폴백을 두어 backward-compat 유지. UI 화면 차원의 "—" 표시 전환은 별도 PR (UI sweep).
+- v0.2 (PR #33): 서버 측 `null` 반환 (fertility-service의 `CRResult.rate: number | null`)
+- v0.3 (PR #34): herd-service의 D13 분리 + 7곳 UI 가드
+- **v0.5 (BUG-006)**: UI 긍정 라벨 ("정상 운영", "이상 없음", "방역 양호") 제거 + 공통 컴포넌트 `MetricValue` 도입
+
+---
+
+### 15.1 D5 UI Rendering 규칙 (BUG-006)
+
+**원칙**: 어떤 UI 위젯도 `status='data_insufficient'` 또는 빈 결과 상태에서 긍정 라벨로 렌더링하지 않는다.
+
+**금지 라벨** (status='ok' 자리에 부활 금지):
+- "정상 운영", "정상", "안전"
+- "이상 없음", "이상없음", "이상 미발견"
+- "양호", "건강함", "문제없음", "특이사항 없음"
+- "방역 양호", "정상 작동", "건강 양호"
+- ✅ / 👌 / 🟢 같은 긍정 이모지 단독 사용 (텍스트 없이)
+
+**허용 표현** (사실 진술 / neutral):
+- 숫자 + 단위: "0건", "0두", "0건 알림"
+- "— (데이터 부족)" (em dash + 라벨)
+- 색상: `var(--ct-text-secondary)` (neutral 회색)
+- 위험/정상 색상(`#22c55e` 녹색, `#ef4444` 빨강) 사용 금지
+
+**공통 컴포넌트**: `packages/web/src/components/common/MetricValue.tsx`
+
+```tsx
+interface Props {
+  result: { displayValue: string; status: 'ok' | 'data_insufficient' };
+  unit?: string;
+  className?: string;
+}
+```
+
+- `status='ok'` → `displayValue` + `unit` (caller가 색·크기 결정)
+- `status='data_insufficient'` → `"—"` + neutral 색 + tooltip "충분한 데이터가 없습니다" + unit 숨김
+- caller가 "정상 운영" 등으로 status='ok' 자리를 덮어쓰는 것을 컴포넌트 차원에서 차단
+
+**호출처 (BUG-006에서 교체)**:
+- `GovAdminDashboard.tsx:178` — "이상 없음" → unit "시도" (neutral)
+- `SovereignAlarmFeed.tsx:96` — "이상 없음" → "활성 알림 0건" (사실 진술, neutral)
+- `QuarantineDashboard.tsx:492` — "방역 양호" → "위험 등급 농장 0건" (사실 진술, neutral)
+- `FarmDetailPage.tsx:HealthBadge` — null healthScore "—" neutral 배지
+- `farm.api.ts:70` — `healthScore: 75` mock 폴백 제거 → `null`
+
+**제외 (정당한 카테고리 라벨, D5 위반 아님)**:
+- `farms.status='active'` enum 라벨 → "정상 운영" (실제 운영 상태)
+- `healthScore >= 80 ? '양호'` 카테고리 등급 (real 값 분류, 데이터 부족 시 null 가드)
+- `breedingScore >= 65 ? 'A 양호'` 등 grade 라벨
 
 ---
 
@@ -716,7 +762,8 @@ v0.2에서 5개 모두 결정됨 (§0 Decision Log 참조).
 | 2026-05-16 | 본 문서 v0.1 초안 (저장만, commit 없음) | — |
 | 2026-05-16 | **v0.2**: Decision Log (D1–D6) + §14 AI Confidence + §15 빈 농장 + §16 L3 cluster TBD + fertility-service 도입 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) |
 | 2026-05-16 | **v0.3**: Decision Log 확장 (D7–D14) + §8 우군 Herd 재작성 (herd-service.ts 신설, currentHeadCount 격하, province 집계, D13 분리). 12 호출처 + 1 mock 통합. | [#34 BUG-007 Part 1](https://github.com/hhj3150/cowtalk/pull/34) |
-| 2026-05-16 | **v0.4**: §10 활성 알림 (D3 구현) — `alert-aggregator.ts` 신설. 878 vs 874 통일 (메인 KPI = AI 브리핑 widget preset 공유). 우선 3 사이트 교체: main KPI / AI 브리핑 / regional 마커. | BUG-007 Part 2 PR (본 PR) |
+| 2026-05-16 | **v0.4**: §10 활성 알림 (D3 구현) — `alert-aggregator.ts` 신설. 878 vs 874 통일 (메인 KPI = AI 브리핑 widget preset 공유). 우선 3 사이트 교체: main KPI / AI 브리핑 / regional 마커. | [#35 BUG-007 Part 2](https://github.com/hhj3150/cowtalk/pull/35) |
+| 2026-05-16 | **v0.5**: §15.1 D5 UI Rendering 강제 — 긍정 라벨("정상 운영"/"이상 없음"/"방역 양호") 제거. `MetricValue` 공통 컴포넌트 신설. healthScore mock 폴백 제거 (`?? 75` → null). | BUG-006 PR (본 PR) |
 
 ---
 

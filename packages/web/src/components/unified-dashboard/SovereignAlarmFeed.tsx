@@ -90,11 +90,12 @@ export function SovereignAlarmFeed({ alarms, isLoading, farmId, onLabelChange }:
   }
 
   if (alarms.length === 0) {
+    // D5 (BUG-006): "이상 없음" 긍정 라벨 제거. 0건은 사실 진술로 neutral 표시.
     return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 24, marginBottom: 8 }}>✅</div>
-        <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>이상 없음</div>
-        <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>소버린 AI가 분석한 결과 특이사항 없음</div>
+      <div style={{ padding: 24, textAlign: 'center', color: 'var(--ct-text-secondary)' }}>
+        <div style={{ fontSize: 28, marginBottom: 8, color: 'var(--ct-text-secondary)' }}>—</div>
+        <div style={{ fontSize: 12, fontWeight: 600 }}>활성 알림 0건</div>
+        <div style={{ fontSize: 10, marginTop: 4 }}>최근 24시간 미확인 알림이 없습니다.</div>
       </div>
     );
   }

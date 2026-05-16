@@ -488,8 +488,10 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {top5RiskFarms.length === 0 && (
+                /* D5 (BUG-006): "방역 양호" 긍정 라벨 제거. 0건은 사실 진술로 neutral 표시. */
                 <div style={{ textAlign: 'center', padding: 16, color: 'var(--ct-text-muted)', fontSize: 13 }}>
-                  ✅ 위험 농장 없음 — 방역 양호
+                  <div style={{ fontSize: 24, marginBottom: 4 }}>—</div>
+                  위험 등급 농장 0건
                 </div>
               )}
               {top5RiskFarms.map((farm, idx) => {

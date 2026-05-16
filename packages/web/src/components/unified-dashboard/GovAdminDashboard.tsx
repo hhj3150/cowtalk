@@ -173,10 +173,11 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
           { icon: '🐄', label: '총 두수', value: nationalSummary.totalAnimals.toLocaleString(), unit: '두', color: '#22c55e' },
           { icon: '📡', label: '센서 모니터링', value: `${monitoringRate}%`, unit: `${nationalSummary.monitoredAnimals.toLocaleString()}두`, color: '#3b82f6' },
           {
+            // D5 (BUG-006): "이상 없음" 긍정 라벨 제거. 0건은 사실 진술로 표시.
             icon: '⚠️', label: '고위험 시도',
             value: nationalSummary.highRiskProvinces,
-            unit: nationalSummary.highRiskProvinces > 0 ? '즉시 조치 필요' : '이상 없음',
-            color: nationalSummary.highRiskProvinces > 0 ? '#ef4444' : '#22c55e',
+            unit: nationalSummary.highRiskProvinces > 0 ? '즉시 조치 필요' : '시도',
+            color: nationalSummary.highRiskProvinces > 0 ? '#ef4444' : 'var(--ct-text-secondary)',
           },
         ].map((kpi) => (
           <div key={kpi.label} style={{

@@ -9,7 +9,7 @@ export interface FarmProfile {
   readonly address: string;
   readonly breedType: 'dairy' | 'beef' | 'mixed';
   readonly totalAnimals: number;
-  readonly healthScore: number;
+  readonly healthScore: number | null;
   readonly conceptionRate: number | null;
   readonly avgOpenDays: number | null;
   readonly mortalityRate: number;
@@ -67,7 +67,8 @@ export async function getFarmProfile(farmId: string): Promise<FarmProfile> {
       address: (basic.address as string) ?? '',
       breedType: 'mixed',
       totalAnimals: (basic.totalAnimals as number) ?? (basic.currentHeadCount as number) ?? 0,
-      healthScore: 75,
+      // D5 (BUG-006): 75 mock 폴백 제거. server가 없으면 null → UI는 "—" 표시.
+      healthScore: null,
       conceptionRate: null,
       avgOpenDays: null,
       mortalityRate: 0,
