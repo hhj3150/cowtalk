@@ -345,7 +345,16 @@ export interface SovereignAlarmAccuracy {
   readonly confirmed:     number;
   readonly falsePositive: number;
   readonly modified:      number;
+  /** @deprecated BUG-008: accuracyResult 사용. */
   readonly accuracy:      number;
+  /** D5/D4 (BUG-008): 표본 부족 시 status='data_insufficient'. */
+  readonly accuracyResult: {
+    readonly numerator: number;
+    readonly denominator: number;
+    readonly rate: number | null;
+    readonly displayValue: string;
+    readonly status: 'ok' | 'data_insufficient';
+  };
   readonly byType: Record<string, { confirmed: number; falsePositive: number; modified: number; total: number }>;
 }
 

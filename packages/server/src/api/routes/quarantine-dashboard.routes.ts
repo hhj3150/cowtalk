@@ -18,6 +18,7 @@ import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farms, feedback } from '../../db/schema.js';
 import { eq, desc, count, sql, ilike, or } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { computeAccuracyFromFraction, accuracyInsufficient } from '../../services/metrics/ai-performance-service.js';
 import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 
 export const quarantineDashboardRouter = Router();
@@ -279,18 +280,33 @@ quarantineDashboardRouter.get('/cases', async (req, res, next) => {
     const fp = fpRows?.count ?? 0;
 
     const pendingCount = Math.max(0, totalEvents - tp - fp);
-    const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-    const recall = totalEvents > 0 ? tp / (tp + pendingCount * 0.5) : 0;
-    const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+    // D5/D4 (BUG-008): clampPct 강제 + 표본 부족 시 status='data_insufficient'.
+    // 분모는 라벨링된 표본 (tp+fp). pending 은 미평가이므로 분모에서 제외.
+    const labeledCount = tp + fp;
+    const precisionFraction = labeledCount > 0 ? tp / (tp + fp) : 0;
+    const recallFraction = totalEvents > 0 ? tp / (tp + pendingCount * 0.5) : 0;
+    const f1Denom = precisionFraction + recallFraction;
+    const f1Fraction = f1Denom > 0 ? (2 * precisionFraction * recallFraction) / f1Denom : 0;
+
+    const precisionResult = computeAccuracyFromFraction(precisionFraction, labeledCount);
+    const recallResult = labeledCount > 0
+      ? computeAccuracyFromFraction(recallFraction, labeledCount)
+      : accuracyInsufficient(labeledCount);
+    const f1Result = labeledCount > 0
+      ? computeAccuracyFromFraction(f1Fraction, labeledCount)
+      : accuracyInsufficient(labeledCount);
 
     res.json({
       success: true,
       data: {
         cases,
         accuracy: {
-          precision: Math.round(precision * 1000) / 1000,
-          recall: Math.round(recall * 1000) / 1000,
-          f1: Math.round(f1 * 1000) / 1000,
+          precision: Math.round(precisionFraction * 1000) / 1000,
+          recall: Math.round(recallFraction * 1000) / 1000,
+          f1: Math.round(f1Fraction * 1000) / 1000,
+          precisionResult,
+          recallResult,
+          f1Result,
           totalCases: totalEvents,
           truePositives: tp,
           falsePositives: fp,

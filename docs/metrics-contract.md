@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| 버전 | **0.5** — §15.1 D5 UI Rendering 강제 (BUG-006: 긍정 라벨 제거 + MetricValue 컴포넌트) |
+| 버전 | **0.6** — §16 AI 성과 지표 정책 (BUG-008: 가짜 정확도 제거 + clampPct 일관 적용 + minSamples 가드) |
 | 작성일 | 2026-05-16 |
-| 최근 머지 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) (`6c2d886`) — 수태율 단일 소스 + D5 |
-| 진행 중 | BUG-007 — 두수 단일 소스 (D7) + currentHeadCount 격하 (D8) + active 통일 (D9) + province 집계 (D14) |
+| 최근 머지 | [#36 BUG-006](https://github.com/hhj3150/cowtalk/pull/36) (`7285711`) — 빈 농장 정상 운영 라벨 제거 + D5 UI 강제 |
+| 진행 중 | BUG-008 — AI 정확도 표본 부족 시 "—" (data_insufficient) + clampPct + minSamples=10 |
 | 소유자 | D2O CTO Office |
 | 적용 범위 | 농장주·수의사·방역관·행정관 화면에 표시되는 모든 메트릭 |
 
@@ -737,7 +737,74 @@ interface Props {
 
 ---
 
-## 16. L3 Cluster Detection Thresholds — TBD
+## 16. AI 성과 지표 정책 (BUG-008 / D4·D5)
+
+### 16.1 핵심 원칙
+
+| 원칙 | 내용 |
+|---|---|
+| **표본 임계값** | AI 정확도·precision·recall·F1 등 ground truth 기반 지표는 **n ≥ 10**일 때만 사용자에게 숫자 표시. 미달 시 `status='data_insufficient'` + `displayValue='—'`. |
+| **Hardcoded mock 금지** | "61.9%", "95%+", "94.2%" 등 ground truth 부재 상태의 가짜 정확도 표시 금지. 시연용도 포함 X. |
+| **clampPct 일관 강제** | 모든 user-visible 비율은 0–100 범위. 음수/100+ 노출 금지. service 내부에서 자동 적용. |
+| **분자/분모 동반 표기** | `k/n (XX.X%)` 권장. 사용자가 표본 크기를 보고 신뢰도를 직접 판단할 수 있어야 함. |
+| **긍정 라벨 금지 (D5 연동)** | `displayValue`는 정확한 수치 또는 `—`. "정확도 우수" / "AI 신뢰도 높음" 등 카테고리 라벨로 대체 금지. |
+
+### 16.2 ai-performance-service (단일 owner)
+
+**파일**: `packages/server/src/services/metrics/ai-performance-service.ts`
+
+```typescript
+export interface AccuracyResult {
+  readonly numerator: number;       // k (정확한 예측 수)
+  readonly denominator: number;     // n (총 ground truth 표본)
+  readonly rate: number | null;     // 0–100 정수. n<minSamples 시 null.
+  readonly displayValue: string;    // "85.0%" 또는 "—"
+  readonly status: 'ok' | 'data_insufficient';
+}
+
+export const DEFAULT_MIN_SAMPLES = 10;
+
+computeAccuracy(numerator, denominator, opts?: { minSamples?, fractionDigits? }): AccuracyResult
+computeAccuracyFromFraction(fraction: 0-1, sampleSize: number, opts?): AccuracyResult  // precision/recall/F1
+computeChange(current, previous): ChangeResult  // 정확도 변화율 (improvementRate)
+accuracyInsufficient(sampleSize?): AccuracyResult  // sentinel
+```
+
+**동작 보장**
+- `denominator < minSamples` → `status='data_insufficient'`, `displayValue='—'`, `rate=null`
+- `denominator ≥ minSamples` → `status='ok'`, `displayValue='XX.X%'`, clampPct 적용된 0–100 정수
+- `numerator > denominator` (시스템 버그) → numerator를 denominator로 clamp
+- `NaN`/`Infinity`/음수 입력 → `data_insufficient`
+
+### 16.3 D5 강제 (UI 라벨 금지)
+
+`displayValue`는 항상:
+- `status='ok'` → `"85.0%"` 형태 (숫자만)
+- `status='data_insufficient'` → `"—"` (em dash)
+
+**금지**: "정확도 우수", "양호", "AI 신뢰도 높음", "학습 양호" 등 카테고리 라벨 (BUG-006 D5 위반 패턴 재발 방지).
+
+### 16.4 교체된 사이트 (BUG-008)
+
+| 사이트 | Before | After |
+|---|---|---|
+| `label-chat.routes.ts:335` sovereign-stats | `accuracyRate: 0` when totalLabels=0 | `accuracyResult: { status: 'data_insufficient', displayValue: '—' }` |
+| `unified-dashboard.routes.ts:3060` event-label-stats | 동일 패턴 | `accuracyResult` 추가 |
+| `quarantine-dashboard.routes.ts:282` cases | precision/recall/f1 = 0 when no labels | `precisionResult` / `recallResult` / `f1Result` 추가 |
+| `sovereign-alarm/label.service.ts:56` | `accuracy: 0` when total=0 | `accuracyResult` 추가 |
+| `SovereignAiWidget.tsx` AccuracyGauge | `rate.toFixed(1)%` (0% 빨간 게이지) | `status='data_insufficient'` 시 "—" + neutral |
+| `TinkerbellAssistant.tsx:500` context | `accuracyRate.toFixed(1)%` 무조건 | `status` 분기로 "—" or "k/n (XX.X%)" |
+| `CaseDatabase.tsx` precision/recall/f1 | `(precision*100).toFixed(0)%` 색 라벨 | `AccuracyMetric` 컴포넌트 (D5 강제) |
+| `DemoModePage.tsx` 4 KPI | hardcoded 95%+, 92점, 97.3%, 94.2% | `value: null` → "—" neutral |
+| `AiPerformancePage.tsx` ProgressBar | `Math.min(value*100, 100)` (음수 미가드) | `Math.max(0, Math.min(safeValue*100, 100))` |
+
+### 16.5 레거시 필드 (deprecated)
+
+기존 `accuracyRate`, `improvementRate`, `accuracy` (number) 필드는 backwards-compat 위해 유지하되 `@deprecated` JSDoc 마킹. 신규 FE 코드는 `accuracyResult` / `improvementResult` 사용 의무. 다음 메이저 버전에서 제거 예정.
+
+---
+
+## 17. L3 Cluster Detection Thresholds — TBD
 
 방역 L3 화면의 "위험 군집" 감지 기준. v0.2 시점에서 결정 대기.
 
@@ -763,7 +830,8 @@ interface Props {
 | 2026-05-16 | **v0.2**: Decision Log (D1–D6) + §14 AI Confidence + §15 빈 농장 + §16 L3 cluster TBD + fertility-service 도입 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) |
 | 2026-05-16 | **v0.3**: Decision Log 확장 (D7–D14) + §8 우군 Herd 재작성 (herd-service.ts 신설, currentHeadCount 격하, province 집계, D13 분리). 12 호출처 + 1 mock 통합. | [#34 BUG-007 Part 1](https://github.com/hhj3150/cowtalk/pull/34) |
 | 2026-05-16 | **v0.4**: §10 활성 알림 (D3 구현) — `alert-aggregator.ts` 신설. 878 vs 874 통일 (메인 KPI = AI 브리핑 widget preset 공유). 우선 3 사이트 교체: main KPI / AI 브리핑 / regional 마커. | [#35 BUG-007 Part 2](https://github.com/hhj3150/cowtalk/pull/35) |
-| 2026-05-16 | **v0.5**: §15.1 D5 UI Rendering 강제 — 긍정 라벨("정상 운영"/"이상 없음"/"방역 양호") 제거. `MetricValue` 공통 컴포넌트 신설. healthScore mock 폴백 제거 (`?? 75` → null). | BUG-006 PR (본 PR) |
+| 2026-05-16 | **v0.5**: §15.1 D5 UI Rendering 강제 — 긍정 라벨("정상 운영"/"이상 없음"/"방역 양호") 제거. `MetricValue` 공통 컴포넌트 신설. healthScore mock 폴백 제거 (`?? 75` → null). | [#36 BUG-006](https://github.com/hhj3150/cowtalk/pull/36) |
+| 2026-05-16 | **v0.6**: §16 AI 성과 지표 정책 — `ai-performance-service.ts` 신설. minSamples=10 가드 + clampPct 일관 적용 + 분자/분모 동반 표기. DemoModePage 4 hardcoded mock 제거. 8 user-visible 사이트 교체 (sovereign-stats/event-label-stats/quarantine cases/sovereign-alarm accuracy/SovereignAiWidget/TinkerbellAssistant/CaseDatabase/DemoMode). | BUG-008 PR (본 PR) |
 
 ---
 

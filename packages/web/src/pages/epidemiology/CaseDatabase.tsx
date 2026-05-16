@@ -1,5 +1,6 @@
 // 방역 이력 및 학습 데이터베이스
 // 경보 이력 테이블 + 정탐/오탐 피드백 + AI 정확도 차트
+// BUG-008: 표본 부족 시 정확도 차트 대신 "—" 안내 + neutral 색.
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,7 +9,38 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { listCases, submitCaseFeedback } from '@web/api/epidemic.api';
-import type { CaseRecord, CaseOutcome, AccuracyStats } from '@web/api/epidemic.api';
+import type { CaseRecord, CaseOutcome, AccuracyStats, AccuracyMetricResult } from '@web/api/epidemic.api';
+
+const INSUFFICIENT_RESULT: AccuracyMetricResult = {
+  numerator: 0,
+  denominator: 0,
+  rate: null,
+  displayValue: '—',
+  status: 'data_insufficient',
+};
+
+function AccuracyMetric({ label, result, okColor, okStyle }: {
+  readonly label: string;
+  readonly result: AccuracyMetricResult;
+  readonly okColor: string;
+  readonly okStyle?: React.CSSProperties;
+}): React.JSX.Element {
+  const insufficient = result.status === 'data_insufficient';
+  return (
+    <div className="text-center">
+      <p
+        className={`text-lg font-bold ${insufficient ? '' : okColor}`}
+        style={insufficient ? { color: 'var(--ct-text-muted)' } : okStyle}
+        role="status"
+        aria-label={insufficient ? `${label} 데이터 부족` : `${label} ${result.displayValue}`}
+        title={insufficient ? '충분한 표본이 없습니다' : undefined}
+      >
+        {result.displayValue}
+      </p>
+      <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>{label}</p>
+    </div>
+  );
+}
 
 
 // ===========================
@@ -32,8 +64,15 @@ export default function CaseDatabase(): React.JSX.Element {
   const cases: readonly CaseRecord[] = data?.cases ?? [];
   const accuracy: AccuracyStats = data?.accuracy ?? {
     precision: 0, recall: 0, f1: 0,
+    precisionResult: INSUFFICIENT_RESULT,
+    recallResult: INSUFFICIENT_RESULT,
+    f1Result: INSUFFICIENT_RESULT,
     totalCases: 0, truePositives: 0, falsePositives: 0, pending: 0,
   };
+  // D5/D4 (BUG-008): 표본 부족 시 차트/숫자 모두 neutral. "0%" 녹색 표시 금지.
+  const allInsufficient = accuracy.precisionResult.status === 'data_insufficient'
+    && accuracy.recallResult.status === 'data_insufficient'
+    && accuracy.f1Result.status === 'data_insufficient';
 
   const feedbackMutation = useMutation({
     mutationFn: ({ alertId, outcome, farmId }: { alertId: string; outcome: CaseOutcome; farmId: string }) =>
@@ -41,10 +80,12 @@ export default function CaseDatabase(): React.JSX.Element {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['quarantine', 'cases'] }),
   });
 
+  // D5/D4 (BUG-008): 표본 부족 시 chart value=0 (radar 비어보임).
+  // 충분 시 rate 직접 (server 측 clampPct + minSamples 통과한 값).
   const radarData = [
-    { metric: '정밀도', value: Math.round(accuracy.precision * 100) },
-    { metric: '재현율', value: Math.round(accuracy.recall * 100) },
-    { metric: 'F1', value: Math.round(accuracy.f1 * 100) },
+    { metric: '정밀도', value: accuracy.precisionResult.rate ?? 0 },
+    { metric: '재현율', value: accuracy.recallResult.rate ?? 0 },
+    { metric: 'F1', value: accuracy.f1Result.rate ?? 0 },
     { metric: '정탐률', value: accuracy.totalCases > 0 ? Math.round(accuracy.truePositives / accuracy.totalCases * 100) : 0 },
     { metric: '커버리지', value: accuracy.totalCases > 0 ? Math.round((accuracy.truePositives + accuracy.falsePositives) / accuracy.totalCases * 100) : 0 },
   ];
@@ -108,21 +149,19 @@ export default function CaseDatabase(): React.JSX.Element {
             </BarChart>
           </ResponsiveContainer>
           <div className="flex gap-4 mt-3 justify-center">
-            <div className="text-center">
-              <p className="text-lg font-bold text-emerald-600">{(accuracy.precision * 100).toFixed(0)}%</p>
-              <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>정밀도</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-blue-600">{(accuracy.recall * 100).toFixed(0)}%</p>
-              <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>재현율</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold" style={{ color: 'var(--ct-primary)' }}>
-                {(accuracy.f1 * 100).toFixed(0)}%
-              </p>
-              <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>F1</p>
-            </div>
+            {/* D5/D4 (BUG-008): 표본 부족 시 "—" neutral. 컬러 라벨 금지. */}
+            <AccuracyMetric label="정밀도" result={accuracy.precisionResult} okColor="text-emerald-600" />
+            <AccuracyMetric label="재현율" result={accuracy.recallResult} okColor="text-blue-600" />
+            <AccuracyMetric label="F1" result={accuracy.f1Result} okColor="" okStyle={{ color: 'var(--ct-primary)' }} />
           </div>
+          {allInsufficient && (
+            <p
+              className="mt-3 text-center text-xs"
+              style={{ color: 'var(--ct-text-secondary)' }}
+            >
+              충분한 표본이 없습니다 (최소 10건 필요, 현재 {accuracy.precisionResult.denominator}건)
+            </p>
+          )}
         </div>
       </div>
 

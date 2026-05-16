@@ -133,10 +133,25 @@ export interface CaseRecord {
   readonly dsiScore: number | null;
 }
 
+export interface AccuracyMetricResult {
+  readonly numerator: number;
+  readonly denominator: number;
+  readonly rate: number | null;
+  readonly displayValue: string;
+  readonly status: 'ok' | 'data_insufficient';
+}
+
 export interface AccuracyStats {
+  /** @deprecated BUG-008: precisionResult 사용. 0-1 fraction, 표본 부족 시도 0 반환. */
   readonly precision: number;
+  /** @deprecated BUG-008: recallResult 사용. */
   readonly recall: number;
+  /** @deprecated BUG-008: f1Result 사용. */
   readonly f1: number;
+  /** D5/D4 (BUG-008): 표본 부족 시 status='data_insufficient'. */
+  readonly precisionResult: AccuracyMetricResult;
+  readonly recallResult: AccuracyMetricResult;
+  readonly f1Result: AccuracyMetricResult;
   readonly totalCases: number;
   readonly truePositives: number;
   readonly falsePositives: number;

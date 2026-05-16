@@ -64,14 +64,39 @@ export interface SubmitLabelRequest {
 
 // ── 소버린 AI 학습 통계 ──
 
+/** AI 성과 지표 상태 (D5 / BUG-008). */
+export type AccuracyMetricStatus = 'ok' | 'data_insufficient';
+
+/** AI 정확도 결과 (분자/분모/표시값/상태 동반). */
+export interface AccuracyMetricResult {
+  readonly numerator: number;
+  readonly denominator: number;
+  readonly rate: number | null;
+  readonly displayValue: string;
+  readonly status: AccuracyMetricStatus;
+}
+
+/** 정확도 변화율. */
+export interface AccuracyChangeResult {
+  readonly delta: number | null;
+  readonly displayValue: string;
+  readonly status: AccuracyMetricStatus;
+}
+
 export interface SovereignAiStats {
   readonly totalLabels: number;
   readonly confirmedCount: number;
   readonly falsePositiveCount: number;
   readonly modifiedCount: number;
   readonly missedCount: number;
+  /** @deprecated BUG-008: accuracyResult 사용. 0 폴백은 D5 위반. */
   readonly accuracyRate: number;
+  /** @deprecated BUG-008: improvementResult 사용. */
   readonly improvementRate: number; // 최근 30일 정확도 변화
+  /** D5/D4 강제: 표본 부족 시 status='data_insufficient' + displayValue='—'. */
+  readonly accuracyResult: AccuracyMetricResult;
+  /** 30일 변화율. 둘 중 하나라도 표본 부족이면 data_insufficient. */
+  readonly improvementResult: AccuracyChangeResult;
   readonly topMisclassifications: readonly MisclassificationItem[];
   readonly labelsByRole: readonly RoleLabelCount[];
   readonly dailyLabelCounts: readonly DailyLabelCount[];

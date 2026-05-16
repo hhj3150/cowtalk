@@ -1,7 +1,8 @@
 // 소버린 AI 학습 현황 위젯 — 지식 강화 루프 진행 상태 시각화
+// BUG-008: AI 정확도는 표본 부족 시 "—" (data_insufficient) 표시.
 
 import React, { useMemo } from 'react';
-import type { SovereignAiStats } from '@cowtalk/shared';
+import type { SovereignAiStats, AccuracyMetricResult, AccuracyChangeResult } from '@cowtalk/shared';
 
 // ── 상수 ──
 
@@ -26,18 +27,71 @@ const ROLE_LABELS: Record<string, string> = {
   farmer: '농장주',
 };
 
-// ── AccuracyGauge ──
+// ── AccuracyGauge (D5/D4 — BUG-008) ──
 
-function AccuracyGauge({ rate, improvement }: {
-  readonly rate: number;
-  readonly improvement: number;
+function AccuracyGauge({ accuracy, change }: {
+  readonly accuracy: AccuracyMetricResult;
+  readonly change: AccuracyChangeResult;
 }): React.JSX.Element {
+  // D5: 표본 부족 시 neutral "—". 긍정/위험 색 안 칠함.
+  if (accuracy.status === 'data_insufficient' || accuracy.rate === null) {
+    return (
+      <div
+        style={{ textAlign: 'center', padding: '8px 0' }}
+        role="status"
+        aria-label="AI 정확도 데이터 부족"
+        title="충분한 표본이 없습니다 (최소 10건)"
+      >
+        <div style={{ position: 'relative', width: 100, height: 100, margin: '0 auto' }}>
+          <svg width="100" height="100" viewBox="0 0 100 100">
+            <circle
+              cx="50" cy="50" r="42"
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="8"
+            />
+          </svg>
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <span style={{
+              fontSize: 28,
+              fontWeight: 800,
+              color: 'var(--ct-text-muted)',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              —
+            </span>
+          </div>
+        </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--ct-text-muted)' }}>
+          AI 정확도
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 2 }}>
+          표본 {accuracy.denominator}건 / 최소 10건 필요
+        </div>
+      </div>
+    );
+  }
+
+  const rate = accuracy.rate;
   const color = rate >= 85 ? '#22c55e' : rate >= 70 ? '#eab308' : '#ef4444';
-  const improvementColor = improvement > 0 ? '#22c55e' : improvement < 0 ? '#ef4444' : '#94a3b8';
-  const pct = Math.min(100, Math.max(0, rate));
+  const delta = change.delta;
+  const improvementColor = delta === null
+    ? '#94a3b8'
+    : delta > 0 ? '#22c55e' : delta < 0 ? '#ef4444' : '#94a3b8';
 
   return (
-    <div style={{ textAlign: 'center', padding: '8px 0' }}>
+    <div
+      style={{ textAlign: 'center', padding: '8px 0' }}
+      role="status"
+      aria-label={`AI 정확도 ${accuracy.displayValue}`}
+    >
       <div style={{ position: 'relative', width: 100, height: 100, margin: '0 auto' }}>
         <svg width="100" height="100" viewBox="0 0 100 100">
           <circle
@@ -52,7 +106,7 @@ function AccuracyGauge({ rate, improvement }: {
             stroke={color}
             strokeWidth="8"
             strokeLinecap="round"
-            strokeDasharray={`${pct * 2.64} ${264 - pct * 2.64}`}
+            strokeDasharray={`${rate * 2.64} ${264 - rate * 2.64}`}
             strokeDashoffset="66"
             style={{ transition: 'stroke-dasharray 1s ease' }}
           />
@@ -79,8 +133,13 @@ function AccuracyGauge({ rate, improvement }: {
       <div style={{ marginTop: 6, fontSize: 11, color: 'var(--ct-text-muted)' }}>
         AI 정확도
       </div>
+      <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 1 }}>
+        {accuracy.numerator}/{accuracy.denominator} 정확
+      </div>
       <div style={{ fontSize: 10, color: improvementColor, fontWeight: 600, marginTop: 2 }}>
-        {improvement > 0 ? '↑' : improvement < 0 ? '↓' : '→'} {Math.abs(improvement).toFixed(1)}% (30일)
+        {change.status === 'data_insufficient'
+          ? '— (30일)'
+          : `${delta! > 0 ? '↑' : delta! < 0 ? '↓' : '→'} ${change.displayValue} (30일)`}
       </div>
     </div>
   );
@@ -238,8 +297,8 @@ export function SovereignAiWidget({ stats, onOpenLabelChat }: Props): React.JSX.
 
       {/* 메인 콘텐츠 */}
       <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 16 }}>
-        {/* 좌측: 정확도 게이지 */}
-        <AccuracyGauge rate={stats.accuracyRate} improvement={stats.improvementRate} />
+        {/* 좌측: 정확도 게이지 — D5/D4 (BUG-008): result + change 객체 직접 전달 */}
+        <AccuracyGauge accuracy={stats.accuracyResult} change={stats.improvementResult} />
 
         {/* 우측: 판정 분포 + 활동 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

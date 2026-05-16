@@ -22,7 +22,9 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 function ProgressBar({ value, label }: { readonly value: number; readonly label: string }): React.JSX.Element {
-  const pct = Math.min(value * 100, 100);
+  // D5 (BUG-008): clampPct 강제 — 음수/100+ 입력으로 깨진 UI 방지.
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const pct = Math.max(0, Math.min(safeValue * 100, 100));
   return (
     <div className="flex items-center gap-2">
       <span className="w-16 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>{label}</span>

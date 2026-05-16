@@ -5,6 +5,7 @@
 import { getDb } from '../../config/database.js';
 import { sovereignAlarmLabels } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { computeAccuracy } from '../metrics/ai-performance-service.js';
 import type { SaveSovereignLabelInput, SovereignAlarmAccuracy } from './types.js';
 
 export async function saveSovereignAlarmLabel(input: SaveSovereignLabelInput): Promise<void> {
@@ -48,12 +49,15 @@ export async function getSovereignAlarmAccuracy(farmId: string): Promise<Soverei
   }
 
   const total = rows.length;
+  // D5/D4 (BUG-008): 표본 부족 시 status='data_insufficient'. 0% 폴백 제거.
+  const accuracyResult = computeAccuracy(confirmed, total, { fractionDigits: 0 });
   return {
     totalLabeled: total,
     confirmed,
     falsePositive,
     modified,
-    accuracy: total > 0 ? Math.round((confirmed / total) * 100) : 0,
+    accuracy: accuracyResult.rate ?? 0,
+    accuracyResult,
     byType,
   };
 }

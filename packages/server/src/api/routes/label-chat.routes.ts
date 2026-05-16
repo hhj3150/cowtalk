@@ -13,6 +13,7 @@ import { eq, and, gte, desc, inArray, count, sql } from 'drizzle-orm';
 import { handleChatStream } from '../../chat/chat-service.js';
 import { extractRecordsFromConversation } from '../../chat/conversation-extractor.js';
 import { isClaudeAvailable } from '../../ai-brain/claude-client.js';
+import { computeAccuracy, computeChange } from '../../services/metrics/ai-performance-service.js';
 import type { Role, ExtractedRecord } from '@cowtalk/shared';
 import type {
   EventContext,
@@ -332,9 +333,11 @@ labelChatRouter.get('/sovereign-stats', async (_req: Request, res: Response, nex
     const modifiedCount = verdictMap.get('modified') ?? 0;
     const missedCount = verdictMap.get('missed') ?? 0;
 
-    const accuracyRate = totalLabels > 0
-      ? Math.round((confirmedCount / totalLabels) * 1000) / 10
-      : 0;
+    // D5/D4 (BUG-008): 표본 부족 시 displayValue='—' + status='data_insufficient'.
+    // 0 폴백 제거 — 0%는 D5 위반 (사용자는 "AI가 다 틀린다"로 오해).
+    const accuracyResult = computeAccuracy(confirmedCount, totalLabels);
+    // 레거시 필드 (deprecated, FE 마이그 후 제거 예정)
+    const accuracyRate = accuracyResult.rate ?? 0;
 
     // 최근 30일 정확도 vs 이전 30일
     const now = new Date();
@@ -366,13 +369,15 @@ labelChatRouter.get('/sovereign-stats', async (_req: Request, res: Response, nex
 
     const recentTotal = recent30.reduce((s, r) => s + Number(r.cnt), 0);
     const recentConfirmed = Number(recent30.find((r) => r.verdict === 'confirmed')?.cnt ?? 0);
-    const recentAccuracy = recentTotal > 0 ? (recentConfirmed / recentTotal) * 100 : 0;
+    const recentAccuracyResult = computeAccuracy(recentConfirmed, recentTotal);
 
     const prevTotal = prev30.reduce((s, r) => s + Number(r.cnt), 0);
     const prevConfirmed = Number(prev30.find((r) => r.verdict === 'confirmed')?.cnt ?? 0);
-    const prevAccuracy = prevTotal > 0 ? (prevConfirmed / prevTotal) * 100 : 0;
+    const prevAccuracyResult = computeAccuracy(prevConfirmed, prevTotal);
 
-    const improvementRate = Math.round((recentAccuracy - prevAccuracy) * 10) / 10;
+    const improvementResult = computeChange(recentAccuracyResult, prevAccuracyResult);
+    // 레거시 필드 (deprecated)
+    const improvementRate = improvementResult.delta ?? 0;
 
     // 주요 오분류 패턴 (Top 5)
     const misclassRows = await db.select({
@@ -431,6 +436,8 @@ labelChatRouter.get('/sovereign-stats', async (_req: Request, res: Response, nex
       missedCount,
       accuracyRate,
       improvementRate,
+      accuracyResult,
+      improvementResult,
       topMisclassifications,
       labelsByRole,
       dailyLabelCounts,

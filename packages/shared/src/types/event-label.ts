@@ -43,5 +43,14 @@ export interface EventLabelStats {
   readonly falsePositive: number;
   readonly modified: number;
   readonly missed: number;
+  /** @deprecated BUG-008: accuracyResult 사용. */
   readonly accuracyRate: number;
+  /** D5/D4 강제: 표본 부족 시 status='data_insufficient'. */
+  readonly accuracyResult: {
+    readonly numerator: number;
+    readonly denominator: number;
+    readonly rate: number | null;
+    readonly displayValue: string;
+    readonly status: 'ok' | 'data_insufficient';
+  };
 }
