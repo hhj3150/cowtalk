@@ -5,6 +5,7 @@
 import { getDb } from '../../config/database.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { computeCRFromCounts } from '../metrics/fertility-service.js';
 
 // ===========================
 // 학습 근거: 목장 내 정액별 과거 수태율
@@ -56,10 +57,10 @@ export async function getFarmSemenPerformance(
       pregnant_count: number;
       open_count: number;
     }>) {
-      const decided = row.pregnant_count + row.open_count;
-      const conceptionRate = decided > 0
-        ? Math.round((row.pregnant_count / decided) * 100)
-        : 0;
+      // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+      const cr = computeCRFromCounts(row.pregnant_count, row.pregnant_count + row.open_count);
+      const decided = cr.denominator;
+      const conceptionRate = cr.rate ?? 0;
       result.set(row.semen_id, {
         semenId: row.semen_id,
         inseminationCount: row.insem_count,
@@ -146,11 +147,11 @@ export async function computeConceptionStats(farmId?: string): Promise<Conceptio
       open_count: number;
     }>)[0] ?? { total_inseminations: 0, pregnant_count: 0, open_count: 0 };
 
-    const decided = overall.pregnant_count + overall.open_count;
+    // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+    const overallCr = computeCRFromCounts(overall.pregnant_count, overall.pregnant_count + overall.open_count);
+    const decided = overallCr.denominator;
     const pendingCount = overall.total_inseminations - decided;
-    const conceptionRate = decided > 0
-      ? Math.round((overall.pregnant_count / decided) * 100)
-      : 0;
+    const conceptionRate = overallCr.rate ?? 0;
 
     // 정액별 수태율
     const semenRows = await db.execute(sql`
@@ -178,13 +179,14 @@ export async function computeConceptionStats(farmId?: string): Promise<Conceptio
       pregnant_count: number;
       open_count: number;
     }>).map((r) => {
-      const dec = r.pregnant_count + r.open_count;
+      // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+      const semenCr = computeCRFromCounts(r.pregnant_count, r.pregnant_count + r.open_count);
       return {
         semenInfo: r.semen_info,
         inseminationCount: r.insem_count,
         pregnantCount: r.pregnant_count,
         openCount: r.open_count,
-        conceptionRate: dec > 0 ? Math.round((r.pregnant_count / dec) * 100) : 0,
+        conceptionRate: semenCr.rate ?? 0,
       };
     });
 

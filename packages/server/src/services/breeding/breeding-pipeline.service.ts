@@ -7,6 +7,7 @@ import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calving
 import { eq, and, desc, gte, inArray, isNull } from 'drizzle-orm';
 import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
 import { logger } from '../../lib/logger.js';
+import { computeCR, decisionsFromPregnancyChecks } from '../metrics/fertility-service.js';
 import type {
   BreedingPipelineData,
   BreedingStage,
@@ -495,11 +496,8 @@ function calcKpis(
   calvingByAnimal: ReadonlyMap<string, readonly Date[]>,
   inseminationsByAnimal: ReadonlyMap<string, readonly Date[]>,
 ): BreedingKpis {
-  // 수태율: pregnant / (pregnant + open)
-  const pregnantCount = pregnancies.filter((p) => p.result === 'pregnant').length;
-  const openCount = pregnancies.filter((p) => p.result === 'open' || p.result === 'not_pregnant').length;
-  const decided = pregnantCount + openCount;
-  const conceptionRate = decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0;
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). 정의: §6.1 metrics-contract.md.
+  const conceptionRate = computeCR(decisionsFromPregnancyChecks(pregnancies)).rate ?? 0;
 
   // 발정탐지율: smaXtec estrus 이벤트 / 전체 암소 × 21일 기대치
   const estrusEvents = smaxtecEvts.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;

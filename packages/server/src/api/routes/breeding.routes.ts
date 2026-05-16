@@ -16,6 +16,7 @@ import { getBreedingInsights } from '../../services/breeding/breeding-insights.s
 import { getTransitionRisk } from '../../services/breeding/transition-risk.service.js';
 import { getMonthlyTrends, getFarmComparison, getParityAnalysis } from '../../services/breeding/breeding-performance.service.js';
 import { createSyncSchedule, getTodaySyncTasks, completeSyncTask, getAvailableProtocols } from '../../services/breeding/sync-protocol.service.js';
+import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
 
 export const breedingRouter = Router();
 
@@ -307,12 +308,12 @@ breedingRouter.get('/stats/:farmId', requireFarmAccess, async (req: Request, res
       .orderBy(desc(pregnancyChecks.checkDate))
       .limit(20);
 
-    // 수태율 계산
+    // 수태율 계산 — fertility-service 단일 소스 (D1, BUG-001)
     const totalInseminations = breedingEventList.filter((e) => e.type === 'insemination').length;
-    const pregnantCount = pregnancies.filter((p) => p.result === 'pregnant').length;
-    const openCount = pregnancies.filter((p) => p.result === 'open' || p.result === 'not_pregnant').length;
-    const decided = pregnantCount + openCount;
-    const conceptionRate = decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0;
+    const cr = computeCR(decisionsFromPregnancyChecks(pregnancies));
+    const pregnantCount = cr.numerator;
+    const openCount = cr.denominator - cr.numerator;
+    const conceptionRate = cr.rate ?? 0;
 
     const stats = {
       farmId,

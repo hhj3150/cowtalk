@@ -5,6 +5,7 @@ import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, pregnancyChecks } from '../../db/schema.js';
 import { eq, and, gte, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { computeCR, decisionsFromPregnancyChecks, decisionsFromSmaxtecPregnancyEvents } from '../metrics/fertility-service.js';
 import type { MonthlyKpiTrend, FarmKpiComparison, ParityKpiGroup } from '@cowtalk/shared';
 
 const MS_PER_DAY = 86_400_000;
@@ -88,23 +89,14 @@ function calcMonthKpis(
   manualPreg: ReadonlyArray<{ result: string }>,
   totalFemales: number,
 ): MonthlyKpiTrend {
-  // 수태율: pregnancy_check 이벤트 중 pregnant 비율
-  const pregChecks = events
-    .filter((e) => e.eventType === 'pregnancy_check')
-    .map((e) => {
-      const d = e.details as Record<string, unknown> | null;
-      return d?.pregnant;
-    })
-    .filter((v) => v === true || v === false);
-
-  // 수동 임신감정 추가
-  for (const p of manualPreg) {
-    pregChecks.push(p.result === 'pregnant');
-  }
-
-  const pregnantCount = pregChecks.filter(Boolean).length;
-  const totalChecks = pregChecks.length;
-  const conceptionRate = totalChecks > 0 ? Math.round((pregnantCount / totalChecks) * 100) : 0;
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+  // D2 정의: pregnant ÷ (pregnant + open|not_pregnant). pending 제외 — 이전 코드는 pending을 false로 분모에 포함시키던 버그가 있었음.
+  const decisions = [
+    ...decisionsFromSmaxtecPregnancyEvents(events),
+    ...decisionsFromPregnancyChecks(manualPreg),
+  ];
+  const cr = computeCR(decisions);
+  const conceptionRate = cr.rate ?? 0;
 
   // 발정탐지율
   const estrusCount = events.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
@@ -119,7 +111,7 @@ function calcMonthKpis(
   const avgDaysOpen = 0;
   const avgCalvingInterval = 0;
 
-  const sampleSize = totalChecks + estrusCount + inseminationCount;
+  const sampleSize = cr.denominator + estrusCount + inseminationCount;
 
   return {
     month,
@@ -200,18 +192,11 @@ export async function getFarmComparison(limit = 10): Promise<readonly FarmKpiCom
     const farmEvents = allEvents.filter((e) => farmAnimalIds.has(e.animalId));
     const farmPreg = pregResults.filter((p) => farmAnimalIds.has(p.animalId));
 
-    // 수태율
-    const smaxtecPreg = farmEvents
-      .filter((e) => e.eventType === 'pregnancy_check')
-      .map((e) => (e.details as Record<string, unknown> | null)?.pregnant)
-      .filter((v) => v === true || v === false);
-    const allPregResults = [
-      ...smaxtecPreg.map((v) => v === true),
-      ...farmPreg.map((p) => p.result === 'pregnant'),
-    ];
-    const pregnantN = allPregResults.filter(Boolean).length;
-    const totalN = allPregResults.length;
-    const conceptionRate = totalN > 0 ? Math.round((pregnantN / totalN) * 100) : 0;
+    // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+    const conceptionRate = computeCR([
+      ...decisionsFromSmaxtecPregnancyEvents(farmEvents),
+      ...decisionsFromPregnancyChecks(farmPreg),
+    ]).rate ?? 0;
 
     // 발정탐지율
     const estrusN = farmEvents.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
@@ -326,18 +311,11 @@ export async function getParityAnalysis(farmId?: string): Promise<readonly Parit
     const groupEvents = allEvents.filter((e) => groupAnimalIds.has(e.animalId));
     const groupPreg = pregResults.filter((p) => groupAnimalIds.has(p.animalId));
 
-    // 수태율
-    const smaxtecPreg = groupEvents
-      .filter((e) => e.eventType === 'pregnancy_check')
-      .map((e) => (e.details as Record<string, unknown> | null)?.pregnant)
-      .filter((v) => v === true || v === false);
-    const allPregR = [
-      ...smaxtecPreg.map((v) => v === true),
-      ...groupPreg.map((p) => p.result === 'pregnant'),
-    ];
-    const pregnantN = allPregR.filter(Boolean).length;
-    const totalN = allPregR.length;
-    const conceptionRate = totalN > 0 ? Math.round((pregnantN / totalN) * 100) : 0;
+    // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+    const conceptionRate = computeCR([
+      ...decisionsFromSmaxtecPregnancyEvents(groupEvents),
+      ...decisionsFromPregnancyChecks(groupPreg),
+    ]).rate ?? 0;
 
     // 발정탐지율
     const estrusN = groupEvents.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;

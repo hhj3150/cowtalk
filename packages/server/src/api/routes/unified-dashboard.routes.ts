@@ -19,6 +19,7 @@ import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
+import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -4276,13 +4277,11 @@ function computeBreedingKpis(
   smaxtecEvts: readonly SmaxtecBreedingRow[],
 ): BreedingKpis {
   const bInseminations = breedingEvts.filter((e) => e.type === 'insemination');
-  const pregnancies = pregChecks.filter((p) => p.result === 'pregnant');
-  const openChecks = pregChecks.filter((p) => p.result === 'open' || p.result === 'not_pregnant');
+  const pregnancies = pregChecks.filter((p) => p.result === 'pregnant'); // downstream daysOpen 계산용
 
-  // 수태율: 임신확정 / 감정완료(임신+미임신). pending 제외, 분자/분모 1:1 카디널리티.
-  // smaXtec이 수정 후 21/28/35/42일에 임신확정 이벤트를 반복 송신해도 분모가 같은 풀에서 옴.
-  const decidedChecks = pregnancies.length + openChecks.length;
-  const conceptionRate = ratioPct(pregnancies.length, decidedChecks, 1);
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). 정의: §6.1 metrics-contract.md.
+  const cr = computeCR(decisionsFromPregnancyChecks(pregChecks));
+  const conceptionRate = cr.rate ?? 0;
 
   const estrusEvents = smaxtecEvts.filter((e) => e.eventType === 'estrus' || e.eventType === 'estrus_dnb');
   const estimatedCycles = Math.max(estrusEvents.length, bInseminations.length, 1);

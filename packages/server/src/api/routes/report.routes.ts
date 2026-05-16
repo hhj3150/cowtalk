@@ -15,6 +15,7 @@ import {
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt } from 'drizzle-orm';
 import { ratioPct } from '../../lib/metrics-clamp.js';
+import { computeCR, decisionsFromBreedingEventCounts } from '../../services/metrics/fertility-service.js';
 
 export const reportRouter = Router();
 
@@ -253,16 +254,9 @@ async function computeBreedingMetrics(
   const inseminationDB = breedingRows.find((r) => r.type === 'insemination')?.cnt ?? 0;
   const inseminationCount = Math.max(inseminationFromEvents, inseminationDB);
 
-  // 수태율: 임신확정 / 감정완료(임신확정 + 미임신). pending 제외하여 분자/분모 1:1 카디널리티 보장.
-  // TODO: 단일 소유권 위반 — breeding-pipeline.service.ts로 위임 예정 (metrics-contract.md 참조).
-  const pregnancyConfirmed = breedingRows
-    .filter((r) => r.type === 'pregnancy_confirmed' || r.type === 'pregnancy_check')
-    .reduce((sum, r) => sum + r.cnt, 0);
-  const notPregnant = breedingRows
-    .filter((r) => r.type === 'pregnancy_failed' || r.type === 'not_pregnant' || r.type === 'open')
-    .reduce((sum, r) => sum + r.cnt, 0);
-  const decidedChecks = pregnancyConfirmed + notPregnant;
-  const conceptionRate = ratioPct(pregnancyConfirmed, decidedChecks);
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). 정의: §6.1 metrics-contract.md.
+  const cr = computeCR(decisionsFromBreedingEventCounts(breedingRows));
+  const conceptionRate = cr.rate ?? 0;
 
   // 발정감지율: (발정 감지 / 발정 가능 두수) × 100
   const totalCows = await db
