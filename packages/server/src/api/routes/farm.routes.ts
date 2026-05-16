@@ -343,7 +343,8 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
       ownerName: farm.ownerName ?? '',
       address: farm.address ?? '',
       breedType,
-      totalAnimals: totalAnimals || (farm.currentHeadCount ?? 0),
+      // D7/D9: 라이브 카운트만 노출. D5/D13: 실측 0두 → 0 (currentHeadCount 폴백 차단, BUG-007).
+      totalAnimals,
       healthScore: 75, // 기본값 — 실제 건강 점수 산출 로직 별도
       conceptionRate: null as number | null,
       avgOpenDays: null as number | null,

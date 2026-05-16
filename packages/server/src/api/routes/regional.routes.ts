@@ -6,8 +6,9 @@ import { authenticate } from '../middleware/auth.js';
 import type { Role } from '@cowtalk/shared';
 import { analyzeRegion } from '../../ai-brain/index.js';
 import { getDb } from '../../config/database.js';
-import { regions, farms, smaxtecEvents } from '../../db/schema.js';
-import { eq, count, and, gte, inArray } from 'drizzle-orm';
+import { regions, farms, smaxtecEvents, animals } from '../../db/schema.js';
+import { eq, count, and, gte, inArray, isNull } from 'drizzle-orm';
+import { getHerdTotal, computeHerd } from '../../services/metrics/herd-service.js';
 
 export const regionalRouter = Router();
 
@@ -57,11 +58,21 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
         name: farms.name,
         lat: farms.lat,
         lng: farms.lng,
-        currentHeadCount: farms.currentHeadCount,
         status: farms.status,
       })
       .from(farms)
       .where(eq(farms.status, 'active'));
+
+    // 라이브 두수 (D7, BUG-007) — farmId별 active 동물 카운트.
+    // currentHeadCount(D8 격하)는 마커 totalAnimals 산출에 사용 안 함 (사용자 노출 = 라이브, D9).
+    const animalRows = await db
+      .select({ farmId: animals.farmId })
+      .from(animals)
+      .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
+    const liveCountByFarm = new Map<string, number>();
+    for (const a of animalRows) {
+      liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
+    }
 
     // 모드별 이벤트 집계 (최근 7일)
     const eventTypes = MODE_EVENT_TYPES[mode];
@@ -103,7 +114,7 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
         name: f.name,
         lat: f.lat,
         lng: f.lng,
-        totalAnimals: f.currentHeadCount,
+        totalAnimals: liveCountByFarm.get(f.farmId) ?? 0,
         activeAlerts: eventCount,
         healthScore: eventTypes ? Math.max(0, 100 - eventCount * 15) : null,
         status: modeStatus,
@@ -145,6 +156,13 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
       .from(farms)
       .where(eq(farms.regionId, regionId));
 
+    // 라이브 두수 (D7, BUG-007) — 지역 내 농장 활성 동물 합. D9 사용자 노출은 라이브만.
+    // 0농장 region이면 실측 0두 (전체 fallback 차단).
+    const regionFarmIds = farmList.map((f) => f.farmId);
+    const regionHerd = regionFarmIds.length > 0
+      ? await getHerdTotal({ farmIds: regionFarmIds })
+      : computeHerd(0, 'live');
+
     // AI 해석 시도
     let interpretation = null;
     try {
@@ -159,7 +177,7 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
         region,
         farms: farmList,
         totalFarms: farmList.length,
-        totalAnimals: farmList.reduce((sum, f) => sum + f.currentHeadCount, 0),
+        totalAnimals: regionHerd.total,
         interpretation,
       },
     });
