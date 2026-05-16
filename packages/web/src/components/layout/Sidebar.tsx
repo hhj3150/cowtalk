@@ -1,10 +1,10 @@
-// 사이드바 — 메뉴는 단일 소스(config/sidebar-menu.ts)에서 산출 (FLOW-02 Step2 / Step2.5)
+// 사이드바 — 메뉴는 단일 소스(config/sidebar-menu.ts)에서 산출 (FLOW-02 Step2 / 2.5 / 2.6)
 //
-// ⚠️ FLOW-02 Step2.5 노트:
+// ⚠️ FLOW-02 Step2.6 노트:
 // - 역할 시뮬레이션은 role-simulation.store(휘발성)를 구독한다. localStorage 직접 읽기 금지.
-// - master 본질 판정 = user.role === 'government_admin' (Header.tsx 의 isMaster 정의와 일치,
-//   auth store 영속 → SSR/하이드레이션 안전). RoleSwitcher 가 user.role 을 더 이상 변경하지
-//   않으므로 government_admin 은 master 계정을 안정적으로 식별한다.
+// - master 본질 판정 = user.role === 'government_admin' AND user.name 에 'Master Admin' 포함.
+//   → D2O master(하현제)와 실제 government_admin 행정관(예: 최경기행정)을 구분한다.
+//   legacy 오염으로 user.role 이 mutate된 경우는 auth-migration.ts 가 마운트 전 복구.
 // - lucide-react 미설치 → 기존 인라인 SVG 아이콘 컴포넌트로 매핑.
 
 import React, { useState, useEffect } from 'react';
@@ -196,26 +196,35 @@ function useNewsItems(): readonly NewsItem[] {
 }
 
 /**
- * 본 계정 역할 + 시뮬레이션 역할 → 메뉴 산출용 MenuRole 결정 (FLOW-02 Step2.5).
- * - master 본질 + 시뮬레이션 안 함 → 'master' (전체 15 메뉴)
+ * master 본질 + 시뮬레이션 역할 → 메뉴 산출용 MenuRole 결정 (FLOW-02 Step2.6).
+ * - master 본질 + 시뮬레이션 안 함(null) → 'master' (전체 15 메뉴)
  * - master 본질 + 시뮬레이션 중 → 시뮬레이션 역할
  * - 비-master → 본 계정 역할
+ *
+ * master 본질 판정은 호출처(Sidebar)에서 `role==='government_admin' && name.includes('Master Admin')`
+ * 로 계산해 boolean 으로 넘긴다 — 실제 government_admin 행정관(예: 최경기행정)과 D2O master 를 구분.
  */
 export function resolveMenuRole(
-  userRole: MenuRole | undefined,
+  isMasterEssence: boolean,
   simulatedRole: MenuRole | null,
+  userRole: MenuRole | undefined,
 ): MenuRole {
-  const isMaster = userRole === 'government_admin';
-  if (isMaster) {
-    return simulatedRole ?? 'master';
+  if (isMasterEssence && simulatedRole === null) {
+    return 'master';
   }
-  return userRole ?? 'farmer';
+  return (simulatedRole ?? userRole) ?? 'farmer';
 }
 
 export function Sidebar(): React.JSX.Element {
   const userRole = useAuthStore((s) => s.user?.role);
+  const userName = useAuthStore((s) => s.user?.name);
   const simulatedRole = useRoleSimulationStore((s) => s.simulatedRole);
-  const menuRole = resolveMenuRole(userRole, simulatedRole);
+
+  // master 본질 = government_admin 역할 + name 'Master Admin' 포함 (D2O master 식별).
+  // legacy 'cowtalk-master-role' localStorage 키는 더 이상 읽지 않는다.
+  const isMasterEssence = userRole === 'government_admin'
+    && (userName?.includes('Master Admin') ?? false);
+  const menuRole = resolveMenuRole(isMasterEssence, simulatedRole, userRole);
   const newsItems = useNewsItems();
 
   // 단일 소스(config/sidebar-menu.ts)에서 메뉴 산출.
