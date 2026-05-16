@@ -21,7 +21,21 @@ interface FarmAnimalsState {
 // 위험등급 배지
 // ===========================
 
-function HealthBadge({ score }: { readonly score: number }) {
+function HealthBadge({ score }: { readonly score: number | null }) {
+  // D5 (BUG-006): healthScore null/undefined → "—" neutral 배지. "양호" 긍정 라벨 부활 금지.
+  if (score == null) {
+    return (
+      <span
+        role="status"
+        aria-label="건강점수 데이터 부족"
+        title="충분한 데이터가 없습니다"
+        className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500"
+      >
+        —
+      </span>
+    );
+  }
+
   const level =
     score >= 80 ? { label: '양호', color: 'bg-green-100 text-green-800' } :
     score >= 60 ? { label: '주의', color: 'bg-yellow-100 text-yellow-800' } :
@@ -114,7 +128,8 @@ export default function FarmDetailPage() {
           address: (r.address as string) ?? '',
           breedType: (r.breedType as 'dairy' | 'beef' | 'mixed') ?? 'mixed',
           totalAnimals: (r.totalAnimals as number) ?? (r.currentHeadCount as number) ?? 0,
-          healthScore: (r.healthScore as number) ?? 75,
+          // D5 (BUG-006): 75 mock 폴백 제거. server가 healthScore 없으면 null → HealthBadge가 "—" 표시.
+          healthScore: (r.healthScore as number | null) ?? null,
           conceptionRate: (r.conceptionRate as number | null) ?? null,
           avgOpenDays: (r.avgOpenDays as number | null) ?? null,
           mortalityRate: (r.mortalityRate as number) ?? 0,
