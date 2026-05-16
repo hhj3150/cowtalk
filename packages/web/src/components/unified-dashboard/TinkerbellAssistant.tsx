@@ -4,6 +4,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
@@ -612,7 +613,8 @@ export function TinkerbellAssistant({
   const [farmIdForChat, setFarmIdForChat] = useState<string | null>(null);
   // 소버린 학습 현황 캐시
   const [sovereignStats, setSovereignStats] = useState<SovereignAiStats | null>(null);
-  const user = useAuthStore((s) => s.user);
+  // FLOW-02 Step2.5: 채팅 컨텍스트·제안은 유효 역할(시뮬레이션 반영)을 따른다.
+  const effectiveRole = useEffectiveRole();
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
 
   // OpenAI Nova 음성 출력 (브라우저 TTS 대체) — 기본 ON, 토글 가능
@@ -625,7 +627,7 @@ export function TinkerbellAssistant({
 
   const t = useT();
   const { lang: uiLang } = useLang();
-  const isQuarantineMode = user?.role === 'quarantine_officer';
+  const isQuarantineMode = effectiveRole === 'quarantine_officer';
   const suggestions = animalContext
     ? [
         t('tb.sugg.animal.inseminate_now'),
@@ -633,7 +635,7 @@ export function TinkerbellAssistant({
         t('tb.sugg.animal.next_action'),
         t('tb.sugg.animal.breeding_history'),
       ]
-    : getContextualSuggestions(t, dashboardContext, user?.role);
+    : getContextualSuggestions(t, dashboardContext, effectiveRole);
 
   // 음성 인식 지원 여부
   const hasSpeechRecognition = typeof window !== 'undefined' &&
@@ -716,7 +718,7 @@ export function TinkerbellAssistant({
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
           : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}\n\n질문: ${question}`,
-        role: user?.role ?? 'farm_owner',
+        role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
         animalId: animalIdForChat ?? undefined,
         dashboardContext: animalContext
@@ -919,7 +921,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, user?.role, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments]);
+  }, [messages, effectiveRole, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {

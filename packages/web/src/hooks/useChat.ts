@@ -1,7 +1,7 @@
 // 채팅 훅 — SSE 스트리밍 + 대시보드 컨텍스트
 
 import { useState, useCallback, useRef } from 'react';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { streamChat, sendChatMessage, type ChatMessageRequest } from '@web/api/chat.api';
 import type { ChatResponse } from '@cowtalk/shared';
 
@@ -27,7 +27,7 @@ export function useChat() {
   const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const cancelRef = useRef<(() => void) | null>(null);
-  const user = useAuthStore((s) => s.user);
+  const effectiveRole = useEffectiveRole();
 
   const sendMessage = useCallback(
     async (question: string, options?: ChatOptions) => {
@@ -42,7 +42,7 @@ export function useChat() {
 
       const request: ChatMessageRequest = {
         question,
-        role: user?.role,
+        role: effectiveRole,
         farmId: options?.farmId,
         animalId: options?.animalId,
         dashboardContext: options?.dashboardContext,
@@ -124,7 +124,7 @@ export function useChat() {
         }
       }
     },
-    [messages, user?.role],
+    [messages, effectiveRole],
   );
 
   const cancelStream = useCallback(() => {

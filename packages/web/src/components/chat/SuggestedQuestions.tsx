@@ -2,7 +2,7 @@
 // 시연용: 역할에 맞는 첫 인사와 핵심 질문으로 AI 역량 시연
 
 import React from 'react';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import type { Role } from '@cowtalk/shared';
 
 interface Props {
@@ -64,7 +64,7 @@ const ROLE_CONFIGS: Record<Role, RoleConfig> = {
 };
 
 export function SuggestedQuestions({ onSelect }: Props): React.JSX.Element {
-  const role = useAuthStore((s) => s.user?.role) ?? 'farmer';
+  const role = useEffectiveRole() ?? 'farmer';
   const config = ROLE_CONFIGS[role];
 
   return (

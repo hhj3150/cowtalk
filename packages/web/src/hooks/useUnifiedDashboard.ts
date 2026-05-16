@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import * as api from '@web/api/unified-dashboard.api';
 import type { FarmProfitEntryInput } from '@cowtalk/shared';
 import { getRegionalMapData } from '@web/api/regional.api';
@@ -26,7 +26,7 @@ function useEffectiveFarmId(): { farmId: string | undefined; farmIds: string | u
 
 export function useUnifiedDashboard() {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
-  const role = useAuthStore((s) => s.user?.role ?? 'government_admin');
+  const role = useEffectiveRole() ?? 'government_admin';
 
   return useQuery({
     queryKey: ['unified-dashboard', ...queryKey, role],
@@ -109,7 +109,7 @@ export function useDashboardFarms() {
 
 export function useAiBriefing(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
-  const role = useAuthStore((s) => s.user?.role ?? 'government_admin');
+  const role = useEffectiveRole() ?? 'government_admin';
 
   return useQuery({
     queryKey: ['ai-briefing', ...queryKey, role],
