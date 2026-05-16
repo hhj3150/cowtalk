@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| 갱신 | 2026-05-16 |
-| 다음 시연 | **2026-06-04** (D-19) |
-| 진행 단계 | Phase 1 / BUG-001 통합 머지 준비 |
-| 활성 PR | [#33 통합 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) (base=`claude/xenodochial-lewin-2906ef`, main 통합 권고됨) |
-| 활성 PR (참고) | [#32 113.1% root cause](https://github.com/hhj3150/cowtalk/pull/32) — PR #33에 통합 예정 |
+| 갱신 | 2026-05-16 (v0.3) |
+| 목표 | **카우톡 v5.0 완성** (시연 일정 없음, 품질 우선) |
+| 진행 단계 | Phase 1 / BUG-007 진입 |
+| 최근 머지 | [#33 BUG-001 통합](https://github.com/hhj3150/cowtalk/pull/33) (`6c2d886`, 2026-05-16) |
+| 정리 대기 | [#32](https://github.com/hhj3150/cowtalk/pull/32) — PR #33에 통합 완료, close 필요 (운영 정리) |
 
 ---
 
@@ -30,14 +30,20 @@ LAYER 1 — 목장 단위 관리 (농장주, 데이터 원천)
 
 ---
 
-## 2. 완성 정의 (Definition of Done) — 6/4 시연 기준
+## 2. 완성 정의 (Definition of Done)
 
-다음 두 조건이 동시에 충족된 상태:
+다음 조건이 모두 충족된 상태:
 
-- **(A) 시연 30분 동안 데이터 모순 0건** — 같은 농장·같은 시점이면 모든 화면이 같은 숫자.
-- **(B) 5단계 시연 시나리오 끊김 없이 작동** — 본문은 사용자가 별도 결정 대기 중.
+- **L1 농장주가 자기 농장 데이터로 매일의 의사결정(번식·건강·도태)을 실제로 내릴 수 있음**
+- **L2 수의사가 담당 농장 통합 모니터링 + 위험 농장 식별 + 처치 결정 가능**
+- **L3 행정/방역이 광역 데이터로 정책 결정(방역 구역 설정, 수급 예측, 보조금 배분 근거)을 내릴 수 있음**
+- **모든 레이어에서 데이터 모순 0건**
+- **시연 일정 없음, 품질 우선**
 
-"기능 완성"이 아니라 위 두 조건이 정의. 매 PR이 이 둘에 기여하는지 자문.
+"기능 완성"이 아니라 위 5가지 조건이 정의. 매 PR이 이들에 기여하는지 자문.
+
+자체 검증 자산:
+- **5단계 데모 시나리오** (카우톡 자체 검증 목적, 시연 일정과 분리). 시나리오 본문은 사용자 결정 대기.
 
 ---
 
@@ -137,7 +143,6 @@ CTO ──→ ⑤ 다음 박스 발행
 
 - **권한 격리는 인프라 우선, UI는 나중.** 어떤 UI 분기로 권한 흉내내는 코드도 즉흥적으로 추가하지 말 것.
 - **master 계정 자체는 항상 유지** — 운영 단계에도 전체 조회 권한.
-- 시연 시 권한 전환을 보여줘야 한다면 §8 미해결 항목 "6/4 시연 master/role 전환 여부"에 따라 사용자 결정 필요.
 
 ### Phase 2 — 역할 분리 (미착수)
 L1/L2/L3 사용자별 다른 화면. 권한 게이팅 통일 UI 아님. **현재 권한 모델 상태는 §6.5 참조** — 새 세션 진입 시 반드시 먼저 읽을 것.
@@ -145,8 +150,8 @@ L1/L2/L3 사용자별 다른 화면. 권한 게이팅 통일 UI 아님. **현재
 ### Phase 3 — L3 핵심 기능 (미착수)
 방역 군집 감지 (cluster thresholds TBD), 전국 vs 시도 합계 일관성 검증 잡, 정책 시뮬레이션.
 
-### Phase 4 — 시연 준비 (미착수)
-5단계 시나리오 본문 확정 → 시나리오별 화면 동선 가드 → E2E 테스트.
+### Phase 4 — 자체 검증 시나리오 (미착수)
+5단계 데모 시나리오 본문 확정 → 화면 동선 가드 → E2E 테스트. 시연 일정 분리, 카우톡 자체 품질 검증 자산.
 
 ---
 
@@ -167,75 +172,65 @@ L1/L2/L3 사용자별 다른 화면. 권한 게이팅 통일 UI 아님. **현재
 
 ## 8. 미해결 (Open Items)
 
-- **BUG-007 owner**: TBD (alert-aggregator 신설 시 지정).
-- **L3 cluster detection thresholds** ([metrics-contract.md §16](metrics-contract.md)): 군집 거리·시간 윈도우·발열/호흡기 임계, 위험스코어 컷오프, 시도 vs 전국 합계 허용 오차 — 모두 TBD. 시나리오 5단계 확정 후 결정 라운드.
-- **시연 5단계 시나리오 본문**: 등장 페르소나(L1/L2/L3), 등장 화면, 클릭 순서 — 사용자 결정 대기.
-- **6/4 시연 master/role 전환 여부**: 시연에서 권한 전환을 보여줄지, 단일 master 권한으로만 갈지 — 사용자 결정 대기.
+- **BUG-007 owner**: TBD (alert-aggregator 신설 시 지정). 두수 단일 소스도 BUG-007 범위.
+- **L3 cluster detection thresholds** ([metrics-contract.md §16](metrics-contract.md)): 군집 거리·시간 윈도우·발열/호흡기 임계, 위험스코어 컷오프, 시도 vs 전국 합계 허용 오차 — 모두 TBD. 자체 검증 시나리오 확정 후 결정 라운드.
+- **5단계 데모 시나리오 본문**: 등장 페르소나(L1/L2/L3), 등장 화면, 클릭 순서 — 사용자 결정 대기. (시연 일정 분리, 자체 검증 자산)
 - **수태율 측정 후 회귀 결과**: D2 위반 수정으로 CR이 어떻게 변하는지 (60–85% 정상, 90%↑ stop condition) — cowtalk.netlify.app preview 환경에서 사용자 수동 측정 후 [bug-001-audit.md §8](bug-001-audit.md) 표 채우기.
 
 ---
 
-## 9. 활성 PR 상태
+## 9. PR 이력
 
-### PR #33 ([URL](https://github.com/hhj3150/cowtalk/pull/33))
-- 브랜치: `claude/bug-001-cr-single-source`
-- 베이스: `claude/xenodochial-lewin-2906ef` (PR #32) → **main으로 변경 권고** (Part 2 §10 참조)
-- 포함 commit:
-  - `87ddd79` BUG-001 단일 owner 통합 (10 사이트 → fertility-service)
-  - `dcf08ac` D5 displayValue/status 추가 + UI 4파일 가드
-  - 본 commit (예정): 잔존 D5 2곳 처리 (chart filter, gauge null) + handoff.md
-- 검증:
-  - tsc server/shared/web: EXIT=0 ✅
-  - vitest fertility-service.test.ts: 24/24 통과 ✅
-  - 수동 회귀: [bug-001-audit.md §10](bug-001-audit.md) 사용자 검증 대기
+### PR #33 — **MERGED** (`6c2d886`, 2026-05-16)
+- 제목: "BUG-001: 수태율 단일 소스 + 113.1% 근본 원인 + production mock 제거 + D5 전파"
+- 머지 방식: PR #32 변경분 통합(옵션 B 적용) → 단일 PR로 main 머지
+- 산출물: `fertility-service.ts`, `metrics-clamp.ts`, `metrics-contract.md` v0.2, `bug-001-audit.md`, `cto-handoff.md` 초안
 
-### PR #32 ([URL](https://github.com/hhj3150/cowtalk/pull/32))
-- 브랜치: `claude/xenodochial-lewin-2906ef`
-- 베이스: `main`
-- 단일 commit: `d068c4d` (4 files, +75/-129)
-- 상태: OPEN. PR #33 통합 머지 시 자동 종결 권고.
+### PR #32 — OPEN (실효성 없음, close 대기)
+- PR #33이 옵션 B로 PR #32 변경분(`d068c4d`)을 흡수하여 main 머지됨.
+- 정리: 사용자가 마무리 코멘트("PR #33에 통합됨") 후 close 권고.
 
 ---
 
-## 10. 머지 옵션 권고
-
-세 옵션 검토:
-
-| 옵션 | 절차 | 검증 횟수 | 리스크 |
-|---|---|---|---|
-| (A) PR #32 먼저 main 머지 → PR #33 자동 retarget → preview 검증 → 머지 | 순차 2단계 | 2회 (각 PR 마다) | 단계 사이에 main이 잠시 PR #32만 적용된 상태로 노출. 시연 환경에서 D5 가드 없는 상태가 짧게라도 보일 수 있음. |
-| **(B) PR #33 base를 main으로 변경 → PR #32 close → 통합 PR로 단일 검증 후 머지** | 1단계 | 1회 | **권고**. PR #33 diff에 PR #32 변경이 자동 포함. Git lineage 보존. PR #32 commit hash는 PR #33 chain에 그대로 존재. |
-| (C) 새 통합 PR 생성 → PR #32 + #33 둘 다 close → 새 PR 검증 후 머지 | 1단계 + 신규 PR | 1회 | (B)와 효과 동일이나 PR 번호 증가. 추적 가치 없음. |
-
-**→ 옵션 (B) 권고.** 이유: GitHub은 PR base 변경 시 diff를 자동 재계산. `claude/bug-001-cr-single-source` 브랜치는 이미 PR #32의 commit (`d068c4d`)을 포함하므로, base를 main으로 바꾸면 PR #33 diff에 PR #32 변경이 합쳐짐. 검증 1회, 시연 환경 노출 단일 시점. PR #32는 마무리 코멘트("PR #33에 통합") 후 close.
-
----
-
-## 11. 복귀 프로토콜
+## 10. 복귀 프로토콜
 
 새 세션이 시작되면:
 
 1. 이 문서를 먼저 읽는다.
 2. §6 Phase/BUG 표에서 현재 단계 확인. 활성 BUG의 PR 링크 follow.
-3. §3 보존 자산 + §4 절대 금지 숙지.
-4. §7 Decision Log + §8 미해결로 결정 컨텍스트 복귀.
-5. §10 머지 옵션 + audit doc §10 회귀 체크리스트 상태 확인.
-6. 사용자가 다음 박스를 발행할 때까지 대기 — **선제적 코드 변경 금지**.
+3. **§6.5 권한 모델 현황** — master 시뮬레이션 오해 방지 필수 숙지.
+4. §3 보존 자산 + §4 절대 금지 숙지.
+5. §7 Decision Log + §8 미해결로 결정 컨텍스트 복귀.
+6. §9 PR 이력 + 활성 audit doc 회귀 체크리스트 확인.
+7. 사용자가 다음 박스를 발행할 때까지 대기 — **선제적 코드 변경 금지**.
 
 다음 박스 작성 시 (외부 LLM이 사용자에게 제안할 때):
-- D6 다음 순서: **BUG-007** (alert-aggregator)
+- D6 다음 순서: **BUG-007** (두수 단일 소스 + alert-aggregator 신설)
 - 박스 구조: 컨텍스트 1단락 + Part 1~N 작업 + 산출물 + 절대 금지 + 중단 조건
 - Claude Code가 매 응답에 paste-ready 요약을 넘기므로 그것을 다음 박스 입력으로 사용.
 
 ---
 
-## 12. 핵심 파일 위치
+## 11. 핵심 파일 위치
 
 | 항목 | 경로 |
 |---|---|
 | 메트릭 단일 진실 | [docs/metrics-contract.md](metrics-contract.md) |
 | BUG-001 감사 | [docs/bug-001-audit.md](bug-001-audit.md) |
+| BUG-007 감사 | [docs/bug-007-audit.md](bug-007-audit.md) (작성 중) |
 | 수태율 owner | [packages/server/src/services/metrics/fertility-service.ts](../packages/server/src/services/metrics/fertility-service.ts) |
+| 두수 owner | (BUG-007 Step 2에서 신설 예정) — `packages/server/src/services/metrics/herd-service.ts` |
+| 알림 카운트 owner | (BUG-007 D3에서 신설 예정) — `packages/server/src/services/alerts/alert-aggregator.ts` |
 | 백분율 헬퍼 | [packages/server/src/lib/metrics-clamp.ts](../packages/server/src/lib/metrics-clamp.ts) |
 | 본 handoff 문서 | docs/cto-handoff.md (이 파일) |
 | 외부 메모리 인덱스 | `~/.claude/projects/.../memory/MEMORY.md` |
+
+---
+
+## 12. Change Log
+
+| 버전 | 일자 | 변경 |
+|---|---|---|
+| v0.1 | 2026-05-16 | 초안 |
+| v0.2 | 2026-05-16 | §6.5 권한 모델 현황 추가 (master 시뮬레이션 오해 방지) |
+| **v0.3** | **2026-05-16** | **완성 정의에서 시연 컨텍스트 제거, 품질 기준 5-bullet으로 전환. "D-19", "6/4", "6월 4일", "정부 시연" 표현 제거. BUG-001 머지 완료 반영. BUG-007 진입 (두수 단일 소스 + alert-aggregator).** |
