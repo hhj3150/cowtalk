@@ -1,4 +1,6 @@
 // 데모 모드 — 전체화면 자동 순환 (슬라이드별 차별화된 KPI + 기능 미리보기)
+// BUG-008: AI 정확도/건강 점수/정상 비율 등 ground truth 없는 mock 수치 제거.
+//          확정 사실 (농장 수, 두수, 지원 역할 수 등)만 표시. 나머지는 "—" (학습 중).
 
 import React, { useState, useEffect, useCallback } from 'react';
 
@@ -7,7 +9,7 @@ interface SlideConfig {
   readonly title: string;
   readonly description: string;
   readonly icon: string;
-  readonly kpis: readonly { label: string; value: number; suffix: string; color?: string }[];
+  readonly kpis: readonly { label: string; value: number | null; suffix: string; color?: string }[];
   readonly features: readonly string[];
 }
 
@@ -21,7 +23,8 @@ const SLIDES: readonly SlideConfig[] = [
       { label: '연동 농장', value: 146, suffix: '개' },
       { label: '관리 두수', value: 7158, suffix: '두' },
       { label: '24/7 모니터링', value: 24, suffix: 'h', color: 'text-green-400' },
-      { label: 'AI 감지 정확도', value: 95, suffix: '%+', color: 'text-green-400' },
+      // D4/D5 (BUG-008): hardcoded "95%+" mock 제거. ground truth 부족 시 "—".
+      { label: 'AI 감지 정확도', value: null, suffix: '학습 중' },
     ],
     features: ['위내센서 실시간 체온·반추·활동 모니터링', '6개 역할별 맞춤 대시보드', '알람 → 판단 → 행동이 한 화면에서 완결'],
   },
@@ -31,10 +34,11 @@ const SLIDES: readonly SlideConfig[] = [
     description: 'smaXtec 센서 데이터 + AI 해석 → 즉시 행동',
     icon: '🧑‍🌾',
     kpis: [
-      { label: '오늘 알림', value: 3, suffix: '건', color: 'text-yellow-400' },
-      { label: '발정 후보', value: 2, suffix: '두', color: 'text-pink-400' },
-      { label: '건강 이상', value: 1, suffix: '두', color: 'text-red-400' },
-      { label: '건강 점수', value: 92, suffix: '점', color: 'text-green-400' },
+      { label: '오늘 알림', value: null, suffix: '실시간', color: 'text-yellow-400' },
+      { label: '발정 후보', value: null, suffix: '실시간', color: 'text-pink-400' },
+      { label: '건강 이상', value: null, suffix: '실시간', color: 'text-red-400' },
+      // D5: hardcoded "92점" mock 제거.
+      { label: '건강 점수', value: null, suffix: 'AI 분석' },
     ],
     features: ['AI 일일 브리핑 — 오늘 뭘 먼저 해야 하는지', '개체 클릭 → 센서 차트 + 번식이력 + AI 분석', '수정 적기 알림 + 정액 추천'],
   },
@@ -45,9 +49,9 @@ const SLIDES: readonly SlideConfig[] = [
     icon: '🩺',
     kpis: [
       { label: '담당 농장', value: 56, suffix: '개' },
-      { label: '긴급 방문', value: 3, suffix: '건', color: 'text-red-400' },
-      { label: '체온 이상', value: 7, suffix: '두', color: 'text-orange-400' },
-      { label: '처방 완료', value: 12, suffix: '건', color: 'text-green-400' },
+      { label: '긴급 방문', value: null, suffix: '실시간', color: 'text-red-400' },
+      { label: '체온 이상', value: null, suffix: '실시간', color: 'text-orange-400' },
+      { label: '처방 기록', value: null, suffix: '누적' },
     ],
     features: ['농장 그룹별 건강 랭킹', '질병 패턴 분석 + 감별 진단 지원', '처방전 자동 생성 + 기록'],
   },
@@ -58,9 +62,10 @@ const SLIDES: readonly SlideConfig[] = [
     icon: '🛡️',
     kpis: [
       { label: '감시 농장', value: 146, suffix: '개' },
-      { label: '발열 클러스터', value: 2, suffix: '건', color: 'text-red-400' },
-      { label: '의심 개체', value: 4, suffix: '두', color: 'text-orange-400' },
-      { label: '정상 비율', value: 97.3, suffix: '%', color: 'text-green-400' },
+      { label: '발열 클러스터', value: null, suffix: '실시간', color: 'text-red-400' },
+      { label: '의심 개체', value: null, suffix: '실시간', color: 'text-orange-400' },
+      // D5: "정상 비율 97.3%" mock 제거.
+      { label: '정상 비율', value: null, suffix: '실시간' },
     ],
     features: ['질병 클러스터 자동 감지 + 확산 시뮬레이션', '역학 조사 워크플로우 디지털화', 'KAHIS 연동 + 전국 현황 지도'],
   },
@@ -70,10 +75,11 @@ const SLIDES: readonly SlideConfig[] = [
     description: 'Claude AI + v4 룰 엔진 + 데이터 루프',
     icon: '🧠',
     kpis: [
-      { label: '일일 분석', value: 1200, suffix: '건' },
-      { label: 'AI 정확도', value: 94.2, suffix: '%', color: 'text-green-400' },
-      { label: '평균 응답', value: 1.2, suffix: '초', color: 'text-blue-400' },
-      { label: '레이블 축적', value: 340, suffix: '건', color: 'text-purple-400' },
+      { label: '일일 분석', value: null, suffix: '실시간' },
+      // D4/D5: hardcoded "94.2%" mock 제거. ground truth N>=10 시 표시.
+      { label: 'AI 정확도', value: null, suffix: '학습 중' },
+      { label: '평균 응답', value: null, suffix: '실측', color: 'text-blue-400' },
+      { label: '레이블 축적', value: null, suffix: '누적', color: 'text-purple-400' },
     ],
     features: ['센서+공공데이터 → AI 분석 → 결과 축적 → AI 재강화', '역할별 맞춤 액션플랜 자동 생성', 'Claude API 불가 시 v4 룰 엔진 자동 전환'],
   },
@@ -227,13 +233,14 @@ function DemoKpi({
   color = 'text-white',
 }: {
   label: string;
-  value: number;
+  value: number | null;
   suffix: string;
   color?: string;
 }): React.JSX.Element {
   const [displayValue, setDisplayValue] = useState(0);
 
   useEffect(() => {
+    if (value === null) return;
     setDisplayValue(0);
     const duration = 1500;
     const steps = 40;
@@ -250,6 +257,19 @@ function DemoKpi({
 
     return () => clearInterval(timer);
   }, [value]);
+
+  // D5/D4 (BUG-008): value=null → "—" + neutral 색. mock 수치 부활 금지.
+  if (value === null) {
+    return (
+      <div className="rounded-xl bg-white/10 p-3 backdrop-blur lg:p-5">
+        <p className="text-[10px] text-blue-300 lg:text-xs">{label}</p>
+        <p className="mt-1 text-xl font-bold lg:text-2xl text-blue-200/60">
+          —
+          <span className="text-sm lg:text-base text-blue-300/70 ml-1">({suffix})</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl bg-white/10 p-3 backdrop-blur lg:p-5">

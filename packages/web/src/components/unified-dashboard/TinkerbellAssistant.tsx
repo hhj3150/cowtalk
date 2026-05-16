@@ -494,10 +494,14 @@ function stopSpeaking(): void {
 
 function formatSovereignContext(stats: SovereignAiStats): string {
   const verdictTotal = stats.confirmedCount + stats.falsePositiveCount + stats.modifiedCount + stats.missedCount;
+  // D5/D4 (BUG-008): 표본 부족 시 정확도 라인을 "—"로 표기. "0.0%" 표시 금지.
+  const accLine = stats.accuracyResult.status === 'data_insufficient'
+    ? `정확도: — (표본 ${stats.accuracyResult.denominator}건, 최소 10건 필요)`
+    : `정확도: ${stats.accuracyResult.displayValue} (${stats.accuracyResult.numerator}/${stats.accuracyResult.denominator}, 30일 변화: ${stats.improvementResult.displayValue})`;
   return [
     `[팅커벨 학습 현황]`,
     `총 레이블: ${stats.totalLabels}건`,
-    `정확도: ${stats.accuracyRate.toFixed(1)}% (30일 변화: ${stats.improvementRate > 0 ? '+' : ''}${stats.improvementRate.toFixed(1)}%)`,
+    accLine,
     `판정 분포: 정확 ${stats.confirmedCount}, 오탐 ${stats.falsePositiveCount}, 수정 ${stats.modifiedCount}, 미탐 ${stats.missedCount} (총 ${verdictTotal}건)`,
     stats.topMisclassifications.length > 0
       ? `주요 오분류: ${stats.topMisclassifications.map((m) => `${m.predictedType}→${m.actualType}(${m.count}건)`).join(', ')}`

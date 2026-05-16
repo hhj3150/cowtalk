@@ -21,6 +21,7 @@ import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
 import { computeHerd, getHerdTotal } from '../../services/metrics/herd-service.js';
+import { computeAccuracy } from '../../services/metrics/ai-performance-service.js';
 import { getAlertCountForWidget } from '../../services/alerts/alert-aggregator.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
@@ -3057,13 +3058,13 @@ unifiedDashboardRouter.get('/event-label-stats', async (req: Request, res: Respo
     const modified = verdictMap['modified'] ?? 0;
     const missed = verdictMap['missed'] ?? 0;
 
-    const accuracyRate = totalLabels > 0
-      ? Math.round((confirmed / totalLabels) * 1000) / 10
-      : 0;
+    // D5/D4 (BUG-008): status='data_insufficient' when n < minSamples.
+    const accuracyResult = computeAccuracy(confirmed, totalLabels);
+    const accuracyRate = accuracyResult.rate ?? 0;
 
     res.json({
       success: true,
-      data: { totalLabels, confirmed, falsePositive, modified, missed, accuracyRate },
+      data: { totalLabels, confirmed, falsePositive, modified, missed, accuracyRate, accuracyResult },
     });
   } catch (error) {
     logger.error({ error }, 'Event label stats query failed');
