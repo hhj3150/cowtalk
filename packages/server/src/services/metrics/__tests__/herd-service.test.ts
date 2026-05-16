@@ -1,15 +1,20 @@
 // herd-service 순수 함수 테스트 — DB 의존성 없음.
-// metrics-contract.md (BUG-007) / Decision D5·D7·D8·D9
+// metrics-contract.md §7 (BUG-007) / Decision D5·D7·D8·D9·D11·D13·D14
 
 import { describe, it, expect } from 'vitest';
-import { computeHerd } from '../herd-service.js';
+import {
+  computeHerd,
+  herdUnavailable,
+  aggregateHerdByProvince,
+} from '../herd-service.js';
 
-describe('computeHerd', () => {
-  it('카운트 0 → status="data_insufficient" + displayValue="—" (D5 빈 농장)', () => {
+describe('computeHerd (D13: 실측 0두 vs 측정 불가 분리)', () => {
+  it('실측 0두 (count=0) → status="ok" + displayValue="0두" (D13)', () => {
+    // farm 존재 + animals 0건 (실측). "—"가 아니라 "0두" 표시.
     expect(computeHerd(0)).toEqual({
       total: 0,
-      displayValue: '—',
-      status: 'data_insufficient',
+      displayValue: '0두',
+      status: 'ok',
       source: 'live',
     });
   });
@@ -47,7 +52,7 @@ describe('computeHerd', () => {
     expect(result.status).toBe('ok');
   });
 
-  it('음수 입력 → "—" (D5 가드)', () => {
+  it('음수 입력 → herdUnavailable (D13 측정 불가)', () => {
     expect(computeHerd(-5)).toEqual({
       total: 0,
       displayValue: '—',
@@ -56,12 +61,12 @@ describe('computeHerd', () => {
     });
   });
 
-  it('NaN 입력 → "—" (Number.isFinite 가드)', () => {
+  it('NaN 입력 → herdUnavailable (Number.isFinite 가드)', () => {
     expect(computeHerd(Number.NaN).status).toBe('data_insufficient');
     expect(computeHerd(Number.NaN).displayValue).toBe('—');
   });
 
-  it('Infinity → "—"', () => {
+  it('Infinity → herdUnavailable', () => {
     expect(computeHerd(Number.POSITIVE_INFINITY).status).toBe('data_insufficient');
   });
 
@@ -75,26 +80,112 @@ describe('computeHerd', () => {
     expect(computeHerd(100).source).toBe('live');
   });
 
-  it('source="registered" 명시 → "registered" 보존 (D8 호출처 디버깅)', () => {
+  it('source="registered" 명시 → 보존 (D8 호출처 정책 추적)', () => {
     expect(computeHerd(100, 'registered').source).toBe('registered');
+  });
+
+  it('registered + 0두도 실측 → "0두" (D13)', () => {
+    expect(computeHerd(0, 'registered')).toEqual({
+      total: 0,
+      displayValue: '0두',
+      status: 'ok',
+      source: 'registered',
+    });
   });
 });
 
-describe('D5/D7/D8/D9 의미 검증', () => {
-  it('rate=0 (실값) vs rate=null (빈 농장) 구별 — D5 핵심', () => {
-    // fertility-service와 달리 herd는 "총 0두 = 실값" vs "데이터 없음"이 모호.
-    // 농장 자체가 없으면 빈 농장. 농장은 있는데 동물 0두면 실값 0... 하지만 그것도 의미적으로 빈 농장.
-    // 따라서 동물 카운트 0 = data_insufficient로 통일 (현재 구현).
-    expect(computeHerd(0).status).toBe('data_insufficient');
-    expect(computeHerd(0).displayValue).toBe('—');
+describe('herdUnavailable (D13 측정 불가 헬퍼)', () => {
+  it('기본 source=live + 측정 불가 결과', () => {
+    expect(herdUnavailable()).toEqual({
+      total: 0,
+      displayValue: '—',
+      status: 'data_insufficient',
+      source: 'live',
+    });
   });
 
-  it('Definition A (registered) vs Definition B (live) 동시 호출 — source 필드로 구별', () => {
-    const live = computeHerd(10666, 'live');
-    const registered = computeHerd(11376, 'registered');
-    // 두 결과가 같은 페이지에 노출되어도 source 필드로 구별 가능.
-    expect(live.source).not.toBe(registered.source);
-    expect(live.total).not.toBe(registered.total);
-    // D9: 사용자 노출은 live만 — 호출처 정책으로 강제. 본 테스트는 호출 자체는 가능함을 검증.
+  it('source="registered" 명시 → source 보존', () => {
+    expect(herdUnavailable('registered')).toEqual({
+      total: 0,
+      displayValue: '—',
+      status: 'data_insufficient',
+      source: 'registered',
+    });
+  });
+});
+
+describe('D13 실측 0 vs 측정 불가 명시 비교', () => {
+  it('실측 0두는 "0두" — UI에 "이 농장 동물 없음"으로 정확히 표시', () => {
+    const result = computeHerd(0);
+    expect(result.status).toBe('ok');
+    expect(result.displayValue).toBe('0두');
+    expect(result.displayValue).not.toBe('—');
+  });
+
+  it('측정 불가는 "—" — UI에 "데이터 부족"으로 정확히 표시', () => {
+    const result = herdUnavailable();
+    expect(result.status).toBe('data_insufficient');
+    expect(result.displayValue).toBe('—');
+    expect(result.displayValue).not.toBe('0두');
+  });
+});
+
+describe('aggregateHerdByProvince (D14 시도별 집계)', () => {
+  // 9 시도 좌표 (province-mapper PROVINCE_CENTERS 기반)
+  const GG_LAT = 37.41; const GG_LNG = 127.52;     // 경기도
+  const CN_LAT = 36.51; const CN_LNG = 126.80;     // 충청남도
+  const JJ_LAT = 33.49; const JJ_LNG = 126.53;     // 제주특별자치도
+
+  it('빈 입력 → 9 시도 모두 "0두" (실측 0)', () => {
+    const result = aggregateHerdByProvince([]);
+    expect(result.size).toBe(9);
+    for (const [, herd] of result) {
+      expect(herd.status).toBe('ok');
+      expect(herd.displayValue).toBe('0두');
+      expect(herd.total).toBe(0);
+    }
+  });
+
+  it('경기 5두 + 충남 3두 + 제주 1두 → 각 시도 정확히 집계', () => {
+    const rows = [
+      ...Array.from({ length: 5 }, () => ({ lat: GG_LAT, lng: GG_LNG })),
+      ...Array.from({ length: 3 }, () => ({ lat: CN_LAT, lng: CN_LNG })),
+      { lat: JJ_LAT, lng: JJ_LNG },
+    ];
+    const result = aggregateHerdByProvince(rows);
+    expect(result.get('경기도')?.total).toBe(5);
+    expect(result.get('경기도')?.displayValue).toBe('5두');
+    expect(result.get('충청남도')?.total).toBe(3);
+    expect(result.get('제주특별자치도')?.total).toBe(1);
+    expect(result.get('경상북도')?.total).toBe(0); // 미사용 시도도 0두 'ok'
+    expect(result.get('경상북도')?.status).toBe('ok');
+  });
+
+  it('해외 / 미분류 좌표는 집계 제외', () => {
+    const rows = [
+      { lat: GG_LAT, lng: GG_LNG },        // 경기 1두
+      { lat: null, lng: null },            // 미분류
+      { lat: 0, lng: 0 },                  // 해외 (한국 범위 밖)
+      { lat: 40.0, lng: 130.0 },           // 해외
+    ];
+    const result = aggregateHerdByProvince(rows);
+    expect(result.get('경기도')?.total).toBe(1);
+    // 해외/미분류는 결과 map에 키로 존재하지 않음
+    expect(result.has('해외')).toBe(false);
+    expect(result.has('미분류')).toBe(false);
+  });
+
+  it('항상 9 시도 모두 포함 (caller가 9개 셀 다 그릴 수 있게)', () => {
+    const result = aggregateHerdByProvince([]);
+    const expected = ['경기도', '강원특별자치도', '충청북도', '충청남도', '전라북도', '전라남도', '경상북도', '경상남도', '제주특별자치도'];
+    for (const p of expected) {
+      expect(result.has(p)).toBe(true);
+    }
+  });
+
+  it('큰 데이터 (10,666두 경기) → 천단위 콤마 포맷', () => {
+    const rows = Array.from({ length: 10666 }, () => ({ lat: GG_LAT, lng: GG_LNG }));
+    const result = aggregateHerdByProvince(rows);
+    expect(result.get('경기도')?.displayValue).toBe('10,666두');
   });
 });

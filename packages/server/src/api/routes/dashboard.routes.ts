@@ -13,6 +13,7 @@ import {
   vaccineSchedules, sensorDevices, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, gt, and, desc, isNull } from 'drizzle-orm';
+import { getHerdTotal } from '../../services/metrics/herd-service.js';
 
 export const dashboardRouter = Router();
 
@@ -212,8 +213,8 @@ async function buildFarmerDashboard(farmId?: string): Promise<DashboardData> {
 
   const [farmInfo] = await db.select().from(farms).where(eq(farms.farmId, targetFarmId));
 
-  const [animalCount] = await db.select({ count: count() }).from(animals)
-    .where(and(eq(animals.farmId, targetFarmId), eq(animals.status, 'active')));
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 농장주 scope.
+  const herd = await getHerdTotal({ farmIds: [targetFarmId] });
 
   const [sensorCount] = await db.select({ count: count() }).from(sensorDevices)
     .where(and(eq(sensorDevices.status, 'active'), isNull(sensorDevices.removeDate)));
@@ -239,7 +240,7 @@ async function buildFarmerDashboard(farmId?: string): Promise<DashboardData> {
     .orderBy(desc(smaxtecEvents.detectedAt))
     .limit(10);
 
-  const totalAnimals = (animalCount?.count ?? 0) as number;
+  const totalAnimals = herd.total;
   const totalSensors = (sensorCount?.count ?? 0) as number;
   const todayEvents = (todayEventCount?.count ?? 0) as number;
   const healthWarnCount = (healthWarnings?.count ?? 0) as number;
@@ -292,7 +293,8 @@ async function buildVetDashboard(): Promise<DashboardData> {
   oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
   const [farmCount] = await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
-  const [animalCount] = await db.select({ count: count() }).from(animals).where(eq(animals.status, 'active'));
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 수의사 scope (전체).
+  const vetHerd = await getHerdTotal();
 
   const [healthEventCount] = await db.select({ count: count() }).from(smaxtecEvents)
     .where(and(
@@ -405,7 +407,7 @@ async function buildVetDashboard(): Promise<DashboardData> {
   }
 
   const totalFarms = (farmCount?.count ?? 0) as number;
-  const totalAnimals = (animalCount?.count ?? 0) as number;
+  const totalAnimals = vetHerd.total;
   const healthWarnings = (healthEventCount?.count ?? 0) as number;
   const activeRx = (rxCount?.count ?? 0) as number;
 
@@ -474,7 +476,8 @@ async function buildAdminDashboard(): Promise<DashboardData> {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   const [farmCount] = await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
-  const [animalCount] = await db.select({ count: count() }).from(animals).where(eq(animals.status, 'active'));
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 마스터 scope (전체).
+  const masterHerd = await getHerdTotal();
   const [eventCount] = await db.select({ count: count() }).from(smaxtecEvents)
     .where(gt(smaxtecEvents.detectedAt, sevenDaysAgo));
 
@@ -510,7 +513,7 @@ async function buildAdminDashboard(): Promise<DashboardData> {
   }).from(regions);
 
   const totalFarms = (farmCount?.count ?? 0) as number;
-  const totalAnimals = (animalCount?.count ?? 0) as number;
+  const totalAnimals = masterHerd.total;
   const recentEvents = (eventCount?.count ?? 0) as number;
   const warningFarmCount = warningFarms.length;
 

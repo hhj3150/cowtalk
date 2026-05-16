@@ -185,7 +185,153 @@ Step 2/Part 2에서 다룰 예정. 현재는 사전 grep만:
 
 ---
 
-## 8. 다음 단계
+## 8. 다음 단계 (Step 2 → Step 5 진행 기록)
 
-- 사용자: Step 2 함수 시그니처 + Step 3 호출처 교체 명세 + Part 2 alert-aggregator 구조 명세 전달
-- Claude Code: 명세 수신 즉시 Step 2 진입 (herd-service.ts 신설 + 12 사이트 교체 + per-farm Definition C 정책 적용 + farm.routes.ts:403 ?? 50 mock 제거)
+- ✅ Step 2: `herd-service.ts` 신설 + 21 unit test (D5/D7/D8/D9/D11/D13/D14)
+- ✅ Step 3: 12 호출처 교체 + Site 13 mock 제거
+- ✅ Step 4: `metrics-contract.md` v0.3 §7 신설
+- ✅ Step 5: 통합 검증 체크리스트 (§10 아래)
+- 보고: Part 2 코드 작업(alert-aggregator)은 별도 박스 대기
+
+---
+
+## 9. Step 3 — 호출처 교체 결과 (12 sites + 1 mock)
+
+| # | 파일:라인(전) | 변경 후 호출 | 동작 변화 |
+|---|---|---|---|
+| **H1** | `farm.routes.ts:84` SUM(currentHeadCount) | `getHerdTotal()` (live) | /farms/summary 의 totalHeadCount = 11,376 → 10,666 (D7) |
+| **H2** | `national-situation.service.ts:121` `+ f.currentHeadCount` | `+ liveCountByFarm.get(f.farmId)` (서비스 내부 라이브 집계) | 시도별 totalAnimals = 라이브 합 (D7) |
+| **H3** | `national-situation.service.ts:193` provinces.reduce | (변경 없음) | provinces 가 이미 라이브이므로 자동 |
+| **H4** | `dashboard.routes.ts:215` (farmer scope) | `getHerdTotal({farmIds:[targetFarmId]})` | 라이브 + deletedAt 필터 추가 |
+| **H5** | `dashboard.routes.ts:296` (vet scope) | `getHerdTotal()` | 동일 |
+| **H6** | `dashboard.routes.ts:478` (master scope) | `getHerdTotal()` | 동일 |
+| **H7** | `unified-dashboard.routes.ts:571-576` (Promise.all) | `getHerdTotal(farmId? ... : {})` Promise.all slot | 메인 대시보드 totalAnimals = 라이브 |
+| **H8** | `unified-dashboard.routes.ts:1970` (farm-comparison map) | `getHerdTotal({farmIds:[farm.farmId]})` per farm | 농장별 healthScore 분모 = 라이브 |
+| **H9** | `unified-dashboard.routes.ts:2384` queryHerdOverview | `getHerdTotal(farmId? ... : {})` | HerdOverview totalAnimals = 라이브 |
+| **H10** | `unified-dashboard.routes.ts:4558` `animalRows.length` | `computeHerd(animalRows.length).total` | 정의상 동일, 단일 owner 통과 |
+| **H11** | `tool-executor.ts:319` `animalRows.length` | `computeHerd(animalRows.length).total` | AI 도구 `query_farm_summary` |
+| **H12** | `tool-executor.ts:1051` `animalRows.length` | `computeHerd(animalRows.length).total` | AI 도구 `get_farm_kpis` |
+| **H13** (mock) | `farm.routes.ts:403` `?? 50` | `getHerdPerFarm(farmId)` + 미존재 시 빈 결과 | D5 mock 제거 |
+| **H14** | `national-situation.service.ts:484` (`getProvinceDetail`) SUM(currentHeadCount) per district + `coordFarmsInProvince.reduce(+f.currentHeadCount)` | district별 live aggregation + 좌표 농장 reduce도 live | 시군구 두수 = 라이브, currentHeadCount 사용 0 (사용자 노출 사이트 기준) |
+
+**총 변경 파일**: 5개 (`farm.routes.ts`, `dashboard.routes.ts`, `unified-dashboard.routes.ts`, `national-situation.service.ts`, `tool-executor.ts`)
+**잔존 인라인 두수 grep**: 0건 (검증)
+**잔존 SUM(currentHeadCount) grep**: 0건 (검증)
+**잔존 `?? 50` herd mock grep**: 0건 (검증)
+
+---
+
+## 10. Step 5 — 통합 검증 체크리스트 (사용자 수동 검증)
+
+cowtalk.netlify.app preview 환경(또는 PR #34 preview)에서 검증. master 권한 + 기본 필터.
+
+### 두수 일관성 (D7 single source, 10개 화면)
+
+| # | URL | 위젯 | 표시 라벨 | 기대값 | scope | 일치 |
+|---|-----|------|-----------|--------|-------|------|
+| 1 | `/` 또는 `/dashboard` | HerdOverviewCards | "총 두수" | (live ≈ 10,666) | live | □ |
+| 2 | `/` 또는 `/dashboard` | GovAdminDashboard | "총 두수" | #1과 **동일** (이전 11,376 모순 해소) | live | □ |
+| 3 | `/` 또는 `/dashboard` | BreedingPipelineWidget | "N두 관리" | #1과 동일 | live | □ |
+| 4 | `/` 또는 `/dashboard` | QuarantineDashboard | "감시 두수" | #1과 동일 | live | □ |
+| 5 | `/breeding` | BreedingCommandPage | "관리 두수" | #1과 동일 | live | □ |
+| 6 | `/breeding/performance` | BreedingKpiPage | (헤더 두수) | #1과 동일 | live | □ |
+| 7 | `/farm-management` | FarmManagementPage | "총 두수" | #1과 동일 (이전 11,376 → 10,666) | live | □ |
+| 8 | `/regional-map` | RegionalMap 시도 카드 | (시도별 두수 합) | #1과 동일 | live | □ |
+| 9 | `/epidemiology/dashboard` | (방역 KPI) | "감시 두수" | #1과 동일 | live | □ |
+| 10 | `/api/quarantine/national-situation` (직접 API) | nationalSummary.totalAnimals | #1과 동일 | live | □ |
+
+### D13 분리 검증 (실측 0두 vs 측정 불가)
+
+| 케이스 | 기대 표시 |
+|---|---|
+| 갈전리목장(데이터 있음) `/farm/:id` | "34두" (실측, 'ok') |
+| 술탄팜(데이터 풍부) | 실측 두수 |
+| 빈 농장 (신규 또는 센서 0) | "0두" (실측 0) — D13 |
+| 미존재 farmId 직접 접근 | "—" (data_insufficient) — D13 |
+
+### 인라인 두수 계산 잔존 grep (CI에서도 가능)
+- `SUM(currentHeadCount)` server side: **0건** ✅
+- `?? 50` herd mock: **0건** ✅
+- inline `count() from animals WHERE status='active'` outside herd-service: **0건** ✅
+
+### Stop condition (1건이라도 발견 시 즉시 보고)
+- 9개 화면 중 동일 값 아님
+- "11,376" 또는 다른 동기화 누락 값 잔존
+- D13 분리가 작동하지 않음 (실측 0두가 "—"로 표시, 또는 미존재 농장이 "0두"로 표시)
+
+---
+
+## 11. Part 2 Step 1 — 알림 카운트 audit (alert-aggregator 사전 정찰)
+
+D3 구현(BUG-007 Part 2)을 위한 사전 grep. 본 PR에서는 코드 변경 0건, 다음 박스 명세 대기.
+
+### Top-level alert count 사이트 (사용자 가시 KPI)
+
+| # | 파일:라인 | 변수 | 산출 방식 | 도메인 | 표시 위치 |
+|---|---|---|---|---|---|
+| A1 | `unified-dashboard.routes.ts` ~2419 | `activeAlerts` | `count() from smaxtecEvents WHERE 24h AND !acked` | all (smaxtec) | HerdOverviewCards "24h 알림" |
+| A2 | `unified-dashboard.routes.ts` ~555 (Promise.all `total24hResult`) | `total24h` | `count() from smaxtecEvents WHERE 24h` (acked 무관) | all | AiBriefing "AI 일일 브리핑" |
+| A3 | `unified-dashboard.routes.ts` (severityRows) | per-severity counts | `groupBy severity` | all | "긴급/높음/보통/낮음" |
+| A4 | `unified-dashboard.routes.ts:2407` `healthCount` | `count() from smaxtecEvents WHERE 24h AND !acked AND eventType IN [health...]` | health (8개 이벤트 타입) | HerdOverviewCards "건강 이상/발열 두수" |
+| A5 | `dashboard.routes.ts:298` `healthEventCount` | 7-day window | health | 수의사 대시보드 "건강 경고(7일)" |
+| A6 | `unified-dashboard.routes.ts:2887` estrusCount | per-event type | breeding (estrus) | 번식 알림 카드 |
+| A7 | `unified-dashboard.routes.ts:2888` calvingCount | per-event type | breeding (calving) | 번식 알림 카드 |
+| A8 | `unified-dashboard.routes.ts:2886` openCowCount | DB count from animals | herd (공태우) | 번식 알림 카드 |
+| A9 | `profile-builder.ts:326/430` farm.alertCount | `count(smaxtecEvents per farm)` | all | farm 비교 위젯 |
+| A10 | `profile-builder.ts:464-500` `activeAlerts` 누적 | sum over farms | all | regional summary |
+| A11 | `epidemic-intelligence.routes.ts:341/348/350` rate-based | feverAnimals / headCount, weightedAffected / headCount | epidemic | 방역 위험률 |
+| A12 | `epidemic-intelligence.routes.ts:148-160` `suspectRows` | `count from alerts WHERE priority='critical'` | epidemic | 의심사례 |
+| A13 | `services/epidemiology/quarantine-dashboard.service.ts:429` legalDiseaseSuspects | alerts.priority='critical' | epidemic | 방역 KPI |
+| A14 | `alarm-engine` 또는 `alert.service` (검색 추가 필요) | TBD | breeding/health/epidemic | 도메인별 알림 발행 |
+
+### 도메인 분류
+
+| 도메인 | 사이트 수 (가시 KPI 기준) |
+|---|---|
+| breeding (수태/임신/공태/분만/재발정/미수정/발정/수정) | A6, A7, A8 (3건) — 발정·분만·공태 |
+| health (고체온/저체온/반추/활동/임상) | A4, A5 (2건) |
+| epidemic (질병 의심/감염 의심/이동 제한) | A11, A12, A13 (3건) |
+| herd (도태 후보/고령우/장기공태) | A8 일부 (공태우는 herd 분류로도 가능) |
+| **agg "전체 알림"** (스마xtec 이벤트 기반) | A1, A2, A3, A9, A10 (5건) |
+
+총 발견 14건 (Stop-condition 20 미만, 5 미만 분류 불가 없음). **분류 정상 진행 가능**.
+
+### 핵심 모순 (사용자 보고 수치 매핑)
+- "24H 알림 878" vs "AI 일일 브리핑 874건" → A1 vs A2 충돌 (acked 필터 + 24h 시점 차)
+- "긴급 31 / 높음 199" → A3 (severity breakdown)
+- "건강 알림 367건 감지" → A4 (health-filtered count)
+- "발정 111, 수정 49, 재발정 24, 분만 징후 23" → A6/A7 + per-event aggregations (breeding 도메인)
+
+### Part 2 Step 2~4 명세 대기 항목 (D3 구현)
+- alert-aggregator 함수 시그니처 (예: `getAlertCounts({scope, domain?, severity?})`)
+- 14 사이트 교체 우선순위 (사용자 가시 KPI 우선)
+- 도메인별 알림 발행 → 집계 흐름 (D3 단방향 명시)
+- '24h vs 7-day vs 실시간' 시간 윈도우 정책 (사용자 결정 필요)
+- acked 필터 정책 (878 vs 874 모순 해소 방향)
+
+→ 본 PR에서 코드 변경 0건. 다음 박스 수신 후 진입.
+
+---
+
+## 12. D10 — 농장 등록/수정 폼 currentHeadCount 입력 위치 (사용자 결정 대기)
+
+D8 격하 대상이 폼 입력에서 처리되는지 사전 grep.
+
+### grep 결과
+
+| # | 파일:라인 | 컴포넌트 | 입력 필드 | 매핑되는 DB 컬럼 |
+|---|---|---|---|---|
+| F1 | `web/src/pages/auth/OnboardingPage.tsx:287` | `OnboardingPage` (가입 단계) | "사육두수 (마리)" (`farmCapacity`) | **`farms.capacity`** (다른 컬럼) |
+
+### 결론
+
+**`currentHeadCount`를 직접 입력하는 UI 폼은 0건.**
+
+- OnboardingPage의 "사육두수" 입력은 `farms.capacity` 컬럼에 매핑됨 (등록 정원, 별도 의미).
+- `farms.currentHeadCount`는 백엔드에서만 갱신되는 메타데이터 컬럼이며, UI 폼에서 직접 노출/수정 안 됨.
+- → **D8 격하(`currentHeadCount` 표시 전용 강등)는 UI 폼에 영향 0건.**
+
+### 표시(Display) 사이트 (별도 PR, Definition C)
+
+`currentHeadCount`를 **표시 전용**으로 사용하는 컴포넌트는 다수 존재(`FarmListLevel`, `FarmMiniMap`, `FarmAnimalDrawer`, `FarmMapWidget`, `ProvinceFarmListPanel`, `NationalMiniMap`).
+이들은 audit §2 Definition C로 분류된 per-farm 표시이며, 본 PR 범위 외. 향후 D9 엄격 적용 시 `getHerdPerFarm()`으로 일괄 전환 검토.

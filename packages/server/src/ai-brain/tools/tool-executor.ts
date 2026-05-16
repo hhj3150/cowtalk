@@ -10,6 +10,7 @@ import {
 import { eq, and, desc, gte, ilike, inArray, isNull, or } from 'drizzle-orm';
 import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
+import { computeHerd } from '../../services/metrics/herd-service.js';
 import {
   getBreedingAdvice,
   recordInsemination,
@@ -310,13 +311,13 @@ async function queryFarmSummary(input: Record<string, unknown>): Promise<unknown
 
   if (!targetFarm) return { error: '농장을 찾을 수 없습니다.' };
 
-  // 두수
+  // 두수 — herd-service 단일 소스 (D7, BUG-007).
   const animalRows = await db
     .select({ animalId: animals.animalId, sex: animals.sex, lactationStatus: animals.lactationStatus })
     .from(animals)
     .where(and(eq(animals.farmId, targetFarm.farmId), eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
-  const totalHead = animalRows.length;
+  const totalHead = computeHerd(animalRows.length).total;
   const milking = animalRows.filter((a) => a.lactationStatus === 'milking').length;
   const dry = animalRows.filter((a) => a.lactationStatus === 'dry').length;
 
@@ -1042,13 +1043,13 @@ async function handleGetFarmKpis(input: Record<string, unknown>): Promise<unknow
   if (farmRows.length === 0) return { error: '농장을 찾을 수 없습니다.' };
   const farm = farmRows[0]!;
 
-  // 두수
+  // 두수 — herd-service 단일 소스 (D7, BUG-007).
   const animalRows = await db
     .select({ lactationStatus: animals.lactationStatus })
     .from(animals)
     .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
-  const totalHead = animalRows.length;
+  const totalHead = computeHerd(animalRows.length).total;
   const milking = animalRows.filter((a) => a.lactationStatus === 'milking').length;
   const dry = animalRows.filter((a) => a.lactationStatus === 'dry').length;
 

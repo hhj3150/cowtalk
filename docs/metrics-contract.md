@@ -4,34 +4,41 @@
 
 | | |
 |---|---|
-| 버전 | **0.2** — Decision Log 반영 (D1–D6 확정) |
+| 버전 | **0.3** — Decision Log 확장 (D1–D14 확정) + BUG-007 두수 단일 소스 |
 | 작성일 | 2026-05-16 |
-| 최근 PR | [cowtalk#32](https://github.com/hhj3150/cowtalk/pull/32) — 수태율 113.1% 근본 수정 + production mock 제거 |
-| 진행 중 | BUG-001 — CR 단일 owner 통합 (D1, D2) — 본 v0.2와 함께 PR |
+| 최근 머지 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) (`6c2d886`) — 수태율 단일 소스 + D5 |
+| 진행 중 | BUG-007 — 두수 단일 소스 (D7) + currentHeadCount 격하 (D8) + active 통일 (D9) + province 집계 (D14) |
 | 소유자 | D2O CTO Office |
 | 적용 범위 | 농장주·수의사·방역관·행정관 화면에 표시되는 모든 메트릭 |
 
 ---
 
-## 0. Decision Log (v0.2)
+## 0. Decision Log (v0.3)
 
 | # | 항목 | 결정 | 결정일 | Owner |
 |---|------|------|--------|-------|
 | **D1** | 수태율(CR) 공식 단일 소스 | 신규 `packages/server/src/services/metrics/fertility-service.ts` 생성. 기존 `breeding-pipeline`·`unified-dashboard`·`report`·`breeding-performance`·`breeding-feedback`·`breeding.routes`의 인라인 CR 계산 → 이 모듈 호출로 일괄 교체. | 2026-05-16 | 하원장님 / Eng |
 | **D2** | "결정난(decided)" 정의 | 임신확정 + 공태확정 only. **재검사 대기(pending)는 분모에서 제외.** 코드 표현: `pregnant ÷ (pregnant + open OR not_pregnant)`. smaXtec 이벤트는 `details.pregnant === true ∥ false`만 결정으로 인정. | 2026-05-16 | 하원장님 / Eng |
-| **D3** | 알림 카운트 owner | 각 도메인 서비스(번식/건강/방역/우군)가 자체 알림 발행 → `packages/server/src/services/alerts/alert-aggregator.ts`(신설 예정)가 단일 집계·우선순위·중복제거·표시 카운트 산출. 라우트는 aggregator 1회 호출. | 2026-05-16 | (BUG-007에서 구현) |
+| **D3** | 알림 카운트 owner | 각 도메인 서비스(번식/건강/방역/우군)가 자체 알림 발행 → `packages/server/src/services/alerts/alert-aggregator.ts`(신설 예정)가 단일 집계·우선순위·중복제거·표시 카운트 산출. 라우트는 aggregator 1회 호출. | 2026-05-16 | (BUG-007 Part 2에서 구현, 다음 박스 대기) |
 | **D4** | AI confidence 표시 단위 | **내부 0–1 float**, UI 표시도 0.00–1.00 (예: "신뢰도 0.87"). % 변환 금지. 기존 "61.9%" 류 표기 전수 제거. **본 PR 비포함, BUG-005에서 일괄 교체.** | 2026-05-16 | (BUG-005에서 구현) |
 | **D5** | 빈 농장 KPI 표시 | "—" (em dash, U+2014). "0", "N/A", "데이터 없음(중복 라벨)" 금지. 라벨이 필요하면 "**데이터 부족**". "정상 운영" 라벨 금지. | 2026-05-16 | UI 가드는 본 PR + 호출처 |
 | **D6** | 버그 수정 순서 | **BUG-001 → BUG-007 → BUG-006 → BUG-008 → BUG-005**. 한 PR = 한 버그. 평행 진행 금지. | 2026-05-16 | 하원장님 |
+| **D7** | 두수(headCount) 단일 정의 | `COUNT(animals WHERE status='active' AND deletedAt IS NULL)` — 라이브. fertility-service 패턴 일관성. `currentHeadCount`는 agg 계산 비참여. | 2026-05-16 | 하원장님 |
+| **D8** | `farms.currentHeadCount` 운명 | 표시 전용으로 격하. `getRegisteredHeadCount()` 명시적 호출만 허용. 사용자 노출 위젯에서 직접 SELECT 금지. 컬럼 자체는 등록 폼 입력값 보존 위해 유지. | 2026-05-16 | 하원장님 |
+| **D9** | 두수 사용자 노출 | 라이브(D7)만 사용자 가시. registered(D8)는 행정 통계 전용. 같은 페이지에서 두 값 동시 노출 금지(11,376 vs 10,666 모순 해소). | 2026-05-16 | 하원장님 |
+| **D11** | `HerdResult.source` 필드 | 유지. JSDoc: "live = 사용자 노출 / registered = 행정 전용". 정책 추적·디버깅용. | 2026-05-16 | 하원장님 |
+| **D12** | `getRegisteredHeadCount` 함수명 | 채택. JSDoc에 "사용자 노출 위젯에서 호출 금지. 행정 통계 전용." 명시. | 2026-05-16 | 하원장님 |
+| **D13** | 실측 0두 vs 측정 불가 분리 | 실측 0두(`count=0`) → `status='ok'`, `displayValue='0두'`. 측정 불가(farm 미존재 / NaN / 음수) → `herdUnavailable()` 반환, `status='data_insufficient'`, `displayValue='—'`. | 2026-05-16 | 하원장님 |
+| **D14** | 시도별 두수 집계 | `getHerdByProvince()` 추가 (Map 반환, 9 시도 모두 포함). `getHerdInProvince(p)` 단일 조회. `national-situation.service.ts`에서 사용. province = 한국 행정구역 시/도 단위 (province-mapper `latLngToProvince`). | 2026-05-16 | Claude Code 권한 위임 |
 
-### v0.2 본문 반영 사항 요약
-- §6.1 수태율(CR): owner를 `fertility-service.ts`로 명시 + 함수 시그니처 명세 추가 + D2 "decided" 정의 명문화
-- §10.1 알림 카운트(activeAlerts): D3 단방향 흐름 명시
-- **§14 (신설)** AI Confidence 표기 규칙 (D4)
-- **§15 (신설)** 빈 농장 / 데이터 부족 표시 규칙 (D5)
-- 부록 A에 **Demo-Readiness** 컬럼 추가 (✅ 핵심 / 🟡 보조 / ⬜ 비공개)
-- §12 Known Gaps에서 BUG-007 owner = TBD 명시
-- **§16 (신설)** L3 cluster detection thresholds — TBD placeholder
+### v0.2 → v0.3 본문 반영 사항 요약
+- §6.1 수태율(CR): owner를 `fertility-service.ts`로 명시 + 함수 시그니처 명세 추가 + D2 "decided" 정의 명문화 (v0.2)
+- §10.1 알림 카운트(activeAlerts): D3 단방향 흐름 명시 (v0.2)
+- **§14** AI Confidence 표기 규칙 (D4) (v0.2)
+- **§15** 빈 농장 / 데이터 부족 표시 규칙 (D5) (v0.2)
+- **§16** L3 cluster detection thresholds — TBD placeholder (v0.2)
+- 부록 A에 **Demo-Readiness** 컬럼 (✅ 핵심 / 🟡 보조 / ⬜ 비공개) (v0.2)
+- **§8 우군 Herd**: §8.1 두수 owner를 `herd-service.ts`로 명시 (D7), §8.2 currentHeadCount 격하 (D8), §8.3 시도별 집계 (D14), §8.4–§8.6 비율·산차 유지, §8.7 source 필드 정책 (D11), §8.8 실측 0두 vs 측정 불가 (D13), §8.9 시도 9개 항상 포함 (D14) — **v0.3 신설**
 
 ### "61.9%" 류 표기 위치 (D4 후속 PR에서 제거 대상)
 초기 grep 결과 (BUG-005 사전 자료):
@@ -326,43 +333,72 @@ CowTalk은 3계층 위계 데이터 플랫폼이다:
 
 ## 8. 우군 Herd
 
-### 7.1 두수 / `headCount`
+### 8.1 두수 / `headCount` / `HerdResult.total`
 - **계층**: L1, L2, L3
-- **공식**: `COUNT(animals where status='active' and deletedAt IS NULL)`
-- **단위**: count
-- **유효범위**: [0, 5000]
-- **출처**: `animals` 테이블
-- **갱신**: realtime
-- **owner**: `farm-service.ts`
-- **검증**: — (count는 자연 보장)
-- **표시**: 모든 화면 상단
-- 🔴 **계층 일관성 위반**: 농장 카드와 개체 리스트 합계가 어긋난 사례 보고됨. 단일 query 사용 강제.
+- **공식 (D7)**: `COUNT(animals where status='active' AND deletedAt IS NULL)` — 라이브.
+- **단위**: count (`HerdResult.total: number`) + 표시 `displayValue: string` ("10,666두" 로케일).
+- **유효범위**: [0, 5000].
+- **출처**: `animals` 테이블 (라이브).
+- **갱신**: realtime.
+- **owner (D1·D7)**: `packages/server/src/services/metrics/herd-service.ts`.
+  - 함수: `getHerdTotal({farmIds?})`, `getHerdPerFarm(farmId)`, `computeHerd(count, source?)`.
+- **검증**: NaN/Infinity/음수 → `herdUnavailable()` (D13 측정 불가). 0 이상 정수 → 'ok'.
+- **표시**: 모든 화면 상단. 11,376 (currentHeadCount) vs 10,666 (라이브) 모순 해소 (BUG-007).
+- ✅ **BUG-007 해소**: 12 사이트 + 1 mock 통합 (audit §9 참조).
 
-### 7.2 착유우 비율 / `lactatingRatio`
-- **계층**: L1, L2
-- **공식**: `count(status='lactating') ÷ headCount × 100`
-- **단위**: %
-- **유효범위**: [0, 100]
-- **출처**: `animals.status`
-- **갱신**: hourly (상태 전이 잡 이후)
-- **owner**: `farm-service.ts`
-- **검증**: Clamp
-- **표시**: Herd overview
+### 8.2 등록 두수 / `currentHeadCount` (D8 격하)
+- **계층**: L3 행정 전용 (사용자 노출 금지, D9).
+- **공식**: `farms.currentHeadCount` (수동 유지 등록값).
+- **단위**: count.
+- **owner**: `herd-service.ts: getRegisteredHeadCount({farmId?, farmIds?})`.
+- **호출 제한**: 사용자 KPI 위젯 사용 금지. 행정 리포트·등록 폼 미리보기 등 명시적 컨텍스트 전용.
+- **참고**: 컬럼 자체는 유지 (등록 시 입력값 보존). agg 계산 비참여.
 
-### 7.3 건유우 비율 / `dryRatio`
-- **계층**: L1, L2
-- 동일 구조, status='dry_off'
+### 8.3 시도별 두수 / `getHerdByProvince` (D14)
+- **계층**: L3.
+- **공식**: 9 시도 그룹화 (`latLngToProvince`로 farm 좌표 → 시도 매핑), per 시도 활성 동물 카운트.
+- **단위**: `Map<province, HerdResult>` — 9 시도 모두 포함 (0두 시도는 "0두" 실측, D13).
+- **출처**: `animals` JOIN `farms.lat/lng` + `province-mapper.latLngToProvince`.
+- **owner**: `herd-service.ts: getHerdByProvince()`, `getHerdInProvince(province)`, `aggregateHerdByProvince(rows)` (pure).
+- **표시**: 전국 방역 대시보드, `/regional-map`, `NationalSituation`.
+- **국가/시도 합계 일관성**: 시도별 두수 합 = 전국 두수 (단일 라이브 소스이므로 수학적 일치 보장).
 
-### 7.4 평균산차 / `avgParity`
-- **계층**: L1, L2, L3
-- **공식**: `mean(parity)`
-- **단위**: count
-- **유효범위**: [0, 5]
-- **출처**: `animals.parity`
-- **갱신**: daily
-- **owner**: `farm-service.ts`
-- **검증**: —
-- **표시**: Herd overview
+### 8.4 착유우 비율 / `lactatingRatio`
+- **계층**: L1, L2.
+- **공식**: `count(status='lactating') ÷ headCount × 100`.
+- **단위**: %.
+- **유효범위**: [0, 100].
+- **출처**: `animals.status`.
+- **갱신**: hourly.
+- **owner**: `farm-service.ts` (검토 후 herd-service로 통합 가능).
+- **검증**: Clamp.
+
+### 8.5 건유우 비율 / `dryRatio`
+- **계층**: L1, L2.
+- 동일 구조, `status='dry_off'`.
+
+### 8.6 평균산차 / `avgParity`
+- **계층**: L1, L2, L3.
+- **공식**: `mean(parity)`.
+- **단위**: count.
+- **유효범위**: [0, 5].
+- **출처**: `animals.parity`.
+- **갱신**: daily.
+
+### 8.7 두수 source 정책 (D11)
+`HerdResult.source` 필드:
+- `'live'` (D9 기본): 사용자 노출 UI 허용. 모든 사용자 가시 위젯에서 사용.
+- `'registered'`: 사용자 노출 금지. `getRegisteredHeadCount()` 호출 시에만 반환됨. 행정 통계 전용.
+
+### 8.8 실측 0두 vs 측정 불가 (D13)
+- **실측 0두** (`status: 'ok'`, `displayValue: '0두'`): DB 쿼리 성공 + count=0. "이 농장 동물 없음" 정확 표시.
+- **측정 불가** (`status: 'data_insufficient'`, `displayValue: '—'`): farm 미존재 / NaN / 음수 / Infinity. UI "데이터 부족" 분기.
+- 경계 케이스: pending-only 농장 등은 audit §11에서 별도 검토.
+
+### 8.9 시도 집계 — 9 시도 항상 포함 (D14)
+- `getHerdByProvince()` 결과 Map은 항상 9 시도 키 보존 (0두 시도도 'ok' "0두").
+- '해외' / '미분류' 좌표는 집계에서 제외 (Map 키로 없음).
+- 단일 시도 lookup: `getHerdInProvince(province)` → 알 수 없는 시도 → `herdUnavailable()`.
 
 ---
 
@@ -648,7 +684,8 @@ v0.2에서 5개 모두 결정됨 (§0 Decision Log 참조).
 |---|---|---|
 | 2026-05-15 | 수태율 113.1%, healthScore/tempStability 음수, demo 데이터 제거 | [#32](https://github.com/hhj3150/cowtalk/pull/32) |
 | 2026-05-16 | 본 문서 v0.1 초안 (저장만, commit 없음) | — |
-| 2026-05-16 | **v0.2**: Decision Log (D1–D6) + §14 AI Confidence + §15 빈 농장 + §16 L3 cluster TBD + fertility-service 도입 | BUG-001 PR |
+| 2026-05-16 | **v0.2**: Decision Log (D1–D6) + §14 AI Confidence + §15 빈 농장 + §16 L3 cluster TBD + fertility-service 도입 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) |
+| 2026-05-16 | **v0.3**: Decision Log 확장 (D7–D14) + §8 우군 Herd 재작성 (herd-service.ts 신설, currentHeadCount 격하, province 집계, D13 분리). 12 호출처 + 1 mock 통합. | BUG-007 PR (본 PR) |
 
 ---
 
