@@ -47,6 +47,9 @@ const BreedingKpiPage = lazy(() => import('@web/pages/intelligence/BreedingKpiPa
 const BreedingCalendarPage = lazy(() => import('@web/pages/breeding/BreedingCalendarPage'));
 const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage'));
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
+// FLOW-02 Step3: 사이드바 등록 라우트 placeholder (404 해소)
+const CaseQueuePage = lazy(() => import('@web/pages/vet/CaseQueuePage'));
+const VisitSchedulePage = lazy(() => import('@web/pages/vet/VisitSchedulePage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -148,6 +151,11 @@ export function App(): React.JSX.Element {
               <Route path="/breeding" element={<BreedingCommandPage />} />
               <Route path="/breeding/calendar" element={<BreedingCalendarPage />} />
               <Route path="/breeding/performance" element={<BreedingKpiPage />} />
+              {/* FLOW-02 Step3: 사이드바 등록 라우트 (권한 가드 미적용 — 별도 FLOW 처리) */}
+              <Route path="/vet/cases" element={<CaseQueuePage />} />
+              <Route path="/vet/schedule" element={<VisitSchedulePage />} />
+              {/* /admin/farms → 기존 실제 FarmManagementPage 로 라우팅 (placeholder 아님) */}
+              <Route path="/admin/farms" element={<FarmManagementPage />} />
             </Route>
 
             {/* 404 → 홈으로 */}
