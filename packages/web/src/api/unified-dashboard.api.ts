@@ -321,6 +321,7 @@ export interface SovereignAlarm {
   readonly title: string;
   readonly reasoning: string;
   readonly actionPlan: string;
+  /** D4 (BUG-005): 0-1 float (canonical). UI 에서 ×100 1회 변환 후 % 표시. */
   readonly confidence: number;
   readonly detectedAt: string;
   readonly dataPoints: Record<string, number>;

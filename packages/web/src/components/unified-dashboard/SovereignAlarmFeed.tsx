@@ -145,7 +145,8 @@ export function SovereignAlarmFeed({ alarms, isLoading, farmId, onLabelChange }:
                 </div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 10, color, fontWeight: 700 }}>{alarm.confidence}%</div>
+                {/* D4 (BUG-005): confidence 0-1 도메인 → UI 에서 ×100 1회 변환. */}
+                <div style={{ fontSize: 10, color, fontWeight: 700 }}>{Math.round(alarm.confidence * 100)}%</div>
                 <div style={{ fontSize: 8, color: '#475569' }}>신뢰도</div>
               </div>
               <span style={{ color: '#475569', fontSize: 10 }}>{isOpen ? '▲' : '▼'}</span>

@@ -26,10 +26,11 @@ export async function saveSovereignAlarmAsPrediction(alarm: SovereignAlarm): Pro
       animalId: alarm.animalId,
       farmId: alarm.farmId,
       timestamp: new Date(),
-      probability: alarm.confidence / 100,
+      // D4 (BUG-005): alarm.confidence 는 0-1 canonical. probability/confidence/rankScore 모두 0-1.
+      probability: alarm.confidence,
       confidence: alarm.confidence,
       severity: alarm.severity,
-      rankScore: alarm.confidence / 100,
+      rankScore: alarm.confidence,
       predictionLabel: alarm.type,
       explanationText: alarm.reasoning || alarm.title,
       contributingFeatures: alarm.dataPoints ?? {},
@@ -77,8 +78,10 @@ export async function saveDifferentialDiagnosisAsPrediction(
         animalId: result.animalId,
         farmId,
         timestamp: new Date(),
+        // D4 (BUG-005): predictions.confidence 는 0-1 canonical.
+        // candidate.probability 는 0-100 (diff-diagnosis 내부 단위) → ÷100 변환.
         probability: candidate.probability / 100,
-        confidence: candidate.probability,
+        confidence: candidate.probability / 100,
         severity: result.urgencyLevel === 'immediate' ? 'critical'
           : result.urgencyLevel === 'within_24h' ? 'high' : 'medium',
         rankScore: candidate.probability / 100,
@@ -124,8 +127,9 @@ export async function saveBreedingAdviceAsPrediction(advice: BreedingAdvice): Pr
       animalId: advice.animalId,
       farmId: advice.farmId,
       timestamp: new Date(),
+      // D4 (BUG-005): predictions.confidence 는 0-1 canonical.
       probability: 0.85,
-      confidence: 85,
+      confidence: 0.85,
       severity: 'high',
       rankScore: 0.85,
       predictionLabel: 'insemination_recommended',

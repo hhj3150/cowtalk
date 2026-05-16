@@ -8,6 +8,7 @@
  */
 
 import type { DailySummary, AnimalProfile, SovereignAlarm } from '../types.js';
+import { toConfidence01 } from '../confidence.js';
 
 const ESTRUS_TEMP_RISE = { min: 0.2, max: 0.5 } as const;
 
@@ -59,7 +60,7 @@ export function ruleEstrus(summary: readonly DailySummary[], animal: AnimalProfi
     title: `발정 의심 (활동 ${Math.round(actIncrease*100)}%↑${hasTemperatureSignature ? ` + 체온 +${tempRise.toFixed(1)}°C` : ''})`,
     reasoning: `활동량이 기준선 대비 ${Math.round(actIncrease*100)}% 급증${hasTemperatureSignature ? `, 체온도 ${tempRise.toFixed(1)}°C 상승` : ''}. 발정 시 활동량 50-300% 증가 + 체온 0.2-0.5°C 상승이 전형적 패턴입니다. DIM ${dim}일. 수정 적기는 발정 시작 후 12-18시간입니다.`,
     actionPlan: `① 발정 징후 육안 확인(승가 허용, 점액, 외음부 부종) ② 수정 적기 계산(발정 시작 후 12-18h) ③ 수정사 연락 ④ 정액 선택 및 준비 ⑤ 수정 기록`,
-    confidence: Math.min(95, confidence),
+    confidence: toConfidence01(Math.min(95, confidence)),
     detectedAt: new Date().toISOString(),
     dataPoints: {
       actIncreasePct: Math.round(actIncrease * 100),
@@ -100,7 +101,7 @@ export function ruleEstrusDnb(summary: readonly DailySummary[], animal: AnimalPr
     title: `발정 감지 — 교배금지 (DIM ${dim}일)`,
     reasoning: `활동량 ${Math.round(actIncrease*100)}% 급증으로 발정 의심되지만 DIM ${dim}일로 교배금지 기간입니다. 번식 주기 기록을 위해 발정 기록은 남기되 수정은 보류합니다.`,
     actionPlan: `① 발정 기록(다음 발정 주기 예측용) ② 수정 보류 사유 기록 ③ 다음 수정 가능 시점 확인`,
-    confidence: Math.round(35 + actIncrease * 30),
+    confidence: toConfidence01(Math.round(35 + actIncrease * 30)),
     detectedAt: new Date().toISOString(),
     dataPoints: { actIncreasePct: Math.round(actIncrease * 100), dim },
   };

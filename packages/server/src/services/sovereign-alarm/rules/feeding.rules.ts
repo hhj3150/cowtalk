@@ -5,6 +5,7 @@
  */
 
 import type { DailySummary, AnimalProfile, SovereignAlarm } from '../types.js';
+import { toConfidence01 } from '../confidence.js';
 
 function avgOf(arr: readonly (number | null)[]): number | null {
   const valid = arr.filter((v): v is number => v !== null && v !== undefined);
@@ -40,7 +41,7 @@ export function ruleFeedingWarning(summary: readonly DailySummary[], _animal: An
     title: `급이 이상 의심 (반추 ${pct}%↓, 체온 정상)`,
     reasoning: `최근 2일 반추시간(${Math.round(recentRum)}분/일)이 이전 5일(${Math.round(prevRum)}분/일) 대비 ${pct}% 감소했으나 체온은 정상 범위. 발열 없이 반추만 감소하면 사료 변경, 급이량 부족, 사료 품질 문제(곰팡이, 발효불량) 가능성이 높습니다.`,
     actionPlan: `① 사료 변경 이력 확인 ② TMR 혼합 균일도 점검 ③ 사료 곰팡이/부패 확인 ④ 급이량 적정성 확인 ⑤ 음수량 동시 확인`,
-    confidence: Math.round(35 + rumDecline * 80),
+    confidence: toConfidence01(Math.round(35 + rumDecline * 80)),
     detectedAt: new Date().toISOString(),
     dataPoints: { rumDeclinePct: pct, recentRumMin: Math.round(recentRum), prevRumMin: Math.round(prevRum), tempAvg: recentTemp ?? 0 },
   };
@@ -76,7 +77,7 @@ export function ruleWaterIntakeAnomaly(summary: readonly DailySummary[], _animal
     actionPlan: isDecrease
       ? `① 음수대 청결 및 수압 확인 ② 체온 측정 ③ 사료섭취량 변화 확인 ④ 스트레스 요인 제거 ⑤ 수의사 상담`
       : `① 사료 내 식염 함량 확인 ② 소변 검사(당뇨 확인) ③ 신장 기능 확인 ④ 전해질 균형 평가`,
-    confidence: Math.round(30 + Math.abs(change) * 60),
+    confidence: toConfidence01(Math.round(30 + Math.abs(change) * 60)),
     detectedAt: new Date().toISOString(),
     dataPoints: { recentDrL: Math.round(recentDr), prevDrL: Math.round(prevDr), changePct: pct },
   };

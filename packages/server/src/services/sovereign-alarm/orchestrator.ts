@@ -13,6 +13,7 @@ import { getConfidenceMultipliers } from '../../intelligence-loop/threshold-lear
 import { getBatchDailySummaries } from './data-loader.js';
 import { getSovereignAlarmAccuracy } from './label.service.js';
 import { getAllRules } from './rules/rule-registry.js';
+import { clampConfidence01 } from './confidence.js';
 import type { SovereignAlarm, AnimalProfile } from './types.js';
 
 export async function generateSovereignAlarms(farmId: string, limit = 30): Promise<SovereignAlarm[]> {
@@ -74,31 +75,33 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
     // Phase 1: 기존 레이블 기반 보정 (fallback)
     const accuracy = await getSovereignAlarmAccuracy(farmId);
 
+    // D4 (BUG-005): confidence 는 0-1 float. multiplier 는 비율이므로
+    // Math.round 없이 곱셈만 적용하고 최종 [0,1] clamp.
     calibratedAlarms = alarms.map(alarm => {
-      let newConf = alarm.confidence;
+      let newConf = alarm.confidence; // 0-1
 
       // 1순위: 학습된 multiplier (sovereign_alarm_labels 90일 집계)
       const learned = learnedMultipliers.get(alarm.type);
       if (learned && learned !== 1.0) {
-        newConf = Math.round(newConf * learned);
+        newConf = newConf * learned;
       } else {
         // 2순위: 기존 실시간 레이블 보정 (학습 데이터 부족 시)
         const typeStats = accuracy.byType[alarm.type];
         if (typeStats && typeStats.total >= 3) {
           const fpRate = typeStats.falsePositive / typeStats.total;
           if (fpRate > 0.5) {
-            newConf = Math.round(newConf * 0.7);
+            newConf = newConf * 0.7;
           } else if (fpRate > 0.3) {
-            newConf = Math.round(newConf * 0.85);
+            newConf = newConf * 0.85;
           }
           const confirmRate = typeStats.confirmed / typeStats.total;
           if (confirmRate > 0.9 && typeStats.total >= 5) {
-            newConf = Math.min(100, Math.round(newConf * 1.1));
+            newConf = newConf * 1.1;
           }
         }
       }
 
-      newConf = Math.max(1, Math.min(100, newConf));
+      newConf = clampConfidence01(newConf);
       return newConf !== alarm.confidence ? { ...alarm, confidence: newConf } : alarm;
     });
   } catch (err) {

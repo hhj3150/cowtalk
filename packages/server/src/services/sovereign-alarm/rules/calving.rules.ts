@@ -6,6 +6,7 @@
  */
 
 import type { DailySummary, AnimalProfile, SovereignAlarm } from '../types.js';
+import { toConfidence01 } from '../confidence.js';
 
 function avgOf(arr: readonly (number | null)[]): number | null {
   const valid = arr.filter((v): v is number => v !== null && v !== undefined);
@@ -50,7 +51,7 @@ export function ruleCalvingDetection(summary: readonly DailySummary[], animal: A
     title: `분만 임박 (체온 ${tempDrop.toFixed(1)}°C↓)`,
     reasoning: `체온이 기준선 대비 ${tempDrop.toFixed(1)}°C 하강했습니다. 분만 12-24시간 전 체온이 0.5-1.0°C 하강하는 것은 분만 전 호르몬(프로게스테론 급감) 변화의 전형적 징후입니다. ${actChange > 0.2 ? `활동량도 ${Math.round(actChange*100)}% 변화하여 안절부절 행동이 관찰됩니다. ` : ''}즉시 분만 준비가 필요합니다.`,
     actionPlan: `① 분만방 이동 및 분만 환경 준비 ② 외음부·골반인대 이완 확인 ③ 12시간 간격 관찰 ④ 난산 대비 수의사 대기 ⑤ 초유 준비`,
-    confidence: Math.min(95, confidence),
+    confidence: toConfidence01(Math.min(95, confidence)),
     detectedAt: new Date().toISOString(),
     dataPoints: { tempDropC: Math.round(tempDrop * 10) / 10, recentTemp, prevTemp, actChangePct: Math.round(actChange * 100) },
   };
@@ -81,7 +82,7 @@ export function ruleCalvingWaiting(summary: readonly DailySummary[], animal: Ani
     title: `분만 대기 (건유 상태)`,
     reasoning: `현재 건유 상태로 분만 대기 중입니다. 센서 데이터에 분만 임박 징후(체온 하강)는 아직 없습니다. 분만 예정일이 가까워지면 자동으로 분만 임박 알람이 발생합니다.`,
     actionPlan: `① 분만 예정일 확인 ② 분만방 환경 사전 점검 ③ 체온 추이 모니터링 ④ BCS(체형점수) 적정 확인`,
-    confidence: 30,
+    confidence: toConfidence01(30),
     detectedAt: new Date().toISOString(),
     dataPoints: { tempAvg: recentTemp ?? 0 },
   };
@@ -134,7 +135,7 @@ export function ruleAbortion(summary: readonly DailySummary[], animal: AnimalPro
     title: `유산 의심 (체온 ${tempDrop.toFixed(1)}°C↓ + 활동 급변)`,
     reasoning: `임신/건유 상태에서 체온 ${tempDrop.toFixed(1)}°C 하강 + 활동량 ${Math.round(actChange*100)}% 변화${rumDecline > 0.15 ? ` + 반추 ${Math.round(rumDecline*100)}% 감소` : ''}가 동시 발생. 유산 시 호르몬 급변으로 체온 하강, 복통에 의한 활동 변화, 스트레스 반추 감소가 나타납니다.`,
     actionPlan: `① 외음부 분비물(혈액/태반 조직) 확인 ② 직장검사로 태아 상태 확인 ③ 수의사 긴급 상담 ④ 브루셀라 등 전염성 유산 원인 검사 ⑤ 격리 및 소독`,
-    confidence: Math.min(85, confidence),
+    confidence: toConfidence01(Math.min(85, confidence)),
     detectedAt: new Date().toISOString(),
     dataPoints: { tempDropC: Math.round(tempDrop * 10) / 10, actChangePct: Math.round(actChange * 100), rumDeclinePct: Math.round(rumDecline * 100) },
   };

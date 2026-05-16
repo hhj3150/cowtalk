@@ -37,6 +37,8 @@ const TEMPLATE_OPTIONS = [
 
 type TemplateId = typeof TEMPLATE_OPTIONS[number];
 
+// 미리보기 전용 샘플값 — production 발송은 server(kakao-alimtalk.ts)가 실제 변수로 치환.
+// BUG-005: confidence '87'은 알림톡 템플릿 미리보기용 % 표기 샘플 (라이브 도메인 값 아님).
 const SAMPLE_VARIABLES: Readonly<Record<TemplateId, Record<string, string>>> = {
   ESTRUS_ALERT:        { farmName: '해돋이목장', earTag: '423', detectedAt: '오늘 03:42', optimalTime: '오늘 15:00~21:00' },
   INSEMINATION_TIMING: { farmName: '해돋이목장', earTag: '423', windowStart: '15:00', windowEnd: '21:00' },

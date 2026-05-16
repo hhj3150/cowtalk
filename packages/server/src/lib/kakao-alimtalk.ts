@@ -323,6 +323,10 @@ export async function notifyDiseaseSuspected(params: {
   farmName: string;
   earTag: string;
   symptom: string;
+  /**
+   * D4 (BUG-005): 알림톡 API 경계값. 0-100 percent 정수로 전달 (템플릿 `#{confidence}%`).
+   * 도메인 confidence(0-1)를 넘길 때는 호출처에서 ×100 변환 후 전달할 것.
+   */
   confidence: number;
 }): Promise<AlimtalkResult> {
   return sendAlimtalk({
