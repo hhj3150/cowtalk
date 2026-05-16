@@ -136,8 +136,10 @@ function RoleSwitcher(): React.JSX.Element | null {
                 type="button"
                 onClick={() => {
                   // 시뮬레이션 역할 설정 (휘발성). user.role 은 불변.
+                  // FLOW-01: 농장 컨텍스트는 farm.store 구독자가 페르소나별 자동 처리
+                  // (farmer/vet → 첫 농장 / 그 외 → 전체). 여기서 clearSelection 을
+                  // 호출하면 구독자가 방금 선택한 농장을 즉시 덮어쓰므로 호출하지 않는다.
                   setSimulatedRole(role);
-                  useFarmStore.getState().clearSelection();
                   useFarmGroupStore.getState().clearSelection();
                   setOpen(false);
                 }}
@@ -176,9 +178,18 @@ function FarmFilterDropdown(): React.JSX.Element {
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds);
   const selectFarm = useFarmStore((s) => s.selectFarm);
   const clearSelection = useFarmStore((s) => s.clearSelection);
+  const setFarms = useFarmStore((s) => s.setFarms);
   const clearGroupSelection = useFarmGroupStore((s) => s.clearSelection);
   const allFarms = farmsData?.farms ?? [];
   const totalCount = farmsData?.total ?? 0;
+
+  // FLOW-01: 농장 목록(React Query)을 farm.store 로 동기화.
+  // → 페르소나 시뮬레이션 시 farm.store 가 첫 농장을 자동 선택할 수 있게 한다.
+  useEffect(() => {
+    if (farmsData?.farms) {
+      setFarms(farmsData.farms.map((f) => ({ farmId: f.farmId, name: f.name })));
+    }
+  }, [farmsData, setFarms]);
 
   // 전체 농장 표시 (드롭다운에서 개별 농장 클릭 → 해당 농장 대시보드)
   const farmList = allFarms;
