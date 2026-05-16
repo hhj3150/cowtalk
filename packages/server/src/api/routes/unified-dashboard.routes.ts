@@ -21,6 +21,7 @@ import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
 import { computeHerd, getHerdTotal } from '../../services/metrics/herd-service.js';
+import { getAlertCountForWidget } from '../../services/alerts/alert-aggregator.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -550,11 +551,12 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
   const yesterday = daysAgo(2);
 
   // 병렬 쿼리: 기본 통계, 심각도별 알림, 농장 랭킹, 이벤트 분포, 최근 긴급, 어제 알림 수
-  // 두수는 herd-service 단일 소스 (D7, BUG-007).
+  // 두수는 herd-service 단일 소스 (D7, BUG-007). 알림은 alert-aggregator (D3, Part 2).
+  const farmScope = farmId ? { farmIds: [farmId] } : {};
   const [
     farmCountResult,
     herdLive,
-    total24hResult,
+    aiBriefingAlerts,
     severityRows,
     topFarmRows,
     eventDistRows,
@@ -570,15 +572,10 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
       )),
 
     // 활성 동물 수 — herd-service 호출 (D7 라이브)
-    getHerdTotal(farmId ? { farmIds: [farmId] } : {}),
+    getHerdTotal(farmScope),
 
-    // 24시간 전체 알림 수
-    db.select({ count: count() })
-      .from(smaxtecEvents)
-      .where(whereAll(
-        farmCondition(smaxtecEvents.farmId, farmId),
-        gte(smaxtecEvents.detectedAt, last24h),
-      )),
+    // 24시간 알림 수 — alert-aggregator 호출 (D3, 메인 KPI와 동일 정의 = 878 vs 874 통일)
+    getAlertCountForWidget('ai_briefing_24h', farmScope),
 
     // 심각도별 알림 수
     db.select({
@@ -654,7 +651,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
 
   const totalFarms = Number(farmCountResult[0]?.count ?? 0);
   const totalAnimals = herdLive.total;
-  const total24h = Number(total24hResult[0]?.count ?? 0);
+  const total24h = aiBriefingAlerts.count;
 
   // 심각도별 집계
   const severityMap: Record<string, number> = {};
@@ -2387,31 +2384,19 @@ async function queryHerdOverview(
     .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
     .where(whereAll(farmCondition(smaxtecEvents.farmId, farmId), eq(animals.status, 'active')));
 
-  // 미확인 알림 (최근 24시간) — 새벽에도 항상 데이터 표시
-  const last24h = daysAgo(1);
-  const [alertCount] = await db.select({ count: count() })
-    .from(smaxtecEvents)
-    .where(whereAll(
-      farmCondition(smaxtecEvents.farmId, farmId),
-      gte(smaxtecEvents.detectedAt, last24h),
-      eq(smaxtecEvents.acknowledged, false),
-    ));
-
-  // 건강 이상 (24시간, 미확인) — 실제 건강 관련 이벤트 전체 포함
-  const [healthCount] = await db.select({ count: count() })
-    .from(smaxtecEvents)
-    .where(whereAll(
-      farmCondition(smaxtecEvents.farmId, farmId),
-      gte(smaxtecEvents.detectedAt, last24h),
-      eq(smaxtecEvents.acknowledged, false),
-      sql`${smaxtecEvents.eventType} IN ('health_warning', 'health_alert', 'temperature_high', 'temperature_low', 'rumination_decrease', 'activity_decrease', 'ph_low', 'drinking_decrease')`,
-    ));
+  // 미확인 알림 / 건강 이상 — alert-aggregator 단일 소스 (D3, BUG-007 Part 2).
+  // window=24h, ackedFilter=false (미확인만). 878 vs 874 모순 해소.
+  const farmScope = farmId ? { farmIds: [farmId] } : {};
+  const [alertResult, healthResult] = await Promise.all([
+    getAlertCountForWidget('main_24h_alerts', farmScope),
+    getAlertCountForWidget('main_health_issues', farmScope),
+  ]);
 
   return {
     totalAnimals: herd.total,
     sensorAttached: Number(sensorCount?.count ?? 0),
-    activeAlerts: (alertCount?.count ?? 0) as number,
-    healthIssues: (healthCount?.count ?? 0) as number,
+    activeAlerts: alertResult.count,
+    healthIssues: healthResult.count,
   };
 }
 
