@@ -4,7 +4,7 @@
 // 드릴다운: 시도 → 시군구 → 농장
 
 import { getDb } from '../../config/database.js';
-import { farms, smaxtecEvents, regions, alerts } from '../../db/schema.js';
+import { farms, smaxtecEvents, regions, alerts, animals } from '../../db/schema.js';
 import { eq, and, gte, sql, inArray, isNull } from 'drizzle-orm';
 import type { RiskLevel } from './quarantine-dashboard.service.js';
 import { latLngToProvince, PROVINCE_CENTERS } from './province-mapper.js';
@@ -96,7 +96,6 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
     interface FarmWithProvince {
       farmId: string;
       province: string;
-      headCount: number;
     }
 
     const farmsWithProvince: FarmWithProvince[] = allFarms.map((f) => {
@@ -108,17 +107,28 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
       return {
         farmId: f.farmId,
         province,
-        headCount: f.currentHeadCount,
       };
     });
 
-    // 3. 시도별 농장 집계
+    // 2.5. 라이브 두수 (D7, BUG-007) — farmId별 활성 동물 카운트.
+    // currentHeadCount(D8 격하)는 시도 합계에 사용 안 함.
+    const animalRows = await db
+      .select({ farmId: animals.farmId })
+      .from(animals)
+      .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
+
+    const liveCountByFarm = new Map<string, number>();
+    for (const a of animalRows) {
+      liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
+    }
+
+    // 3. 시도별 농장 집계 — totalAnimals는 라이브 카운트 합 (D7).
     const provinceAgg = new Map<string, { farmCount: number; totalAnimals: number; farmIds: string[] }>();
     for (const f of farmsWithProvince) {
       const existing = provinceAgg.get(f.province) ?? { farmCount: 0, totalAnimals: 0, farmIds: [] };
       provinceAgg.set(f.province, {
         farmCount: existing.farmCount + 1,
-        totalAnimals: existing.totalAnimals + f.headCount,
+        totalAnimals: existing.totalAnimals + (liveCountByFarm.get(f.farmId) ?? 0),
         farmIds: [...existing.farmIds, f.farmId],
       });
     }
@@ -466,12 +476,21 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
   const db = getDb();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // regionId 있는 농장
-  const farmRows = await db
+  // 라이브 두수 (D7, BUG-007) — farmId별 활성 동물 카운트. currentHeadCount(D8 격하) 사용 안 함.
+  const animalRows = await db
+    .select({ farmId: animals.farmId })
+    .from(animals)
+    .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
+  const liveCountByFarm = new Map<string, number>();
+  for (const a of animalRows) {
+    liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
+  }
+
+  // regionId 있는 농장: 시군구별 farmId 목록 수집 (D7 집계 위해 농장 단위로 가져옴)
+  const farmInDistrict = await db
     .select({
+      farmId: farms.farmId,
       district: regions.district,
-      farmCount: sql<number>`COUNT(${farms.farmId})`,
-      totalAnimals: sql<number>`SUM(${farms.currentHeadCount})`,
     })
     .from(farms)
     .innerJoin(regions, eq(farms.regionId, regions.regionId))
@@ -480,14 +499,28 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
         eq(farms.status, 'active'),
         eq(regions.province, province),
       ),
-    )
-    .groupBy(regions.district);
+    );
+
+  // 시군구별 farmCount + 라이브 두수 집계
+  const districtAgg = new Map<string, { farmCount: number; totalAnimals: number }>();
+  for (const f of farmInDistrict) {
+    const existing = districtAgg.get(f.district) ?? { farmCount: 0, totalAnimals: 0 };
+    districtAgg.set(f.district, {
+      farmCount: existing.farmCount + 1,
+      totalAnimals: existing.totalAnimals + (liveCountByFarm.get(f.farmId) ?? 0),
+    });
+  }
+
+  const farmRows = Array.from(districtAgg, ([district, agg]) => ({
+    district,
+    farmCount: agg.farmCount,
+    totalAnimals: agg.totalAnimals,
+  }));
 
   // regionId 없는 농장 중 해당 시도에 속하는 것
   const noRegionFarms = await db
     .select({
       farmId: farms.farmId,
-      currentHeadCount: farms.currentHeadCount,
       lat: farms.lat,
       lng: farms.lng,
     })
@@ -503,9 +536,12 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
     (f) => latLngToProvince(f.lat, f.lng) === province,
   );
 
-  // 미분류 시군구로 합산
+  // 미분류 시군구로 합산 — 라이브 카운트 사용 (D7)
   const unclassifiedCount = coordFarmsInProvince.length;
-  const unclassifiedAnimals = coordFarmsInProvince.reduce((s, f) => s + f.currentHeadCount, 0);
+  const unclassifiedAnimals = coordFarmsInProvince.reduce(
+    (s, f) => s + (liveCountByFarm.get(f.farmId) ?? 0),
+    0,
+  );
 
   // 발열 집계 (regionId 있는 것)
   const feverRows = await db

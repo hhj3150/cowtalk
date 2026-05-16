@@ -11,6 +11,7 @@ import { farms, animals, smaxtecEvents, regions } from '../../db/schema.js';
 import { eq, and, sql, count, gt } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
+import { getHerdTotal, getHerdPerFarm } from '../../services/metrics/herd-service.js';
 
 export const farmRouter = Router();
 
@@ -81,7 +82,6 @@ farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Reque
     const [farmCounts] = await db
       .select({
         total: count(),
-        totalHeadCount: sql<number>`COALESCE(SUM(${farms.currentHeadCount}), 0)`,
         active: sql<number>`COUNT(*) FILTER (WHERE ${farms.status} = 'active')`,
         inactive: sql<number>`COUNT(*) FILTER (WHERE ${farms.status} != 'active')`,
       })
@@ -95,17 +95,21 @@ farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Reque
       .from(animals)
       .where(eq(animals.status, 'active'));
 
+    // 두수 단일 소스 — D7/D9 라이브 카운트 (BUG-007).
+    const liveHerd = await getHerdTotal();
+    const totalHeadCount = liveHerd.total;
+
     res.json({
       success: true,
       data: {
         totalFarms: farmCounts?.total ?? 0,
-        totalHeadCount: Number(farmCounts?.totalHeadCount ?? 0),
+        totalHeadCount,
         activeFarms: Number(farmCounts?.active ?? 0),
         inactiveFarms: Number(farmCounts?.inactive ?? 0),
         tracedAnimalCount: Number(animalCounts?.traced ?? 0),
         sensorAnimalCount: Number(animalCounts?.withSensor ?? 0),
-        avgOperationRate: Number(farmCounts?.totalHeadCount ?? 0) > 0
-          ? Number(((Number(animalCounts?.withSensor ?? 0) / Number(farmCounts?.totalHeadCount ?? 1)) * 100).toFixed(1))
+        avgOperationRate: totalHeadCount > 0
+          ? Number(((Number(animalCounts?.withSensor ?? 0) / totalHeadCount) * 100).toFixed(1))
           : 0,
       },
     });
@@ -339,7 +343,8 @@ farmRouter.get('/:farmId/profile', requirePermission('farm', 'read'), async (req
       ownerName: farm.ownerName ?? '',
       address: farm.address ?? '',
       breedType,
-      totalAnimals: totalAnimals || (farm.currentHeadCount ?? 0),
+      // D7/D9: 라이브 카운트만 노출. D5/D13: 실측 0두 → 0 (currentHeadCount 폴백 차단, BUG-007).
+      totalAnimals,
       healthScore: 75, // 기본값 — 실제 건강 점수 산출 로직 별도
       conceptionRate: null as number | null,
       avgOpenDays: null as number | null,
@@ -395,12 +400,14 @@ farmRouter.get('/:farmId/similar', requirePermission('farm', 'read'), async (req
     const db = getDb();
     const farmId = req.params.farmId as string;
 
-    const [currentFarm] = await db
-      .select({ currentHeadCount: farms.currentHeadCount })
-      .from(farms)
-      .where(eq(farms.farmId, farmId));
-
-    const headCount = currentFarm?.currentHeadCount ?? 50;
+    // 두수 단일 소스 — D7 라이브 카운트. D5 mock(?? 50) 제거 (BUG-007).
+    const currentHerd = await getHerdPerFarm(farmId);
+    if (currentHerd.status === 'data_insufficient') {
+      // farm 미존재 → 유사 농장 검색 불가, 빈 결과 반환.
+      res.json({ success: true, data: [] });
+      return;
+    }
+    const headCount = currentHerd.total;
     const minCount = Math.max(0, headCount - 30);
     const maxCount = headCount + 30;
 

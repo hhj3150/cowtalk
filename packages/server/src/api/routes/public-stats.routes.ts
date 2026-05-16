@@ -5,7 +5,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { getDb } from '../../config/database.js';
 import { farms, animals, smaxtecEvents, users } from '../../db/schema.js';
-import { eq, count, sum, gt, and, isNotNull } from 'drizzle-orm';
+import { eq, count, gt, and, isNotNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 
 export const publicStatsRouter = Router();
@@ -57,15 +57,14 @@ publicStatsRouter.get('/stats', async (_req: Request, res: Response, next: NextF
       todayAlertResult,
       roleResult,
     ] = await Promise.all([
-      // 1. 활성 농장 수 + 총 두수
+      // 1. 활성 농장 수 (두수는 #2 라이브 카운트 사용 — D7/D9 단일 소스)
       db.select({
         farmCount: count(),
-        totalHead: sum(farms.currentHeadCount),
       })
         .from(farms)
         .where(eq(farms.status, 'active')),
 
-      // 2. 동물 테이블 기준 총 두수
+      // 2. 라이브 두수 (D7) — animals 활성 카운트. public 노출 = 라이브 (D9).
       db.select({ animalCount: count() })
         .from(animals)
         .where(eq(animals.status, 'active')),

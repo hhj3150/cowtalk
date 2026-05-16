@@ -2,7 +2,7 @@
 // 개체별로 모든 데이터를 하나의 통합 프로파일로 결합
 // 이 프로파일이 Claude AI에게 전달되어 해석/액션 생성
 
-import { eq, and, desc, gte, lte, isNull, count } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, isNull, count, inArray } from 'drizzle-orm';
 import { getDb } from '../config/database.js';
 import {
   animals, farms, regions, smaxtecEvents,
@@ -459,13 +459,30 @@ export async function buildRegionalProfile(
     .from(farms)
     .where(and(eq(farms.regionId, regionId), isNull(farms.deletedAt)));
 
+  // 라이브 두수 (D7, BUG-007) — 지역 내 농장 활성 동물.
+  const regionFarmIds = regionFarms.map((f) => f.farmId);
+  const liveByFarmRegion = new Map<string, number>();
+  if (regionFarmIds.length > 0) {
+    const animalRows = await db
+      .select({ farmId: animals.farmId })
+      .from(animals)
+      .where(and(
+        eq(animals.status, 'active'),
+        isNull(animals.deletedAt),
+        inArray(animals.farmId, regionFarmIds),
+      ));
+    for (const a of animalRows) {
+      liveByFarmRegion.set(a.farmId, (liveByFarmRegion.get(a.farmId) ?? 0) + 1);
+    }
+  }
+
   const farmSummaries: FarmSummaryInProfile[] = [];
   let totalAnimals = 0;
   let activeAlerts = 0;
 
   for (const farm of regionFarms) {
-    const animalCount = farm.currentHeadCount;
-    totalAnimals += animalCount;
+    const liveCount = liveByFarmRegion.get(farm.farmId) ?? 0;
+    totalAnimals += liveCount;
 
     const eventCount = await db
       .select()
@@ -483,7 +500,7 @@ export async function buildRegionalProfile(
     farmSummaries.push({
       farmId: farm.farmId,
       name: farm.name,
-      totalAnimals: animalCount,
+      totalAnimals: liveCount,
       activeAlerts: farmAlerts,
       healthScore: null,
     });
@@ -517,16 +534,34 @@ export async function buildTenantProfile(
     .from(farms)
     .where(and(eq(farms.tenantId, tenantId), isNull(farms.deletedAt)));
 
+  // 라이브 두수 (D7, BUG-007) — tenant 농장들 활성 동물.
+  const tenantFarmIds = tenantFarms.map((f) => f.farmId);
+  const liveByFarm = new Map<string, number>();
+  if (tenantFarmIds.length > 0) {
+    const animalRows = await db
+      .select({ farmId: animals.farmId })
+      .from(animals)
+      .where(and(
+        eq(animals.status, 'active'),
+        isNull(animals.deletedAt),
+        ...(tenantFarmIds.length > 0 ? [inArray(animals.farmId, tenantFarmIds)] : []),
+      ));
+    for (const a of animalRows) {
+      liveByFarm.set(a.farmId, (liveByFarm.get(a.farmId) ?? 0) + 1);
+    }
+  }
+
   const farmSummaries: FarmSummaryInProfile[] = [];
   let totalAnimals = 0;
   let activeAlerts = 0;
 
   for (const farm of tenantFarms) {
-    totalAnimals += farm.currentHeadCount;
+    const liveCount = liveByFarm.get(farm.farmId) ?? 0;
+    totalAnimals += liveCount;
     farmSummaries.push({
       farmId: farm.farmId,
       name: farm.name,
-      totalAnimals: farm.currentHeadCount,
+      totalAnimals: liveCount,
       activeAlerts: 0,
       healthScore: null,
     });

@@ -20,6 +20,7 @@ import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
+import { computeHerd, getHerdTotal } from '../../services/metrics/herd-service.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -549,9 +550,10 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
   const yesterday = daysAgo(2);
 
   // 병렬 쿼리: 기본 통계, 심각도별 알림, 농장 랭킹, 이벤트 분포, 최근 긴급, 어제 알림 수
+  // 두수는 herd-service 단일 소스 (D7, BUG-007).
   const [
     farmCountResult,
-    animalCountResult,
+    herdLive,
     total24hResult,
     severityRows,
     topFarmRows,
@@ -567,13 +569,8 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
         eq(farms.status, 'active'),
       )),
 
-    // 활성 동물 수
-    db.select({ count: count() })
-      .from(animals)
-      .where(whereAll(
-        farmCondition(animals.farmId, farmId),
-        eq(animals.status, 'active'),
-      )),
+    // 활성 동물 수 — herd-service 호출 (D7 라이브)
+    getHerdTotal(farmId ? { farmIds: [farmId] } : {}),
 
     // 24시간 전체 알림 수
     db.select({ count: count() })
@@ -656,7 +653,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
   ]);
 
   const totalFarms = Number(farmCountResult[0]?.count ?? 0);
-  const totalAnimals = Number(animalCountResult[0]?.count ?? 0);
+  const totalAnimals = herdLive.total;
   const total24h = Number(total24hResult[0]?.count ?? 0);
 
   // 심각도별 집계
@@ -1966,11 +1963,9 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
 
     // 농장별 메트릭 계산
     const data = await Promise.all(farmRows.map(async (farm) => {
-      // 7일간 알림 없는 동물 비율 → healthScore
-      const [totalAnimals] = await db.select({ count: count() })
-        .from(animals)
-        .where(and(eq(animals.farmId, farm.farmId), eq(animals.status, 'active')));
-      const total = Number(totalAnimals?.count ?? 0);
+      // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 농장별 healthScore 분모.
+      const farmHerd = await getHerdTotal({ farmIds: [farm.farmId] });
+      const total = farmHerd.total;
 
       const [alertedAnimals] = await db.select({
         count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
@@ -2381,9 +2376,8 @@ async function queryHerdOverview(
   farmId: string | null,
   _today: Date,
 ): Promise<HerdOverview> {
-  const [animalCount] = await db.select({ count: count() })
-    .from(animals)
-    .where(whereAll(farmCondition(animals.farmId, farmId), eq(animals.status, 'active')));
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007).
+  const herd = await getHerdTotal(farmId ? { farmIds: [farmId] } : {});
 
   // 센서 장착: 활성 동물 중 smaXtec 이벤트가 있는 동물 수
   const [sensorCount] = await db.select({
@@ -2414,7 +2408,7 @@ async function queryHerdOverview(
     ));
 
   return {
-    totalAnimals: (animalCount?.count ?? 0) as number,
+    totalAnimals: herd.total,
     sensorAttached: Number(sensorCount?.count ?? 0),
     activeAlerts: (alertCount?.count ?? 0) as number,
     healthIssues: (healthCount?.count ?? 0) as number,
@@ -4555,7 +4549,9 @@ async function buildBreedingPipeline(farmId: string | null): Promise<BreedingPip
 
   return {
     pipeline, kpis: finalKpis, urgentActions,
-    totalAnimals: animalRows.length, lastUpdated: new Date().toISOString(),
+    // 두수 단일 소스 — D7. animalRows.length도 정의상 'active' 동물 → computeHerd로 통과 (BUG-007).
+    totalAnimals: computeHerd(animalRows.length).total,
+    lastUpdated: new Date().toISOString(),
   };
 }
 
