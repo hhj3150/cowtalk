@@ -11,10 +11,10 @@ import {
   animals,
   smaxtecEvents,
   breedingEvents,
-  calvingEvents,
   sensorDevices,
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt } from 'drizzle-orm';
+import { ratioPct } from '../../lib/metrics-clamp.js';
 
 export const reportRouter = Router();
 
@@ -253,29 +253,16 @@ async function computeBreedingMetrics(
   const inseminationDB = breedingRows.find((r) => r.type === 'insemination')?.cnt ?? 0;
   const inseminationCount = Math.max(inseminationFromEvents, inseminationDB);
 
-  // 분만 카운트 (분만간격 계산용)
-  const calvingRows = await db
-    .select({ cnt: count() })
-    .from(calvingEvents)
-    .innerJoin(animals, eq(calvingEvents.animalId, animals.animalId))
-    .where(
-      and(
-        eq(animals.farmId, farmId),
-        gte(calvingEvents.calvingDate, start),
-        lt(calvingEvents.calvingDate, end),
-      ),
-    );
-
-  const calvingCount = calvingRows[0]?.cnt ?? 0;
-
-  // 수태율: 수정 대비 임신 확인 비율 (간이)
+  // 수태율: 임신확정 / 감정완료(임신확정 + 미임신). pending 제외하여 분자/분모 1:1 카디널리티 보장.
+  // TODO: 단일 소유권 위반 — breeding-pipeline.service.ts로 위임 예정 (metrics-contract.md 참조).
   const pregnancyConfirmed = breedingRows
     .filter((r) => r.type === 'pregnancy_confirmed' || r.type === 'pregnancy_check')
     .reduce((sum, r) => sum + r.cnt, 0);
-
-  const conceptionRate = inseminationCount > 0
-    ? Math.round((pregnancyConfirmed / inseminationCount) * 100)
-    : 45; // 업계 평균 기본값
+  const notPregnant = breedingRows
+    .filter((r) => r.type === 'pregnancy_failed' || r.type === 'not_pregnant' || r.type === 'open')
+    .reduce((sum, r) => sum + r.cnt, 0);
+  const decidedChecks = pregnancyConfirmed + notPregnant;
+  const conceptionRate = ratioPct(pregnancyConfirmed, decidedChecks);
 
   // 발정감지율: (발정 감지 / 발정 가능 두수) × 100
   const totalCows = await db
@@ -289,20 +276,20 @@ async function computeBreedingMetrics(
       ),
     );
 
-  const femaleCows = totalCows[0]?.cnt ?? 1;
-  const estrusDetectionRate = femaleCows > 0
-    ? Math.min(Math.round((estrusCount / Math.max(femaleCows * 0.05, 1)) * 100), 95)
-    : 0;
+  const femaleCows = totalCows[0]?.cnt ?? 0;
+  // 한 사이클(21일) 기준 60% 발정 기대치. breeding-pipeline.service.ts와 동일.
+  const expectedEstrus = Math.max(1, femaleCows * 0.6);
+  const estrusDetectionRate = ratioPct(estrusCount, expectedEstrus);
 
+  // avgDaysOpen / calvingInterval / conceptionPerService 정밀 계산 미구현 — 가짜 수치 대신 0 반환.
+  // 프론트엔드는 0을 "데이터 없음"으로 표시해야 함. (Math.random() 기반 모킹 제거됨)
   return {
     conceptionRate,
-    avgDaysOpen: inseminationCount > 0 ? Math.round(120 + Math.random() * 30) : 135,
-    calvingInterval: calvingCount > 0 ? Math.round(390 + Math.random() * 20) : 405,
+    avgDaysOpen: 0,
+    calvingInterval: 0,
     estrusDetectionRate,
     inseminationCount,
-    conceptionPerService: inseminationCount > 0 && pregnancyConfirmed > 0
-      ? Math.round((inseminationCount / pregnancyConfirmed) * 10) / 10
-      : 2.1,
+    conceptionPerService: 0,
   };
 }
 

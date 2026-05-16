@@ -18,6 +18,7 @@ import {
 import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
+import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -1979,7 +1980,8 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
           gte(smaxtecEvents.detectedAt, last7d),
         ));
       const alerted = Number(alertedAnimals?.count ?? 0);
-      const healthScore = total > 0 ? Math.round(((total - alerted) / total) * 100) : 0;
+      // alerted가 total보다 클 수 있음(상태 전이 시점 차로). clampPct로 음수 차단.
+      const healthScore = total > 0 ? Math.round(clampPct(((total - alerted) / total) * 100)) : 0;
 
       // 발정 감지율 → breedingScore
       const [estrusCount] = await db.select({ count: count() })
@@ -2003,7 +2005,7 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
           gte(smaxtecEvents.detectedAt, last7d),
         ));
       const tempWarned = Number(tempAlerted?.count ?? 0);
-      const tempStability = total > 0 ? Math.round(((total - tempWarned) / total) * 100) : 0;
+      const tempStability = total > 0 ? Math.round(clampPct(((total - tempWarned) / total) * 100)) : 0;
 
       // 센서 장착률
       const [sensorAnimals] = await db.select({
@@ -4275,14 +4277,16 @@ function computeBreedingKpis(
 ): BreedingKpis {
   const bInseminations = breedingEvts.filter((e) => e.type === 'insemination');
   const pregnancies = pregChecks.filter((p) => p.result === 'pregnant');
+  const openChecks = pregChecks.filter((p) => p.result === 'open' || p.result === 'not_pregnant');
 
-  const conceptionRate = bInseminations.length > 0
-    ? Math.round((pregnancies.length / bInseminations.length) * 1000) / 10
-    : 0;
+  // 수태율: 임신확정 / 감정완료(임신+미임신). pending 제외, 분자/분모 1:1 카디널리티.
+  // smaXtec이 수정 후 21/28/35/42일에 임신확정 이벤트를 반복 송신해도 분모가 같은 풀에서 옴.
+  const decidedChecks = pregnancies.length + openChecks.length;
+  const conceptionRate = ratioPct(pregnancies.length, decidedChecks, 1);
 
   const estrusEvents = smaxtecEvts.filter((e) => e.eventType === 'estrus' || e.eventType === 'estrus_dnb');
   const estimatedCycles = Math.max(estrusEvents.length, bInseminations.length, 1);
-  const estrusDetectionRate = Math.round((bInseminations.length / estimatedCycles) * 1000) / 10;
+  const estrusDetectionRate = ratioPct(bInseminations.length, estimatedCycles, 1);
 
   const calvingsByAnimal = new Map<string, readonly Date[]>();
   for (const c of calvingData) {
@@ -4347,9 +4351,8 @@ function computeBreedingKpis(
     ? Math.round(daysToFirstServiceValues.reduce((s, v) => s + v, 0) / daysToFirstServiceValues.length)
     : 0;
 
-  const pregnancyRate = estimatedCycles > 0
-    ? Math.round((pregnancies.length / estimatedCycles) * 1000) / 10
-    : 0;
+  // 임신율 = 발정탐지율 × 수태율 (업계 표준 공식). 두 인자가 모두 클램프돼 있으므로 0–100 보장.
+  const pregnancyRate = clampPct1((estrusDetectionRate * conceptionRate) / 100);
 
   return {
     conceptionRate,
@@ -4466,73 +4469,22 @@ function buildBreedingUrgentActions(
   return deduplicated;
 }
 
-function generateDemoBreedingData(): BreedingPipelineData {
-  const totalAnimals = 146;
-  const now = new Date();
-  const stageDistribution: ReadonlyArray<{ stage: BreedingStage; ratio: number }> = [
-    { stage: 'open', ratio: 0.40 },
-    { stage: 'estrus_detected', ratio: 0.05 },
-    { stage: 'inseminated', ratio: 0.15 },
-    { stage: 'pregnancy_confirmed', ratio: 0.20 },
-    { stage: 'late_gestation', ratio: 0.12 },
-    { stage: 'calving_expected', ratio: 0.08 },
-  ];
-
-  const demoFarms = ['갈전리목장', '청송농장', '삼척한우', '영주목장', '봉화농장'];
-  let idx = 0;
-
-  const pipeline: readonly BreedingStageGroup[] = stageDistribution.map(({ stage, ratio }) => {
-    const cnt = Math.round(totalAnimals * ratio);
-    const demoAnimals: BreedingAnimalSummary[] = [];
-
-    for (let i = 0; i < cnt; i++) {
-      idx += 1;
-      const fi = idx % demoFarms.length;
-      const dis = stage === 'estrus_detected' ? 0
-        : stage === 'inseminated' ? Math.floor(Math.random() * 35)
-        : stage === 'open' ? 30 + Math.floor(Math.random() * 180)
-        : stage === 'pregnancy_confirmed' ? 35 + Math.floor(Math.random() * 150)
-        : stage === 'late_gestation' ? Math.floor(Math.random() * 60)
-        : Math.floor(Math.random() * 7);
-
-      demoAnimals.push({
-        animalId: `demo-animal-${idx}`,
-        earTag: `KR${String(410 + fi).padStart(3, '0')}${String(idx).padStart(5, '0')}`,
-        farmId: `demo-farm-${fi}`,
-        farmName: demoFarms[fi] ?? '갈전리목장',
-        currentStage: stage,
-        lastEventDate: new Date(now.getTime() - dis * MS_PER_DAY).toISOString(),
-        daysInStage: dis,
-        lactationNumber: 1 + Math.floor(Math.random() * 5),
-        smaxtecEstrusDetected: stage === 'estrus_detected' || Math.random() < 0.2,
-        urgency: assignUrgency(stage, dis),
-      });
-    }
-
-    return { stage, label: STAGE_LABELS[stage], count: cnt, animals: demoAnimals };
-  });
-
-  const cr = 42 + Math.random() * 13;
-  const edr = 60 + Math.random() * 20;
-
+// 빈 상태(실데이터 0건). 시연용 가짜 데이터 대신 0으로 채워 프론트가 "데이터 없음"으로 표시한다.
+function emptyBreedingData(): BreedingPipelineData {
+  const stages: readonly BreedingStage[] = ['open', 'estrus_detected', 'inseminated', 'pregnancy_confirmed', 'late_gestation', 'calving_expected'];
   return {
-    pipeline,
+    pipeline: stages.map((stage) => ({ stage, label: STAGE_LABELS[stage], count: 0, animals: [] })),
     kpis: {
-      conceptionRate: Math.round(cr * 10) / 10,
-      estrusDetectionRate: Math.round(edr * 10) / 10,
-      avgDaysOpen: 120 + Math.floor(Math.random() * 40),
-      avgCalvingInterval: 385 + Math.floor(Math.random() * 35),
-      avgDaysToFirstService: 65 + Math.floor(Math.random() * 30),
-      pregnancyRate: Math.round((cr * edr / 100) * 10) / 10,
+      conceptionRate: 0,
+      estrusDetectionRate: 0,
+      avgDaysOpen: 0,
+      avgCalvingInterval: 0,
+      avgDaysToFirstService: 0,
+      pregnancyRate: 0,
     },
-    urgentActions: [
-      { animalId: 'demo-animal-7', earTag: 'KR41100007', farmId: 'demo-farm-2', farmName: '삼척한우', actionType: 'inseminate_now', description: '발정 감지됨 — 수정 적기 (잔여 8시간)', hoursRemaining: 8, detectedAt: new Date(now.getTime() - 16 * 60 * 60 * 1000).toISOString() },
-      { animalId: 'demo-animal-23', earTag: 'KR41300023', farmId: 'demo-farm-3', farmName: '영주목장', actionType: 'pregnancy_check_due', description: '수정 후 32일 경과 — 임신 감정 필요', hoursRemaining: 72, detectedAt: new Date(now.getTime() - 32 * MS_PER_DAY).toISOString() },
-      { animalId: 'demo-animal-45', earTag: 'KR41000045', farmId: 'demo-farm-0', farmName: '갈전리목장', actionType: 'calving_imminent', description: '분만 징후 — 분만실 이동 및 모니터링 강화 필요', hoursRemaining: 48, detectedAt: new Date(now.getTime() - 5 * MS_PER_DAY).toISOString() },
-      { animalId: 'demo-animal-89', earTag: 'KR41400089', farmId: 'demo-farm-4', farmName: '봉화농장', actionType: 'repeat_breeder', description: '4회 수정 실패 — 리피트 브리더 의심. 수의사 정밀 검사 권고', hoursRemaining: 0, detectedAt: now.toISOString() },
-    ],
-    totalAnimals,
-    lastUpdated: now.toISOString(),
+    urgentActions: [],
+    totalAnimals: 0,
+    lastUpdated: new Date().toISOString(),
   };
 }
 
@@ -4548,7 +4500,7 @@ async function buildBreedingPipeline(farmId: string | null): Promise<BreedingPip
   ]);
 
   if (animalRows.length === 0) {
-    return generateDemoBreedingData();
+    return emptyBreedingData();
   }
 
   const animalSummaries: readonly BreedingAnimalSummary[] = animalRows.map((animal) => {

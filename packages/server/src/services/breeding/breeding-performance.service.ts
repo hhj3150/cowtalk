@@ -2,7 +2,7 @@
 // BreedingKpiPage 3개 분석 탭용 데이터 제공
 
 import { getDb } from '../../config/database.js';
-import { animals, farms, smaxtecEvents, pregnancyChecks, calvingEvents } from '../../db/schema.js';
+import { animals, farms, smaxtecEvents, pregnancyChecks } from '../../db/schema.js';
 import { eq, and, gte, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import type { MonthlyKpiTrend, FarmKpiComparison, ParityKpiGroup } from '@cowtalk/shared';
@@ -64,12 +64,6 @@ export async function getMonthlyTrends(farmId?: string, months = 6): Promise<rea
     .from(pregnancyChecks)
     .where(and(inArray(pregnancyChecks.animalId, animalIds), gte(pregnancyChecks.checkDate, sinceDate)));
 
-  // 분만 이벤트 (수동)
-  const manualCalvings = await db
-    .select({ animalId: calvingEvents.animalId, calvingDate: calvingEvents.calvingDate })
-    .from(calvingEvents)
-    .where(and(inArray(calvingEvents.animalId, animalIds), gte(calvingEvents.calvingDate, sinceDate)));
-
   // 월별 KPI 계산
   const trends: MonthlyKpiTrend[] = buckets.map((bucket) => {
     const monthEvents = allEvents.filter((e) => {
@@ -81,7 +75,7 @@ export async function getMonthlyTrends(farmId?: string, months = 6): Promise<rea
       return t >= bucket.start.getTime() && t < bucket.end.getTime();
     });
 
-    return calcMonthKpis(bucket.month, monthEvents, monthPreg, animalIds.length, manualCalvings, bucket);
+    return calcMonthKpis(bucket.month, monthEvents, monthPreg, animalIds.length);
   });
 
   logger.info({ months, farmId, dataPoints: trends.length }, '[BreedingPerformance] 월별 추이 산출');
@@ -93,8 +87,6 @@ function calcMonthKpis(
   events: ReadonlyArray<{ eventType: string; details: unknown; animalId: string }>,
   manualPreg: ReadonlyArray<{ result: string }>,
   totalFemales: number,
-  manualCalvings: ReadonlyArray<{ animalId: string; calvingDate: Date | null }>,
-  bucket: { start: Date; end: Date },
 ): MonthlyKpiTrend {
   // 수태율: pregnancy_check 이벤트 중 pregnant 비율
   const pregChecks = events
@@ -122,21 +114,10 @@ function calcMonthKpis(
   // 수정 이벤트 수
   const inseminationCount = events.filter((e) => e.eventType === 'insemination').length;
 
-  // 공태일: 해당 월에 분만한 개체의 분만~수정 간격 (간접 추정)
-  const calvingsInMonth = [
-    ...events.filter((e) => e.eventType === 'calving' || e.eventType === 'calving_confirmation'),
-    ...manualCalvings
-      .filter((c) => c.calvingDate && c.calvingDate.getTime() >= bucket.start.getTime() && c.calvingDate.getTime() < bucket.end.getTime())
-      .map((c) => ({ animalId: c.animalId, eventType: 'calving' as const })),
-  ];
-
-  // 간이 공태일: open 상태 이벤트 기반 (정확도 낮지만 추이 파악용)
-  const avgDaysOpen = calvingsInMonth.length > 0
-    ? Math.round(120 + (Math.random() * 20 - 10)) // 추후 정밀 계산으로 교체
-    : 0;
-
-  // 분만간격: 해당 월 데이터만으로는 계산 어려움 — 전체 데이터 기반 스냅샷 사용
-  const avgCalvingInterval = 0; // 0 = 데이터 부족 시 차트에서 null 처리
+  // 평균공태일 / 분만간격: 월별 정밀 계산 미구현 — 0 반환(가짜 수치 노출 금지).
+  // 프론트엔드는 0을 "데이터 없음"으로 표시. 정밀 계산은 breeding-pipeline.service 참조.
+  const avgDaysOpen = 0;
+  const avgCalvingInterval = 0;
 
   const sampleSize = totalChecks + estrusCount + inseminationCount;
 
