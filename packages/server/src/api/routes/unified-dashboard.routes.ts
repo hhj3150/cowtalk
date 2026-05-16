@@ -4279,9 +4279,8 @@ function computeBreedingKpis(
   const bInseminations = breedingEvts.filter((e) => e.type === 'insemination');
   const pregnancies = pregChecks.filter((p) => p.result === 'pregnant'); // downstream daysOpen 계산용
 
-  // 수태율: fertility-service 단일 소스 (D1, BUG-001). 정의: §6.1 metrics-contract.md.
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
   const cr = computeCR(decisionsFromPregnancyChecks(pregChecks));
-  const conceptionRate = cr.rate ?? 0;
 
   const estrusEvents = smaxtecEvts.filter((e) => e.eventType === 'estrus' || e.eventType === 'estrus_dnb');
   const estimatedCycles = Math.max(estrusEvents.length, bInseminations.length, 1);
@@ -4350,16 +4349,22 @@ function computeBreedingKpis(
     ? Math.round(daysToFirstServiceValues.reduce((s, v) => s + v, 0) / daysToFirstServiceValues.length)
     : 0;
 
-  // 임신율 = 발정탐지율 × 수태율 (업계 표준 공식). 두 인자가 모두 클램프돼 있으므로 0–100 보장.
-  const pregnancyRate = clampPct1((estrusDetectionRate * conceptionRate) / 100);
+  // 임신율 = EDR × CR / 100. CR이 null이면 PR도 null (D5).
+  const pregnancyRate = cr.rate === null ? null : clampPct1((estrusDetectionRate * cr.rate) / 100);
+  const pregnancyRateDisplay = pregnancyRate === null ? '—' : `${pregnancyRate.toFixed(1)}%`;
+  const pregnancyRateStatus = pregnancyRate === null ? 'data_insufficient' as const : 'ok' as const;
 
   return {
-    conceptionRate,
+    conceptionRate: cr.rate,
+    conceptionRateDisplay: cr.displayValue,
+    conceptionRateStatus: cr.status,
     estrusDetectionRate,
     avgDaysOpen,
     avgCalvingInterval,
     avgDaysToFirstService,
     pregnancyRate,
+    pregnancyRateDisplay,
+    pregnancyRateStatus,
   };
 }
 
@@ -4468,18 +4473,22 @@ function buildBreedingUrgentActions(
   return deduplicated;
 }
 
-// 빈 상태(실데이터 0건). 시연용 가짜 데이터 대신 0으로 채워 프론트가 "데이터 없음"으로 표시한다.
+// 빈 상태(실데이터 0건). null로 채워 UI가 "—"로 표시 (D5).
 function emptyBreedingData(): BreedingPipelineData {
   const stages: readonly BreedingStage[] = ['open', 'estrus_detected', 'inseminated', 'pregnancy_confirmed', 'late_gestation', 'calving_expected'];
   return {
     pipeline: stages.map((stage) => ({ stage, label: STAGE_LABELS[stage], count: 0, animals: [] })),
     kpis: {
-      conceptionRate: 0,
+      conceptionRate: null,
+      conceptionRateDisplay: '—',
+      conceptionRateStatus: 'data_insufficient',
       estrusDetectionRate: 0,
       avgDaysOpen: 0,
       avgCalvingInterval: 0,
       avgDaysToFirstService: 0,
-      pregnancyRate: 0,
+      pregnancyRate: null,
+      pregnancyRateDisplay: '—',
+      pregnancyRateStatus: 'data_insufficient',
     },
     urgentActions: [],
     totalAnimals: 0,
@@ -4526,15 +4535,22 @@ async function buildBreedingPipeline(farmId: string | null): Promise<BreedingPip
   const kpis = computeBreedingKpis(breedingEvtsData, pregnancyRows, calvingRows, smaxtecBreeding);
   const urgentActions = buildBreedingUrgentActions(animalRows, smaxtecBreeding, breedingEvtsData, pregnancyRows);
 
-  const hasRealKpis = kpis.conceptionRate > 0 || kpis.avgDaysOpen > 0 || kpis.avgCalvingInterval > 0;
-  // 실데이터 없으면 null — 프론트엔드가 "데이터 부족" 표시 (가짜 수치 제거)
+  // 데이터 부족 판별: CR/EDR/공태일/분만간격 모두 0이거나 null이면 빈 농장 취급.
+  // D5: empty state → conceptionRate=null + displayValue="—"
+  const hasRealKpis = (kpis.conceptionRate !== null && kpis.conceptionRate > 0)
+    || kpis.avgDaysOpen > 0
+    || kpis.avgCalvingInterval > 0;
   const finalKpis: BreedingKpis = hasRealKpis ? kpis : {
-    conceptionRate: 0,
+    conceptionRate: null,
+    conceptionRateDisplay: '—',
+    conceptionRateStatus: 'data_insufficient',
     estrusDetectionRate: 0,
     avgDaysOpen: 0,
     avgCalvingInterval: 0,
     avgDaysToFirstService: 0,
-    pregnancyRate: 0,
+    pregnancyRate: null,
+    pregnancyRateDisplay: '—',
+    pregnancyRateStatus: 'data_insufficient',
   };
 
   return {

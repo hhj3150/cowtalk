@@ -11,8 +11,14 @@ import {
 } from '../fertility-service.js';
 
 describe('computeCR', () => {
-  it('빈 입력 → rate=null (D5 빈 농장)', () => {
-    expect(computeCR([])).toEqual({ numerator: 0, denominator: 0, rate: null });
+  it('빈 입력 → rate=null + displayValue="—" + status="data_insufficient" (D5 빈 농장)', () => {
+    expect(computeCR([])).toEqual({
+      numerator: 0,
+      denominator: 0,
+      rate: null,
+      displayValue: '—',
+      status: 'data_insufficient',
+    });
   });
 
   it('5 임신 + 5 공태 → 50%', () => {
@@ -20,7 +26,9 @@ describe('computeCR', () => {
       ...Array.from({ length: 5 }, () => ({ pregnant: true })),
       ...Array.from({ length: 5 }, () => ({ pregnant: false })),
     ];
-    expect(computeCR(decisions)).toEqual({ numerator: 5, denominator: 10, rate: 50 });
+    expect(computeCR(decisions)).toEqual({
+      numerator: 5, denominator: 10, rate: 50, displayValue: '50.0%', status: 'ok',
+    });
   });
 
   it('83 임신 + 17 공태 → 83% (/breeding 의 정답 재현)', () => {
@@ -28,21 +36,29 @@ describe('computeCR', () => {
       ...Array.from({ length: 83 }, () => ({ pregnant: true })),
       ...Array.from({ length: 17 }, () => ({ pregnant: false })),
     ];
-    expect(computeCR(decisions)).toEqual({ numerator: 83, denominator: 100, rate: 83 });
+    expect(computeCR(decisions)).toEqual({
+      numerator: 83, denominator: 100, rate: 83, displayValue: '83.0%', status: 'ok',
+    });
   });
 
   it('100% 임신 → rate=100', () => {
     const decisions = Array.from({ length: 7 }, () => ({ pregnant: true }));
-    expect(computeCR(decisions)).toEqual({ numerator: 7, denominator: 7, rate: 100 });
+    expect(computeCR(decisions)).toEqual({
+      numerator: 7, denominator: 7, rate: 100, displayValue: '100.0%', status: 'ok',
+    });
   });
 
-  it('전부 공태 → rate=0', () => {
+  it('전부 공태 → rate=0 (실값. status="ok", "—"와 구별)', () => {
     const decisions = Array.from({ length: 4 }, () => ({ pregnant: false }));
-    expect(computeCR(decisions)).toEqual({ numerator: 0, denominator: 4, rate: 0 });
+    expect(computeCR(decisions)).toEqual({
+      numerator: 0, denominator: 4, rate: 0, displayValue: '0.0%', status: 'ok',
+    });
   });
 
   it('단일 케이스 (1/1) → 100', () => {
-    expect(computeCR([{ pregnant: true }])).toEqual({ numerator: 1, denominator: 1, rate: 100 });
+    expect(computeCR([{ pregnant: true }])).toEqual({
+      numerator: 1, denominator: 1, rate: 100, displayValue: '100.0%', status: 'ok',
+    });
   });
 
   it('11 수정 / 13 임신확정 시나리오 (PR #32 113% 버그가 다시 살아나지 않음)', () => {
@@ -52,16 +68,64 @@ describe('computeCR', () => {
     const result = computeCR(decisions);
     expect(result.rate).toBeLessThanOrEqual(100);
     expect(result.rate).toBe(100);
+    expect(result.status).toBe('ok');
+  });
+});
+
+describe('D5 displayValue/status 분기 (rate=0 vs rate=null 구별)', () => {
+  it('실값 0% (분모 있음) → status="ok", displayValue="0.0%" — "데이터 부족" 아님', () => {
+    // 실제 농장에서 수정만 하고 임신 0인 경우. "—"가 아니라 0% 표시 정답.
+    const decisions = Array.from({ length: 10 }, () => ({ pregnant: false }));
+    const result = computeCR(decisions);
+    expect(result.rate).toBe(0);
+    expect(result.status).toBe('ok');
+    expect(result.displayValue).toBe('0.0%');
+    expect(result.displayValue).not.toBe('—');
+  });
+
+  it('빈 농장 (분모 없음) → status="data_insufficient", displayValue="—" — 0%과 구별', () => {
+    // 아직 임신감정 안 한 신규 농장. 0%로 표시되면 D5 위반.
+    const decisions: { pregnant: boolean }[] = [];
+    const result = computeCR(decisions);
+    expect(result.rate).toBeNull();
+    expect(result.status).toBe('data_insufficient');
+    expect(result.displayValue).toBe('—');
+    expect(result.displayValue).not.toBe('0%');
+    expect(result.displayValue).not.toBe('0.0%');
+  });
+
+  it('pending만 있는 농장 (decided=0) → "—" (D2 + D5 결합)', () => {
+    // pending이 분모에서 제외되므로 decided=0 → 빈 농장 취급 → "—"
+    const decisions = decisionsFromPregnancyChecks([
+      { result: 'pending' },
+      { result: 'pending' },
+      { result: 'inconclusive' },
+    ]);
+    expect(decisions.length).toBe(0);
+    const result = computeCR(decisions);
+    expect(result.status).toBe('data_insufficient');
+    expect(result.displayValue).toBe('—');
+  });
+
+  it('computeCRFromCounts(0,0) → displayValue="—", status="data_insufficient"', () => {
+    const result = computeCRFromCounts(0, 0);
+    expect(result.rate).toBeNull();
+    expect(result.displayValue).toBe('—');
+    expect(result.status).toBe('data_insufficient');
   });
 });
 
 describe('computeCRFromCounts', () => {
-  it('카운트 0/0 → rate=null', () => {
-    expect(computeCRFromCounts(0, 0)).toEqual({ numerator: 0, denominator: 0, rate: null });
+  it('카운트 0/0 → rate=null + displayValue="—" + status="data_insufficient"', () => {
+    expect(computeCRFromCounts(0, 0)).toEqual({
+      numerator: 0, denominator: 0, rate: null, displayValue: '—', status: 'data_insufficient',
+    });
   });
 
   it('5/10 → 50', () => {
-    expect(computeCRFromCounts(5, 10)).toEqual({ numerator: 5, denominator: 10, rate: 50 });
+    expect(computeCRFromCounts(5, 10)).toEqual({
+      numerator: 5, denominator: 10, rate: 50, displayValue: '50.0%', status: 'ok',
+    });
   });
 
   it('분자가 분모보다 큰 비정상 입력 → 분모로 자동 클램프 (>100% 차단)', () => {
@@ -72,7 +136,9 @@ describe('computeCRFromCounts', () => {
   });
 
   it('음수 분자 입력 → 0으로 클램프', () => {
-    expect(computeCRFromCounts(-3, 10)).toEqual({ numerator: 0, denominator: 10, rate: 0 });
+    expect(computeCRFromCounts(-3, 10)).toEqual({
+      numerator: 0, denominator: 10, rate: 0, displayValue: '0.0%', status: 'ok',
+    });
   });
 
   it('음수 분모 → null', () => {
@@ -180,6 +246,8 @@ describe('End-to-end: extract → compute', () => {
       ...decisionsFromPregnancyChecks(manualChecks),
     ];
     const cr = computeCR(merged);
-    expect(cr).toEqual({ numerator: 2, denominator: 4, rate: 50 });
+    expect(cr).toEqual({
+      numerator: 2, denominator: 4, rate: 50, displayValue: '50.0%', status: 'ok',
+    });
   });
 });

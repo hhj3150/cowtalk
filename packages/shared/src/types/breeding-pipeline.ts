@@ -28,13 +28,20 @@ export interface BreedingStageGroup {
   readonly animals: readonly BreedingAnimalSummary[];
 }
 
+/** D5 상태 sentinel — 빈 농장과 실값 0%을 구별. */
+export type MetricStatus = 'ok' | 'data_insufficient';
+
 export interface BreedingKpis {
-  readonly conceptionRate: number;         // 수태율 (%)
-  readonly estrusDetectionRate: number;    // 발정탐지율 (%)
-  readonly avgDaysOpen: number;            // 평균공태일
-  readonly avgCalvingInterval: number;     // 평균분만간격 (일)
-  readonly avgDaysToFirstService: number;  // 분만후 첫 수정일수 (목표 <80일)
-  readonly pregnancyRate: number;          // 임신율 (%) = 발정탐지율 × 수태율
+  readonly conceptionRate: number | null;        // 수태율 (%). null = 데이터 부족 (D5).
+  readonly conceptionRateDisplay?: string;        // UI 표시용. "—" 또는 "83.0%" (D5).
+  readonly conceptionRateStatus?: MetricStatus;   // UI 분기용 sentinel (D5).
+  readonly estrusDetectionRate: number;           // 발정탐지율 (%)
+  readonly avgDaysOpen: number;                   // 평균공태일
+  readonly avgCalvingInterval: number;            // 평균분만간격 (일)
+  readonly avgDaysToFirstService: number;         // 분만후 첫 수정일수 (목표 <80일)
+  readonly pregnancyRate: number | null;          // 임신율 (%) = EDR × CR. CR이 null이면 null (D5).
+  readonly pregnancyRateDisplay?: string;
+  readonly pregnancyRateStatus?: MetricStatus;
 }
 
 export interface BreedingUrgentAction {
@@ -62,12 +69,14 @@ export interface BreedingPipelineData {
 
 /** 월별 KPI 추이 */
 export interface MonthlyKpiTrend {
-  readonly month: string;        // "2026-01"
-  readonly conceptionRate: number;
+  readonly month: string;                         // "2026-01"
+  readonly conceptionRate: number | null;         // null = 해당 월 데이터 부족 (D5)
+  readonly conceptionRateDisplay?: string;
+  readonly conceptionRateStatus?: MetricStatus;
   readonly estrusDetectionRate: number;
   readonly avgDaysOpen: number;
   readonly avgCalvingInterval: number;
-  readonly sampleSize: number;   // 해당 월 이벤트 수 (신뢰도)
+  readonly sampleSize: number;                    // 해당 월 이벤트 수 (신뢰도)
 }
 
 /** 농장별 KPI 비교 */
@@ -75,7 +84,9 @@ export interface FarmKpiComparison {
   readonly farmId: string;
   readonly farmName: string;
   readonly animalCount: number;
-  readonly conceptionRate: number;
+  readonly conceptionRate: number | null;         // null = 데이터 부족 (D5)
+  readonly conceptionRateDisplay?: string;
+  readonly conceptionRateStatus?: MetricStatus;
   readonly estrusDetectionRate: number;
   readonly avgDaysOpen: number;
   readonly avgCalvingInterval: number;
@@ -110,10 +121,12 @@ export interface CalendarEvent {
 
 /** 산차별 KPI */
 export interface ParityKpiGroup {
-  readonly parityLabel: string;  // "1산", "2산", "3산", "4산+"
+  readonly parityLabel: string;                   // "1산", "2산", "3산", "4산+"
   readonly parityRange: readonly [number, number];
   readonly animalCount: number;
-  readonly conceptionRate: number;
+  readonly conceptionRate: number | null;         // null = 해당 산차 데이터 부족 (D5)
+  readonly conceptionRateDisplay?: string;
+  readonly conceptionRateStatus?: MetricStatus;
   readonly estrusDetectionRate: number;
   readonly avgDaysOpen: number;
   readonly avgCalvingInterval: number;

@@ -536,7 +536,11 @@ function buildAnimalContext(profile: AnimalProfile): string {
   // ── 번식 피드백 ──
   if (profile.breedingFeedback) {
     const fb = profile.breedingFeedback;
-    lines.push(`- 이 개체 수태율: ${String(fb.conceptionRate.toFixed(1))}% (수정 ${String(fb.totalInseminations)}회, 임신 ${String(fb.pregnantCount)}회)`);
+    // D5: rate=null이면 "—"로 표시 (가짜 0% 표시 금지).
+    const crLabel = fb.conceptionRate === null
+      ? '— (데이터 부족)'
+      : `${fb.conceptionRate.toFixed(1)}%`;
+    lines.push(`- 이 개체 수태율: ${crLabel} (수정 ${String(fb.totalInseminations)}회, 임신 ${String(fb.pregnantCount)}회)`);
   }
 
   // ── 건강 이력 ──
@@ -751,8 +755,11 @@ function buildBreedingPipelinePrompt(data: BreedingPipelineData): string {
   // KPI
   const k = data.kpis;
   lines.push(`### 번식 핵심 KPI`);
-  lines.push(`- 임신율(PR): **${String(k.pregnancyRate.toFixed(1))}%** ${k.pregnancyRate >= 25 ? '' : k.pregnancyRate >= 15 ? '' : ''}`);
-  lines.push(`- 수태율(CR): **${String(k.conceptionRate.toFixed(1))}%** ${k.conceptionRate >= 50 ? '' : k.conceptionRate >= 35 ? '' : ''}`);
+  // D5: rate=null이면 displayValue/"—" 표시 (가짜 0% 표시 금지).
+  const prLabel = k.pregnancyRate === null ? '— (데이터 부족)' : `${k.pregnancyRate.toFixed(1)}%`;
+  const crLabel = k.conceptionRate === null ? '— (데이터 부족)' : `${k.conceptionRate.toFixed(1)}%`;
+  lines.push(`- 임신율(PR): **${prLabel}** ${k.pregnancyRate !== null && k.pregnancyRate >= 25 ? '' : k.pregnancyRate !== null && k.pregnancyRate >= 15 ? '' : ''}`);
+  lines.push(`- 수태율(CR): **${crLabel}** ${k.conceptionRate !== null && k.conceptionRate >= 50 ? '' : k.conceptionRate !== null && k.conceptionRate >= 35 ? '' : ''}`);
   lines.push(`- 발정탐지율: **${String(k.estrusDetectionRate.toFixed(1))}%** ${k.estrusDetectionRate >= 70 ? '' : k.estrusDetectionRate >= 50 ? '' : ''}`);
   lines.push(`- 평균공태일: **${String(k.avgDaysOpen)}일** ${k.avgDaysOpen < 130 ? '' : k.avgDaysOpen < 160 ? '' : ''}`);
   lines.push(`- 첫수정일수: **${String(k.avgDaysToFirstService)}일** ${k.avgDaysToFirstService < 80 ? '' : k.avgDaysToFirstService < 100 ? '' : ''}`);

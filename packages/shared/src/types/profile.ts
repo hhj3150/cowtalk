@@ -198,7 +198,9 @@ export interface SensorSnapshot {
 export type PregnancyStatus = 'open' | 'inseminated' | 'confirmed' | 'late_gestation';
 
 export interface BreedingFeedbackSummary {
-  readonly conceptionRate: number; // 수태율 (%)
+  readonly conceptionRate: number | null; // 수태율 (%). null = 데이터 부족 (D5).
+  readonly conceptionRateDisplay?: string; // "—" 또는 "83.0%"
+  readonly conceptionRateStatus?: 'ok' | 'data_insufficient';
   readonly totalInseminations: number;
   readonly pregnantCount: number;
   readonly openCount: number;

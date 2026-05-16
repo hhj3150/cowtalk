@@ -308,20 +308,19 @@ breedingRouter.get('/stats/:farmId', requireFarmAccess, async (req: Request, res
       .orderBy(desc(pregnancyChecks.checkDate))
       .limit(20);
 
-    // 수태율 계산 — fertility-service 단일 소스 (D1, BUG-001)
+    // 수태율 계산 — fertility-service 단일 소스 (D1). null = 데이터 부족 (D5).
     const totalInseminations = breedingEventList.filter((e) => e.type === 'insemination').length;
     const cr = computeCR(decisionsFromPregnancyChecks(pregnancies));
-    const pregnantCount = cr.numerator;
-    const openCount = cr.denominator - cr.numerator;
-    const conceptionRate = cr.rate ?? 0;
 
     const stats = {
       farmId,
       estrusEventCount: estrusCount?.count ?? 0,
       totalInseminations,
-      conceptionRate,
-      pregnantCount,
-      openCount,
+      conceptionRate: cr.rate,
+      conceptionRateDisplay: cr.displayValue,
+      conceptionRateStatus: cr.status,
+      pregnantCount: cr.numerator,
+      openCount: cr.denominator - cr.numerator,
       breedingEvents: breedingEventList,
       pregnancyChecks: pregnancies,
     };

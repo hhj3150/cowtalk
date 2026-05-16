@@ -262,8 +262,11 @@ function EconomicSummary({
 // ===========================
 
 function PerformanceBadge({ kpis }: { kpis: BreedingKpis }): React.JSX.Element {
+  // D5: conceptionRate가 null이면 그 항목은 0점 처리 (데이터 부족 시 등급 계산에서 중립).
+  const crForScore = kpis.conceptionRate ?? 0;
+  const hasCR = kpis.conceptionRate !== null;
   const scores = [
-    kpis.conceptionRate >= TARGETS.conceptionRate ? 2 : kpis.conceptionRate >= NATIONAL_BENCHMARK.conceptionRate ? 1 : 0,
+    hasCR && crForScore >= TARGETS.conceptionRate ? 2 : hasCR && crForScore >= NATIONAL_BENCHMARK.conceptionRate ? 1 : 0,
     kpis.estrusDetectionRate >= TARGETS.estrusDetectionRate ? 2 : kpis.estrusDetectionRate >= NATIONAL_BENCHMARK.estrusDetectionRate ? 1 : 0,
     kpis.avgDaysOpen <= TARGETS.avgDaysOpen ? 2 : kpis.avgDaysOpen <= NATIONAL_BENCHMARK.avgDaysOpen ? 1 : 0,
     kpis.avgCalvingInterval <= TARGETS.avgCalvingInterval ? 2 : kpis.avgCalvingInterval <= NATIONAL_BENCHMARK.avgCalvingInterval ? 1 : 0,
@@ -373,7 +376,7 @@ export default function BreedingKpiPage(): React.JSX.Element {
           >
             <GaugeSection
               label="수태율"
-              current={kpis.conceptionRate}
+              current={kpis.conceptionRate ?? 0}
               national={NATIONAL_BENCHMARK.conceptionRate}
               target={TARGETS.conceptionRate}
               unit="%"
@@ -418,7 +421,7 @@ export default function BreedingKpiPage(): React.JSX.Element {
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold" style={{ color: '#2563eb' }}>
-                {kpis.pregnancyRate.toFixed(1)}%
+                {kpis.pregnancyRate === null ? '—' : `${kpis.pregnancyRate.toFixed(1)}%`}
               </p>
               <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
                 전국평균 {(NATIONAL_BENCHMARK.conceptionRate * NATIONAL_BENCHMARK.estrusDetectionRate / 100).toFixed(1)}%

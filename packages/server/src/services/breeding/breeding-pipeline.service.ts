@@ -496,8 +496,8 @@ function calcKpis(
   calvingByAnimal: ReadonlyMap<string, readonly Date[]>,
   inseminationsByAnimal: ReadonlyMap<string, readonly Date[]>,
 ): BreedingKpis {
-  // 수태율: fertility-service 단일 소스 (D1, BUG-001). 정의: §6.1 metrics-contract.md.
-  const conceptionRate = computeCR(decisionsFromPregnancyChecks(pregnancies)).rate ?? 0;
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
+  const cr = computeCR(decisionsFromPregnancyChecks(pregnancies));
 
   // 발정탐지율: smaXtec estrus 이벤트 / 전체 암소 × 21일 기대치
   const estrusEvents = smaxtecEvts.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
@@ -554,16 +554,22 @@ function calcKpis(
     ? Math.round(daysToFirstServiceValues.reduce((s, v) => s + v, 0) / daysToFirstServiceValues.length)
     : 0;
 
-  // 임신율 = 발정탐지율 × 수태율 / 100
-  const pregnancyRate = Math.round((estrusDetectionRate * conceptionRate) / 100);
+  // 임신율 = 발정탐지율 × 수태율 / 100. CR이 null이면 PR도 null (D5).
+  const pregnancyRate = cr.rate === null ? null : Math.round((estrusDetectionRate * cr.rate) / 100);
+  const pregnancyRateDisplay = pregnancyRate === null ? '—' : `${pregnancyRate.toFixed(1)}%`;
+  const pregnancyRateStatus = pregnancyRate === null ? 'data_insufficient' as const : 'ok' as const;
 
   return {
-    conceptionRate,
+    conceptionRate: cr.rate,
+    conceptionRateDisplay: cr.displayValue,
+    conceptionRateStatus: cr.status,
     estrusDetectionRate,
     avgDaysOpen,
     avgCalvingInterval,
     avgDaysToFirstService,
     pregnancyRate,
+    pregnancyRateDisplay,
+    pregnancyRateStatus,
   };
 }
 

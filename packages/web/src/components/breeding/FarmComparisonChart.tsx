@@ -114,7 +114,7 @@ export default function FarmComparisonChart(): React.JSX.Element {
               {chartData.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
-                  fill={entry.value >= metric.national ? metric.color : '#d97706'}
+                  fill={(entry.value ?? 0) >= metric.national ? metric.color : '#d97706'}
                   fillOpacity={0.8}
                 />
               ))}

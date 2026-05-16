@@ -70,7 +70,9 @@ ${breedLines.join('\n')}
     const outcomeLines = fb.recentOutcomes.map((o) =>
       `- ${o.date.split('T')[0]}: ${o.bullName ?? '정액정보없음'} → ${o.result}`,
     );
-    sections.push(`## 번식 성적 피드백 (수태율: ${String(fb.conceptionRate)}%)
+    // D5: rate가 null이면 "—" 표시. AI에게도 데이터 부족임을 명시.
+    const crLabel = fb.conceptionRateDisplay ?? (fb.conceptionRate !== null ? `${fb.conceptionRate}%` : '—');
+    sections.push(`## 번식 성적 피드백 (수태율: ${crLabel})
 - 총 수정: ${String(fb.totalInseminations)}회 | 임신: ${String(fb.pregnantCount)} | 미임신: ${String(fb.openCount)} | 대기: ${String(fb.pendingCount)}
 ${outcomeLines.length > 0 ? `최근 결과:\n${outcomeLines.join('\n')}` : ''}
 ⚠️ 이 데이터를 참고하여 다음 수정 시 정액 선택과 타이밍을 조언하세요.`);

@@ -89,14 +89,13 @@ function calcMonthKpis(
   manualPreg: ReadonlyArray<{ result: string }>,
   totalFemales: number,
 ): MonthlyKpiTrend {
-  // 수태율: fertility-service 단일 소스 (D1, BUG-001).
-  // D2 정의: pregnant ÷ (pregnant + open|not_pregnant). pending 제외 — 이전 코드는 pending을 false로 분모에 포함시키던 버그가 있었음.
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
+  // D2 정의: pregnant ÷ (pregnant + open|not_pregnant). pending 제외.
   const decisions = [
     ...decisionsFromSmaxtecPregnancyEvents(events),
     ...decisionsFromPregnancyChecks(manualPreg),
   ];
   const cr = computeCR(decisions);
-  const conceptionRate = cr.rate ?? 0;
 
   // 발정탐지율
   const estrusCount = events.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
@@ -115,7 +114,9 @@ function calcMonthKpis(
 
   return {
     month,
-    conceptionRate,
+    conceptionRate: cr.rate,
+    conceptionRateDisplay: cr.displayValue,
+    conceptionRateStatus: cr.status,
     estrusDetectionRate,
     avgDaysOpen,
     avgCalvingInterval,
@@ -124,7 +125,16 @@ function calcMonthKpis(
 }
 
 function emptyTrend(month: string): MonthlyKpiTrend {
-  return { month, conceptionRate: 0, estrusDetectionRate: 0, avgDaysOpen: 0, avgCalvingInterval: 0, sampleSize: 0 };
+  return {
+    month,
+    conceptionRate: null,
+    conceptionRateDisplay: '—',
+    conceptionRateStatus: 'data_insufficient',
+    estrusDetectionRate: 0,
+    avgDaysOpen: 0,
+    avgCalvingInterval: 0,
+    sampleSize: 0,
+  };
 }
 
 // ===========================
@@ -192,11 +202,11 @@ export async function getFarmComparison(limit = 10): Promise<readonly FarmKpiCom
     const farmEvents = allEvents.filter((e) => farmAnimalIds.has(e.animalId));
     const farmPreg = pregResults.filter((p) => farmAnimalIds.has(p.animalId));
 
-    // 수태율: fertility-service 단일 소스 (D1, BUG-001).
-    const conceptionRate = computeCR([
+    // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
+    const cr = computeCR([
       ...decisionsFromSmaxtecPregnancyEvents(farmEvents),
       ...decisionsFromPregnancyChecks(farmPreg),
-    ]).rate ?? 0;
+    ]);
 
     // 발정탐지율
     const estrusN = farmEvents.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
@@ -211,17 +221,19 @@ export async function getFarmComparison(limit = 10): Promise<readonly FarmKpiCom
       farmId: fId,
       farmName: farmNameMap.get(fId) ?? fId,
       animalCount: farmAnimalIds.size,
-      conceptionRate,
+      conceptionRate: cr.rate,
+      conceptionRateDisplay: cr.displayValue,
+      conceptionRateStatus: cr.status,
       estrusDetectionRate,
       avgDaysOpen,
       avgCalvingInterval,
     };
   });
 
-  // 수태율 내림차순, 상위 limit
+  // 수태율 내림차순, 상위 limit. null은 0 취급하여 정렬 (실값보다 뒤로).
   const sorted = [...results]
-    .filter((r) => r.conceptionRate > 0 || r.estrusDetectionRate > 0)
-    .sort((a, b) => b.conceptionRate - a.conceptionRate)
+    .filter((r) => (r.conceptionRate !== null && r.conceptionRate > 0) || r.estrusDetectionRate > 0)
+    .sort((a, b) => (b.conceptionRate ?? 0) - (a.conceptionRate ?? 0))
     .slice(0, limit);
 
   logger.info({ totalFarms: farmIds.length, returned: sorted.length }, '[BreedingPerformance] 농장 비교 산출');
@@ -261,7 +273,9 @@ export async function getParityAnalysis(farmId?: string): Promise<readonly Parit
       parityLabel: g.label,
       parityRange: g.range,
       animalCount: 0,
-      conceptionRate: 0,
+      conceptionRate: null,
+      conceptionRateDisplay: '—',
+      conceptionRateStatus: 'data_insufficient',
       estrusDetectionRate: 0,
       avgDaysOpen: 0,
       avgCalvingInterval: 0,
@@ -301,7 +315,9 @@ export async function getParityAnalysis(farmId?: string): Promise<readonly Parit
         parityLabel: group.label,
         parityRange: group.range,
         animalCount: 0,
-        conceptionRate: 0,
+        conceptionRate: null,
+        conceptionRateDisplay: '—',
+        conceptionRateStatus: 'data_insufficient',
         estrusDetectionRate: 0,
         avgDaysOpen: 0,
         avgCalvingInterval: 0,
@@ -311,11 +327,11 @@ export async function getParityAnalysis(farmId?: string): Promise<readonly Parit
     const groupEvents = allEvents.filter((e) => groupAnimalIds.has(e.animalId));
     const groupPreg = pregResults.filter((p) => groupAnimalIds.has(p.animalId));
 
-    // 수태율: fertility-service 단일 소스 (D1, BUG-001).
-    const conceptionRate = computeCR([
+    // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
+    const cr = computeCR([
       ...decisionsFromSmaxtecPregnancyEvents(groupEvents),
       ...decisionsFromPregnancyChecks(groupPreg),
-    ]).rate ?? 0;
+    ]);
 
     // 발정탐지율
     const estrusN = groupEvents.filter((e) => e.eventType === 'estrus' || e.eventType === 'heat').length;
@@ -326,7 +342,9 @@ export async function getParityAnalysis(farmId?: string): Promise<readonly Parit
       parityLabel: group.label,
       parityRange: group.range,
       animalCount: groupAnimalIds.size,
-      conceptionRate,
+      conceptionRate: cr.rate,
+      conceptionRateDisplay: cr.displayValue,
+      conceptionRateStatus: cr.status,
       estrusDetectionRate,
       avgDaysOpen: 0,
       avgCalvingInterval: 0,

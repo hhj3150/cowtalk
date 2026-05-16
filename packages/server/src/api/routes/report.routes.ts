@@ -210,7 +210,9 @@ reportRouter.get(
 // ── 번식 지표 계산 ──
 
 interface BreedingMetrics {
-  readonly conceptionRate: number;
+  readonly conceptionRate: number | null;  // null = 데이터 부족 (D5)
+  readonly conceptionRateDisplay: string;  // "—" 또는 "83.0%"
+  readonly conceptionRateStatus: 'ok' | 'data_insufficient';
   readonly avgDaysOpen: number;
   readonly calvingInterval: number;
   readonly estrusDetectionRate: number;
@@ -254,9 +256,8 @@ async function computeBreedingMetrics(
   const inseminationDB = breedingRows.find((r) => r.type === 'insemination')?.cnt ?? 0;
   const inseminationCount = Math.max(inseminationFromEvents, inseminationDB);
 
-  // 수태율: fertility-service 단일 소스 (D1, BUG-001). 정의: §6.1 metrics-contract.md.
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
   const cr = computeCR(decisionsFromBreedingEventCounts(breedingRows));
-  const conceptionRate = cr.rate ?? 0;
 
   // 발정감지율: (발정 감지 / 발정 가능 두수) × 100
   const totalCows = await db
@@ -278,7 +279,9 @@ async function computeBreedingMetrics(
   // avgDaysOpen / calvingInterval / conceptionPerService 정밀 계산 미구현 — 가짜 수치 대신 0 반환.
   // 프론트엔드는 0을 "데이터 없음"으로 표시해야 함. (Math.random() 기반 모킹 제거됨)
   return {
-    conceptionRate,
+    conceptionRate: cr.rate,
+    conceptionRateDisplay: cr.displayValue,
+    conceptionRateStatus: cr.status,
     avgDaysOpen: 0,
     calvingInterval: 0,
     estrusDetectionRate,
@@ -348,12 +351,14 @@ function buildAiComment(input: AiCommentInput): string {
     parts.push('이번 달 특이 알림이 발생하지 않았습니다.');
   }
 
-  // 번식 평가
-  if (breedingData.conceptionRate >= 50) {
-    parts.push(`수태율 ${String(breedingData.conceptionRate)}%로 양호한 수준입니다.`);
+  // 번식 평가. D5: rate=null이면 코멘트 생략 (가짜 평가 금지).
+  if (breedingData.conceptionRate === null) {
+    // 데이터 부족: 평가 코멘트 생성 안 함.
+  } else if (breedingData.conceptionRate >= 50) {
+    parts.push(`수태율 ${breedingData.conceptionRateDisplay}로 양호한 수준입니다.`);
   } else if (breedingData.conceptionRate > 0) {
     parts.push(
-      `수태율 ${String(breedingData.conceptionRate)}%로 목표(50%) 미달입니다. ` +
+      `수태율 ${breedingData.conceptionRateDisplay}로 목표(50%) 미달입니다. ` +
       '수정 시기 정확도와 정액 품질을 점검해 주세요.',
     );
   }

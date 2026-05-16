@@ -90,7 +90,9 @@ export interface ConceptionStats {
     readonly pregnantCount: number;
     readonly openCount: number;
     readonly pendingCount: number;
-    readonly conceptionRate: number; // %
+    readonly conceptionRate: number | null; // %. null = 데이터 부족 (D5).
+    readonly conceptionRateDisplay: string; // "—" 또는 "83.0%"
+    readonly conceptionRateStatus: 'ok' | 'data_insufficient';
   };
   readonly bySemen: readonly SemenConceptionRate[];
   readonly byAnimal: readonly AnimalConceptionRate[];
@@ -101,7 +103,9 @@ export interface SemenConceptionRate {
   readonly inseminationCount: number;
   readonly pregnantCount: number;
   readonly openCount: number;
-  readonly conceptionRate: number;
+  readonly conceptionRate: number | null;          // null = 데이터 부족 (D5)
+  readonly conceptionRateDisplay: string;
+  readonly conceptionRateStatus: 'ok' | 'data_insufficient';
 }
 
 export interface AnimalConceptionRate {
@@ -147,11 +151,10 @@ export async function computeConceptionStats(farmId?: string): Promise<Conceptio
       open_count: number;
     }>)[0] ?? { total_inseminations: 0, pregnant_count: 0, open_count: 0 };
 
-    // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+    // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
     const overallCr = computeCRFromCounts(overall.pregnant_count, overall.pregnant_count + overall.open_count);
     const decided = overallCr.denominator;
     const pendingCount = overall.total_inseminations - decided;
-    const conceptionRate = overallCr.rate ?? 0;
 
     // 정액별 수태율
     const semenRows = await db.execute(sql`
@@ -179,14 +182,16 @@ export async function computeConceptionStats(farmId?: string): Promise<Conceptio
       pregnant_count: number;
       open_count: number;
     }>).map((r) => {
-      // 수태율: fertility-service 단일 소스 (D1, BUG-001).
+      // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
       const semenCr = computeCRFromCounts(r.pregnant_count, r.pregnant_count + r.open_count);
       return {
         semenInfo: r.semen_info,
         inseminationCount: r.insem_count,
         pregnantCount: r.pregnant_count,
         openCount: r.open_count,
-        conceptionRate: semenCr.rate ?? 0,
+        conceptionRate: semenCr.rate,
+        conceptionRateDisplay: semenCr.displayValue,
+        conceptionRateStatus: semenCr.status,
       };
     });
 
@@ -243,7 +248,9 @@ export async function computeConceptionStats(farmId?: string): Promise<Conceptio
         pregnantCount: overall.pregnant_count,
         openCount: overall.open_count,
         pendingCount,
-        conceptionRate,
+        conceptionRate: overallCr.rate,
+        conceptionRateDisplay: overallCr.displayValue,
+        conceptionRateStatus: overallCr.status,
       },
       bySemen,
       byAnimal,
@@ -253,7 +260,15 @@ export async function computeConceptionStats(farmId?: string): Promise<Conceptio
     return {
       farmId: farmId ?? null,
       farmName: null,
-      overall: { totalInseminations: 0, pregnantCount: 0, openCount: 0, pendingCount: 0, conceptionRate: 0 },
+      overall: {
+        totalInseminations: 0,
+        pregnantCount: 0,
+        openCount: 0,
+        pendingCount: 0,
+        conceptionRate: null,
+        conceptionRateDisplay: '—',
+        conceptionRateStatus: 'data_insufficient',
+      },
       bySemen: [],
       byAnimal: [],
     };

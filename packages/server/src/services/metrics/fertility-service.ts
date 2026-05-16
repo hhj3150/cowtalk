@@ -15,6 +15,9 @@ export interface Decision {
   readonly pregnant: boolean;
 }
 
+/** 수태율 데이터 상태 (D5). */
+export type CRStatus = 'ok' | 'data_insufficient';
+
 /** 수태율 계산 결과. */
 export interface CRResult {
   /** 임신확정 두수 */
@@ -23,6 +26,10 @@ export interface CRResult {
   readonly denominator: number;
   /** 0–100 정수 백분율. denominator===0 이면 null (빈 농장, D5). */
   readonly rate: number | null;
+  /** UI 직접 표시용. 빈 농장은 "—", 그 외 "83.0%" (D5). */
+  readonly displayValue: string;
+  /** 상태 sentinel. UI가 "데이터 부족" 분기에 사용 (D5). */
+  readonly status: CRStatus;
 }
 
 /** 결정 배열로부터 CR 계산. */
@@ -112,14 +119,23 @@ export function decisionsFromBreedingEventCounts(
 
 function buildResult(pregnant: number, decided: number): CRResult {
   if (!Number.isFinite(pregnant) || !Number.isFinite(decided) || decided <= 0) {
-    return { numerator: Math.max(0, pregnant | 0), denominator: Math.max(0, decided | 0), rate: null };
+    return {
+      numerator: Math.max(0, pregnant | 0),
+      denominator: Math.max(0, decided | 0),
+      rate: null,
+      displayValue: '—',
+      status: 'data_insufficient',
+    };
   }
   const safePreg = Math.min(Math.max(0, pregnant), decided);
   const rawRate = (safePreg / decided) * 100;
   const clamped = Math.max(0, Math.min(100, rawRate));
+  const rate = Math.round(clamped);
   return {
     numerator: safePreg,
     denominator: decided,
-    rate: Math.round(clamped),
+    rate,
+    displayValue: `${rate.toFixed(1)}%`,
+    status: 'ok',
   };
 }

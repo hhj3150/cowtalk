@@ -85,12 +85,87 @@ stop-condition 어디에도 해당 안 함. 정상 진행.
 ## 7. 검증 계획
 
 타입체크 외에 자동 회귀 검증:
-- pure 함수 unit test (`fertility-service.test.ts`):
-  - 빈 입력 → rate=null
-  - 5+5 (50%) → rate=50
+- pure 함수 unit test (`fertility-service.test.ts`): **24/24 통과 (209ms)**
+  - 빈 입력 → rate=null, displayValue="—", status="data_insufficient"
+  - 5+5 (50%) → rate=50, displayValue="50.0%"
   - 83+17 (83%) — `/breeding`의 83.0% 재현
   - 100+0 (100%) → rate=100
+  - rate=0 vs rate=null 구별 (D5 핵심)
+  - pending만 있는 농장 → "—"
   - extractor가 'pending' 등 비결정 결과를 분모에서 제외
-- 통합 회귀:
-  - 변경 전후 grep으로 호출 사이트 다이프
-  - PR #32 + 본 PR 적용 후 동일 농장·동일 기간 `/dashboard`, `/breeding`, `/breeding/calendar`, `/farm/:id`, `/reports/monthly`가 같은 CR을 표시하는지 시연 환경에서 수동 검증 (지표 5개 화면)
+- 통합 회귀: §9 Pre-merge regression checklist 참조.
+
+## 8. Part 2 — 수치 변화 검증 (D2 위반 수정 영향)
+
+| 측정 지점 | 수정 전 CR | 수정 후 CR | Δ |
+|----------|-----------|-----------|---|
+| /breeding 전체 | **측정 불가** | **측정 불가** | — |
+| /breeding 특정 농장 1개 | **측정 불가** | **측정 불가** | — |
+| /breeding 최근 3개월 | **측정 불가** | **측정 불가** | — |
+| 대시보드 메인 CR | **측정 불가** | **측정 불가** | — |
+| Report API CR | **측정 불가** | **측정 불가** | — |
+
+**사유**: 현재 worktree에 DB 연결 없음 (Postgres + Redis 미설치). vitest는 DB 의존 테스트가 hang. **시연 환경 회귀에서 수동 측정 예정** (§9 체크리스트).
+
+**예상 방향** (코드 인스펙션 근거, 측정값 아님):
+- breeding-performance.service.ts 3개 사이트 (S5/S6/S7)에서 D2 위반 수정 (pending 분모 제외) → 분모가 줄어듦 → CR 약간 **상승** 예상
+- 정확도 다른 사이트(S1~S4, S8~S10)는 이미 D2 준수 → **무변화** 예상
+- 빈 농장: 이전 0% → 본 PR 후 "—" (UI 2곳에서 가드, 나머지는 0% 유지 — §9 참조)
+- 113.1% / 110.6% 같은 100% 초과 값: PR #32에서 차단됨. 본 PR에서 추가로 fertility-service의 `Math.min(100, ...)` 보강. **재발 불가능**.
+
+**판단 기준 (사용자 브리프)**:
+- 수정 후 CR이 60–85%면 정상 → 시연 환경에서 확인
+- 수정 후 CR이 90% 이상이면 비현실적 → **즉시 보고**, D2 정의 재검토
+
+## 9. Pre-merge Regression Checklist (시연 환경)
+
+### 배포 정보
+- 본 PR(#33) base는 `claude/xenodochial-lewin-2906ef` (PR #32 브랜치). Netlify 미리보기 트리거 여부는 PR #32 머지 후 main 대상으로 retarget되며 결정됨.
+- PR #32의 미리보기 (참고): https://deploy-preview-32--cowtalk.netlify.app
+- PR #33 푸시 후 GitHub PR 페이지에서 Netlify 체크 확인 필요.
+
+### 5개 화면 — 사용자 요청 vs 실제 CR 표시 위치
+
+⚠️ **사용자 브리프 5개 화면 중 2개(`/farm-management`, `/admin/system`)는 코드 상 CR을 표시하지 않음.** 정확한 검증을 위해 CR이 실제로 노출되는 5개 화면으로 대체 권고.
+
+| # | 사용자 요청 화면 | CR 표시 여부 | 대체 권고 |
+|---|---|---|---|
+| 1 | `/` (메인 대시보드) | ✅ (BreedingPipelineWidget) | 그대로 |
+| 2 | `/breeding` | ✅ (BreedingCommandPage KPI 카드) | 그대로 |
+| 3 | `/breeding/calendar` | ❌ CR 미표시 | `/breeding/performance` (BreedingKpiPage)로 대체 |
+| 4 | `/farm-management` | ❌ CR 미표시 | `/farm/:farmId` (FarmDetailPage) — 개별 농장 카드의 CR 필드 |
+| 5 | `/admin/system` | ❌ CR 미표시 | `/report/farm/:farmId/monthly` (MonthlyReportPage) — 월간 보고서 CR 라인 |
+
+### 검증할 5개 화면 (수정안)
+
+| # | URL | 컴포넌트 | CR 표시 위치 (라벨/셀렉터) | 기본 필터 |
+|---|---|---|---|---|
+| 1 | `/dashboard` | `BreedingPipelineWidget` 안 | "수태율(CR)" 라벨, KPI 칩 6개 중 두 번째. CSS path: `[class*="kpi-chip"]` 또는 텍스트 매치 "수태율(CR)" | master 권한, 전체 농장 통합 |
+| 2 | `/breeding` | `BreedingCommandPage` | "수태율" KPI 카드, 페이지 상단. 텍스트 매치 "수태율" + `.toFixed(1)` 출력 | master 권한, 농장 미선택(=전체) |
+| 3 | `/breeding/performance` | `BreedingKpiPage` `<GaugeSection label="수태율">` | "수태율" 게이지 (큰 SVG). 라벨 텍스트 "수태율" | master 권한, 농장 미선택 |
+| 4 | `/farm/:farmId` | `FarmDetailPage` | `<KpiCard label="수태율">` (line 229). 단일 농장 페이지 | master 권한, 갈전리 농장 등 샘플 1개 |
+| 5 | `/report/farm/:farmId/monthly` | `MonthlyReportPage` (서버 응답 `BreedingMetrics.conceptionRate` + display) | "수태율 X%로 양호/미달..." 코멘트 라인 | master 권한, 갈전리 농장 직전 월 |
+
+### 빈 농장(센서 0 또는 데이터 0건)의 화면별 표시
+
+| 화면 | 본 PR 머지 후 표시 | 비고 |
+|---|---|---|
+| `/dashboard` (BreedingPipelineWidget) | **"—"** (em dash) | D5 가드 본 PR에서 추가 ✅ |
+| `/breeding` (BreedingCommandPage) | **"—"** (em dash) | D5 가드 본 PR에서 추가 ✅ |
+| `/breeding/performance` (BreedingKpiPage) | **"0.0%"** (gauge) / **"—"** (PR 임신율 라인) | 게이지는 `?? 0` 폴백, 임신율은 displayValue 사용. **부분적 D5** — 게이지 D5 전환은 BUG-005 |
+| `/farm/:farmId` (FarmDetailPage) | **null 처리됨** (이미 기존에 `!= null ? ... : null` 가드) | 기존 코드가 이미 D5에 가까웠음. 갈전리 데이터 있으면 정상 표시. |
+| `/report/.../monthly` | 코멘트 라인 자체가 생성 안 됨 | 서버 `if (cr === null) {}` 분기로 가짜 코멘트 차단 ✅ |
+
+→ **사용자 가시 화면 5개 중 4개**가 빈 농장에서 "—" 또는 코멘트 생략. 1개(`/breeding/performance` gauge)는 "0.0%"로 남음(BUG-005 처리 대상).
+
+### 검증 절차
+1. PR #33 push 후 Netlify 빌드 대기 (3–5분).
+2. 빌드 성공 시 preview URL을 PR에서 확인 (또는 PR #32와 결합 시 main 머지 후 https://cowtalk.netlify.app).
+3. master 계정으로 5개 URL 순차 방문.
+4. 각 화면의 CR 값 캡처 + 동일 여부 비교.
+5. 빈 농장(예: 신규 또는 센서 0 농장)에서 "—" 표시 여부 캡처.
+6. 결과를 본 audit doc `## 10. Regression Results`로 추가 (시연 후 작성).
+
+### 자동화 한계
+- worktree에 DB 없음 → API 응답 캡처 자동화 불가.
+- E2E (Playwright) 시나리오는 별도 PR로 작성 필요.
