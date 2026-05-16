@@ -25,6 +25,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
+import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { ErrorFallback } from '@web/components/common/ErrorFallback';
 import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
@@ -79,29 +80,18 @@ const ROLE_ICONS: Record<string, string> = {
   quarantine_officer: '🛡️',
 };
 
-const MASTER_KEY = 'cowtalk-master-role';
-
-function isMasterUser(): boolean {
-  try { return localStorage.getItem(MASTER_KEY) === 'true'; } catch { return false; }
-}
-
+// FLOW-02 Step2.5: 역할 전환 = role-simulation.store 신호 (휘발성).
+// user.role(본 계정 역할)은 변경하지 않는다. 새로고침 시 시뮬레이션 해제 → master 뷰 복귀.
 function RoleSwitcher(): React.JSX.Element | null {
-  const user = useAuthStore((s) => s.user);
-  const updateUser = useAuthStore((s) => s.updateUser);
+  const userRole = useAuthStore((s) => s.user?.role);
+  const simulatedRole = useRoleSimulationStore((s) => s.simulatedRole);
+  const setSimulatedRole = useRoleSimulationStore((s) => s.setSimulatedRole);
   const [open, setOpen] = useState(false);
 
-  if (!user) return null;
+  // master 본질(government_admin)만 역할 전환 노출 (Header isMaster 정의와 일치)
+  if (userRole !== 'government_admin') return null;
 
-  // government_admin으로 로그인한 적 있으면 마스터로 기억
-  try {
-    if (user.email === 'ha@d2o.kr' || localStorage.getItem(MASTER_KEY) === 'true') {
-      localStorage.setItem(MASTER_KEY, 'true');
-    }
-  } catch { /* ignore localStorage errors */ }
-
-  // 마스터가 아니면 숨김
-  if (!isMasterUser()) return null;
-
+  const effectiveRole = simulatedRole ?? userRole;
   const roles = Object.entries(ROLE_LABELS) as [Role, string][];
 
   return (
@@ -123,7 +113,7 @@ function RoleSwitcher(): React.JSX.Element | null {
           gap: 4,
         }}
       >
-        {ROLE_ICONS[user.role] ?? '👤'} 역할 전환 ▾
+        {ROLE_ICONS[effectiveRole] ?? '👤'} 역할 전환 ▾
       </button>
       {open && (
         <div style={{
@@ -138,53 +128,40 @@ function RoleSwitcher(): React.JSX.Element | null {
           minWidth: 160,
           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
         }}>
-          {roles.map(([role, label]) => (
-            <button
-              key={role}
-              type="button"
-              onClick={async () => {
-                try {
-                  const token = useAuthStore.getState().accessToken;
-                  const resp = await fetch('/api/auth/switch-role', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ role }),
-                  });
-                  const json = await resp.json() as { success: boolean; data?: { accessToken: string; user: { userId: string; name: string; email: string; role: string } } };
-                  if (json.success && json.data) {
-                    useAuthStore.getState().updateTokens(json.data.accessToken, useAuthStore.getState().refreshToken ?? '');
-                    updateUser({ ...user, role: json.data.user.role as Role, farmIds: [] });
-                  } else {
-                    // fallback: 서버 역할 전환 실패 시 프론트엔드만 변경
-                    updateUser({ ...user, role, farmIds: [] });
-                  }
-                } catch {
-                  updateUser({ ...user, role, farmIds: [] });
-                }
-                useFarmStore.getState().clearSelection();
-                useFarmGroupStore.getState().clearSelection();
-                setOpen(false);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: user.role === role ? 700 : 400,
-                background: user.role === role ? 'var(--ct-primary)' : 'transparent',
-                color: user.role === role ? '#fff' : 'var(--ct-text)',
-                border: 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <span>{ROLE_ICONS[role] ?? '👤'}</span>
-              <span>{label}</span>
-            </button>
-          ))}
+          {roles.map(([role, label]) => {
+            const active = simulatedRole === role;
+            return (
+              <button
+                key={role}
+                type="button"
+                onClick={() => {
+                  // 시뮬레이션 역할 설정 (휘발성). user.role 은 불변.
+                  setSimulatedRole(role);
+                  useFarmStore.getState().clearSelection();
+                  useFarmGroupStore.getState().clearSelection();
+                  setOpen(false);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 400,
+                  background: active ? 'var(--ct-primary)' : 'transparent',
+                  color: active ? '#fff' : 'var(--ct-text)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span>{ROLE_ICONS[role] ?? '👤'}</span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

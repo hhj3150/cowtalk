@@ -1,16 +1,16 @@
-// 사이드바 — 메뉴는 단일 소스(config/sidebar-menu.ts)에서 산출 (FLOW-02 Step2)
+// 사이드바 — 메뉴는 단일 소스(config/sidebar-menu.ts)에서 산출 (FLOW-02 Step2 / Step2.5)
 //
-// ⚠️ FLOW-02 Step2 노트:
-// - 코드베이스에 master-essence + 시뮬레이션 역할 2값 시스템이 존재하지 않는다.
-//   auth.store 는 user.role(canonical Role) 단일값만 보유하며, Header 의 "MASTER"
-//   배지는 user.role === 'government_admin' 에 대한 라벨일 뿐이다.
-//   → 현재는 user.role 을 그대로 MenuRole 로 직결한다. 'master'(15-메뉴) 뷰는
-//     master/시뮬레이션 메커니즘 도입 후 후속 amend 대상. (PR 본문 참조)
+// ⚠️ FLOW-02 Step2.5 노트:
+// - 역할 시뮬레이션은 role-simulation.store(휘발성)를 구독한다. localStorage 직접 읽기 금지.
+// - master 본질 판정 = user.role === 'government_admin' (Header.tsx 의 isMaster 정의와 일치,
+//   auth store 영속 → SSR/하이드레이션 안전). RoleSwitcher 가 user.role 을 더 이상 변경하지
+//   않으므로 government_admin 은 master 계정을 안정적으로 식별한다.
 // - lucide-react 미설치 → 기존 인라인 SVG 아이콘 컴포넌트로 매핑.
 
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '@web/stores/auth.store';
+import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
 import { fetchNews } from '@web/api/news.api';
 import type { NewsItem, NewsCategory } from '@web/api/news.api';
 import { getMenuForRole, type MenuRole } from '@web/config/sidebar-menu';
@@ -196,19 +196,26 @@ function useNewsItems(): readonly NewsItem[] {
 }
 
 /**
- * 현재 사용자 → 메뉴 산출용 MenuRole 결정.
- *
- * ⚠️ 코드베이스에 master-essence + 시뮬레이션 역할 2값 시스템이 없으므로
- * (auth.store 는 user.role 단일값만 보유), 현재는 user.role 을 그대로 사용한다.
- * master(15-메뉴) 뷰는 master/시뮬레이션 메커니즘 도입 후 후속 amend 대상.
+ * 본 계정 역할 + 시뮬레이션 역할 → 메뉴 산출용 MenuRole 결정 (FLOW-02 Step2.5).
+ * - master 본질 + 시뮬레이션 안 함 → 'master' (전체 15 메뉴)
+ * - master 본질 + 시뮬레이션 중 → 시뮬레이션 역할
+ * - 비-master → 본 계정 역할
  */
-function resolveMenuRole(role: MenuRole | undefined): MenuRole {
-  return role ?? 'farmer';
+export function resolveMenuRole(
+  userRole: MenuRole | undefined,
+  simulatedRole: MenuRole | null,
+): MenuRole {
+  const isMaster = userRole === 'government_admin';
+  if (isMaster) {
+    return simulatedRole ?? 'master';
+  }
+  return userRole ?? 'farmer';
 }
 
 export function Sidebar(): React.JSX.Element {
-  const user = useAuthStore((s) => s.user);
-  const menuRole = resolveMenuRole(user?.role);
+  const userRole = useAuthStore((s) => s.user?.role);
+  const simulatedRole = useRoleSimulationStore((s) => s.simulatedRole);
+  const menuRole = resolveMenuRole(userRole, simulatedRole);
   const newsItems = useNewsItems();
 
   // 단일 소스(config/sidebar-menu.ts)에서 메뉴 산출.

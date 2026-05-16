@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useNotificationStore } from '@web/stores/notification.store';
 import { useAutoRefresh } from '@web/hooks/useAutoRefresh';
 import { useAuth } from '@web/hooks/useAuth';
@@ -50,8 +51,10 @@ export function Header({ onMenuClick, onChatClick }: Props): React.JSX.Element {
   useAutoRefresh();
   const { logout } = useAuth();
 
-  const roleLabel = ROLE_LABELS[user?.role ?? 'farmer'] ?? '사용자';
-  const isMaster = user?.role === 'government_admin';
+  // FLOW-02 Step2.5: 배지·라벨은 유효 역할(시뮬레이션 반영)을 따른다.
+  const effectiveRole = useEffectiveRole();
+  const roleLabel = ROLE_LABELS[effectiveRole ?? 'farmer'] ?? '사용자';
+  const isMaster = effectiveRole === 'government_admin';
   const initials = (user?.name ?? 'U').slice(0, 1).toUpperCase();
 
   return (

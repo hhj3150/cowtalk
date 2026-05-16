@@ -1,7 +1,7 @@
 // 역할 기반 대시보드 훅
 // auth store에서 역할을 읽어 위젯 가시성을 결정
 
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { isWidgetVisible, ROLE_LABELS } from '@web/config/dashboard-widgets';
 import type { DashboardWidgetId } from '@web/config/dashboard-widgets';
 import type { Role } from '@cowtalk/shared';
@@ -15,7 +15,7 @@ interface RoleDashboard {
 }
 
 export function useRoleDashboard(): RoleDashboard {
-  const role = useAuthStore((s) => s.user?.role ?? 'government_admin') as Role;
+  const role = (useEffectiveRole() ?? 'government_admin') as Role;
 
   return {
     role,

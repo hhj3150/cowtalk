@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import * as eventApi from '@web/api/event.api';
 import type { EventType, EventCategory } from '@web/api/event.api';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
@@ -47,7 +47,7 @@ const CATEGORY_ORDER_BY_ROLE: Record<Role, readonly EventCategory[]> = {
 
 export function EventRecorder({ farmId, animalId, initialCategory, onClose }: Props): React.JSX.Element {
   const queryClient = useQueryClient();
-  const role = useAuthStore((s) => s.user?.role) ?? 'farmer';
+  const role = useEffectiveRole() ?? 'farmer';
   const [selectedCategory, setSelectedCategory] = useState<EventCategory | null>(initialCategory ?? null);
   const [selectedType, setSelectedType] = useState<EventType | null>(null);
   const [formData, setFormData] = useState<Record<string, unknown>>({});

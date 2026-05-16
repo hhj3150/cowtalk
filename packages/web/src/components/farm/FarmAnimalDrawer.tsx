@@ -4,7 +4,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@web/api/client';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { AnimalFormPanel } from '@web/components/animal/AnimalFormPanel';
 import { AnimalStatusChangeModal } from '@web/components/animal/AnimalStatusChangeModal';
 import type { AnimalRecord as FullAnimalRecord } from '@web/api/animal-management.api';
@@ -53,7 +53,7 @@ export function FarmAnimalDrawer({ farmId, farmName, onClose, onAnimalClick }: P
   const [statusChangeAnimal, setStatusChangeAnimal] = useState<FullAnimalRecord | null>(null);
 
   // 권한: 농장주와 수의사만 등록/수정/상태변경 버튼 노출
-  const userRole = useAuthStore((s) => s.user?.role);
+  const userRole = useEffectiveRole();
   const canEdit = userRole === 'farmer' || userRole === 'veterinarian' || userRole === 'government_admin';
 
   const { data, isLoading } = useQuery({
