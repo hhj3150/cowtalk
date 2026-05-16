@@ -9,6 +9,7 @@ import { getDb } from '../../config/database.js';
 import { regions, farms, smaxtecEvents, animals } from '../../db/schema.js';
 import { eq, count, and, gte, inArray, isNull } from 'drizzle-orm';
 import { getHerdTotal, computeHerd } from '../../services/metrics/herd-service.js';
+import { aggregateAlertsByFarm } from '../../services/alerts/alert-aggregator.js';
 
 export const regionalRouter = Router();
 
@@ -74,7 +75,7 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
       liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
     }
 
-    // 모드별 이벤트 집계 (최근 7일)
+    // 모드별 이벤트 집계 (최근 7일) — mode 화면 상태 판별용
     const eventTypes = MODE_EVENT_TYPES[mode];
     let farmEventCounts = new Map<string, number>();
 
@@ -97,6 +98,10 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
       farmEventCounts = new Map(counts.map((r) => [r.farmId, r.cnt]));
     }
 
+    // 활성 알림 (D3, alert-aggregator 단일 소스) — 마커별 24h 미확인 카운트.
+    // 클라이언트 markers.reduce(+activeAlerts)가 user-visible agg가 되므로 D3 표준 강제 (지난 회차 교훈).
+    const alertsByFarm = await aggregateAlertsByFarm({ window: '24h', ackedFilter: false });
+
     // 모드별 상태 계산
     const markers = baseFarms.map((f) => {
       const eventCount = farmEventCounts.get(f.farmId) ?? 0;
@@ -115,7 +120,7 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
         lat: f.lat,
         lng: f.lng,
         totalAnimals: liveCountByFarm.get(f.farmId) ?? 0,
-        activeAlerts: eventCount,
+        activeAlerts: alertsByFarm.get(f.farmId) ?? 0,
         healthScore: eventTypes ? Math.max(0, 100 - eventCount * 15) : null,
         status: modeStatus,
       };

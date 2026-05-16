@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| 버전 | **0.3** — Decision Log 확장 (D1–D14 확정) + BUG-007 두수 단일 소스 |
+| 버전 | **0.4** — Decision Log + §10 alert-aggregator (D3 구현, BUG-007 Part 2) |
 | 작성일 | 2026-05-16 |
 | 최근 머지 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) (`6c2d886`) — 수태율 단일 소스 + D5 |
 | 진행 중 | BUG-007 — 두수 단일 소스 (D7) + currentHeadCount 격하 (D8) + active 통일 (D9) + province 집계 (D14) |
@@ -431,31 +431,61 @@ CowTalk은 3계층 위계 데이터 플랫폼이다:
 
 ## 10. 알림/AI
 
-### 10.1 활성 알림 수 / `activeAlerts`
+### 10.1 활성 알림 수 / `activeAlerts` / `AlertCountResult`
 - **계층**: L1, L2, L3
-- **공식**: `COUNT(smaxtecEvents WHERE detectedAt >= today AND acked IS NULL)` — **단일 쿼리, 단일 owner**
-- **단위**: count
-- **유효범위**: [0, ∞)
-- **출처**: `smaxtecEvents` + `alert_ack`
-- **갱신**: realtime
-- **owner (D3)**: `packages/server/src/services/alerts/alert-aggregator.ts` (BUG-007에서 신설)
-- **검증**: —
-- **표시**: 모든 화면 알림 벨
-- **단방향 흐름 (D3)**:
+- **공식 (D3)**: `COUNT(smaxtecEvents WHERE detectedAt >= now-24h AND acknowledged=false)`.
+- **opts 기본값** (`AlertOpts`):
+  - `window: '24h'` (24h / 7d / 30d / live)
+  - `ackedFilter: false` — **미확인만** (878 vs 874 모순 해소 핵심)
+  - `severity: 'all'` (all / critical / high / medium / low)
+  - `domainFilter: 'all'` (all / breeding / health / epidemic / herd)
+- **단위**: `AlertCountResult { count: number, displayValue: string, status: 'ok'|'data_insufficient' }`
+- **유효범위**: [0, ∞). 0건도 `'ok'` + `'0'` (D13 실측 0).
+- **출처**: `smaxtecEvents` (도메인 서비스가 publish한 raw 이벤트).
+- **갱신**: realtime.
+- **owner (D3)**: `packages/server/src/services/alerts/alert-aggregator.ts` ✅ **BUG-007 Part 2에서 구현됨**.
+- **함수 시그니처**:
+  ```typescript
+  // Pure
+  export function buildAlertCountResult(rawCount: number): AlertCountResult;
+  export function aggregateAlertRowsByProvince(rows): Map<string, AlertCountResult>;
 
+  // DB wrappers
+  export async function getActiveAlerts(opts?: AlertOpts): Promise<AlertCountResult>;
+  export async function aggregateAlertsByDomain(opts?): Promise<Record<AlertDomain, AlertCountResult>>;
+  export async function aggregateAlertsByFarm(opts?): Promise<ReadonlyMap<string, number>>;
+  export async function aggregateAlertsByProvince(opts?): Promise<ReadonlyMap<string, AlertCountResult>>;
+  export async function getAlertCountForWidget(widgetId: string, override?): Promise<AlertCountResult>;
+  ```
+- **위젯 preset (일관성 강제)**:
+  - `main_24h_alerts` = 메인 KPI "24h 알림" (878)
+  - `main_health_issues` = 메인 KPI "건강 이상" (health 도메인)
+  - `main_breeding_alerts` = 메인 KPI "번식 알림" (breeding 도메인)
+  - `main_epidemic_alerts` = 메인 KPI "방역 알림" (epidemic 도메인)
+  - **`ai_briefing_24h` = `main_24h_alerts`와 동일 opts** → 878 vs 874 통일 (D3 핵심)
+  - `regional_marker_24h` = /regional-map 마커
+  - `epidemiology_dashboard` = 방역 대시보드
+  - `epidemic_critical` = severity=critical
+- **단방향 흐름 (D3)**:
   ```
   [번식 서비스]   [건강 서비스]   [방역 서비스]   [우군 서비스]
        │             │              │              │
        └─────────────┴──────────────┴──────────────┘
-                          │ (각자 알림 발행)
+                          │ (각자 raw 알림 publish → smaxtecEvents)
                           ▼
             packages/server/src/services/alerts/
                     alert-aggregator.ts
-              (집계 + 우선순위 + 중복제거 + 표시 카운트)
+              (collect + filter + group + 표시 카운트)
                           │
                           ▼
-          [라우트 1회 호출] → 모든 화면 동일 값
+          [UI / route 1회 호출] → 모든 화면 동일 값
   ```
+  **UI/route는 도메인 서비스를 직접 호출하지 않음.** aggregator만 경유.
+- **호출처 (BUG-007 Part 2에서 교체)**:
+  - ✅ `unified-dashboard.routes.ts:queryHerdOverview` — 메인 KPI 4개 (activeAlerts, healthIssues 등)
+  - ✅ `unified-dashboard.routes.ts:buildAiBriefing` — `total24h` (AI 일일 브리핑) → 메인과 동일 widgetId
+  - ✅ `regional.routes.ts:/map` — 마커 activeAlerts (clientside reduce 회귀 방지)
+  - 🟡 잔존 사이트 (다음 sweep): `dashboard.routes.ts` healthEventCount, `profile-builder.ts` farmAlerts, `tool-executor.ts` alertsLast24h, `quarantine-dashboard.service.ts` fetchActiveAlerts (list 반환이라 별도 처리 필요).
 
   라우트는 aggregator를 **1회**만 호출한다. 자체적으로 카운트 재계산 금지.
 - 🔴 **BUG-007**: 같은 화면에서 "오늘 1건" vs "AI 19건" 불일치 → aggregator 미구현이 원인. BUG-007 PR에서 해소.
@@ -685,7 +715,8 @@ v0.2에서 5개 모두 결정됨 (§0 Decision Log 참조).
 | 2026-05-15 | 수태율 113.1%, healthScore/tempStability 음수, demo 데이터 제거 | [#32](https://github.com/hhj3150/cowtalk/pull/32) |
 | 2026-05-16 | 본 문서 v0.1 초안 (저장만, commit 없음) | — |
 | 2026-05-16 | **v0.2**: Decision Log (D1–D6) + §14 AI Confidence + §15 빈 농장 + §16 L3 cluster TBD + fertility-service 도입 | [#33 BUG-001](https://github.com/hhj3150/cowtalk/pull/33) |
-| 2026-05-16 | **v0.3**: Decision Log 확장 (D7–D14) + §8 우군 Herd 재작성 (herd-service.ts 신설, currentHeadCount 격하, province 집계, D13 분리). 12 호출처 + 1 mock 통합. | BUG-007 PR (본 PR) |
+| 2026-05-16 | **v0.3**: Decision Log 확장 (D7–D14) + §8 우군 Herd 재작성 (herd-service.ts 신설, currentHeadCount 격하, province 집계, D13 분리). 12 호출처 + 1 mock 통합. | [#34 BUG-007 Part 1](https://github.com/hhj3150/cowtalk/pull/34) |
+| 2026-05-16 | **v0.4**: §10 활성 알림 (D3 구현) — `alert-aggregator.ts` 신설. 878 vs 874 통일 (메인 KPI = AI 브리핑 widget preset 공유). 우선 3 사이트 교체: main KPI / AI 브리핑 / regional 마커. | BUG-007 Part 2 PR (본 PR) |
 
 ---
 
