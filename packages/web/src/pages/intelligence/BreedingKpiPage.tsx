@@ -91,7 +91,7 @@ function calcEconomicEffects(kpis: BreedingKpis, _totalAnimals: number): readonl
 
 interface GaugeSectionProps {
   readonly label: string;
-  readonly current: number;
+  readonly current: number | null;  // D5: null = 데이터 부족 ("—" 표시)
   readonly national: number;
   readonly target: number;
   readonly unit: string;
@@ -99,13 +99,20 @@ interface GaugeSectionProps {
 }
 
 function GaugeSection({ label, current, national, target, unit, higherIsBetter = true }: GaugeSectionProps): React.JSX.Element {
-  const max = higherIsBetter ? Math.max(current, national, target) * 1.1 : Math.max(current, national, target) * 1.1;
+  // D5: current=null이면 데이터 부족 상태 — bar 숨기고 "—" 표시.
+  const isInsufficient = current === null;
+  const currentValue = current ?? 0;
+  const max = higherIsBetter ? Math.max(currentValue, national, target) * 1.1 : Math.max(currentValue, national, target) * 1.1;
 
   const pct = (v: number): number => Math.min(100, Math.round((v / max) * 100));
 
-  const isGood = higherIsBetter ? current >= target : current <= target;
-  const isBetterThanNational = higherIsBetter ? current >= national : current <= national;
-  const currentColor = isGood ? '#16a34a' : isBetterThanNational ? '#d97706' : '#dc2626';
+  const isGood = !isInsufficient && (higherIsBetter ? currentValue >= target : currentValue <= target);
+  const isBetterThanNational = !isInsufficient && (higherIsBetter ? currentValue >= national : currentValue <= national);
+  const currentColor = isInsufficient ? '#6b7280' : isGood ? '#16a34a' : isBetterThanNational ? '#d97706' : '#dc2626';
+
+  const valueLabel = isInsufficient
+    ? '—'
+    : `${currentValue.toFixed(label.includes('일') ? 0 : 1)}${unit}`;
 
   return (
     <div className="space-y-2">
@@ -113,9 +120,10 @@ function GaugeSection({ label, current, national, target, unit, higherIsBetter =
         <p className="text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>{label}</p>
         <div className="flex items-center gap-2">
           <span className="text-lg font-bold" style={{ color: currentColor }}>
-            {current.toFixed(label.includes('일') ? 0 : 1)}{unit}
+            {valueLabel}
           </span>
-          {isGood && <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>목표 달성</span>}
+          {isInsufficient && <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(107,114,128,0.1)', color: '#6b7280' }}>데이터 부족</span>}
+          {!isInsufficient && isGood && <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>목표 달성</span>}
         </div>
       </div>
 
@@ -125,13 +133,15 @@ function GaugeSection({ label, current, national, target, unit, higherIsBetter =
         <div className="flex items-center gap-2">
           <span className="text-[11px] w-16 text-right flex-shrink-0" style={{ color: currentColor }}>현재</span>
           <div className="flex-1 h-4 rounded-full overflow-hidden" style={{ background: 'var(--ct-border)' }}>
-            <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${pct(current)}%`, background: currentColor }}
-            />
+            {!isInsufficient && (
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${pct(currentValue)}%`, background: currentColor }}
+              />
+            )}
           </div>
           <span className="text-xs w-14 flex-shrink-0" style={{ color: currentColor }}>
-            {current.toFixed(label.includes('일') ? 0 : 1)}{unit}
+            {valueLabel}
           </span>
         </div>
         {/* 전국 평균 */}
@@ -262,8 +272,11 @@ function EconomicSummary({
 // ===========================
 
 function PerformanceBadge({ kpis }: { kpis: BreedingKpis }): React.JSX.Element {
+  // D5: conceptionRate가 null이면 그 항목은 0점 처리 (데이터 부족 시 등급 계산에서 중립).
+  const crForScore = kpis.conceptionRate ?? 0;
+  const hasCR = kpis.conceptionRate !== null;
   const scores = [
-    kpis.conceptionRate >= TARGETS.conceptionRate ? 2 : kpis.conceptionRate >= NATIONAL_BENCHMARK.conceptionRate ? 1 : 0,
+    hasCR && crForScore >= TARGETS.conceptionRate ? 2 : hasCR && crForScore >= NATIONAL_BENCHMARK.conceptionRate ? 1 : 0,
     kpis.estrusDetectionRate >= TARGETS.estrusDetectionRate ? 2 : kpis.estrusDetectionRate >= NATIONAL_BENCHMARK.estrusDetectionRate ? 1 : 0,
     kpis.avgDaysOpen <= TARGETS.avgDaysOpen ? 2 : kpis.avgDaysOpen <= NATIONAL_BENCHMARK.avgDaysOpen ? 1 : 0,
     kpis.avgCalvingInterval <= TARGETS.avgCalvingInterval ? 2 : kpis.avgCalvingInterval <= NATIONAL_BENCHMARK.avgCalvingInterval ? 1 : 0,
@@ -418,7 +431,7 @@ export default function BreedingKpiPage(): React.JSX.Element {
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold" style={{ color: '#2563eb' }}>
-                {kpis.pregnancyRate.toFixed(1)}%
+                {kpis.pregnancyRate === null ? '—' : `${kpis.pregnancyRate.toFixed(1)}%`}
               </p>
               <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
                 전국평균 {(NATIONAL_BENCHMARK.conceptionRate * NATIONAL_BENCHMARK.estrusDetectionRate / 100).toFixed(1)}%

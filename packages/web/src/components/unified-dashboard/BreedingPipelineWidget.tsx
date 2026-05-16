@@ -110,8 +110,11 @@ function BreedingKpiBar({ kpis }: { readonly kpis: BreedingKpis }): React.JSX.El
       marginBottom: 20,
     }}>
       {KPI_DEFS.map((def) => {
-        const value = kpis[def.key];
-        const status = def.evaluate(value);
+        const rawValue = kpis[def.key];
+        // D5: null이면 "—" 표시, status 평가 생략 (orange로 중립 처리)
+        const isNull = rawValue === null || rawValue === undefined;
+        const value: number = isNull ? 0 : Number(rawValue);
+        const status = isNull ? 'orange' : def.evaluate(value);
         const color = STATUS_COLORS[status];
 
         return (
@@ -134,11 +137,11 @@ function BreedingKpiBar({ kpis }: { readonly kpis: BreedingKpis }): React.JSX.El
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '-0.5px',
             }}>
-              {typeof value === 'number' && def.unit === '%'
-                ? value.toFixed(1)
-                : value}
+              {isNull
+                ? '—'
+                : (def.unit === '%' ? value.toFixed(1) : value)}
               <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 1 }}>
-                {def.unit}
+                {isNull ? '' : def.unit}
               </span>
             </div>
             <div style={{ fontSize: 10, color: 'var(--ct-text-muted)', marginTop: 3 }}>

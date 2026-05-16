@@ -71,13 +71,20 @@ function KpiCard({ label, value, unit, target, status }: KpiCardProps): React.JS
 }
 
 function buildKpiCards(kpis: BreedingKpis): readonly KpiCardProps[] {
+  // D5: conceptionRate가 null이면 displayValue("—") 사용, status 평가 생략.
+  const cr = kpis.conceptionRate;
+  const crValue = cr === null ? '—' : cr.toFixed(1);
+  const crUnit = cr === null ? '' : '%';
+  const crStatus: KpiCardProps['status'] = cr === null
+    ? 'warn'
+    : cr >= 65 ? 'good' : cr >= 50 ? 'warn' : 'bad';
   return [
     {
       label: '수태율',
-      value: kpis.conceptionRate.toFixed(1),
-      unit: '%',
+      value: crValue,
+      unit: crUnit,
       target: '≥ 65%',
-      status: kpis.conceptionRate >= 65 ? 'good' : kpis.conceptionRate >= 50 ? 'warn' : 'bad',
+      status: crStatus,
     },
     {
       label: '발정탐지율',

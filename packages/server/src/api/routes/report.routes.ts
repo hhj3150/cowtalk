@@ -11,10 +11,11 @@ import {
   animals,
   smaxtecEvents,
   breedingEvents,
-  calvingEvents,
   sensorDevices,
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt } from 'drizzle-orm';
+import { ratioPct } from '../../lib/metrics-clamp.js';
+import { computeCR, decisionsFromBreedingEventCounts } from '../../services/metrics/fertility-service.js';
 
 export const reportRouter = Router();
 
@@ -209,7 +210,9 @@ reportRouter.get(
 // ── 번식 지표 계산 ──
 
 interface BreedingMetrics {
-  readonly conceptionRate: number;
+  readonly conceptionRate: number | null;  // null = 데이터 부족 (D5)
+  readonly conceptionRateDisplay: string;  // "—" 또는 "83.0%"
+  readonly conceptionRateStatus: 'ok' | 'data_insufficient';
   readonly avgDaysOpen: number;
   readonly calvingInterval: number;
   readonly estrusDetectionRate: number;
@@ -253,29 +256,8 @@ async function computeBreedingMetrics(
   const inseminationDB = breedingRows.find((r) => r.type === 'insemination')?.cnt ?? 0;
   const inseminationCount = Math.max(inseminationFromEvents, inseminationDB);
 
-  // 분만 카운트 (분만간격 계산용)
-  const calvingRows = await db
-    .select({ cnt: count() })
-    .from(calvingEvents)
-    .innerJoin(animals, eq(calvingEvents.animalId, animals.animalId))
-    .where(
-      and(
-        eq(animals.farmId, farmId),
-        gte(calvingEvents.calvingDate, start),
-        lt(calvingEvents.calvingDate, end),
-      ),
-    );
-
-  const calvingCount = calvingRows[0]?.cnt ?? 0;
-
-  // 수태율: 수정 대비 임신 확인 비율 (간이)
-  const pregnancyConfirmed = breedingRows
-    .filter((r) => r.type === 'pregnancy_confirmed' || r.type === 'pregnancy_check')
-    .reduce((sum, r) => sum + r.cnt, 0);
-
-  const conceptionRate = inseminationCount > 0
-    ? Math.round((pregnancyConfirmed / inseminationCount) * 100)
-    : 45; // 업계 평균 기본값
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
+  const cr = computeCR(decisionsFromBreedingEventCounts(breedingRows));
 
   // 발정감지율: (발정 감지 / 발정 가능 두수) × 100
   const totalCows = await db
@@ -289,20 +271,22 @@ async function computeBreedingMetrics(
       ),
     );
 
-  const femaleCows = totalCows[0]?.cnt ?? 1;
-  const estrusDetectionRate = femaleCows > 0
-    ? Math.min(Math.round((estrusCount / Math.max(femaleCows * 0.05, 1)) * 100), 95)
-    : 0;
+  const femaleCows = totalCows[0]?.cnt ?? 0;
+  // 한 사이클(21일) 기준 60% 발정 기대치. breeding-pipeline.service.ts와 동일.
+  const expectedEstrus = Math.max(1, femaleCows * 0.6);
+  const estrusDetectionRate = ratioPct(estrusCount, expectedEstrus);
 
+  // avgDaysOpen / calvingInterval / conceptionPerService 정밀 계산 미구현 — 가짜 수치 대신 0 반환.
+  // 프론트엔드는 0을 "데이터 없음"으로 표시해야 함. (Math.random() 기반 모킹 제거됨)
   return {
-    conceptionRate,
-    avgDaysOpen: inseminationCount > 0 ? Math.round(120 + Math.random() * 30) : 135,
-    calvingInterval: calvingCount > 0 ? Math.round(390 + Math.random() * 20) : 405,
+    conceptionRate: cr.rate,
+    conceptionRateDisplay: cr.displayValue,
+    conceptionRateStatus: cr.status,
+    avgDaysOpen: 0,
+    calvingInterval: 0,
     estrusDetectionRate,
     inseminationCount,
-    conceptionPerService: inseminationCount > 0 && pregnancyConfirmed > 0
-      ? Math.round((inseminationCount / pregnancyConfirmed) * 10) / 10
-      : 2.1,
+    conceptionPerService: 0,
   };
 }
 
@@ -367,12 +351,14 @@ function buildAiComment(input: AiCommentInput): string {
     parts.push('이번 달 특이 알림이 발생하지 않았습니다.');
   }
 
-  // 번식 평가
-  if (breedingData.conceptionRate >= 50) {
-    parts.push(`수태율 ${String(breedingData.conceptionRate)}%로 양호한 수준입니다.`);
+  // 번식 평가. D5: rate=null이면 코멘트 생략 (가짜 평가 금지).
+  if (breedingData.conceptionRate === null) {
+    // 데이터 부족: 평가 코멘트 생성 안 함.
+  } else if (breedingData.conceptionRate >= 50) {
+    parts.push(`수태율 ${breedingData.conceptionRateDisplay}로 양호한 수준입니다.`);
   } else if (breedingData.conceptionRate > 0) {
     parts.push(
-      `수태율 ${String(breedingData.conceptionRate)}%로 목표(50%) 미달입니다. ` +
+      `수태율 ${breedingData.conceptionRateDisplay}로 목표(50%) 미달입니다. ` +
       '수정 시기 정확도와 정액 품질을 점검해 주세요.',
     );
   }

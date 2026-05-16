@@ -10,6 +10,7 @@ import {
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { getFarmSemenPerformance, type SemenPerformance } from './breeding-feedback.service.js';
+import { computeCR } from '../metrics/fertility-service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
 
@@ -595,7 +596,9 @@ export interface BreedingFeedback {
   readonly pregnantCount: number;
   readonly openCount: number;
   readonly pendingCount: number;
-  readonly conceptionRate: number;
+  readonly conceptionRate: number | null;          // null = 데이터 부족 (D5)
+  readonly conceptionRateDisplay: string;
+  readonly conceptionRateStatus: 'ok' | 'data_insufficient';
   readonly entries: readonly BreedingFeedbackEntry[];
 }
 
@@ -664,7 +667,12 @@ export async function getBreedingFeedback(animalId: string): Promise<BreedingFee
   const pregnantCount = entries.filter((e) => e.pregnancyResult === 'pregnant').length;
   const openCount = entries.filter((e) => e.pregnancyResult === 'open').length;
   const pendingCount = entries.filter((e) => e.pregnancyResult === 'pending').length;
-  const decided = pregnantCount + openCount;
+
+  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
+  const cr = computeCR([
+    ...Array.from({ length: pregnantCount }, () => ({ pregnant: true })),
+    ...Array.from({ length: openCount }, () => ({ pregnant: false })),
+  ]);
 
   return {
     animalId,
@@ -672,7 +680,9 @@ export async function getBreedingFeedback(animalId: string): Promise<BreedingFee
     pregnantCount,
     openCount,
     pendingCount,
-    conceptionRate: decided > 0 ? Math.round((pregnantCount / decided) * 100) : 0,
+    conceptionRate: cr.rate,
+    conceptionRateDisplay: cr.displayValue,
+    conceptionRateStatus: cr.status,
     entries,
   };
 }

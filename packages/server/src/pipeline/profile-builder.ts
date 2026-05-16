@@ -102,6 +102,8 @@ export async function buildAnimalProfile(animalId: string): Promise<AnimalProfil
     daysSinceInsemination: pregStatus.daysSince,
     breedingFeedback: feedbackRaw ? {
       conceptionRate: feedbackRaw.conceptionRate,
+      conceptionRateDisplay: feedbackRaw.conceptionRateDisplay,
+      conceptionRateStatus: feedbackRaw.conceptionRateStatus,
       totalInseminations: feedbackRaw.totalInseminations,
       pregnantCount: feedbackRaw.pregnantCount,
       openCount: feedbackRaw.openCount,
