@@ -25,6 +25,7 @@
     "format": "prettier --write 'packages/*/src/**/*.{ts,tsx,json}'",
     "format:check": "prettier --check 'packages/*/src/**/*.{ts,tsx,json}'",
     "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/server/tsconfig.json && tsc --noEmit -p packages/web/tsconfig.json",
+    "audit:confidence-units": "node scripts/audit-confidence-units.mjs",
     "db:migrate": "npm run migrate --workspace=packages/server",
     "db:seed": "npm run seed --workspace=packages/server"
   },

@@ -5,6 +5,7 @@
  */
 
 import type { DailySummary, AnimalProfile, SovereignAlarm } from '../types.js';
+import { toConfidence01 } from '../confidence.js';
 
 function avgOf(arr: readonly (number | null)[]): number | null {
   const valid = arr.filter((v): v is number => v !== null && v !== undefined);
@@ -88,7 +89,7 @@ export function ruleHealthGeneral(summary: readonly DailySummary[], _animal: Ani
     title: `종합 건강 이상 (${descriptions})`,
     reasoning: `${devs.length}개 메트릭에서 동시 이상 감지: ${descriptions}. 단일 메트릭 변화보다 복수 메트릭 동시 변화가 질병의 더 강한 지표입니다. 조합 패턴에 따라 유방염, 케토시스, 제4위변위, 자궁내막염 등 다양한 질병이 의심됩니다.`,
     actionPlan: `① 전신 임상 검사(체온, 심박, 호흡수, 탈수도) ② 식욕·반추·착유량 종합 확인 ③ 감별진단 의뢰(팅커벨 감별진단 도구 활용) ④ 수의사 진찰 예약`,
-    confidence: Math.round(40 + avgDev * 40),
+    confidence: toConfidence01(Math.round(40 + avgDev * 40)),
     detectedAt: new Date().toISOString(),
     dataPoints: Object.fromEntries(devs.map(d => [d.metric + 'Dev', Math.round(d.deviation * 100)])),
   };
@@ -113,7 +114,7 @@ export function ruleClinicalCondition(summary: readonly DailySummary[], _animal:
     title: `심각한 임상 증상 (${descriptions})`,
     reasoning: `체온, 반추, 활동량 3개 메트릭 모두에서 심각한 이상 감지: ${descriptions}. 전신성 질환(패혈증, 급성 유방염, 제4위변위, 중증 폐렴) 가능성이 높습니다. 즉시 수의학적 개입이 필요합니다.`,
     actionPlan: `① 즉시 수의사 호출 ② 격리 조치 ③ 활력 징후 집중 모니터링(15분 간격) ④ 수액 치료 준비 ⑤ 착유 중단 고려`,
-    confidence: Math.round(60 + avgDev * 30),
+    confidence: toConfidence01(Math.round(60 + avgDev * 30)),
     detectedAt: new Date().toISOString(),
     dataPoints: Object.fromEntries(devs.map(d => [d.metric + 'Dev', Math.round(d.deviation * 100)])),
   };

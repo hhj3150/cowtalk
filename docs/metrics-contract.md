@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| 버전 | **0.6** — §16 AI 성과 지표 정책 (BUG-008: 가짜 정확도 제거 + clampPct 일관 적용 + minSamples 가드) |
-| 작성일 | 2026-05-16 |
-| 최근 머지 | [#36 BUG-006](https://github.com/hhj3150/cowtalk/pull/36) (`7285711`) — 빈 농장 정상 운영 라벨 제거 + D5 UI 강제 |
-| 진행 중 | BUG-008 — AI 정확도 표본 부족 시 "—" (data_insufficient) + clampPct + minSamples=10 |
+| 버전 | **0.7** — §14 AI Confidence 단위 통일 (BUG-005: SovereignAlarm 0-100→0-1 canonical + toConfidence01) |
+| 작성일 | 2026-05-17 |
+| 최근 머지 | [#37 BUG-008](https://github.com/hhj3150/cowtalk/pull/37) (`4dbd365`) — 가짜 AI 정확도 제거 + clampPct 일관 적용 |
+| 진행 중 | BUG-005 — confidence 도메인 0-1 / UI % 통일. Phase 1 마지막 BUG (D6). |
 | 소유자 | D2O CTO Office |
 | 적용 범위 | 농장주·수의사·방역관·행정관 화면에 표시되는 모든 메트릭 |
 
@@ -634,32 +634,47 @@ v0.2에서 5개 모두 결정됨 (§0 Decision Log 참조).
 
 ---
 
-## 14. AI Confidence 표기 규칙 (D4 정의)
+## 14. AI Confidence 단위 규칙 (D4 정의 + BUG-005 구현)
 
-**내부 표현**:
-- 타입: `number` (float)
-- 범위: `[0.0, 1.0]`
-- 의미: 0.0 = 추정 불가/모름, 1.0 = 확실. 비율로 보지 말 것 (캘리브레이션은 §10.3 aiAccuracy로 별도 추적).
+> 2026-05-17 BUG-005 확정: confidence 단위를 도메인 0-1 / UI % 로 통일. 아래 §14.1 이 최종 규칙.
 
-**UI 표현 규칙**:
-- 라벨: **"신뢰도"** (한국어 고정)
-- 형식: `{label} {value.toFixed(2)}` — 예: `"신뢰도 0.87"`
-- 소수점 둘째 자리까지. 첫째 자리 또는 셋째 자리 금지.
-- **금지**: `%` 부호, 정수 변환(`87%`), `${x*100}%`, "62%" 류 표기, "정확도"와 혼용.
-- **금지**: "신뢰도 87점" 같은 임의 라벨링.
+### 14.1 단위 규칙 (canonical)
 
-**예시**:
-- ✅ `"이 진단 신뢰도 0.87"`
-- ✅ `<span>신뢰도 {conf.toFixed(2)}</span>`
-- ❌ `"신뢰도 87%"`
-- ❌ `"AI 정확도 0.62"` ("정확도"는 §10.3 aiAccuracy 전용)
-- ❌ `"61.9% 확실"` (D4 위반의 전형)
+**도메인 계층 (service / route / DB / 모델 출력) — 항상 0-1 float**:
+- 타입: `number`, 범위 `[0.0, 1.0]`
+- 의미: 0.0 = 추정 불가/모름, 1.0 = 확실
+- **0-100 정수 노출 금지.** `confidence: 85` 같은 도메인 필드는 D4 위반.
+- smaXtec 이벤트 / pipeline / AI interpreter / LiveAlarm / SovereignAlarm / predictions 테이블 모두 0-1.
 
-**aiAccuracy (정확도, §10.3)와의 분리**:
-- "정확도"는 모델 자체의 성능 지표 → L3(관리자) 화면 **only**, 0–100% 표기 허용
-- "신뢰도"는 개별 예측의 확신도 → L1·L2 사용자 화면, 0.00–1.00 표기
+**UI 계층 — % 변환은 최종 render 직전 1회만**:
+- `Math.round(confidence * 100)` 또는 `clampPct(confidence * 100)` 1회 적용 후 `%` 표시.
+- 도메인에서 이미 0-100 이면 → 중복 변환(CASE A) 또는 raw float 노출(CASE B) → 위반.
+- 표본/데이터 부족 시 numeric 표시 금지 → "—" (D5) 또는 "(학습 중)".
 
-**구현**: 본 PR 비포함. BUG-005에서 일괄 교체. 교체 대상 위치는 §0 Decision Log의 "61.9% 류 표기 위치"에 정리.
+**금지**:
+- 하드코딩 % 마케팅 카피 ("95%+", "정확도 우수") — CASE C.
+- 도메인 필드가 0-100 정수 (`confidenceScore: 85`) — CASE D.
+
+### 14.2 SovereignAlarm 단위 전환 (BUG-005)
+
+전환 전: SovereignAlarm rule 들이 `confidence: Math.round(60 + ...)` 형태로 **0-100 정수** 출력 (D4 위반).
+전환 후: `toConfidence01(...)` 단일 변환 함수로 출력을 **0-1** 로 변환.
+- helper: `packages/server/src/services/sovereign-alarm/confidence.ts`
+  - `toConfidence01(score100)` — 0-100 점수 → 0-1 (clamp 내장)
+  - `clampConfidence01(value)` — 이미 0-1 인 값 보정 후 [0,1] clamp (orchestrator multiplier 용)
+- 8 rule 파일 25개 출력 site + orchestrator 보정 로직 전환.
+- UI(`SovereignAlarmFeed`)는 `Math.round(alarm.confidence * 100)%` 로 1회 변환.
+
+### 14.3 aiAccuracy (정확도, §16)와의 분리
+
+- "정확도"(accuracy/precision/recall/F1) = 모델 성능 지표 → §16 정책 (ground truth N≥10).
+- "신뢰도"(confidence) = 개별 예측 확신도 → 본 §14, 도메인 0-1.
+- 둘은 별개 — confidence 가 높다고 accuracy 가 높은 것이 아님.
+
+### 14.4 회귀 방지
+
+- `npm run audit:confidence-units` — SovereignAlarm 룰 출력이 `toConfidence01` 미경유 시 exit 1.
+- `confidence.test.ts` (12 tests) + `rules-confidence.test.ts` (2 tests) — 모든 룰 confidence ∈ [0,1] 검증.
 
 ---
 
@@ -821,7 +836,7 @@ accuracyInsufficient(sampleSize?): AccuracyResult  // sentinel
 
 ---
 
-## 17. Change Log
+## 18. Change Log
 
 | 일자 | 변경 | PR |
 |---|---|---|
@@ -831,7 +846,8 @@ accuracyInsufficient(sampleSize?): AccuracyResult  // sentinel
 | 2026-05-16 | **v0.3**: Decision Log 확장 (D7–D14) + §8 우군 Herd 재작성 (herd-service.ts 신설, currentHeadCount 격하, province 집계, D13 분리). 12 호출처 + 1 mock 통합. | [#34 BUG-007 Part 1](https://github.com/hhj3150/cowtalk/pull/34) |
 | 2026-05-16 | **v0.4**: §10 활성 알림 (D3 구현) — `alert-aggregator.ts` 신설. 878 vs 874 통일 (메인 KPI = AI 브리핑 widget preset 공유). 우선 3 사이트 교체: main KPI / AI 브리핑 / regional 마커. | [#35 BUG-007 Part 2](https://github.com/hhj3150/cowtalk/pull/35) |
 | 2026-05-16 | **v0.5**: §15.1 D5 UI Rendering 강제 — 긍정 라벨("정상 운영"/"이상 없음"/"방역 양호") 제거. `MetricValue` 공통 컴포넌트 신설. healthScore mock 폴백 제거 (`?? 75` → null). | [#36 BUG-006](https://github.com/hhj3150/cowtalk/pull/36) |
-| 2026-05-16 | **v0.6**: §16 AI 성과 지표 정책 — `ai-performance-service.ts` 신설. minSamples=10 가드 + clampPct 일관 적용 + 분자/분모 동반 표기. DemoModePage 4 hardcoded mock 제거. 8 user-visible 사이트 교체 (sovereign-stats/event-label-stats/quarantine cases/sovereign-alarm accuracy/SovereignAiWidget/TinkerbellAssistant/CaseDatabase/DemoMode). | BUG-008 PR (본 PR) |
+| 2026-05-16 | **v0.6**: §16 AI 성과 지표 정책 — `ai-performance-service.ts` 신설. minSamples=10 가드 + clampPct 일관 적용 + 분자/분모 동반 표기. DemoModePage 4 hardcoded mock 제거. 8 user-visible 사이트 교체 (sovereign-stats/event-label-stats/quarantine cases/sovereign-alarm accuracy/SovereignAiWidget/TinkerbellAssistant/CaseDatabase/DemoMode). | [#37 BUG-008](https://github.com/hhj3150/cowtalk/pull/37) |
+| 2026-05-17 | **v0.7**: §14 AI Confidence 단위 통일 (D4 구현) — SovereignAlarm rule 8파일 25 site `confidence` 0-100→0-1 (`toConfidence01` 단일 변환). orchestrator multiplier 보정 0-1 전환. prediction-bridge predictions.confidence 0-1 통일. SovereignAlarmFeed UI ×100 1회. FusionPanel(orphan) 제거. audit-confidence-units 스크립트 + 14 tests. §17 중복 번호 수정. | BUG-005 PR (본 PR) |
 
 ---
 
