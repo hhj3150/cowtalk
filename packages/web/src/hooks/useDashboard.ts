@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useFarmStore } from '@web/stores/farm.store';
 import * as dashboardApi from '@web/api/dashboard.api';
 
@@ -10,7 +11,8 @@ const STALE_TIME = 5 * 60 * 1000; // 5분
 function useDashboardParams(): Record<string, string | undefined> {
   const user = useAuthStore((s) => s.user);
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
-  const role = user?.role;
+  // FLOW-02 Step2.5: 역할별 분기는 유효 역할(시뮬레이션 반영). farmIds/tenantId 는 본 계정 user 사용.
+  const role = useEffectiveRole();
 
   switch (role) {
     case 'farmer':

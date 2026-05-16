@@ -1,7 +1,7 @@
 // 역할별 피드백 버튼
 
 import React from 'react';
-import { useAuthStore } from '@web/stores/auth.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useSubmitFeedback } from '@web/hooks/useFeedback';
 import type { FeedbackType } from '@web/api/feedback.api';
 import type { Role } from '@cowtalk/shared';
@@ -41,7 +41,7 @@ const ROLE_FEEDBACK: Record<Role, readonly FeedbackOption[]> = {
 };
 
 export function FeedbackButtons({ animalId, farmId, predictionId }: Props): React.JSX.Element {
-  const role = useAuthStore((s) => s.user?.role) ?? 'farmer';
+  const role = useEffectiveRole() ?? 'farmer';
   const feedbackMutation = useSubmitFeedback();
   const options = ROLE_FEEDBACK[role];
 
