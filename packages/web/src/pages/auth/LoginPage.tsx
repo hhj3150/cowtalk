@@ -45,7 +45,7 @@ interface Strings {
   readonly statFarms: string;
   readonly statCattle: string;
   readonly statMonitoring: string;
-  readonly statDetection: string;
+  // BUG-008 amend: statDetection 제거 (hardcoded '95%+' marketing copy 차단).
   readonly statEngines: string;
   readonly roleVet: string;
   readonly roleFarmer: string;
@@ -86,7 +86,6 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     statFarms: '농장',
     statCattle: '소',
     statMonitoring: '24/7',
-    statDetection: '감지 정확도',
     statEngines: 'AI 엔진',
     roleVet: '수의사',
     roleFarmer: '목장주',
@@ -125,7 +124,6 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     statFarms: 'Farms',
     statCattle: 'Cattle',
     statMonitoring: 'Monitoring',
-    statDetection: 'Detection',
     statEngines: 'AI engines',
     roleVet: 'Veterinarian',
     roleFarmer: 'Farmer',
@@ -164,7 +162,6 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     statFarms: 'Ферм',
     statCattle: 'Коров',
     statMonitoring: 'Мониторинг',
-    statDetection: 'Точность',
     statEngines: 'ИИ-модулей',
     roleVet: 'Ветеринар',
     roleFarmer: 'Фермер',
@@ -203,7 +200,6 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     statFarms: 'Ferma',
     statCattle: 'Qoramol',
     statMonitoring: 'Monitoring',
-    statDetection: 'Aniqlik',
     statEngines: 'AI dvigatel',
     roleVet: 'Veterinar',
     roleFarmer: 'Fermer',
@@ -252,7 +248,7 @@ interface PublicStats {
   readonly totalFarms: number;
   readonly totalCattle: number;
   readonly totalSensors: number;
-  readonly detectionAccuracy: string;
+  // BUG-008 amend: detectionAccuracy 제거 (server도 동일).
   readonly aiEngines: number;
   readonly monitoring: string;
   readonly todayAlerts: number;
@@ -359,7 +355,6 @@ export default function LoginPage(): React.JSX.Element {
           totalFarms: 146,
           totalCattle: 7124,
           totalSensors: 6800,
-          detectionAccuracy: '95%+',
           aiEngines: 6,
           monitoring: '24/7',
           todayAlerts: 0,
@@ -404,7 +399,7 @@ export default function LoginPage(): React.JSX.Element {
   const heroFarms = stats?.totalFarms?.toLocaleString() ?? '...';
   const heroCattle = stats?.totalCattle?.toLocaleString() ?? '...';
   const heroMonitoring = stats?.monitoring ?? '24/7';
-  const heroDetection = stats?.detectionAccuracy ?? '95%+';
+  // BUG-008 amend: heroDetection 제거 (hardcoded '95%+' 가짜 정확도 차단).
   const heroEngines = String(stats?.aiEngines ?? 6);
 
   const features: readonly FeatureCard[] = [
@@ -531,7 +526,6 @@ export default function LoginPage(): React.JSX.Element {
             <StatItem value={heroFarms} label={t.statFarms} />
             <StatItem value={heroCattle} label={t.statCattle} />
             <StatItem value={heroMonitoring} label={t.statMonitoring} />
-            <StatItem value={heroDetection} label={t.statDetection} />
           </div>
         </div>
       )}
@@ -814,7 +808,6 @@ export default function LoginPage(): React.JSX.Element {
           <StatItem value={heroFarms} label={t.statFarms} />
           <StatItem value={heroCattle} label={t.statCattle} />
           <StatItem value={heroMonitoring} label={t.statMonitoring} />
-          <StatItem value={heroDetection} label={t.statDetection} />
           <StatItem value={heroEngines} label={t.statEngines} />
         </div>
 

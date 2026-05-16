@@ -41,13 +41,16 @@
 
 | # | 파일:라인 | mock | 처리 |
 |---|---|---|---|
+| 0 | `LoginPage.tsx:407` + `public-stats.routes.ts:107` | hero stats `detectionAccuracy: '95%+'` (로그인 전 marketing carousel) | **D5 violation** (초기 audit 누락, amend 추가) | ✅ → 카드 제거 + i18n 4언어 정리 |
 | 1 | `DemoModePage.tsx:24` | `AI 감지 정확도: 95, suffix: '%+'` | ✅ → `value: null` + "학습 중" |
 | 2 | `DemoModePage.tsx:37` | `건강 점수: 92, suffix: '점'` | ✅ → `value: null` + "AI 분석" |
 | 3 | `DemoModePage.tsx:63` | `정상 비율: 97.3, suffix: '%'` | ✅ → `value: null` + "실시간" |
 | 4 | `DemoModePage.tsx:74` | `AI 정확도: 94.2, suffix: '%'` | ✅ → `value: null` + "학습 중" |
 | 5 | `xai.routes.ts:122-124` | "estrusDetection: '95%+'" 등 transparency 문서 텍스트 | ⬜ 유지 (frontend 미연동, transparency 보고서용) |
 
-→ **수정 18건 (server 5 + UI 5 + mock 4 + service+test 2 + docs 2)**, 보존 4건 (이미 D5 컴플라이언트 or 정당한 컨텍스트).
+**Audit 누락 원인 (amend 1)**: 초기 grep 패턴이 `61\.[0-9]+%` / `94\.[0-9]+` / `accuracy.*=` 등 숫자·키워드 기반이었음. LoginPage의 `detectionAccuracy: '95%+'` (string)는 PublicStats 인터페이스 필드 + hero `StatItem` 렌더로 분기되어 위 패턴에 안 잡힘. **향후 audit grep 패턴에 marketing carousel / hero stats / landing page 명시 포함 의무.**
+
+→ **수정 19건 (server 6 + UI 6 + mock 4 + service+test 2 + docs 2 + i18n cleanup)**, 보존 4건 (이미 D5 컴플라이언트 or 정당한 컨텍스트).
 
 ### D. clampPct 미적용 site
 
@@ -101,7 +104,30 @@ accuracyInsufficient(sampleSize?): AccuracyResult
 
 ---
 
-## 3. 교체 결과 (8 user-visible 사이트)
+## 3. 교체 결과 (9 user-visible 사이트)
+
+### Site 0 (amend) — LoginPage hero "95%+ 감지 정확도" 카드 제거
+
+**경로**: `packages/web/src/pages/auth/LoginPage.tsx` + `packages/server/src/api/routes/public-stats.routes.ts`
+
+**Before** (master 로그인 전 hero):
+```
+197 농장 / 10,666 소 / 24/7 / 95%+ 감지 정확도 / 6 AI 엔진
+```
+`detectionAccuracy: '95%+'` (server에서 hardcoded, FE에 그대로 전달).
+
+**After**:
+```
+197 농장 / 10,666 소 / 24/7 / 6 AI 엔진
+```
+- server `PublicStats.detectionAccuracy` 필드 제거 + 응답에서 제거
+- client `PublicStats`/`Translation` 인터페이스 정리
+- `heroDetection` 변수 + 2 위치 `<StatItem />` 제거 (line 530-535 + 814-818)
+- i18n 4언어 (ko/en/ru/uz) `statDetection` 키 제거
+
+**결정 이유**: 로그인 전 화면에 모델 정확도 실시간 표시는 사용자 의사결정에 무의미. ground truth 없는 marketing 통계는 D5 violation.
+
+
 
 ### Site 1 — label-chat.routes.ts sovereign-stats
 

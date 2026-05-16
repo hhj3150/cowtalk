@@ -21,7 +21,8 @@ interface PublicStats {
   readonly totalFarms: number;
   readonly totalCattle: number;
   readonly totalSensors: number;
-  readonly detectionAccuracy: string;
+  // D4/D5 (BUG-008 amend): detectionAccuracy '95%+' hardcoded marketing 제거.
+  // 로그인 전 hero에 ground truth 없는 정확도 표시 = false positive.
   readonly aiEngines: number;
   readonly monitoring: string;
   readonly todayAlerts: number;
@@ -104,7 +105,6 @@ publicStatsRouter.get('/stats', async (_req: Request, res: Response, next: NextF
       totalFarms,
       totalCattle,
       totalSensors,
-      detectionAccuracy: '95%+',
       aiEngines: 6,
       monitoring: '24/7',
       todayAlerts,
