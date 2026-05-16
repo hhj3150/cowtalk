@@ -146,17 +146,19 @@ stop-condition 어디에도 해당 안 함. 정상 진행.
 | 4 | `/farm/:farmId` | `FarmDetailPage` | `<KpiCard label="수태율">` (line 229). 단일 농장 페이지 | master 권한, 갈전리 농장 등 샘플 1개 |
 | 5 | `/report/farm/:farmId/monthly` | `MonthlyReportPage` (서버 응답 `BreedingMetrics.conceptionRate` + display) | "수태율 X%로 양호/미달..." 코멘트 라인 | master 권한, 갈전리 농장 직전 월 |
 
-### 빈 농장(센서 0 또는 데이터 0건)의 화면별 표시
+### 빈 농장(센서 0 또는 데이터 0건)의 화면별 표시 (최종)
 
 | 화면 | 본 PR 머지 후 표시 | 비고 |
 |---|---|---|
-| `/dashboard` (BreedingPipelineWidget) | **"—"** (em dash) | D5 가드 본 PR에서 추가 ✅ |
-| `/breeding` (BreedingCommandPage) | **"—"** (em dash) | D5 가드 본 PR에서 추가 ✅ |
-| `/breeding/performance` (BreedingKpiPage) | **"0.0%"** (gauge) / **"—"** (PR 임신율 라인) | 게이지는 `?? 0` 폴백, 임신율은 displayValue 사용. **부분적 D5** — 게이지 D5 전환은 BUG-005 |
-| `/farm/:farmId` (FarmDetailPage) | **null 처리됨** (이미 기존에 `!= null ? ... : null` 가드) | 기존 코드가 이미 D5에 가까웠음. 갈전리 데이터 있으면 정상 표시. |
-| `/report/.../monthly` | 코멘트 라인 자체가 생성 안 됨 | 서버 `if (cr === null) {}` 분기로 가짜 코멘트 차단 ✅ |
+| `/dashboard` (BreedingPipelineWidget) | **"—"** (em dash) | D5 가드 ✅ |
+| `/breeding` (BreedingCommandPage) | **"—"** (em dash) | D5 가드 ✅ |
+| `/breeding/performance` 임신율 라인 | **"—"** | displayValue 사용 ✅ |
+| `/breeding/performance` 게이지 | **"—" + "데이터 부족" 배지 + 빈 바** | **본 commit에서 완전 해결** (GaugeSection null 핸들링) ✅ |
+| `/farm/:farmId` (FarmDetailPage) | null 처리됨 | 기존 코드 가드 ✅ |
+| `/report/.../monthly` | 코멘트 생략 | 서버 `if (cr === null) {}` ✅ |
+| `FarmComparisonChart` (대시보드 차트) | **빈 농장 차트에서 제외 + "데이터 부족 N개 농장 제외" 안내** | **본 commit에서 완전 해결** (filter null + 범례 안내) ✅ |
 
-→ **사용자 가시 화면 5개 중 4개**가 빈 농장에서 "—" 또는 코멘트 생략. 1개(`/breeding/performance` gauge)는 "0.0%"로 남음(BUG-005 처리 대상).
+→ **사용자 가시 위치 7개 모두 D5 준수.** "0%"로 잔존하는 곳 없음. 차트 미표시 위치는 범례에서 제외 카운트 노출하여 투명성 보장.
 
 ### 검증 절차
 1. PR #33 push 후 Netlify 빌드 대기 (3–5분).
@@ -169,3 +171,52 @@ stop-condition 어디에도 해당 안 함. 정상 진행.
 ### 자동화 한계
 - worktree에 DB 없음 → API 응답 캡처 자동화 불가.
 - E2E (Playwright) 시나리오는 별도 PR로 작성 필요.
+
+---
+
+## 10. Pre-merge Regression Checklist — 시연 환경 수동 검증 (6/4 대비)
+
+cowtalk.netlify.app preview 환경에서 사용자(하원장님)가 직접 클릭 검증. master 권한 + 기본 필터 기준.
+
+| # | URL | 확인 항목 | 셀렉터 / 라벨 위치 | 기대값 |
+|---|-----|----------|---|---|
+| 1 | `/dashboard` (또는 `/` → RoleAwareHome) | CR 수치 | `BreedingPipelineWidget` 안 KPI 칩 6개 중 **"수태율(CR)"** 라벨 | 한 값. 60–85% 범위. 110% 초과 없음. |
+| 2 | `/breeding` | CR 수치 | `BreedingCommandPage` 상단 KPI 카드 — **"수태율"** 라벨 (큰 숫자) | #1과 동일 값. |
+| 3 | `/breeding/calendar` | CR 미표시 확인 | 페이지 어디에도 "수태율" 없음 | (의도된 미표시. 코드 검증 완료) |
+| 4 | `/farm/:farmId` (샘플: 갈전리 또는 술탄팜) | CR 수치 | `FarmDetailPage` 상단 `<KpiCard label="수태율">` | 해당 농장 단일 값. 빈 농장이면 "—". |
+| 5 | `/report/farm/:farmId/monthly` | CR 코멘트 | "수태율 X%로 양호한 수준입니다" 또는 "...로 목표(50%) 미달입니다" 텍스트. 빈 농장이면 코멘트 자체 없음. | 정수 % 표기 (예: "수태율 63%로..."). null이면 라인 자체 미생성. |
+| 6 | 빈 농장 1개 (센서 0 또는 신규 농장) | CR 표시 | 위 5개 위치 어디서나 | **"—"** (em dash) 또는 코멘트 미생성. "0%" 절대 금지. |
+| 7 | `/breeding/performance` 수태율 게이지 | 빈 농장 | `GaugeSection label="수태율"`. 값 텍스트 + 회색 "데이터 부족" 배지 | **"—"** + 배지 + 빈 바. |
+| 8 | `/dashboard` `FarmComparisonChart` | 빈 농장 | 차트의 막대 + 범례 영역 | 빈 농장 막대 미표시. 범례 우측에 "데이터 부족 N개 농장 제외" 텍스트. |
+| 9 | 모든 화면 통합 | CR > 100% 발견 | 어디서든 텍스트 "1__%" 또는 "11_%" | **0건** (PR #32 카디널리티 수정 + fertility-service clamp). |
+| 10 | `/dashboard` 번식 위젯 | mock 데이터 흔적 | "갈전리", "청송", "삼척한우", "영주", "봉화" 같은 demo 농장명 (실데이터에 없는 경우) | 실데이터만. demo 농장명 없음. 신규 농장은 빈 상태 표시. |
+
+### 검증 결과 기록 (시연 후 작성)
+표 옆에 "OK" / "FAIL: 사유" 컬럼 추가. FAIL이 1건이라도 있으면 머지 차단 → 즉시 fix PR.
+
+---
+
+## 11. Part 4 — PR #32 Mock 제거 영향 분석
+
+**질문**: PR #32에서 삭제한 `generateDemoBreedingData()` 70줄이 사라진 후, unified-dashboard의 번식 위젯(`BreedingPipelineWidget`)이 어디서 데이터를 받는가?
+
+**답**: **(b) 빈 응답 처리로 전환됨.**
+
+**경로**:
+- 클라이언트: `useQuery(['unified-dashboard-breeding-pipeline'])` → `/api/unified-dashboard/breeding-pipeline?farmId=...`
+- 서버: `buildBreedingPipeline(farmId)` ([unified-dashboard.routes.ts](packages/server/src/api/routes/unified-dashboard.routes.ts) line ~4498)
+- 분기:
+  - **`animalRows.length === 0`** (해당 농장에 동물 0두 또는 farmId 미선택 시 전체 농장 동물 0두) → `emptyBreedingData()` 반환
+    - 본 PR 후: `kpis = { conceptionRate: null, conceptionRateDisplay: '—', conceptionRateStatus: 'data_insufficient', estrusDetectionRate: 0, avgDaysOpen: 0, avgCalvingInterval: 0, avgDaysToFirstService: 0, pregnancyRate: null, ... }`
+    - 파이프라인: 6개 stage 모두 count=0
+    - UI: BreedingPipelineWidget이 "—" 표시 (D5 가드 적용됨)
+  - **실데이터 있음** → `computeBreedingKpis(breedingEvts, pregChecks, calvingData, smaxtecEvts)` 호출 → 진짜 농장 데이터로 KPI 계산 → fertility-service 단일 소스 (D1)
+
+**시연 영향**:
+- 갈전리·술탄팜·해돋이 등 데이터 풍부한 시연 농장은 **무영향** — 실데이터로 정상 동작.
+- 시연 시 사용자가 "신규 농장" 또는 "센서 0 농장"을 선택해도 가짜 146두 등장 안 함 — "—" 또는 "데이터 없음" 표시.
+- 시연 시나리오에서 일부러 빈 농장을 골라 비교하는 흐름이 있다면 **자연스럽게 작동**. 가짜 데이터로 인한 신뢰 손상 위험 0.
+
+**남은 위험**:
+- 없음. PR #32의 emptyBreedingData()는 본 PR에서 D5 준수 (`conceptionRate: null` + display fields)로 보강됨.
+- 단, `BreedingPipelineWidget`의 stage 카드(6개)가 모두 count=0으로 표시될 때 UX가 "정말 빈 농장"인지 명확히 보이도록 §10 #6 항목으로 확인.

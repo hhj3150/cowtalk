@@ -51,12 +51,15 @@ export default function FarmComparisonChart(): React.JSX.Element {
     );
   }
 
-  const chartData = data.map((f) => ({
+  // D5: rate=null(데이터 부족) 농장은 차트에서 제외. "0%"로 잘못 표시되는 것 방지.
+  const allEntries = data.map((f) => ({
     name: f.farmName.length > 8 ? `${f.farmName.slice(0, 8)}..` : f.farmName,
     fullName: f.farmName,
     value: f[metric.key],
     count: f.animalCount,
   }));
+  const chartData = allEntries.filter((d): d is typeof d & { value: number } => d.value !== null);
+  const insufficientCount = allEntries.length - chartData.length;
 
   const barHeight = Math.max(300, chartData.length * 36);
 
@@ -114,7 +117,7 @@ export default function FarmComparisonChart(): React.JSX.Element {
               {chartData.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
-                  fill={(entry.value ?? 0) >= metric.national ? metric.color : '#d97706'}
+                  fill={entry.value >= metric.national ? metric.color : '#d97706'}
                   fillOpacity={0.8}
                 />
               ))}
@@ -124,7 +127,7 @@ export default function FarmComparisonChart(): React.JSX.Element {
       </div>
 
       {/* 범례 */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded" style={{ background: metric.color }} />
           <span className="text-[11px]" style={{ color: 'var(--ct-text-secondary)' }}>전국 평균 이상</span>
@@ -133,6 +136,11 @@ export default function FarmComparisonChart(): React.JSX.Element {
           <div className="w-3 h-3 rounded" style={{ background: '#d97706' }} />
           <span className="text-[11px]" style={{ color: 'var(--ct-text-secondary)' }}>전국 평균 미만</span>
         </div>
+        {insufficientCount > 0 && (
+          <span className="text-[11px]" style={{ color: 'var(--ct-text-secondary)' }}>
+            데이터 부족 {insufficientCount}개 농장 제외
+          </span>
+        )}
       </div>
     </div>
   );
