@@ -183,3 +183,97 @@ export async function runAutoLabeling(days: number = 3): Promise<AutoLabelResult
     return { totalEvents: 0, labelsCreated: 0, predictionsMatched: 0 };
   }
 }
+
+interface FpCandidateDryRunResult {
+  readonly windowDays: number;
+  readonly oldAlarmsTotal: number;
+  readonly oldAlarmsMatched: number;
+  readonly fpCandidates: number;
+  readonly fpCandidatePct: number;
+  readonly sampleSignatures: string[];
+  readonly durationMs: number;
+}
+
+/**
+ * DATA-05 드라이런 — false_positive 후보 규모만 카운트한다. DB 쓰기 없음.
+ *
+ * windowDays(기본 14) 이전에 발사된 sovereign 알람 중, 같은 개체에서
+ * windowDays 내 smaXtec 이벤트가 한 건도 매칭되지 않은 알람을 "잠재 false_positive"로
+ * 집계만 한다. sovereign_alarm_labels / outcome_evaluations 등 어떤 테이블에도 INSERT 하지 않는다.
+ * 실제 fp_candidate 라벨링은 후속 사이클(DATA-05-B)에서 진행한다.
+ *
+ * animal_id IS NULL 인 predictions 행은 매칭이 불가능하므로 잠재 FP 에 계상한다(B3와 동일 시맨틱).
+ */
+export async function countFalsePositiveCandidates(
+  options?: { windowDays?: number; sampleLimit?: number },
+): Promise<FpCandidateDryRunResult> {
+  const windowDays = options?.windowDays ?? 14;
+  const sampleLimit = options?.sampleLimit ?? 5;
+  const startedAt = Date.now();
+  const db = getDb();
+
+  // 60일 전 ~ windowDays일 전 사이에 발사된 sovereign 알람을 대상으로 한다.
+  const totalsRows = await db.execute(sql`
+    WITH old_alarms AS (
+      SELECT p.prediction_id, p.animal_id, p.created_at
+      FROM predictions p
+      WHERE p.engine_type = 'sovereign_v1'
+        AND p.created_at <  NOW() - make_interval(days => ${windowDays}::int)
+        AND p.created_at >= NOW() - INTERVAL '60 days'
+    ),
+    matched AS (
+      SELECT DISTINCT oa.prediction_id
+      FROM old_alarms oa
+      JOIN smaxtec_events se
+        ON se.animal_id = oa.animal_id
+       AND se.detected_at BETWEEN oa.created_at
+                              AND oa.created_at + make_interval(days => ${windowDays}::int)
+    )
+    SELECT
+      (SELECT COUNT(*) FROM old_alarms) AS old_total,
+      (SELECT COUNT(*) FROM matched)    AS old_matched
+  `);
+
+  const totals = (totalsRows as unknown as Array<{ old_total: string | number; old_matched: string | number }>)[0];
+  const oldAlarmsTotal = Number(totals?.old_total ?? 0);
+  const oldAlarmsMatched = Number(totals?.old_matched ?? 0);
+  const fpCandidates = oldAlarmsTotal - oldAlarmsMatched;
+  const fpCandidatePct = Math.round((100 * fpCandidates / Math.max(oldAlarmsTotal, 1)) * 100) / 100;
+
+  // 매칭 안 된(잠재 FP) 알람 중 최근 sampleLimit 개의 시그니처 표본.
+  // 시그니처 패턴은 기존 auto-labeler 와 동일: `${animalId}:${alarmType}:${YYYY-MM-DD}`
+  const sampleRows = await db.execute(sql`
+    SELECT p.animal_id, p.prediction_label, p.created_at
+    FROM predictions p
+    WHERE p.engine_type = 'sovereign_v1'
+      AND p.created_at <  NOW() - make_interval(days => ${windowDays}::int)
+      AND p.created_at >= NOW() - INTERVAL '60 days'
+      AND NOT EXISTS (
+        SELECT 1 FROM smaxtec_events se
+        WHERE se.animal_id = p.animal_id
+          AND se.detected_at BETWEEN p.created_at
+                                 AND p.created_at + make_interval(days => ${windowDays}::int)
+      )
+    ORDER BY p.created_at DESC
+    LIMIT ${sampleLimit}
+  `);
+
+  const sampleSignatures = (sampleRows as unknown as Array<{
+    animal_id: string | null;
+    prediction_label: string | null;
+    created_at: string | Date;
+  }>).map((r) => {
+    const dateStr = new Date(r.created_at).toISOString().slice(0, 10);
+    return `${r.animal_id ?? 'null'}:${r.prediction_label ?? 'unknown'}:${dateStr}`;
+  });
+
+  return {
+    windowDays,
+    oldAlarmsTotal,
+    oldAlarmsMatched,
+    fpCandidates,
+    fpCandidatePct,
+    sampleSignatures,
+    durationMs: Date.now() - startedAt,
+  };
+}

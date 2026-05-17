@@ -485,13 +485,29 @@ export class PipelineOrchestrator {
       await this.runSovereignAlarmSweep();
 
       // 1) 자동 레이블링 — 146개 농장의 smaXtec 이벤트 → 소버린 알람 레이블 자동 생성
-      const { runAutoLabeling } = await import('../intelligence-loop/auto-labeler.service.js');
+      const { runAutoLabeling, countFalsePositiveCandidates } = await import('../intelligence-loop/auto-labeler.service.js');
       const labelResult = await runAutoLabeling(3);
       logger.info({
         events: labelResult.totalEvents,
         labels: labelResult.labelsCreated,
         matched: labelResult.predictionsMatched,
       }, '[Pipeline] Auto-labeling completed');
+
+      // DATA-05 드라이런 — false_positive 후보 규모만 측정 (DB 쓰기 0, fire-and-forget).
+      try {
+        const fpCount = await countFalsePositiveCandidates({ windowDays: 14, sampleLimit: 5 });
+        logger.info({
+          windowDays: fpCount.windowDays,
+          oldAlarmsTotal: fpCount.oldAlarmsTotal,
+          oldAlarmsMatched: fpCount.oldAlarmsMatched,
+          fpCandidates: fpCount.fpCandidates,
+          fpCandidatePct: fpCount.fpCandidatePct,
+          sampleSignatures: fpCount.sampleSignatures,
+          durationMs: fpCount.durationMs,
+        }, '[auto-labeler] FP candidate dry-run');
+      } catch (err) {
+        logger.warn({ err: (err as Error).message }, '[auto-labeler] FP candidate dry-run failed');
+      }
 
       // 2) 예측-결과 배치 매칭 — predictions ↔ smaXtec 이벤트/feedback
       const { runBatchMatching } = await import('../intelligence-loop/outcome-recorder.js');
