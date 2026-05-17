@@ -220,7 +220,10 @@ export async function compareEngines(
 interface PerformanceOverview {
   readonly engines: readonly EngineEvaluation[];
   readonly totalPredictions: number;
-  readonly totalFeedback: number;
+  // DATA-03-A: AI 평가 누적량 = outcome_evaluations 합산 (게이트 기준).
+  readonly totalEvaluated: number;
+  // 사용자 명시 피드백(feedback 테이블)은 별도 보존.
+  readonly feedbackCount: number;
   readonly overallAccuracy: number;
   readonly feedbackRate: number;
 }
@@ -242,7 +245,7 @@ export async function getPerformanceOverview(
       WHERE created_at >= ${dateRange.from.toISOString()}
         AND created_at <= ${dateRange.to.toISOString()}
     `);
-    const totalFeedback = Number((fbResult as unknown as Record<string, unknown>[])[0]?.total_feedback ?? 0);
+    const feedbackCount = Number((fbResult as unknown as Record<string, unknown>[])[0]?.total_feedback ?? 0);
 
     const totalPredictions = engines.reduce((sum, e) => sum + e.totalPredictions, 0);
     const totalEvaluated = engines.reduce((sum, e) => sum + e.totalEvaluated, 0);
@@ -252,14 +255,16 @@ export async function getPerformanceOverview(
       ? engines.reduce((sum, e) => sum + e.precision * e.totalEvaluated, 0) / totalEvaluated
       : 0;
 
+    // DATA-03-A: "전체 예측 중 평가 누적률" — outcome_evaluations 기준으로 재정의.
     const feedbackRate = totalPredictions > 0
-      ? totalFeedback / totalPredictions
+      ? totalEvaluated / totalPredictions
       : 0;
 
     return {
       engines,
       totalPredictions,
-      totalFeedback,
+      totalEvaluated,
+      feedbackCount,
       overallAccuracy,
       feedbackRate,
     };
