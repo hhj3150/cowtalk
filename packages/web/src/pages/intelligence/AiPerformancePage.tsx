@@ -178,6 +178,19 @@ export default function AiPerformancePage(): React.JSX.Element {
             </div>
           )}
 
+          {/* AIPERF-BANNER-01: sovereign_alarm_labels 표본 편향 경고 (master 한정 노출) */}
+          {isMaster && (
+            <div
+              className="rounded-lg border px-3 py-2 text-xs"
+              style={{ borderColor: 'var(--ct-warning-border, #f59e0b)', background: 'var(--ct-warning-bg, #fffbeb)', color: 'var(--ct-warning-text, #92400e)' }}
+            >
+              ⚠️ 표본 편향 알림 — 현재 sovereign 엔진의 라벨 표본은 confirmed 100%로 편향되어
+              있습니다. 표시되는 Precision/Recall/F1은 confirmed-only 표본에서 산출된 값이며
+              실제 모델 성능을 과대평가할 수 있습니다. (DATA-05 후속 패치에서 false_positive
+              라벨링 경로 신설 예정)
+            </div>
+          )}
+
           {/* Top KPI row */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard
