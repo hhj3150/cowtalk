@@ -1265,13 +1265,13 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
         }
       }
       setSensorAnomalies(anomalies);
-    }).catch(() => {});
+    }).catch((err) => { console.warn('[AlarmLabelChat] 센서 이상치 로딩 실패', err); });
   }, [animalId]);
 
   // 동물 기본 정보 + 이벤트 목록 + 관찰 기록 로드
   useEffect(() => {
-    getAnimalInfo(animalId).then((info) => setAnimalInfo(info)).catch(() => {});
-    getObservations(animalId).then((data) => setObservations(data)).catch(() => {});
+    getAnimalInfo(animalId).then((info) => setAnimalInfo(info)).catch((err) => { console.warn('[AlarmLabelChat] 동물 정보 로딩 실패', err); });
+    getObservations(animalId).then((data) => setObservations(data)).catch((err) => { console.warn('[AlarmLabelChat] 관찰 기록 로딩 실패', err); });
     getAnimalEvents(animalId).then((data) => {
       setEvents(data);
       if (!selectedEventId && data.length > 0) {
@@ -1299,11 +1299,11 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
           role: 'system',
           content: `${ctx.farmName} | ${ctx.earTag} | ${eventTypeLabel(ctx.eventType)} (${ctx.severity}) — AI와 대화하며 현장 확인 결과를 레이블링하세요.`,
         }]);
-      }).catch(() => {});
+      }).catch((err) => { console.warn('[AlarmLabelChat] 이벤트 컨텍스트 로딩 실패', err); });
 
       getLabelHistory(selectedEventId).then((history) => {
         setLabelHistory(history);
-      }).catch(() => {});
+      }).catch((err) => { console.warn('[AlarmLabelChat] 레이블 이력 로딩 실패', err); });
     } else if (animalInfo && events.length === 0) {
       // 이벤트가 없는 소 → 센서 이상 여부에 따라 메시지 변경
       const hasAnomalies = sensorAnomalies.length > 0;
@@ -1454,7 +1454,7 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
 
       // 관찰 기록 목록 갱신
       if (animalId) {
-        getObservations(animalId).then(setObservations).catch(() => {});
+        getObservations(animalId).then(setObservations).catch((err) => { console.warn('[AlarmLabelChat] 관찰 기록 갱신 실패', err); });
       }
     } catch {
       // 에러 시 무시 (UI에서 버튼 다시 시도 가능)

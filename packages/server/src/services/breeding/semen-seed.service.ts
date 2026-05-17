@@ -260,7 +260,7 @@ export async function syncHanwooSemenFromPublicApi(): Promise<{ synced: number }
     return { synced };
   } catch (err) {
     logger.error({ err }, '[SemenSync] 한우 씨수소 동기화 실패');
-    await connector.disconnect().catch(() => {});
+    await connector.disconnect().catch((discErr) => { logger.warn({ err: discErr }, '[SemenSync] 동기화 실패 후 disconnect 실패'); });
     return { synced: 0 };
   }
 }
