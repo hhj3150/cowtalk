@@ -66,7 +66,8 @@ function EngineCard({ engine }: { readonly engine: EngineMetrics }): React.JSX.E
       </div>
       <div className="flex justify-between text-xs pt-1" style={{ color: 'var(--ct-text-secondary)', borderTop: '1px solid var(--ct-border)' }}>
         <span>총 예측: {engine.totalPredictions.toLocaleString()}</span>
-        <span>평균 신뢰도: {(engine.averageConfidence * 100).toFixed(0)}%</span>
+        {/* POLISH-04: 서버 averageConfidence는 이미 0~100 스케일 — ×100 제거 + 0~100 클램프 */}
+        <span>평균 신뢰도: {Math.max(0, Math.min(engine.averageConfidence, 100)).toFixed(1)}%</span>
       </div>
     </div>
   );
