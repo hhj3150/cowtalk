@@ -27,8 +27,12 @@ export interface MapFilters {
 
 // ── 상수 ──
 
-const DEFAULT_CENTER: [number, number] = [36.0, 127.5];
+// POLISH-01: 한반도 고정 뷰포트 (NationalMiniMap 과 동일 center/zoom).
+const DEFAULT_CENTER: [number, number] = [36.2, 127.8];
 const DEFAULT_ZOOM = 7;
+const MIN_ZOOM = 6;
+// 한반도 + 여유 — 글로벌 패닝(카자흐스탄/몽골/중국) 방지. Leaflet bounds [[남,서],[북,동]].
+const KOREA_MAX_BOUNDS: [[number, number], [number, number]] = [[32.5, 123.5], [39.8, 132.5]];
 
 const STATUS_COLORS: Readonly<Record<string, string>> = {
   normal: '#22c55e',
@@ -74,17 +78,11 @@ function MapController({
       const sel = markers.find((m) => m.farmId === selectedFarmId);
       if (sel?.lat && sel.lng) {
         map.setView([sel.lat, sel.lng], 11);
-        return;
       }
     }
-    const valid = markers.filter((m) => m.lat && m.lng);
-    if (valid.length === 0) return;
-    if (valid.length === 1) {
-      map.setView([valid[0]!.lat, valid[0]!.lng], 11);
-      return;
-    }
-    const bounds = valid.map((m) => [m.lat, m.lng] as [number, number]);
-    map.fitBounds(bounds, { padding: [40, 40] });
+    // POLISH-01: 데이터 기반 fitBounds 제거 — 필터 클릭 시 filteredMarkers 가 바뀌어도
+    // 뷰포트를 재계산하지 않는다. 초기 뷰포트는 MapContainer 의 고정 center/zoom(한반도).
+    // (좌표 이상 농장이 fitBounds 에 섞여 글로벌로 풀리던 증상도 함께 해소.)
   }, [map, markers, selectedFarmId, center, zoom]);
 
   return null;
@@ -173,6 +171,9 @@ export function RegionalMap({
       <MapContainer
         center={center ?? DEFAULT_CENTER}
         zoom={zoom}
+        minZoom={MIN_ZOOM}
+        maxBounds={KOREA_MAX_BOUNDS}
+        maxBoundsViscosity={1.0}
         style={{ height: '100%', width: '100%', borderRadius: 14 }}
         zoomControl={true}
         attributionControl={true}

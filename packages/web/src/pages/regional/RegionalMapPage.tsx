@@ -31,7 +31,7 @@ export default function RegionalMapPage(): React.JSX.Element {
   const navigate = useNavigate();
   const [mode, setMode] = useState<MapMode>('status');
   const [selectedFarm, setSelectedFarm] = useState<string | null>(null);
-  const [darkMode, setDarkMode] = useState(true); // 기본 다크 모드
+  const [darkMode, setDarkMode] = useState(false); // POLISH-01: 기본 라이트(컬러) 타일 — 시연 가독성. 토글 유지.
   const [statusFilter, setStatusFilter] = useState<readonly string[]>([]);
   const { data: mapData, isLoading, error, refetch, dataUpdatedAt } = useRegionalMap(mode);
   const { data: summary } = useRegionalSummary();
