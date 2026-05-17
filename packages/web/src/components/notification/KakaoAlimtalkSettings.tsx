@@ -52,6 +52,8 @@ export function KakaoAlimtalkSettings(): React.JSX.Element {
   const [phone, setPhone] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>('ESTRUS_ALERT');
   const [lastResult, setLastResult] = useState<TestResult | null>(null);
+  // POLISH-02: 인프라 안내(배지 + 활성화 절차)는 기본 접힘 — 시연 시 정면 노출 방지.
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const { data: status } = useQuery<AlimtalkStatus>({
     queryKey: ['alimtalk-status'],
@@ -91,50 +93,9 @@ export function KakaoAlimtalkSettings(): React.JSX.Element {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {status && (
-            <span
-              className="text-xs px-2 py-0.5 rounded-full font-semibold"
-              style={{
-                background: isReady ? 'rgba(22,163,74,0.1)' : 'rgba(217,119,6,0.1)',
-                color: isReady ? '#16a34a' : '#d97706',
-              }}
-            >
-              {status.testMode ? '테스트 모드' : '실발송'}
-            </span>
-          )}
-          <span
-            className="text-xs px-2 py-0.5 rounded-full font-semibold"
-            style={{
-              background: status?.configured ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
-              color: status?.configured ? '#16a34a' : '#dc2626',
-            }}
-          >
-            {status?.approvalStatus === 'ready' ? '연동 완료' : '채널 등록 필요'}
-          </span>
-        </div>
       </div>
 
       <div className="p-4 space-y-5">
-        {/* 등록 안내 (미연동 시) */}
-        {status && !status.configured && (
-          <div
-            className="rounded-xl p-4 space-y-2"
-            style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.2)' }}
-          >
-            <p className="text-xs font-semibold" style={{ color: '#d97706' }}>📋 카카오 알림톡 활성화 절차</p>
-            <ol className="text-xs space-y-1 list-decimal list-inside" style={{ color: 'var(--ct-text-secondary)' }}>
-              <li>카카오 비즈니스 채널 등록 → <strong>business.kakao.com</strong></li>
-              <li>Solapi 계정 생성 → 카카오채널 연동 → API 키 발급</li>
-              <li>6개 템플릿 심사 신청 (자동 승인 약 2~3일)</li>
-              <li>.env에 KAKAO_ALIMTALK_API_KEY, PFID 등록 → 즉시 실발송 전환</li>
-            </ol>
-            <p className="text-[11px] mt-2" style={{ color: 'var(--ct-text-secondary)' }}>
-              템플릿 승인 전까지 테스트 모드로 동작 — 메시지 내용은 서버 로그에서 확인
-            </p>
-          </div>
-        )}
-
         {/* 템플릿 목록 */}
         <div>
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--ct-text)' }}>지원 알림 유형 (6종)</p>
@@ -226,6 +187,63 @@ export function KakaoAlimtalkSettings(): React.JSX.Element {
             💬 미리보기 — {TEMPLATE_LABELS[selectedTemplate]?.label}
           </p>
           <SampleMessage templateId={selectedTemplate} />
+        </div>
+
+        {/* POLISH-02: 설정 가이드 (기본 접힘) — 인프라 안내·상태 배지를 토글 안으로 */}
+        <div style={{ borderTop: '1px solid var(--ct-border)', paddingTop: 12 }}>
+          <button
+            type="button"
+            onClick={() => setIsGuideOpen((v) => !v)}
+            className="text-xs"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ct-text-secondary)', padding: 0 }}
+          >
+            ⚙ 설정 가이드 {isGuideOpen ? '▾' : '▸'}
+          </button>
+          {isGuideOpen && (
+            <div className="mt-3 space-y-3">
+              {/* 연동 상태 배지 */}
+              <div className="flex items-center gap-2">
+                {status && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                    style={{
+                      background: isReady ? 'rgba(22,163,74,0.1)' : 'rgba(217,119,6,0.1)',
+                      color: isReady ? '#16a34a' : '#d97706',
+                    }}
+                  >
+                    {status.testMode ? '테스트 모드' : '실발송'}
+                  </span>
+                )}
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                  style={{
+                    background: status?.configured ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
+                    color: status?.configured ? '#16a34a' : '#dc2626',
+                  }}
+                >
+                  {status?.approvalStatus === 'ready' ? '연동 완료' : '채널 등록 필요'}
+                </span>
+              </div>
+              {/* 활성화 절차 (미연동 시) */}
+              {status && !status.configured && (
+                <div
+                  className="rounded-xl p-4 space-y-2"
+                  style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.2)' }}
+                >
+                  <p className="text-xs font-semibold" style={{ color: '#d97706' }}>📋 카카오 알림톡 활성화 절차</p>
+                  <ol className="text-xs space-y-1 list-decimal list-inside" style={{ color: 'var(--ct-text-secondary)' }}>
+                    <li>카카오 비즈니스 채널 등록 → <strong>business.kakao.com</strong></li>
+                    <li>Solapi 계정 생성 → 카카오채널 연동 → API 키 발급</li>
+                    <li>6개 템플릿 심사 신청 (자동 승인 약 2~3일)</li>
+                    <li>.env에 KAKAO_ALIMTALK_API_KEY, PFID 등록 → 즉시 실발송 전환</li>
+                  </ol>
+                  <p className="text-[11px] mt-2" style={{ color: 'var(--ct-text-secondary)' }}>
+                    템플릿 승인 전까지 테스트 모드로 동작 — 메시지 내용은 서버 로그에서 확인
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
