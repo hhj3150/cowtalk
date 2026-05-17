@@ -42,7 +42,10 @@ export interface ThresholdSuggestion {
 export interface PerformanceOverview {
   readonly engines: readonly EngineMetrics[];
   readonly totalPredictions: number;
-  readonly totalFeedback: number;
+  // DATA-03-A: AI 평가 누적량 = outcome_evaluations 합산 (게이트 기준).
+  readonly totalEvaluated: number;
+  // 사용자 명시 피드백(feedback 테이블)은 별도 보존.
+  readonly feedbackCount: number;
   readonly overallAccuracy: number;
   readonly feedbackRate: number;
 }

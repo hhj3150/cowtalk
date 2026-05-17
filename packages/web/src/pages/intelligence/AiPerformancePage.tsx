@@ -131,7 +131,7 @@ export default function AiPerformancePage(): React.JSX.Element {
 
   if (isLoading) return <LoadingSkeleton lines={8} />;
 
-  const hasMinData = Boolean(data) && (data?.totalFeedback ?? 0) >= 10;
+  const hasMinData = Boolean(data) && (data?.totalEvaluated ?? 0) >= 10;
 
   // POLISH-03: master(행정관 슈퍼계정)는 운영 피드백 누적 전이라도
   // 평가가 완료된 엔진 카드를 확인할 수 있다 (시드/시뮬레이션 평가 데이터).
@@ -158,10 +158,10 @@ export default function AiPerformancePage(): React.JSX.Element {
           style={{ borderColor: 'var(--ct-warning)', background: '#FFFBEB' }}
         >
           <p className="text-sm font-medium" style={{ color: '#92400E' }}>
-            최소 10건의 피드백이 필요합니다.
+            최소 10건의 평가 데이터가 필요합니다.
           </p>
           <p className="mt-1 text-xs" style={{ color: '#A16207' }}>
-            현재 피드백: {data?.totalFeedback ?? 0}건. 피드백이 쌓이면 정확도 분석이 시작됩니다.
+            평가 누적: {data?.totalEvaluated ?? 0}건. 평가가 쌓이면 정확도 분석이 시작됩니다.
           </p>
         </div>
       )}
@@ -190,12 +190,12 @@ export default function AiPerformancePage(): React.JSX.Element {
               unit="건"
             />
             <KpiCard
-              label="총 피드백 수"
-              value={data.totalFeedback.toLocaleString()}
+              label="총 평가 수"
+              value={data.totalEvaluated.toLocaleString()}
               unit="건"
             />
             <KpiCard
-              label="피드백 수집률"
+              label="평가 누적률"
               value={`${(data.feedbackRate * 100).toFixed(1)}%`}
             />
           </div>
