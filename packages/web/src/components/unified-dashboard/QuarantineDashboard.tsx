@@ -273,7 +273,7 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
       setNational(nat);
       setMetrics(met);
       setActionQueue(aq ?? []);
-    }).catch(() => {});
+    }).catch((err) => { console.warn('[QuarantineDashboard] 대시보드 초기 로딩 실패', err); });
   }, []);
 
   const handleCompleteAction = useCallback(async (actionId: string) => {
@@ -1004,7 +1004,7 @@ export function QuarantineDashboard({ onFarmClick }: Props): React.JSX.Element {
             // 발령 후 actionQueue 갱신 (성공 화면이 닫힐 때 자동으로 onClose 호출됨)
             apiGet<readonly ActionQueueItem[]>('/quarantine/action-queue')
               .then((aq) => setActionQueue(aq ?? []))
-              .catch(() => {});
+              .catch((err) => { console.warn('[QuarantineDashboard] 액션 큐 갱신 실패', err); });
           }}
         />
       )}

@@ -110,7 +110,7 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
     ]).then(([nat, met]) => {
       setNational(nat);
       setMetrics(met);
-    }).catch(() => {});
+    }).catch((err) => { console.warn('[GovAdminDashboard] 전국/메트릭 로딩 실패', err); });
   }, []);
 
   if (!national) {

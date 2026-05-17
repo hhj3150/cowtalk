@@ -973,11 +973,11 @@ export function TinkerbellAssistant({
     stopSpeaking();
     try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     unlockTts();
-    console.log('[Whisper] 1) 시작 — getUserMedia 요청');
+    if (import.meta.env.DEV) console.log('[Whisper] 1) 시작 — getUserMedia 요청');
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log('[Whisper] 2) 스트림 획득 — tracks:', stream.getTracks().length);
+      if (import.meta.env.DEV) console.log('[Whisper] 2) 스트림 획득 — tracks:', stream.getTracks().length);
       mediaStreamRef.current = stream;
 
       // iOS Safari MediaRecorder는 'audio/mp4' 만 지원, Android는 'audio/webm' 선호.
@@ -991,7 +991,7 @@ export function TinkerbellAssistant({
           break;
         }
       }
-      console.log('[Whisper] 3) MediaRecorder mimeType:', mimeType || '(브라우저 기본)');
+      if (import.meta.env.DEV) console.log('[Whisper] 3) MediaRecorder mimeType:', mimeType || '(브라우저 기본)');
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       mediaChunksRef.current = [];
@@ -999,19 +999,19 @@ export function TinkerbellAssistant({
       recorder.ondataavailable = (e: BlobEvent) => {
         if (e.data && e.data.size > 0) {
           mediaChunksRef.current.push(e.data);
-          console.log('[Whisper] 4) chunk 도착:', e.data.size, 'bytes (총', mediaChunksRef.current.length, ')');
+          if (import.meta.env.DEV) console.log('[Whisper] 4) chunk 도착:', e.data.size, 'bytes (총', mediaChunksRef.current.length, ')');
         }
       };
 
       recorder.onstop = async () => {
-        console.log('[Whisper] 5) recorder.onstop fired');
+        if (import.meta.env.DEV) console.log('[Whisper] 5) recorder.onstop fired');
         if (mediaStreamRef.current) {
           for (const track of mediaStreamRef.current.getTracks()) track.stop();
           mediaStreamRef.current = null;
         }
         const chunks = mediaChunksRef.current;
         mediaChunksRef.current = [];
-        console.log('[Whisper] 6) 총 chunk:', chunks.length, 'bytes:', chunks.reduce((s, c) => s + c.size, 0));
+        if (import.meta.env.DEV) console.log('[Whisper] 6) 총 chunk:', chunks.length, 'bytes:', chunks.reduce((s, c) => s + c.size, 0));
         if (chunks.length === 0) {
           setState('idle');
           setVoiceError('녹음 데이터 없음 — iOS MediaRecorder 호환성 문제일 수 있습니다. Safari 새로고침 또는 Android 권장.');
@@ -1024,10 +1024,10 @@ export function TinkerbellAssistant({
           return;
         }
         setState('thinking');
-        console.log('[Whisper] 7) Whisper 전사 요청 — blob:', blob.size, 'bytes,', blob.type);
+        if (import.meta.env.DEV) console.log('[Whisper] 7) Whisper 전사 요청 — blob:', blob.size, 'bytes,', blob.type);
         try {
           const result = await transcribeAudio(blob, uiLang);
-          console.log('[Whisper] 8) 전사 완료 — text:', result.text);
+          if (import.meta.env.DEV) console.log('[Whisper] 8) 전사 완료 — text:', result.text);
           const text = (result.text ?? '').trim();
           if (text) {
             const cleaned = cleanSttTranscript(text);
@@ -1050,7 +1050,7 @@ export function TinkerbellAssistant({
       // iOS Safari는 timeslice 없으면 ondataavailable이 onstop 때만 호출됨.
       // 1초 timeslice로 chunk가 도착하는지 실시간 확인 가능 + 데이터 손실 방지.
       recorder.start(1000);
-      console.log('[Whisper] 4) recorder.start(1000) — state:', recorder.state);
+      if (import.meta.env.DEV) console.log('[Whisper] 4) recorder.start(1000) — state:', recorder.state);
       setState('listening');
       setTranscript('');
 
@@ -1064,7 +1064,7 @@ export function TinkerbellAssistant({
       // 자동 정지: 6초 후 (사용자가 다시 마이크 누르면 stopListening이 즉시 정지)
       window.setTimeout(() => {
         if (recorder.state === 'recording') {
-          console.log('[Whisper] 4.5) 6초 자동 정지');
+          if (import.meta.env.DEV) console.log('[Whisper] 4.5) 6초 자동 정지');
           try { recorder.stop(); } catch { /* ignore */ }
         }
       }, 6000);

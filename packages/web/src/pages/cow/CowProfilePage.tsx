@@ -210,7 +210,7 @@ export default function CowProfilePage(): React.JSX.Element {
           setFarmAnimalIds(list.map((a) => a.animalId));
         }
       })
-      .catch(() => {});
+      .catch((err) => { console.warn('[CowProfile] 농장 개체 목록 로딩 실패', err); });
   }, [profile?.farmId]);
 
   // 소버린 AI 알람 — 이 개체에 해당하는 것만 필터
@@ -304,7 +304,7 @@ export default function CowProfilePage(): React.JSX.Element {
           drinkingCount: computeDrinkingCount(tempPts),
         });
       })
-      .catch(() => {});
+      .catch((err) => { console.warn('[CowProfile] 센서 차트 로딩 실패', err); });
 
     // 보조 데이터 — 비동기 지연 로딩 (로딩 상태 차단 안 함)
     withTimeout(apiGet<unknown>(`/animals/${id}/breeding-history`), 10000)
@@ -323,19 +323,19 @@ export default function CowProfilePage(): React.JSX.Element {
           setBreeding(flat);
         }
       })
-      .catch(() => {});
+      .catch((err) => { console.warn('[CowProfile] 번식 이력 로딩 실패', err); });
 
     withTimeout(apiGet<{ riskScore: number; riskLevel: string; reasons: string[]; recommendation: string }>(`/predictions/health/${id}`), 10000)
       .then((data) => { if (!cancelled && data) setHealthPred(data); })
-      .catch(() => {});
+      .catch((err) => { console.warn('[CowProfile] 건강 예측 로딩 실패', err); });
 
     withTimeout(apiGet<{ hasData: boolean; avgCycleDays?: number; daysUntilNext?: number; nextEstrusDate?: string; isWithin3Days?: boolean; reasoning?: string; message?: string }>(`/predictions/estrus/${id}`), 10000)
       .then((data) => { if (!cancelled && data) setEstrusPred(data); })
-      .catch(() => {});
+      .catch((err) => { console.warn('[CowProfile] 발정 예측 로딩 실패', err); });
 
     withTimeout(apiGet<{ calvingRisk: string; reasons: string[]; recommendation: string }>(`/predictions/calving/${id}`), 10000)
       .then((data) => { if (!cancelled && data) setCalvingPred(data); })
-      .catch(() => {});
+      .catch((err) => { console.warn('[CowProfile] 분만 예측 로딩 실패', err); });
 
     return () => { cancelled = true; };
   }, [id]);

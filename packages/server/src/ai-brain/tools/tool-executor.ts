@@ -980,7 +980,7 @@ async function handleRecommendInseminationWindow(input: Record<string, unknown>)
     // AI 성능 측정: 번식 추천을 predictions에 저장 (비동기)
     import('../../intelligence-loop/prediction-bridge.service.js')
       .then(({ saveBreedingAdviceAsPrediction }) => saveBreedingAdviceAsPrediction(advice))
-      .catch(() => {});
+      .catch((err) => { logger.warn({ err }, '[ToolExecutor] 번식 권고 prediction 저장 실패'); });
 
     return {
       animalId: advice.animalId,
@@ -1110,7 +1110,7 @@ async function handleDifferentialDiagnosis(input: Record<string, unknown>): Prom
   const symptoms = Array.isArray(input.symptoms) ? input.symptoms as string[] : undefined;
   const result = await getDifferentialDiagnosis(animalId, symptoms);
   // AI 성능 측정: 감별진단 결과를 predictions에 저장 (비동기)
-  saveDifferentialDiagnosisAsPrediction(result).catch(() => {});
+  saveDifferentialDiagnosisAsPrediction(result).catch((err) => { logger.warn({ err }, '[ToolExecutor] 감별진단 prediction 저장 실패'); });
   return result;
 }
 
