@@ -56,11 +56,12 @@ describe('KpiCard', () => {
     expect(screen.getByText('→')).toBeInTheDocument();
   });
 
-  it('severity에 따른 border 색상 클래스', () => {
+  it('severity=critical 이면 좌측 테두리에 위험 색상 적용', () => {
     const { container } = render(
       <KpiCard label="위험" value={5} severity="critical" drilldownType="health_risk" />,
     );
+    // KpiCard 는 Tailwind 클래스가 아닌 인라인 style 로 좌측 테두리 색을 지정한다.
     const button = container.querySelector('button');
-    expect(button?.className).toContain('border-l-red-500');
+    expect(button?.style.borderLeft).toContain('var(--ct-danger)');
   });
 });
