@@ -26,6 +26,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
+import { useNotificationStore } from '@web/stores/notification.store';
+import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
+import { deriveRecommendationCta, type RecommendationCta } from '@web/features/ai-recommendation/recommendation-cta';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { ErrorFallback } from '@web/components/common/ErrorFallback';
 import { SectionErrorBoundary } from '@web/components/common/SectionErrorBoundary';
@@ -234,6 +237,35 @@ function AiBriefingCard({ onKpiClick }: {
   readonly onKpiClick?: (filter: { eventType: string; label: string }) => void;
 }): React.JSX.Element {
   const { data: briefing, isLoading } = useAiBriefing();
+  // FLOW-07: AI 추천 CTA — 패턴 매칭으로 도출, 클릭 시 액션.
+  const navigate = useNavigate();
+  const farms = useFarmStore((s) => s.farms);
+  const selectFarm = useFarmStore((s) => s.selectFarm);
+  const currentFarmId = useFarmStore((s) => s.selectedFarmId);
+  const effectiveRole = useEffectiveRole() ?? 'government_admin';
+  const toggleNotificationDrawer = useNotificationStore((s) => s.toggleDrawer);
+
+  function runRecommendationCta(cta: RecommendationCta): void {
+    switch (cta.kind) {
+      case 'route':
+        navigate(cta.target);
+        break;
+      case 'farm-select':
+        // D21: URL 변경 없이 farm.store 만 갱신.
+        selectFarm(cta.farmId);
+        break;
+      case 'severity-filter':
+        // /alerts 라우트 부재 → 대시보드 severity drilldown 재사용.
+        onKpiClick?.({
+          eventType: cta.severity === 'critical' ? 'SEVERITY_CRITICAL' : 'SEVERITY_HIGH',
+          label: cta.label,
+        });
+        break;
+      case 'open-notifications':
+        toggleNotificationDrawer();
+        break;
+    }
+  }
 
   if (isLoading || !briefing) {
     return (
@@ -307,28 +339,65 @@ function AiBriefingCard({ onKpiClick }: {
             AI 추천
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {(briefing.recommendations ?? []).slice(0, 3).map((rec, i) => (
-              <div key={i} style={{
-                fontSize: 12,
-                color: 'var(--ct-text-secondary)',
-                paddingLeft: 16,
-                position: 'relative',
-                lineHeight: 1.6,
-              }}>
-                <span style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 1,
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: 'var(--ct-primary)',
-                  opacity: 0.6,
-                  marginTop: 5,
-                }} />
-                {rec}
-              </div>
-            ))}
+            {(briefing.recommendations ?? []).slice(0, 3).map((rec, i) => {
+              // FLOW-07: 추천 문구 → CTA 도출. null 이면 기존 평문 유지.
+              const cta = deriveRecommendationCta(rec, {
+                role: effectiveRole,
+                farms,
+                currentFarmId: currentFarmId ?? undefined,
+              });
+              return (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}>
+                  <div style={{
+                    fontSize: 12,
+                    color: 'var(--ct-text-secondary)',
+                    paddingLeft: 16,
+                    position: 'relative',
+                    lineHeight: 1.6,
+                    flex: 1,
+                    minWidth: 0,
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 1,
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: 'var(--ct-primary)',
+                      opacity: 0.6,
+                      marginTop: 5,
+                    }} />
+                    {rec}
+                  </div>
+                  {cta && (
+                    <button
+                      type="button"
+                      onClick={() => runRecommendationCta(cta)}
+                      style={{
+                        flexShrink: 0,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        border: '1px solid var(--ct-primary)',
+                        background: 'transparent',
+                        color: 'var(--ct-primary)',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {cta.label}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
