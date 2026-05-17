@@ -4,21 +4,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-
-const mockSendMessage = vi.fn();
-const mockClearMessages = vi.fn();
+// vi.mock 팩토리는 호이스팅되므로 mutable 상태는 vi.hoisted 로 선언한다.
+const h = vi.hoisted(() => ({
+  messages: [] as { id: string; role: string; content: string }[],
+  sendMessage: vi.fn(),
+  clearMessages: vi.fn(),
+}));
 
 vi.mock('@web/hooks/useChat', () => ({
   useChat: () => ({
-    messages: [],
+    messages: h.messages,
     isStreaming: false,
-    sendMessage: mockSendMessage,
+    sendMessage: h.sendMessage,
     cancelStream: vi.fn(),
-    clearMessages: mockClearMessages,
+    clearMessages: h.clearMessages,
   }),
 }));
 
-vi.mock('./SuggestedQuestions', () => ({
+// ChatDrawer 는 useDashboard(React Query) 를 transitively 호출한다.
+// QueryClientProvider 없이 렌더하면 "No QueryClient set" 로 실패하므로 모킹한다.
+vi.mock('@web/hooks/useDashboard', () => ({
+  useDashboard: () => ({ data: undefined, isLoading: false, error: null }),
+}));
+
+// 모킹 경로는 ChatDrawer 가 실제로 import 하는 모듈로 해석되어야 한다
+// (테스트 파일 기준 상대경로가 아니라 컴포넌트 모듈 경로).
+vi.mock('@web/components/chat/SuggestedQuestions', () => ({
   SuggestedQuestions: ({ onSelect }: { onSelect: (q: string) => void }) => (
     <div data-testid="suggested-questions">
       <button type="button" onClick={() => onSelect('테스트 질문')}>테스트 질문</button>
@@ -26,7 +37,7 @@ vi.mock('./SuggestedQuestions', () => ({
   ),
 }));
 
-vi.mock('./ChatMessage', () => ({
+vi.mock('@web/components/chat/ChatMessage', () => ({
   ChatMessage: ({ message }: { message: { content: string } }) => (
     <div data-testid="chat-message">{message.content}</div>
   ),
@@ -37,6 +48,7 @@ import { ChatDrawer } from '@web/components/chat/ChatDrawer';
 describe('ChatDrawer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    h.messages = [];
   });
 
   it('isOpen=false이면 렌더링하지 않음', () => {
@@ -46,17 +58,14 @@ describe('ChatDrawer', () => {
 
   it('isOpen=true이면 헤더와 입력 폼 표시', () => {
     render(<ChatDrawer isOpen={true} onClose={vi.fn()} />);
-    expect(screen.getByText('AI 어시스턴트')).toBeInTheDocument();
+    expect(screen.getByText('CowTalk AI')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('질문을 입력하세요...')).toBeInTheDocument();
-    expect(screen.getByText('전송')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '전송' })).toBeInTheDocument();
   });
 
-  it('빈 입력으로 전송 불가', async () => {
-    userEvent.setup();
+  it('빈 입력으로 전송 불가', () => {
     render(<ChatDrawer isOpen={true} onClose={vi.fn()} />);
-
-    const submitBtn = screen.getByText('전송');
-    expect(submitBtn).toBeDisabled();
+    expect(screen.getByRole('button', { name: '전송' })).toBeDisabled();
   });
 
   it('텍스트 입력 후 전송 버튼 클릭 → sendMessage 호출', async () => {
@@ -66,11 +75,12 @@ describe('ChatDrawer', () => {
     const input = screen.getByPlaceholderText('질문을 입력하세요...');
     await user.type(input, '이 소 건강 상태는?');
 
-    const submitBtn = screen.getByText('전송');
+    const submitBtn = screen.getByRole('button', { name: '전송' });
     expect(submitBtn).not.toBeDisabled();
 
     await user.click(submitBtn);
-    expect(mockSendMessage).toHaveBeenCalledWith('이 소 건강 상태는?');
+    // doSend 는 sendMessage(question, options) 형태로 호출한다.
+    expect(h.sendMessage).toHaveBeenCalledWith('이 소 건강 상태는?', expect.any(Object));
   });
 
   it('닫기 버튼 클릭 → onClose 호출', async () => {
@@ -84,19 +94,18 @@ describe('ChatDrawer', () => {
   });
 
   it('대화 지우기 버튼 → clearMessages 호출', async () => {
+    // 대화 지우기 버튼은 messages.length > 0 일 때만 렌더된다.
+    h.messages = [{ id: 'm1', role: 'user', content: '안녕' }];
     const user = userEvent.setup();
     render(<ChatDrawer isOpen={true} onClose={vi.fn()} />);
 
     const clearBtn = screen.getByLabelText('대화 지우기');
     await user.click(clearBtn);
-    expect(mockClearMessages).toHaveBeenCalledOnce();
+    expect(h.clearMessages).toHaveBeenCalledOnce();
   });
 
   it('메시지가 없으면 SuggestedQuestions 또는 빈 상태 표시', () => {
     render(<ChatDrawer isOpen={true} onClose={vi.fn()} />);
-    // SuggestedQuestions가 모킹된 상태이므로 빈 메시지 리스트 확인
-    // ChatDrawer는 messages.length === 0이면 SuggestedQuestions를 렌더
-    // 실제로는 모킹이 다른 경로에서 로드될 수 있어 입력 폼이 보이는지 확인
     expect(screen.getByPlaceholderText('질문을 입력하세요...')).toBeInTheDocument();
   });
 });
