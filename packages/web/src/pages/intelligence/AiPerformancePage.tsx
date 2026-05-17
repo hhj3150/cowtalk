@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { KpiCard } from '@web/components/data/KpiCard';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { usePerformanceOverview, useAccuracyTrend, useRoleFeedbackStats } from '@web/hooks/useAiPerformance';
+import { useAuthStore } from '@web/stores/auth.store';
 import type { EngineMetrics } from '@web/api/ai-performance.api';
 
 const ENGINE_LABELS: Record<string, string> = {
@@ -12,7 +13,13 @@ const ENGINE_LABELS: Record<string, string> = {
   pregnancy: '임신 예측',
   herd: '군집 분석',
   regional: '지역 분석',
+  sovereign_v1: '주권형 알람 엔진',
+  diff_diagnosis_v1: '감별진단 엔진',
+  breeding_advisor_v1: '번식 추천 엔진',
 };
+
+// POLISH-03: 카드 노출 최소 평가 건수 (엔진별)
+const MIN_EVALUATED = 10;
 
 const ROLE_LABELS: Record<string, string> = {
   farmer: '농장주',
@@ -119,10 +126,19 @@ export default function AiPerformancePage(): React.JSX.Element {
   const { data, isLoading } = usePerformanceOverview();
   const { data: roleStats, isLoading: rolesLoading } = useRoleFeedbackStats();
   const [selectedEngine, setSelectedEngine] = useState('estrus');
+  const userRole = useAuthStore((s) => s.user?.role);
 
   if (isLoading) return <LoadingSkeleton lines={8} />;
 
   const hasMinData = Boolean(data) && (data?.totalFeedback ?? 0) >= 10;
+
+  // POLISH-03: master(행정관 슈퍼계정)는 운영 피드백 누적 전이라도
+  // 평가가 완료된 엔진 카드를 확인할 수 있다 (시드/시뮬레이션 평가 데이터).
+  // 비-master는 기존 빈 메시지 동작을 그대로 보존한다.
+  const isMaster = userRole === 'government_admin';
+  const evaluatedEngines = (data?.engines ?? []).filter((e) => e.totalEvaluated >= MIN_EVALUATED);
+  const showCards = hasMinData || (isMaster && evaluatedEngines.length > 0);
+  const showSourceLabel = showCards && isMaster && !hasMinData;
 
   return (
     <div className="space-y-6">
@@ -135,7 +151,7 @@ export default function AiPerformancePage(): React.JSX.Element {
       </div>
 
       {/* 최소 데이터 경고 */}
-      {!hasMinData && (
+      {!showCards && (
         <div
           className="rounded-xl border p-6 text-center"
           style={{ borderColor: 'var(--ct-warning)', background: '#FFFBEB' }}
@@ -149,8 +165,18 @@ export default function AiPerformancePage(): React.JSX.Element {
         </div>
       )}
 
-      {hasMinData && data && (
+      {showCards && data && (
         <>
+          {/* 데이터 출처 안내 (master 한정 — 운영 피드백 누적 전 평가 데이터) */}
+          {showSourceLabel && (
+            <div
+              className="rounded-lg border px-3 py-2 text-xs"
+              style={{ borderColor: 'var(--ct-border)', background: 'var(--ct-card)', color: 'var(--ct-text-secondary)' }}
+            >
+              📊 시드/시뮬레이션 평가 데이터 — 실제 운영 피드백이 누적되면 자동 갱신됩니다.
+            </div>
+          )}
+
           {/* Top KPI row */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard
@@ -179,7 +205,7 @@ export default function AiPerformancePage(): React.JSX.Element {
               엔진별 성능
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {data.engines.map((engine) => (
+              {evaluatedEngines.map((engine) => (
                 <EngineCard key={engine.engineType} engine={engine} />
               ))}
             </div>
