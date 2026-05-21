@@ -277,3 +277,119 @@ export async function countFalsePositiveCandidates(
     durationMs: Date.now() - startedAt,
   };
 }
+
+// DATA-05-B: fp_candidate 시범 적재 1회당 최대 행 수 — 외부에서 어떤 값을 넘겨도 이 cap을 넘을 수 없다.
+const HARD_PILOT_CAP = 100;
+
+interface FpPilotResult {
+  readonly windowDays: number;
+  readonly pilotLimit: number;
+  readonly examined: number;
+  readonly inserted: number;
+  readonly skippedConflict: number;
+  readonly skippedNullAnimal: number;
+  readonly insertedSamples: string[];
+  readonly durationMs: number;
+}
+
+/**
+ * DATA-05-B 시범 적재 — countFalsePositiveCandidates 가 측정한 후보군 중
+ * 최대 HARD_PILOT_CAP(100)건만 verdict='fp_candidate' 로 1회 적재한다.
+ *
+ * 안전마진:
+ *  - HARD_PILOT_CAP=100 으로 함수 내부에서 강제 cap (외부 인자로 우회 불가)
+ *  - verdict='fp_candidate' (varchar(20) 호환, 'false_positive' 와 명확히 구분)
+ *  - onConflictDoNothing — 기존 confirmed 라벨 보존
+ *  - animal_id NULL 행은 시그니처 생성 불가 → skip
+ *
+ * 자동 배치에서 호출 금지. master(government_admin) 명시 트리거 전용.
+ */
+export async function insertFalsePositiveCandidatesPilot(
+  options?: { windowDays?: number; pilotLimit?: number },
+): Promise<FpPilotResult> {
+  const windowDays = options?.windowDays ?? 14;
+  const effectiveLimit = Math.min(options?.pilotLimit ?? HARD_PILOT_CAP, HARD_PILOT_CAP);
+  const startedAt = Date.now();
+  const db = getDb();
+
+  // 60일 전 ~ windowDays일 전 발사된 sovereign 알람 중, windowDays 내 smaXtec 미매칭분을
+  // 가장 오래된 순으로 effectiveLimit 개 가져온다.
+  const rows = await db.execute(sql`
+    SELECT p.prediction_id, p.animal_id, p.farm_id, p.prediction_label, p.severity, p.created_at
+    FROM predictions p
+    WHERE p.engine_type = 'sovereign_v1'
+      AND p.created_at <  NOW() - make_interval(days => ${windowDays}::int)
+      AND p.created_at >= NOW() - INTERVAL '60 days'
+      AND NOT EXISTS (
+        SELECT 1 FROM smaxtec_events se
+        WHERE se.animal_id = p.animal_id
+          AND se.detected_at BETWEEN p.created_at
+                                 AND p.created_at + make_interval(days => ${windowDays}::int)
+      )
+    ORDER BY p.created_at ASC
+    LIMIT ${effectiveLimit}
+  `);
+
+  const candidates = rows as unknown as Array<{
+    prediction_id: string;
+    animal_id: string | null;
+    farm_id: string;
+    prediction_label: string | null;
+    severity: string | null;
+    created_at: string | Date;
+  }>;
+
+  let inserted = 0;
+  let skippedConflict = 0;
+  let skippedNullAnimal = 0;
+  const insertedSamples: string[] = [];
+
+  for (const c of candidates) {
+    if (!c.animal_id) {
+      skippedNullAnimal++;
+      continue;
+    }
+    const created = new Date(c.created_at);
+    const dateStr = created.toISOString().slice(0, 10);
+    // alarm_type 컬럼은 varchar(50) — prediction_label(varchar(200)) 방어 truncate.
+    const alarmType = (c.prediction_label ?? 'unknown').slice(0, 50);
+    const signature = `${c.animal_id}:${alarmType}:${dateStr}`;
+
+    try {
+      const insertedRows = await db
+        .insert(sovereignAlarmLabels)
+        .values({
+          alarmSignature: signature,
+          animalId: c.animal_id,
+          farmId: c.farm_id,
+          alarmType,
+          predictedSeverity: (c.severity ?? 'warning').slice(0, 20),
+          verdict: 'fp_candidate',
+          notes: `fp_candidate (DATA-05-B 시범, windowDays=${windowDays}, smaxtec 매칭 0건, alarm_created=${created.toISOString()})`,
+        })
+        .onConflictDoNothing()
+        .returning({ alarmSignature: sovereignAlarmLabels.alarmSignature });
+
+      if (insertedRows.length > 0) {
+        inserted++;
+        if (insertedSamples.length < 10) insertedSamples.push(signature);
+      } else {
+        skippedConflict++;
+      }
+    } catch (err) {
+      // 개별 행 INSERT 실패 — 배치 전체 중단하지 않고 다음 행으로 진행 (CLAUDE.md 규칙10: 로깅 필수).
+      logger.warn({ err, signature }, '[FP-pilot] 행 INSERT 실패');
+    }
+  }
+
+  return {
+    windowDays,
+    pilotLimit: effectiveLimit,
+    examined: candidates.length,
+    inserted,
+    skippedConflict,
+    skippedNullAnimal,
+    insertedSamples,
+    durationMs: Date.now() - startedAt,
+  };
+}
