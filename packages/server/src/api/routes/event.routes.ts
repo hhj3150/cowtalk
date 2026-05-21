@@ -6,7 +6,45 @@ import { authenticate } from '../middleware/auth.js';
 import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farmEvents, animals } from '../../db/schema.js';
-import { eq, and, desc, count } from 'drizzle-orm';
+import { eq, and, desc, count, sql } from 'drizzle-orm';
+import { logger } from '../../lib/logger.js';
+
+/**
+ * AX-LOOP-01 드라이런 — 사용자 farm_event 기록 직후, 같은 동물의 최근 7일
+ * sovereign 예측 중 아직 outcome_evaluations 가 없는 건수를 측정만 한다.
+ *
+ * 목적: 사용자 입력 → AI 평가 자동 전이 배선의 잠재 매칭량을 실측 확보해
+ *      후속 PR(실 recordOutcome 적재)의 사이즈를 정량화한다. DB 쓰기 0.
+ */
+async function measureFarmEventMatchCandidates(animalId: string | null, eventId: string): Promise<void> {
+  if (!animalId) return;
+  try {
+    const db = getDb();
+    const rows = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM predictions p
+      WHERE p.engine_type = 'sovereign_v1'
+        AND p.animal_id = ${animalId}
+        AND p.created_at >= NOW() - INTERVAL '7 days'
+        AND NOT EXISTS (
+          SELECT 1 FROM outcome_evaluations oe
+          WHERE oe.prediction_id = p.prediction_id
+        )
+    `);
+    const candidateCount = Number(
+      (rows as unknown as Array<{ count: string | number }>)[0]?.count ?? 0,
+    );
+    logger.info(
+      { eventId, animalId, candidateCount },
+      '[AX-LOOP] farm_event → prediction match candidates (dry-run, sovereign_v1, 7d, unevaluated)',
+    );
+  } catch (err) {
+    logger.warn(
+      { err: (err as Error).message, eventId },
+      '[AX-LOOP] match candidate dry-run failed',
+    );
+  }
+}
 
 export const eventRouter = Router();
 
@@ -63,6 +101,11 @@ eventRouter.post('/', async (req: Request, res: Response, next: NextFunction) =>
         metadata,
       })
       .returning();
+
+    // AX-LOOP-01 드라이런 — 사용자 farm_event 직후 잠재 매칭 후보만 카운트 (DB 쓰기 0, fire-and-forget).
+    if (event) {
+      void measureFarmEventMatchCandidates(event.animalId, event.eventId);
+    }
 
     res.status(201).json({ success: true, data: event });
   } catch (error) {
