@@ -1695,3 +1695,81 @@ export const cameraTrackingEvents = pgTable('camera_tracking_events', {
   index('idx_cte_animal').on(table.animalId),
   index('idx_cte_status').on(table.trackingStatus),
 ]);
+
+// ============================================================
+// 수의사 진료센터 (Veterinary Clinical Record & Document Module)
+// 1단계: 개체 중심 진료기록 + 진료 시점 데이터 snapshot
+// ============================================================
+
+// 수의사 진료기록 — 자동 호출 데이터(snapshot)와 수의사 입력을 결합하는 중심 테이블.
+export const veterinaryVisits = pgTable('veterinary_visits', {
+  visitId: uuid('visit_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  veterinarianId: uuid('veterinarian_id').notNull().references(() => users.userId),
+  visitDatetime: timestamp('visit_datetime', { withTimezone: true }).notNull().defaultNow(),
+  // ── 수의사 입력(자유 텍스트) ──
+  visitReason: text('visit_reason'),
+  chiefComplaint: text('chief_complaint'),
+  farmerStatement: text('farmer_statement'),
+  physicalExam: text('physical_exam'),
+  clinicalFindings: text('clinical_findings'),
+  differentialDiagnosis: text('differential_diagnosis'),
+  finalDiagnosis: text('final_diagnosis'),
+  treatment: text('treatment'),
+  prescription: text('prescription'),
+  medication: text('medication'),
+  withdrawalPeriod: text('withdrawal_period'),
+  prognosis: text('prognosis'),
+  followUpDate: date('follow_up_date'),
+  farmerInstruction: text('farmer_instruction'),
+  quarantineRequired: boolean('quarantine_required').notNull().default(false),
+  veterinarianNotes: text('veterinarian_notes'),
+  // ── 연계 참조 ──
+  sensorAlertId: uuid('sensor_alert_id').references(() => smaxtecEvents.eventId),
+  publicDataReferenceId: varchar('public_data_reference_id', { length: 100 }),
+  // ── 상태/대화형 기록 ──
+  status: varchar('status', { length: 20 }).notNull().default('draft'), // draft, saved, finalized
+  rawConversationNote: text('raw_conversation_note'),
+  aiStructuredNoteJson: jsonb('ai_structured_note_json'),
+  aiConfidenceScore: real('ai_confidence_score'),
+  veterinarianConfirmedAiNote: boolean('veterinarian_confirmed_ai_note').notNull().default(false),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  // ── 현장 기록 메타 ──
+  inputMethod: varchar('input_method', { length: 20 }).notNull().default('manual'), // manual, quick_select, voice, conversation, mixed
+  fieldVisitLocation: text('field_visit_location'),
+  gpsLatitude: real('gps_latitude'),
+  gpsLongitude: real('gps_longitude'),
+  offlineDraftId: varchar('offline_draft_id', { length: 100 }),
+  // ── 농장주 확인/서명 ──
+  farmerAcknowledged: boolean('farmer_acknowledged').notNull().default(false),
+  farmerSignatureImageUrl: text('farmer_signature_image_url'),
+  farmerAcknowledgedAt: timestamp('farmer_acknowledged_at', { withTimezone: true }),
+  withdrawalPeriodNotified: boolean('withdrawal_period_notified').notNull().default(false),
+  // ── 동기화/타임스탬프 ──
+  syncedAt: timestamp('synced_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('veterinary_visits_farm_id_idx').on(table.farmId),
+  index('veterinary_visits_animal_id_idx').on(table.animalId),
+  index('veterinary_visits_vet_id_idx').on(table.veterinarianId),
+  index('veterinary_visits_visit_datetime_idx').on(table.visitDatetime),
+  index('veterinary_visits_status_idx').on(table.status),
+]);
+
+// 진료 시점 자동 호출 데이터 snapshot — 저장 시점 데이터를 동결.
+// 이후 목장/개체/센서 정보가 바뀌어도 과거 진료기록은 불변.
+export const veterinaryVisitSnapshots = pgTable('veterinary_visit_snapshots', {
+  snapshotId: uuid('snapshot_id').primaryKey().defaultRandom(),
+  visitId: uuid('visit_id').notNull().references(() => veterinaryVisits.visitId),
+  farmSnapshotJson: jsonb('farm_snapshot_json'),
+  animalSnapshotJson: jsonb('animal_snapshot_json'),
+  reproductionSnapshotJson: jsonb('reproduction_snapshot_json'),
+  healthHistorySnapshotJson: jsonb('health_history_snapshot_json'),
+  sensorSnapshotJson: jsonb('sensor_snapshot_json'),
+  publicDataSnapshotJson: jsonb('public_data_snapshot_json'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('veterinary_visit_snapshots_visit_id_idx').on(table.visitId),
+]);
