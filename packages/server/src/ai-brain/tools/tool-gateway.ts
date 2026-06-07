@@ -36,6 +36,7 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   get_farm_kpis: 'farm',
   query_differential_diagnosis: 'health',
   confirm_treatment_outcome: 'health',
+  record_expert_label: 'health',
 };
 
 // ===========================
@@ -60,6 +61,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_grade', 'query_weather', 'query_sire_info',
     'query_differential_diagnosis', 'confirm_treatment_outcome',
     'schedule_sync_protocol', 'query_sync_today',
+    'record_expert_label',
   ],
   government_admin: [
     'query_animal', 'query_farm_summary', 'query_breeding_stats',
@@ -72,6 +74,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_sensor_data', 'query_traceability', 'get_farm_kpis',
     'query_weather',
     'query_quarantine_dashboard', 'query_national_situation',
+    'record_expert_label',
   ],
 };
 
@@ -173,7 +176,7 @@ export async function executeToolWithGateway(
 
   try {
     resultText = await Promise.race([
-      executeTool(toolName, input),
+      executeTool(toolName, input, { userId: context.userId, role: String(context.role), farmId: context.farmId }),
       new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`도구 '${toolName}' 실행 타임아웃 (${TOOL_TIMEOUT_MS / 1000}초 초과)`)),

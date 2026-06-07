@@ -172,9 +172,9 @@ export async function saveChatConversation(input: {
       learningSignals: signals as unknown as Record<string, unknown>,
     });
 
-    // 학습 신호가 있으면 자동 기록
+    // 학습 신호가 있으면 자동 기록 (진단 레이블은 전문가 역할만 — 농장주 추측 오염 방지)
     if (signals.length > 0 && input.animalId) {
-      await processLearningSignals(signals, input.animalId, input.farmId, input.userId);
+      await processLearningSignals(signals, input.animalId, input.farmId, input.userId, input.role);
     }
 
     if (signals.length > 0) {
@@ -318,13 +318,19 @@ export function formatFarmLearningContext(snapshot: FarmLearningSnapshot): strin
 
 // ── 학습 신호 → 이벤트 자동 기록 ──
 
+// 진단 레이블 생성 권한 역할 — 전문가 판단만 정답 레이블로 인정.
+// (치료·분만·번식 같은 '사실' 기록은 농장주도 가능하지만, 진단은 전문가 한정)
+const EXPERT_DIAGNOSIS_ROLES: ReadonlySet<string> = new Set(['veterinarian', 'quarantine_officer']);
+
 async function processLearningSignals(
   signals: readonly LearningSignal[],
   animalId: string,
   farmId: string | null,
   userId: string,
+  role: string,
 ): Promise<void> {
   const db = getDb();
+  const isExpert = EXPERT_DIAGNOSIS_ROLES.has(role);
 
   for (const signal of signals) {
     try {
@@ -381,6 +387,14 @@ async function processLearningSignals(
 
         case 'diagnosis': {
           if (!farmId) break;
+          // 전문가(수의사·방역관)의 진단만 레이블로 기록. 농장주·행정관 추측은 제외.
+          if (!isExpert) {
+            logger.info(
+              { diagnosis: signal.value, role, animalId },
+              '[ChatLearner] 비전문가 진단 신호 — 레이블 기록 생략 (전문가 한정)',
+            );
+            break;
+          }
           await db.insert(clinicalObservations).values({
             animalId,
             farmId,

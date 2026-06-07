@@ -5,6 +5,7 @@ import { getDb } from '../../config/database.js';
 import {
   animals, farms, smaxtecEvents, breedingEvents,
   pregnancyChecks, sensorDailyAgg, sensorHourlyAgg, healthEvents, treatments,
+  eventLabels, clinicalObservations,
   type TreatmentDetails,
 } from '../../db/schema.js';
 import { eq, and, desc, gte, ilike, inArray, isNull, or } from 'drizzle-orm';
@@ -35,6 +36,14 @@ import {
 
 const MAX_RESULT_LENGTH = 6000;
 
+// 도구 실행 컨텍스트 — 게이트웨이가 인증된 사용자 정보를 전달.
+// (gateway의 ToolCallContext와 구조적으로 호환. 순환 import 방지 위해 로컬 정의)
+export interface ExecutorContext {
+  readonly userId?: string;
+  readonly role?: string;
+  readonly farmId?: string;
+}
+
 // ===========================
 // 메인 디스패처
 // ===========================
@@ -42,6 +51,7 @@ const MAX_RESULT_LENGTH = 6000;
 export async function executeTool(
   name: string,
   input: Record<string, unknown>,
+  context?: ExecutorContext,
 ): Promise<string> {
   const startTime = Date.now();
 
@@ -114,6 +124,9 @@ export async function executeTool(
         break;
       case 'confirm_treatment_outcome':
         result = await handleConfirmTreatmentOutcome(input);
+        break;
+      case 'record_expert_label':
+        result = await handleRecordExpertLabel(input, context);
         break;
       default:
         result = { error: `알 수 없는 도구: ${name}` };
@@ -1022,6 +1035,126 @@ async function handleRecommendInseminationWindow(input: Record<string, unknown>)
 async function handleRecordTreatment(input: Record<string, unknown>): Promise<unknown> {
   const { recordTreatment } = await import('../../services/vet/treatment.service.js');
   return recordTreatment(input as unknown as Parameters<typeof recordTreatment>[0]);
+}
+
+// ===========================
+// 9-b. 전문가 레이블 (수의사·방역관 전용)
+// 전문가의 진단·방역 판단을 고신뢰 학습 레이블로 기록 → 강화 학습 루프 입구.
+// 최근 AI 알람과 매칭되면 event_labels(정답 판정), 없으면 clinical_observations로 보존.
+// ===========================
+
+const EXPERT_LABEL_ROLES: ReadonlySet<string> = new Set(['veterinarian', 'quarantine_officer']);
+
+async function handleRecordExpertLabel(
+  input: Record<string, unknown>,
+  context?: ExecutorContext,
+): Promise<unknown> {
+  const db = getDb();
+
+  const animalId = typeof input.animalId === 'string' ? input.animalId : '';
+  const diagnosis = typeof input.diagnosis === 'string' ? input.diagnosis.trim() : '';
+  if (!animalId || !diagnosis) {
+    return { error: 'animalId와 diagnosis는 필수입니다.' };
+  }
+
+  // 권한 방어적 이중 확인 — 게이트웨이가 1차 차단하지만, role 컨텍스트가 있으면 재확인.
+  // (전문가에 한해서만 레이블 생성 — 농장주 추측은 정답 레이블로 삼지 않는다)
+  const role = context?.role;
+  if (role && !EXPERT_LABEL_ROLES.has(role)) {
+    return { error: '전문가 레이블은 수의사·방역관만 기록할 수 있습니다.' };
+  }
+
+  // 개체 확인 + farmId 확보 (input의 farmId를 신뢰하지 않고 개체 기준으로 결정)
+  const animalRows = await db
+    .select({ animalId: animals.animalId, farmId: animals.farmId, earTag: animals.earTag })
+    .from(animals)
+    .where(eq(animals.animalId, animalId))
+    .limit(1);
+  if (animalRows.length === 0) {
+    return { error: '개체를 찾을 수 없습니다.' };
+  }
+  const animal = animalRows[0]!;
+
+  const severity = typeof input.severity === 'string' ? input.severity : 'medium';
+  const labelType = input.labelType === 'quarantine' ? 'quarantine' : 'clinical';
+  const notes = typeof input.notes === 'string' ? input.notes : null;
+  const mappedAlarmType = typeof input.mappedAlarmType === 'string' ? input.mappedAlarmType : undefined;
+  const labeledBy = context?.userId ?? null;
+
+  // 최근 21일 내 해당 개체의 smaXtec 이벤트 조회 (레이블을 붙일 대상 알람 찾기)
+  const since = new Date(Date.now() - 21 * 86_400_000);
+  const events = await db
+    .select({
+      eventId: smaxtecEvents.eventId,
+      eventType: smaxtecEvents.eventType,
+      severity: smaxtecEvents.severity,
+      detectedAt: smaxtecEvents.detectedAt,
+    })
+    .from(smaxtecEvents)
+    .where(and(eq(smaxtecEvents.animalId, animalId), gte(smaxtecEvents.detectedAt, since)))
+    .orderBy(desc(smaxtecEvents.detectedAt))
+    .limit(20);
+
+  // mappedAlarmType 우선 매칭, 없으면 가장 최근 이벤트
+  const target = (mappedAlarmType ? events.find((e) => e.eventType === mappedAlarmType) : undefined)
+    ?? events[0];
+
+  if (target) {
+    // verdict: 전문가 판단이 AI 예측 알람 타입과 일치하면 confirmed, 다르면 modified.
+    const verdict = mappedAlarmType && target.eventType === mappedAlarmType ? 'confirmed' : 'modified';
+    const inserted = await db
+      .insert(eventLabels)
+      .values({
+        eventId: target.eventId,
+        animalId,
+        farmId: animal.farmId,
+        predictedType: target.eventType,
+        predictedSeverity: target.severity,
+        verdict,
+        actualType: mappedAlarmType ?? target.eventType,
+        actualSeverity: severity,
+        actualDiagnosis: diagnosis,
+        notes,
+        labeledBy,
+      })
+      .returning({ labelId: eventLabels.labelId });
+
+    logger.info(
+      { labelId: inserted[0]?.labelId, animalId, diagnosis, verdict, role },
+      '[ExpertLabel] event_labels 기록',
+    );
+
+    return {
+      recorded: true,
+      mode: 'event_label',
+      labelId: inserted[0]?.labelId ?? null,
+      earTag: animal.earTag,
+      diagnosis,
+      verdict,
+      matchedAlarm: target.eventType,
+      message: `${animal.earTag ?? animalId}번 — "${diagnosis}" 전문가 레이블을 ${target.eventType} 알람에 ${verdict === 'confirmed' ? '정답 확정' : '수정 판정'}으로 기록했습니다. 학습 루프에 반영됩니다.`,
+    };
+  }
+
+  // 매칭 AI 알람 없음 → 임상관찰로 보존 (전문가 판단 유실 방지)
+  await db.insert(clinicalObservations).values({
+    animalId,
+    farmId: animal.farmId,
+    observationType: labelType === 'quarantine' ? 'quarantine_judgment' : 'expert_diagnosis',
+    description: `[전문가 레이블] ${diagnosis}`,
+    conversationSummary: notes ?? `전문가(${role ?? 'expert'}) 대화 판단: ${diagnosis}`,
+    recordedBy: labeledBy,
+  });
+
+  logger.info({ animalId, diagnosis, role }, '[ExpertLabel] 매칭 알람 없음 → clinical_observations 보존');
+
+  return {
+    recorded: true,
+    mode: 'clinical_observation',
+    earTag: animal.earTag,
+    diagnosis,
+    message: `${animal.earTag ?? animalId}번 — "${diagnosis}" 전문가 판단을 기록했습니다. 매칭되는 AI 알람이 없어 임상관찰로 보존되었고, 향후 알람 발생 시 학습에 활용됩니다.`,
+  };
 }
 
 // ===========================
