@@ -1,5 +1,5 @@
-// 수의사 진료센터 API 클라이언트 (1~3단계)
-import { apiGet, apiPost, apiPatch } from './client';
+// 수의사 진료센터 API 클라이언트 (1~4단계)
+import { apiGet, apiPost, apiPatch, apiClient } from './client';
 
 export interface VetFarm {
   farm_id: string;
@@ -155,4 +155,39 @@ export const vetApi = {
   updateVisit: (visitId: string, payload: UpdateVisitPayload) =>
     apiPatch<UpdateVisitResult>(`/vet/visits/${visitId}`, payload),
   listRevisions: (visitId: string) => apiGet<VisitRevision[]>(`/vet/visits/${visitId}/revisions`),
+  // 4단계 — 공식 문서
+  getDocument: (visitId: string, docType: VetDocType) =>
+    apiGet<VetDocModel>(`/vet/visits/${visitId}/documents/${docType}`),
+  downloadDocumentPdf: async (visitId: string, docType: VetDocType): Promise<Blob> => {
+    const res = await apiClient.get<Blob>(
+      `/vet/visits/${visitId}/documents/${docType}/pdf`,
+      { responseType: 'blob' },
+    );
+    return res.data;
+  },
 };
+
+// 4단계 — 공식 문서 모델 (서버 document-builder와 동일 형태)
+export const VET_DOC_TYPES = ['medical_record', 'prescription', 'diagnosis'] as const;
+export type VetDocType = (typeof VET_DOC_TYPES)[number];
+export const VET_DOC_LABELS: Record<VetDocType, string> = {
+  medical_record: '진료기록부',
+  prescription: '처방전',
+  diagnosis: '진단서',
+};
+
+export interface VetDocPair { key: string; value: string }
+export interface VetDocSection {
+  heading: string;
+  pairs?: VetDocPair[];
+  paragraphs?: string[];
+}
+export interface VetDocModel {
+  doc_type: VetDocType;
+  doc_title: string;
+  issue_date: string;
+  header_pairs: VetDocPair[];
+  sections: VetDocSection[];
+  issuer: { name: string; email: string | null; licenseNumber: string | null; clinicName: string | null };
+  footer_notes: string[];
+}

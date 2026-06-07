@@ -4,7 +4,7 @@
 import { getDb } from '../../config/database.js';
 import {
   veterinaryVisits, veterinaryVisitSnapshots, veterinaryVisitRevisions,
-  farms, animals, userFarmAccess,
+  farms, animals, userFarmAccess, users,
 } from '../../db/schema.js';
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
@@ -188,6 +188,34 @@ export async function getVisitFarmId(visitId: string): Promise<string | null> {
   const [v] = await db.select({ farmId: veterinaryVisits.farmId })
     .from(veterinaryVisits).where(eq(veterinaryVisits.visitId, visitId)).limit(1);
   return v?.farmId ?? null;
+}
+
+// ── 4단계: 문서 발행용 — visit + snapshot 원본 행 조회 (camelCase) ──
+export interface VisitDocumentData {
+  readonly visit: Record<string, unknown>;
+  readonly snapshot: Record<string, unknown> | null;
+  readonly farmId: string;
+}
+export async function getVisitDocumentData(visitId: string): Promise<VisitDocumentData | null> {
+  const db = getDb();
+  const [visit] = await db.select().from(veterinaryVisits)
+    .where(eq(veterinaryVisits.visitId, visitId)).limit(1);
+  if (!visit) return null;
+  const [snapshot] = await db.select().from(veterinaryVisitSnapshots)
+    .where(eq(veterinaryVisitSnapshots.visitId, visitId)).limit(1);
+  return {
+    visit: visit as unknown as Record<string, unknown>,
+    snapshot: (snapshot as unknown as Record<string, unknown>) ?? null,
+    farmId: visit.farmId,
+  };
+}
+
+// ── 발행자(수의사) 정보 — 면허번호는 미보유(수기 기입란) ──
+export async function getVetIssuer(userId: string): Promise<{ name: string; email: string | null } | null> {
+  const db = getDb();
+  const [u] = await db.select({ name: users.name, email: users.email })
+    .from(users).where(eq(users.userId, userId)).limit(1);
+  return u ? { name: u.name, email: u.email } : null;
 }
 
 // ── 3단계: 진료기록 수정 / 이력관리 ──

@@ -13,8 +13,11 @@ import {
   listAccessibleFarms, listFarmAnimals, vetCanAccessFarm,
   saveVisit, listAnimalVisits, getVisitDetail,
   updateVisit, listVisitRevisions, getVisitFarmId,
+  getVisitDocumentData, getVetIssuer,
 } from '../../services/vet/visit.service.js';
 import { structureConversationNote } from '../../services/vet/conversation-note.service.js';
+import { buildVetDocument, VET_DOC_TYPES, VET_DOC_TITLES, type VetDocType, type VetDocModel } from '../../services/vet/document-builder.service.js';
+import { renderVetDocumentPdf } from '../../services/vet/document-pdf.service.js';
 
 export const vetRouter = Router();
 
@@ -239,6 +242,64 @@ vetRouter.get('/visits/:visitId/revisions', async (req: Request, res: Response, 
     }
     const data = await listVisitRevisions(visitId);
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 4단계 — 공식 문서 발행 (진료기록부 / 처방전 / 진단서)
+
+function isVetDocType(v: string): v is VetDocType {
+  return (VET_DOC_TYPES as readonly string[]).includes(v);
+}
+
+// 문서 모델 + 접근검증 + 발행자 조립 (미리보기/PDF 공용)
+async function loadVetDocument(
+  visitId: string, docTypeRaw: string, userId: string, farmIds: readonly string[],
+): Promise<VetDocModel> {
+  if (!isVetDocType(docTypeRaw)) {
+    throw new BadRequestError(`지원하지 않는 문서 유형입니다: ${docTypeRaw}`);
+  }
+  const data = await getVisitDocumentData(visitId);
+  if (!data) {
+    throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+  }
+  if (!(await vetCanAccessFarm(data.farmId, farmIds, userId))) {
+    throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
+  }
+  const issuer = await getVetIssuer(userId);
+  return buildVetDocument({
+    docType: docTypeRaw,
+    visit: data.visit,
+    snapshot: data.snapshot,
+    issuer: { name: issuer?.name ?? '담당 수의사', email: issuer?.email ?? null },
+  });
+}
+
+// GET /api/vet/visits/:visitId/documents/:docType — 문서 모델(미리보기/프린트용 JSON)
+vetRouter.get('/visits/:visitId/documents/:docType', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    const docType = String(req.params.docType ?? '');
+    const model = await loadVetDocument(visitId, docType, req.user!.userId, req.user?.farmIds ?? []);
+    res.json({ success: true, data: model });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/vet/visits/:visitId/documents/:docType/pdf — PDF 발행(스트리밍 다운로드)
+vetRouter.get('/visits/:visitId/documents/:docType/pdf', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    const docType = String(req.params.docType ?? '');
+    const model = await loadVetDocument(visitId, docType, req.user!.userId, req.user?.farmIds ?? []);
+
+    const title = VET_DOC_TITLES[model.doc_type];
+    const fileName = `cowtalk_${model.doc_type}_${visitId.slice(0, 8)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${title}_${visitId.slice(0, 8)}.pdf`)}; filename="${fileName}"`);
+    await renderVetDocumentPdf(model, res);
   } catch (error) {
     next(error);
   }

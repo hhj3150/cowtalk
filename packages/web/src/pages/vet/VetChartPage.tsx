@@ -4,7 +4,11 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { vetApi, type SaveVisitPayload, type EditableVisitPayload, type ConversationNoteResult, type StructuredNote } from '@web/api/vet.api';
+import {
+  vetApi, VET_DOC_TYPES, VET_DOC_LABELS,
+  type SaveVisitPayload, type EditableVisitPayload, type ConversationNoteResult, type StructuredNote,
+  type VetDocType, type VetDocModel,
+} from '@web/api/vet.api';
 import { VetCard, VetButton, VetTabBar, KeyValueList } from './vet-ui';
 
 const CONFIRM_ITEMS = [
@@ -120,6 +124,60 @@ export default function VetChartPage(): React.JSX.Element {
     },
     onError: () => setNotice('수정에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
   });
+
+  // 4단계 — 공식 문서 발행
+  const [docVisitId, setDocVisitId] = useState<string>('');
+  const [docType, setDocType] = useState<VetDocType>('medical_record');
+
+  const docQuery = useQuery({
+    queryKey: ['vet', 'document', docVisitId, docType],
+    queryFn: () => vetApi.getDocument(docVisitId, docType),
+    enabled: !!docVisitId && !!docType,
+  });
+
+  const downloadMutation = useMutation({
+    mutationFn: () => vetApi.downloadDocumentPdf(docVisitId, docType),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cowtalk_${docType}_${docVisitId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+    onError: () => setNotice('PDF 다운로드에 실패했습니다.'),
+  });
+
+  function printDocument(model: VetDocModel): void {
+    const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] ?? c));
+    const header = model.header_pairs.map((p) => `<tr><th>${esc(p.key)}</th><td>${esc(p.value)}</td></tr>`).join('');
+    const sections = model.sections.map((sec) => {
+      const pairs = (sec.pairs ?? []).map((p) => `<tr><th>${esc(p.key)}</th><td>${esc(p.value)}</td></tr>`).join('');
+      const paras = (sec.paragraphs ?? []).map((t) => `<p>${esc(t)}</p>`).join('');
+      return `<h2>${esc(sec.heading)}</h2>${pairs ? `<table>${pairs}</table>` : ''}${paras}`;
+    }).join('');
+    const issuer = model.issuer;
+    const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(model.doc_title)}</title>
+      <style>body{font-family:'Malgun Gothic',sans-serif;color:#212121;padding:32px;max-width:720px;margin:auto}
+      h1{text-align:center;color:#1B5E20}h2{color:#1B5E20;border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:20px;font-size:15px}
+      table{width:100%;border-collapse:collapse;margin:6px 0}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:13px}
+      th{background:#F1F8E9;width:140px;color:#0277BD}.sig{margin-top:28px;border-top:1px solid #ccc;padding-top:12px;font-size:13px;line-height:2}
+      .foot{margin-top:20px;color:#888;font-size:11px}</style></head>
+      <body><h1>${esc(model.doc_title)}</h1>
+      <p style="text-align:center;color:#888;font-size:12px">CowTalk 진료센터</p>
+      <table>${header}</table>${sections}
+      <div class="sig">발행일: ${esc(model.issue_date)}<br>동물병원/소속: ${esc(issuer.clinicName ?? '(            )')}<br>
+      수의사 면허번호: ${esc(issuer.licenseNumber ?? '(            )')}<br>수의사 성명: ${esc(issuer.name)} (서명 또는 인)</div>
+      <div class="foot">${model.footer_notes.map(esc).join('<br>')}</div></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { setNotice('프린트 창을 열 수 없습니다 (팝업 차단 확인).'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+  }
 
   const structureMutation = useMutation({
     mutationFn: () => vetApi.structureConversationNote(farmId, animalId, rawNote),
@@ -433,9 +491,86 @@ export default function VetChartPage(): React.JSX.Element {
       )}
 
       {tab === 'documents' && (
-        <VetCard>
-          <p className="text-sm" style={{ color: 'var(--ct-text)' }}>📄 진료기록부·처방전·진단서 PDF 발행은 <b>4~6단계</b>에서 제공됩니다.</p>
-        </VetCard>
+        <div className="space-y-3">
+          <VetCard>
+            <h2 className="mb-2 text-sm font-bold" style={{ color: 'var(--ct-text)' }}>공식 문서 발행</h2>
+            <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+              저장된 진료기록을 선택하면 진료기록부·처방전·진단서를 미리보고 PDF/프린트로 발행할 수 있습니다.
+              (발행 시점 동결 데이터 기반, 면허번호·서명란은 발행 수의사가 확인)
+            </p>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium" style={{ color: 'var(--ct-text-secondary)' }}>진료기록 선택</span>
+              <select
+                value={docVisitId}
+                onChange={(e) => setDocVisitId(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-base"
+                style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}
+              >
+                <option value="">— 진료기록을 선택하세요 —</option>
+                {(visitsQuery.data ?? []).map((v) => (
+                  <option key={v.visit_id} value={v.visit_id}>
+                    {new Date(v.visit_datetime).toLocaleDateString('ko-KR')} · {v.final_diagnosis ?? v.chief_complaint ?? '기록'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {VET_DOC_TYPES.map((t) => (
+                <VetButton
+                  key={t}
+                  variant={docType === t ? 'primary' : 'default'}
+                  onClick={() => setDocType(t)}
+                  title={VET_DOC_LABELS[t]}
+                >
+                  {VET_DOC_LABELS[t]}
+                </VetButton>
+              ))}
+            </div>
+          </VetCard>
+
+          {!docVisitId && (
+            <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>먼저 진료기록을 선택하세요.</p>
+          )}
+          {docVisitId && docQuery.isLoading && (
+            <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>문서 미리보기 불러오는 중…</p>
+          )}
+          {docVisitId && docQuery.isError && (
+            <p className="text-sm" style={{ color: 'var(--ct-danger, #ef4444)' }}>문서를 불러오지 못했습니다.</p>
+          )}
+
+          {docVisitId && docQuery.data && (
+            <>
+              <Section title={`${docQuery.data.doc_title} 미리보기`}>
+                <KeyValueList data={Object.fromEntries(docQuery.data.header_pairs.map((p) => [p.key, p.value]))} />
+                {docQuery.data.sections.map((sec, i) => (
+                  <div key={i} className="mt-3">
+                    <h3 className="mb-1 text-xs font-bold" style={{ color: 'var(--ct-text)' }}>{sec.heading}</h3>
+                    {sec.pairs && sec.pairs.length > 0 && (
+                      <KeyValueList data={Object.fromEntries(sec.pairs.map((p) => [p.key, p.value]))} />
+                    )}
+                    {(sec.paragraphs ?? []).map((t, j) => (
+                      <p key={j} className="text-sm" style={{ color: 'var(--ct-text)' }}>{t}</p>
+                    ))}
+                  </div>
+                ))}
+                <p className="mt-3 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                  발행일 {docQuery.data.issue_date} · 수의사 {docQuery.data.issuer.name}
+                </p>
+              </Section>
+              <div className="flex flex-wrap gap-2">
+                <VetButton
+                  variant="primary"
+                  disabled={downloadMutation.isPending}
+                  onClick={() => downloadMutation.mutate()}
+                  title="PDF 저장"
+                >
+                  {downloadMutation.isPending ? '생성 중…' : 'PDF 저장'}
+                </VetButton>
+                <VetButton onClick={() => docQuery.data && printDocument(docQuery.data)} title="프린트">프린트</VetButton>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* 항상 접근 가능한 현장 액션바 */}
@@ -449,8 +584,8 @@ export default function VetChartPage(): React.JSX.Element {
         </VetButton>
         <VetButton onClick={() => { setTab('history'); setNotice('과거기록 탭에서 진료기록을 선택해 수정하세요.'); }} title="수정하기">수정</VetButton>
         <VetButton onClick={todo('보내기')} title="보내기">보내기</VetButton>
-        <VetButton onClick={todo('프린트하기')} title="프린트하기">프린트</VetButton>
-        <VetButton onClick={todo('PDF 발행')} title="PDF 발행">PDF</VetButton>
+        <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록을 선택해 프린트하세요.'); }} title="프린트하기">프린트</VetButton>
+        <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록을 선택해 PDF로 발행하세요.'); }} title="PDF 발행">PDF</VetButton>
       </div>
     </div>
   );
