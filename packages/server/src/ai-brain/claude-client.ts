@@ -311,8 +311,17 @@ export async function callClaudeForChatWithTools(
       webSearchTool,
     ];
 
+    // TTFT(첫 토큰 도착) 계측 — 한 요청에 한 번만 기록
+    const requestStart = Date.now();
+    let firstTokenLogged = false;
+
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-      const response = await anthropic.messages.create({
+      // 실시간 스트리밍 — messages.stream으로 텍스트를 토큰 단위로 즉시 방출.
+      // (기존 messages.create는 라운드 전체 생성이 끝나야 텍스트가 나와 체감 지연이 컸음)
+      let roundTextLen = 0;
+      const roundStart = Date.now();
+
+      const stream = anthropic.messages.stream({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
         // Extended Thinking 사용 시 temperature는 1로 강제됨 (Anthropic 제약)
@@ -323,16 +332,23 @@ export async function callClaudeForChatWithTools(
         tools: toolsWithWebSearch,
       });
 
-      // 응답 content blocks 처리
-      const toolUseBlocks: Anthropic.Messages.ToolUseBlock[] = [];
-      let roundTextLen = 0;
+      // text 델타를 즉시 사용자에게 전달 (진짜 스트리밍)
+      stream.on('text', (text) => {
+        if (!firstTokenLogged) {
+          firstTokenLogged = true;
+          logger.info({ ttftMs: Date.now() - requestStart, round: round + 1 }, '[ToolUse] 첫 토큰 도착(TTFT)');
+        }
+        fullText += text;
+        roundTextLen += text.length;
+        callbacks.onText(text);
+      });
 
+      const response = await stream.finalMessage();
+
+      // tool_use 블록만 수집 — 텍스트는 위 on('text')에서 이미 방출됨(재방출 금지)
+      const toolUseBlocks: Anthropic.Messages.ToolUseBlock[] = [];
       for (const block of response.content) {
-        if (block.type === 'text') {
-          fullText += block.text;
-          roundTextLen += block.text.length;
-          callbacks.onText(block.text);
-        } else if (block.type === 'tool_use') {
+        if (block.type === 'tool_use') {
           toolUseBlocks.push(block);
         }
       }
@@ -343,6 +359,7 @@ export async function callClaudeForChatWithTools(
         blocks: response.content.length,
         roundTextLen,
         toolCalls: toolUseBlocks.length,
+        roundMs: Date.now() - roundStart,
       }, '[ToolUse] 라운드 응답');
 
       // tool_use 없으면 완료
@@ -429,7 +446,8 @@ export async function callClaudeForChatWithTools(
           content: '위 도구 결과들을 바탕으로 최종 답변을 지금 작성해 주세요. 더 이상 도구를 호출하지 마세요. 사용자 질문에 대한 직접적이고 완전한 답변만 자연어로 작성하세요.',
         },
       ];
-      const finalResponse = await anthropic.messages.create({
+      let finalRoundLen = 0;
+      const finalStream = anthropic.messages.stream({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
         temperature: config.ANTHROPIC_TEMPERATURE_CHAT_FINAL,
@@ -437,15 +455,12 @@ export async function callClaudeForChatWithTools(
         messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
       });
-
-      let finalRoundLen = 0;
-      for (const block of finalResponse.content) {
-        if (block.type === 'text') {
-          fullText += block.text;
-          finalRoundLen += block.text.length;
-          callbacks.onText(block.text);
-        }
-      }
+      finalStream.on('text', (text) => {
+        fullText += text;
+        finalRoundLen += text.length;
+        callbacks.onText(text);
+      });
+      const finalResponse = await finalStream.finalMessage();
       logger.info({
         rounds: MAX_TOOL_ROUNDS + 1,
         finalRoundLen,
