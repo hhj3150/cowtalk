@@ -1823,3 +1823,31 @@ export const veterinaryDocumentDeliveries = pgTable('veterinary_document_deliver
   index('veterinary_document_deliveries_visit_id_idx').on(table.visitId),
   index('veterinary_document_deliveries_farm_id_idx').on(table.farmId),
 ]);
+
+// KAHIS 약물사용 보고 (8단계) — 처방대상 약물 기록 강제 → 오남용 방지 + 상위 DB 보고.
+// visit 1:1 (진료 1건당 약물보고 1건). 실제 제출은 스텁 커넥터(KahisDrugReportConnector)로 대체.
+export const veterinaryDrugReports = pgTable('veterinary_drug_reports', {
+  reportId: uuid('report_id').primaryKey().defaultRandom(),
+  visitId: uuid('visit_id').notNull().references(() => veterinaryVisits.visitId).unique(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  vetId: uuid('vet_id').notNull().references(() => users.userId),
+  drugName: varchar('drug_name', { length: 200 }),
+  drugCode: varchar('drug_code', { length: 50 }),
+  isPrescriptionTarget: boolean('is_prescription_target').notNull().default(false), // 처방대상 약물 여부
+  dosage: varchar('dosage', { length: 200 }),
+  route: varchar('route', { length: 50 }),          // 투여경로
+  withdrawalNote: text('withdrawal_note'),
+  administeredAt: date('administered_at'),
+  status: varchar('status', { length: 20 }).notNull().default('draft'), // draft, submitted, accepted, rejected
+  payloadJson: jsonb('payload_json'),
+  receiptNo: varchar('receipt_no', { length: 100 }),  // 제출 접수번호(스텁)
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  responseAt: timestamp('response_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('veterinary_drug_reports_visit_id_idx').on(table.visitId),
+  index('veterinary_drug_reports_farm_id_idx').on(table.farmId),
+  index('veterinary_drug_reports_status_idx').on(table.status),
+]);

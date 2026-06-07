@@ -21,6 +21,9 @@ import { buildVisitDocumentModel } from '../../services/vet/document-issue.servi
 import { renderVetDocumentPdf } from '../../services/vet/document-pdf.service.js';
 import { getVetProfile, upsertVetProfile } from '../../services/vet/vet-profile.service.js';
 import { sendDocument, listDeliveries } from '../../services/vet/document-delivery.service.js';
+import {
+  getDrugReport, upsertDrugReport, submitDrugReport,
+} from '../../services/vet/drug-report.service.js';
 
 export const vetRouter = Router();
 
@@ -378,6 +381,75 @@ vetRouter.get('/visits/:visitId/deliveries', async (req: Request, res: Response,
     }
     const data = await listDeliveries(visitId);
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 8단계 — KAHIS 약물사용 보고
+
+// 진료기록 접근 검증(공용) — 약물보고 라우트에서 재사용
+async function assertVisitAccess(visitId: string, userId: string, farmIds: readonly string[]): Promise<void> {
+  const farmId = await getVisitFarmId(visitId);
+  if (!farmId) {
+    throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+  }
+  if (!(await vetCanAccessFarm(farmId, farmIds, userId))) {
+    throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
+  }
+}
+
+// GET /api/vet/visits/:visitId/drug-report — 약물보고 조회(없으면 null)
+vetRouter.get('/visits/:visitId/drug-report', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    await assertVisitAccess(visitId, req.user!.userId, req.user?.farmIds ?? []);
+    const data = await getDrugReport(visitId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const drugReportSchema = z.object({
+  drugName: z.string().max(200).optional().nullable(),
+  drugCode: z.string().max(50).optional().nullable(),
+  isPrescriptionTarget: z.boolean().optional(),
+  dosage: z.string().max(200).optional().nullable(),
+  route: z.string().max(50).optional().nullable(),
+  withdrawalNote: z.string().max(500).optional().nullable(),
+  administeredAt: z.string().max(20).optional().nullable(),
+});
+
+// PUT /api/vet/visits/:visitId/drug-report — 약물보고 작성/수정(검증 포함)
+vetRouter.put('/visits/:visitId/drug-report', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    await assertVisitAccess(visitId, req.user!.userId, req.user?.farmIds ?? []);
+    const input = drugReportSchema.parse(req.body ?? {});
+    const result = await upsertDrugReport(visitId, req.user!.userId, input);
+    if (!result) {
+      throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/vet/visits/:visitId/drug-report/submit — KAHIS 제출(필수검증 통과 시)
+vetRouter.post('/visits/:visitId/drug-report/submit', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    await assertVisitAccess(visitId, req.user!.userId, req.user?.farmIds ?? []);
+    const result = await submitDrugReport(visitId);
+    if (!result) {
+      throw new NotFoundError('약물보고를 찾을 수 없습니다. 먼저 저장하세요.');
+    }
+    if (!result.ok) {
+      throw new BadRequestError(`필수 항목 누락: ${result.missing.join(', ')}`);
+    }
+    res.json({ success: true, data: result.result });
   } catch (error) {
     next(error);
   }

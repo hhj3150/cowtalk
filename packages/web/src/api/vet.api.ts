@@ -172,7 +172,38 @@ export const vetApi = {
   sendDocument: (visitId: string, docType: VetDocType, note?: string) =>
     apiPost<SendDocumentResult>(`/vet/visits/${visitId}/documents/${docType}/send`, { note }),
   listDeliveries: (visitId: string) => apiGet<VetDelivery[]>(`/vet/visits/${visitId}/deliveries`),
+  // 8단계 — KAHIS 약물보고
+  getDrugReport: (visitId: string) => apiGet<DrugReport | null>(`/vet/visits/${visitId}/drug-report`),
+  saveDrugReport: (visitId: string, payload: DrugReportPayload) =>
+    apiPut<{ report: DrugReport; validation: { ok: boolean; missing: string[] } }>(`/vet/visits/${visitId}/drug-report`, payload),
+  submitDrugReport: (visitId: string) =>
+    apiPost<{ status: string; receiptNo: string | null; testMode?: boolean }>(`/vet/visits/${visitId}/drug-report/submit`),
 };
+
+// 8단계 — KAHIS 약물보고
+export interface DrugReportPayload {
+  drugName?: string | null;
+  drugCode?: string | null;
+  isPrescriptionTarget?: boolean;
+  dosage?: string | null;
+  route?: string | null;
+  withdrawalNote?: string | null;
+  administeredAt?: string | null;
+}
+export interface DrugReport {
+  report_id: string | null;
+  visit_id: string;
+  drug_name: string | null;
+  drug_code: string | null;
+  is_prescription_target: boolean;
+  dosage: string | null;
+  route: string | null;
+  withdrawal_note: string | null;
+  administered_at: string | null;
+  status: string;
+  receipt_no: string | null;
+  submitted_at: string | null;
+}
 
 // 면허/병원 마스터
 export interface VetProfile {

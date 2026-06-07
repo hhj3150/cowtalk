@@ -1,14 +1,16 @@
 // /vet/farms/:farmId/animals/:animalId/chart — 개체 중심 진료차트 (1단계)
 // 탭: 개체요약 / 센서·이력 / 과거기록 / 진료입력 / 대화형(2단계) / 문서(4단계)
 // 하단 항상 접근 가능한 액션바: 불러오기·저장·수정·보내기·프린트·PDF발행
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   vetApi, VET_DOC_TYPES, VET_DOC_LABELS,
   type SaveVisitPayload, type EditableVisitPayload, type ConversationNoteResult, type StructuredNote,
-  type VetDocType, type VetDocModel,
+  type VetDocType, type VetDocModel, type DrugReportPayload,
 } from '@web/api/vet.api';
+
+const EMPTY_DRUG: DrugReportPayload = { isPrescriptionTarget: false };
 import { VetCard, VetButton, VetTabBar, KeyValueList } from './vet-ui';
 
 const CONFIRM_ITEMS = [
@@ -194,6 +196,45 @@ export default function VetChartPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ['vet', 'deliveries', docVisitId] });
     },
     onError: () => setNotice('보내기에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+  });
+
+  // 8단계 — KAHIS 약물보고
+  const [drugForm, setDrugForm] = useState<DrugReportPayload>(EMPTY_DRUG);
+  const setDrug = (k: keyof DrugReportPayload, v: string | boolean) => setDrugForm((p) => ({ ...p, [k]: v }));
+  const drugReportQuery = useQuery({
+    queryKey: ['vet', 'drug-report', docVisitId],
+    queryFn: () => vetApi.getDrugReport(docVisitId),
+    enabled: !!docVisitId,
+  });
+  useEffect(() => {
+    const r = drugReportQuery.data;
+    setDrugForm(r
+      ? {
+          drugName: r.drug_name ?? '', drugCode: r.drug_code ?? '',
+          isPrescriptionTarget: r.is_prescription_target, dosage: r.dosage ?? '',
+          route: r.route ?? '', withdrawalNote: r.withdrawal_note ?? '',
+          administeredAt: r.administered_at ?? '',
+        }
+      : EMPTY_DRUG);
+  }, [drugReportQuery.data, docVisitId]);
+
+  const saveDrugMutation = useMutation({
+    mutationFn: () => vetApi.saveDrugReport(docVisitId, drugForm),
+    onSuccess: (res) => {
+      setNotice(res.validation.ok
+        ? '약물보고 저장됨 — KAHIS 제출 가능합니다.'
+        : `임시 저장됨. 제출 전 필수 항목: ${res.validation.missing.join(', ')}`);
+      void qc.invalidateQueries({ queryKey: ['vet', 'drug-report', docVisitId] });
+    },
+    onError: () => setNotice('약물보고 저장에 실패했습니다.'),
+  });
+  const submitDrugMutation = useMutation({
+    mutationFn: () => vetApi.submitDrugReport(docVisitId),
+    onSuccess: (r) => {
+      setNotice(`KAHIS 약물보고 제출 완료 (${r.status}${r.receiptNo ? `, 접수 ${r.receiptNo}` : ''}${r.testMode ? ' · 테스트모드' : ''}).`);
+      void qc.invalidateQueries({ queryKey: ['vet', 'drug-report', docVisitId] });
+    },
+    onError: () => setNotice('제출 실패 — 처방대상 약물은 약품명·용량·투약일·휴약기간이 모두 필요합니다.'),
   });
 
   const structureMutation = useMutation({
@@ -620,6 +661,62 @@ export default function VetChartPage(): React.JSX.Element {
                 </div>
               </Section>
             </>
+          )}
+
+          {docVisitId && (
+            <Section title="KAHIS 약물사용 보고">
+              <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                처방대상 약물은 약품명·용량·투약일·휴약기간이 모두 필요합니다(오남용 방지). 저장 후 KAHIS로 제출합니다.
+              </p>
+              <label className="mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(drugForm.isPrescriptionTarget)}
+                  onChange={(e) => setDrug('isPrescriptionTarget', e.target.checked)}
+                />
+                처방대상 약물(항생제 등)
+              </label>
+              <Field label="약품명" value={drugForm.drugName ?? ''} onChange={(v) => setDrug('drugName', v)} />
+              <Field label="약품 코드 (선택)" value={drugForm.drugCode ?? ''} onChange={(v) => setDrug('drugCode', v)} />
+              <Field label="용법·용량" value={drugForm.dosage ?? ''} onChange={(v) => setDrug('dosage', v)} />
+              <Field label="투여경로 (선택)" value={drugForm.route ?? ''} onChange={(v) => setDrug('route', v)} />
+              <Field label="휴약기간" value={drugForm.withdrawalNote ?? ''} onChange={(v) => setDrug('withdrawalNote', v)} />
+              <label className="block space-y-1">
+                <span className="text-xs font-medium" style={{ color: 'var(--ct-text-secondary)' }}>투약일</span>
+                <input
+                  type="date"
+                  value={drugForm.administeredAt ?? ''}
+                  onChange={(e) => setDrug('administeredAt', e.target.value)}
+                  className="w-full rounded-lg px-3 py-2 text-base"
+                  style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}
+                />
+              </label>
+
+              {drugReportQuery.data && (
+                <p className="mt-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                  상태: {drugReportQuery.data.status}
+                  {drugReportQuery.data.receipt_no ? ` · 접수 ${drugReportQuery.data.receipt_no}` : ''}
+                </p>
+              )}
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                <VetButton
+                  disabled={saveDrugMutation.isPending}
+                  onClick={() => saveDrugMutation.mutate()}
+                  title="약물보고 저장"
+                >
+                  {saveDrugMutation.isPending ? '저장 중…' : '저장'}
+                </VetButton>
+                <VetButton
+                  variant="primary"
+                  disabled={submitDrugMutation.isPending || !drugReportQuery.data}
+                  onClick={() => submitDrugMutation.mutate()}
+                  title="KAHIS 제출"
+                >
+                  {submitDrugMutation.isPending ? '제출 중…' : 'KAHIS 제출'}
+                </VetButton>
+              </div>
+            </Section>
           )}
         </div>
       )}
