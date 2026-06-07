@@ -343,6 +343,13 @@ export async function callClaudeForChatWithTools(
         callbacks.onText(text);
       });
 
+      // 'error' 리스너 필수 — 없으면 SDK 스트림의 error 이벤트가 Node 프로세스를 죽임.
+      // 실제 에러 전파/onError 호출은 아래 finalMessage() 거부 → 바깥 try/catch가 담당하므로
+      // 여기서는 중복 onError 방지를 위해 로깅만 한다.
+      stream.on('error', (err: Error) => {
+        logger.warn({ error: err, round: round + 1 }, '[ToolUse] 스트림 error 이벤트 (finalMessage에서 전파됨)');
+      });
+
       const response = await stream.finalMessage();
 
       // tool_use 블록만 수집 — 텍스트는 위 on('text')에서 이미 방출됨(재방출 금지)
@@ -454,6 +461,10 @@ export async function callClaudeForChatWithTools(
         system: buildCachedSystem(systemPrompt),
         messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
+      });
+      // 'error' 리스너 필수 (위 라운드 루프와 동일 이유) — 전파는 finalMessage()가 담당
+      finalStream.on('error', (err: Error) => {
+        logger.warn({ error: err }, '[ToolUse] final round 스트림 error 이벤트');
       });
       finalStream.on('text', (text) => {
         fullText += text;
