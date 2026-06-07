@@ -202,12 +202,14 @@ export interface VetDelivery {
 }
 
 // 4단계 — 공식 문서 모델 (서버 document-builder와 동일 형태)
-export const VET_DOC_TYPES = ['medical_record', 'prescription', 'diagnosis'] as const;
+export const VET_DOC_TYPES = ['medical_record', 'prescription', 'diagnosis', 'necropsy', 'vaccination'] as const;
 export type VetDocType = (typeof VET_DOC_TYPES)[number];
 export const VET_DOC_LABELS: Record<VetDocType, string> = {
   medical_record: '진료기록부',
   prescription: '처방전',
   diagnosis: '진단서',
+  necropsy: '검안서',
+  vaccination: '예방접종증명서',
 };
 
 export interface VetDocPair { key: string; value: string }

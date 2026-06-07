@@ -60,6 +60,21 @@ describe('buildVetDocument — 공식 문서 모델', () => {
     expect(wd?.paragraphs?.[0]).toBe('해당 없음');
   });
 
+  it('검안서: 추정 사인 + 검안 증명 문구 포함', () => {
+    const m = buildVetDocument({ docType: 'necropsy', visit, snapshot, issuer });
+    expect(m.doc_title).toBe('검안서');
+    expect(m.sections.find((s) => s.heading === '추정 사인')?.paragraphs?.[0]).toBe('산후 자궁염');
+    expect(m.sections.some((s) => (s.paragraphs ?? []).some((t) => t.includes('검안')))).toBe(true);
+  });
+
+  it('예방접종증명서: 접종 내역(처치) + 접종 증명 문구 포함', () => {
+    const m = buildVetDocument({ docType: 'vaccination', visit, snapshot, issuer });
+    expect(m.doc_title).toBe('예방접종증명서');
+    const vac = m.sections.find((s) => s.heading === '접종 내역');
+    expect(vac?.pairs?.find((p) => p.key === '백신·처치')?.value).toBe('항생제 투여');
+    expect(m.sections.some((s) => (s.paragraphs ?? []).some((t) => t.includes('예방접종')))).toBe(true);
+  });
+
   it('발행일 기본값은 오늘(YYYY-MM-DD), 지정 시 그 값', () => {
     const m1 = buildVetDocument({ docType: 'diagnosis', visit, snapshot, issuer });
     expect(m1.issue_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);

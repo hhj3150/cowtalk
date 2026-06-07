@@ -2,13 +2,15 @@
 // 저장된 진료기록 + 동결 snapshot + 발행자(수의사) → 문서 모델.
 // 모델은 PDF 렌더러(document-pdf.service)와 웹 미리보기가 공유한다.
 
-export const VET_DOC_TYPES = ['medical_record', 'prescription', 'diagnosis'] as const;
+export const VET_DOC_TYPES = ['medical_record', 'prescription', 'diagnosis', 'necropsy', 'vaccination'] as const;
 export type VetDocType = (typeof VET_DOC_TYPES)[number];
 
 export const VET_DOC_TITLES: Record<VetDocType, string> = {
   medical_record: '진료기록부',
   prescription: '처방전',
   diagnosis: '진단서',
+  necropsy: '검안서',
+  vaccination: '예방접종증명서',
 };
 
 export interface DocPair {
@@ -165,7 +167,7 @@ export function buildVetDocument(input: BuildVetDocumentInput): VetDocModel {
         paragraphs: [dash(visit.farmerInstruction)],
       },
     ];
-  } else {
+  } else if (docType === 'diagnosis') {
     // 진단서
     sections = [
       {
@@ -193,6 +195,58 @@ export function buildVetDocument(input: BuildVetDocumentInput): VetDocModel {
         paragraphs: ['상기 개체는 위와 같이 진단되었음을 증명합니다.'],
       },
     ];
+  } else if (docType === 'necropsy') {
+    // 검안서 (사체 검안)
+    sections = [
+      {
+        heading: '검안 개요',
+        pairs: [
+          { key: '검안 사유', value: dash(visit.visitReason) },
+          { key: '의뢰자 진술', value: dash(visit.farmerStatement) },
+        ],
+      },
+      {
+        heading: '검안 소견',
+        pairs: [
+          { key: '외관·신체검사', value: dash(visit.physicalExam) },
+          { key: '검안 소견', value: dash(visit.clinicalFindings) },
+        ],
+      },
+      {
+        heading: '추정 사인',
+        paragraphs: [dash(visit.finalDiagnosis)],
+      },
+      {
+        heading: '비고',
+        paragraphs: [dash(visit.veterinarianNotes)],
+      },
+      {
+        heading: '용도',
+        paragraphs: ['상기 개체를 검안한 결과는 위와 같음을 증명합니다.'],
+      },
+    ];
+  } else if (docType === 'vaccination') {
+    // 예방접종증명서 (접종 내역은 진료기록의 처치·투약 기준)
+    sections = [
+      {
+        heading: '접종 내역',
+        pairs: [
+          { key: '백신·처치', value: dash(visit.treatment) },
+          { key: '접종 상세', value: dash(visit.medication) },
+          { key: '처방', value: dash(visit.prescription) },
+        ],
+      },
+      {
+        heading: '접종 후 주의사항',
+        paragraphs: [dash(visit.farmerInstruction)],
+      },
+      {
+        heading: '용도',
+        paragraphs: ['상기 개체에 대하여 위와 같이 예방접종을 실시하였음을 증명합니다.'],
+      },
+    ];
+  } else {
+    sections = [];
   }
 
   return {
