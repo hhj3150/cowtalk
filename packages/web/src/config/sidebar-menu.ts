@@ -16,6 +16,7 @@ export interface MenuItem {
 export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'dashboard',    label: '대시보드',      href: '/',                       icon: 'LayoutDashboard', roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 10,  group: 'core' },
   { id: 'my-cows',      label: '내 소',         href: '/my-cattle',              icon: 'Cog',             roles: ['master','farmer'],                                                          order: 20,  group: 'core' },
+  { id: 'my-documents', label: '받은 문서함',   href: '/documents',              icon: 'Bell',            roles: ['master','farmer'],                                                          order: 22,  group: 'core' },
   { id: 'breeding',     label: '번식 커맨드',   href: '/breeding',               icon: 'Heart',           roles: ['master','farmer','veterinarian'],                                          order: 30,  group: 'core' },
   { id: 'breeding-cal', label: '번식 캘린더',   href: '/breeding/calendar',      icon: 'Calendar',        roles: ['master','farmer','veterinarian'],                                          order: 35,  group: 'core' },
   { id: 'vet-center',   label: '수의사 진료센터', href: '/vet',                  icon: 'Stethoscope',     roles: ['master','veterinarian'],                                                    order: 38,  group: 'core' },

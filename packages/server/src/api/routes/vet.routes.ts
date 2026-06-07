@@ -13,10 +13,11 @@ import {
   listAccessibleFarms, listFarmAnimals, vetCanAccessFarm,
   saveVisit, listAnimalVisits, getVisitDetail,
   updateVisit, listVisitRevisions, getVisitFarmId,
-  getVisitDocumentData, getVetIssuer,
+  getVisitDocumentData,
 } from '../../services/vet/visit.service.js';
 import { structureConversationNote } from '../../services/vet/conversation-note.service.js';
-import { buildVetDocument, VET_DOC_TYPES, VET_DOC_TITLES, type VetDocType, type VetDocModel } from '../../services/vet/document-builder.service.js';
+import { VET_DOC_TYPES, VET_DOC_TITLES, type VetDocType, type VetDocModel } from '../../services/vet/document-builder.service.js';
+import { buildVisitDocumentModel } from '../../services/vet/document-issue.service.js';
 import { renderVetDocumentPdf } from '../../services/vet/document-pdf.service.js';
 import { getVetProfile, upsertVetProfile } from '../../services/vet/vet-profile.service.js';
 import { sendDocument, listDeliveries } from '../../services/vet/document-delivery.service.js';
@@ -285,33 +286,21 @@ function isVetDocType(v: string): v is VetDocType {
   return (VET_DOC_TYPES as readonly string[]).includes(v);
 }
 
-// 문서 모델 + 접근검증 + 발행자 조립 (미리보기/PDF 공용)
+// 문서 모델 + 접근검증 (미리보기/PDF 공용). 발행자는 진료 수의사 기준(document-issue).
 async function loadVetDocument(
   visitId: string, docTypeRaw: string, userId: string, farmIds: readonly string[],
 ): Promise<VetDocModel> {
   if (!isVetDocType(docTypeRaw)) {
     throw new BadRequestError(`지원하지 않는 문서 유형입니다: ${docTypeRaw}`);
   }
-  const data = await getVisitDocumentData(visitId);
-  if (!data) {
+  const built = await buildVisitDocumentModel(visitId, docTypeRaw);
+  if (!built) {
     throw new NotFoundError('진료기록을 찾을 수 없습니다.');
   }
-  if (!(await vetCanAccessFarm(data.farmId, farmIds, userId))) {
+  if (!(await vetCanAccessFarm(built.farmId, farmIds, userId))) {
     throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
   }
-  const issuer = await getVetIssuer(userId);
-  const profile = await getVetProfile(userId);
-  return buildVetDocument({
-    docType: docTypeRaw,
-    visit: data.visit,
-    snapshot: data.snapshot,
-    issuer: {
-      name: issuer?.name ?? '담당 수의사',
-      email: issuer?.email ?? null,
-      licenseNumber: profile?.licenseNumber ?? null,
-      clinicName: profile?.clinicName ?? null,
-    },
-  });
+  return built.model;
 }
 
 // GET /api/vet/visits/:visitId/documents/:docType — 문서 모델(미리보기/프린트용 JSON)

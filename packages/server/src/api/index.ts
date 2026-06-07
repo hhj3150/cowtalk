@@ -56,6 +56,7 @@ import { xaiRouter } from './routes/xai.routes.js';
 import { paymentRouter } from './routes/payment.routes.js';
 import { treatmentsRouter } from './routes/treatments.routes.js';
 import { vetRouter } from './routes/vet.routes.js';
+import { farmerRouter } from './routes/farmer.routes.js';
 import { diagnosisRouter } from './routes/diagnosis.routes.js';
 import { audioRouter } from './routes/audio.routes.js';
 
@@ -119,6 +120,7 @@ export function createApiRouter(): Router {
   api.use('/payments', paymentRouter);
   api.use('/treatments', treatmentsRouter);
   api.use('/vet', vetRouter);
+  api.use('/farmer', farmerRouter);
   api.use('/diagnosis', diagnosisRouter);
   api.use('/audio', audioRouter);
 
