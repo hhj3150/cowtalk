@@ -378,9 +378,16 @@ DB 영속화:
 | genetics | query_sire_info | 조회 | 한우 씨수소 정보 (농촌진흥청) |
 | vet | query_differential_diagnosis | 분석 | 감별진단 6개 질병 확률 순위 + 센서 근거 + 확인검사 트리 |
 | vet | confirm_treatment_outcome | 기록 | 치료 결과 추적 (회복/악화/모니터링 센서 비교 판정) |
+| vet | record_expert_label | 기록 | 전문가 레이블 (수의사·방역관 전용). 대화 중 진단·방역 판단 → event_labels 정답 레이블 |
 
 역할별 접근 권한: tool-gateway.ts의 ROLE_TOOL_ACCESS 참조.
 감사 로그: 모든 도구 호출이 tool_audit_log 테이블에 자동 기록.
+
+전문가 레이블 루프 (record_expert_label):
+- 원칙: 전문가(수의사·방역관)의 자연대화 판단이 곧 고신뢰 학습 레이블. 농장주·행정관 추측은 제외(학습 데이터 오염 방지).
+- 동작: 전문가가 특정 개체 데이터를 보고 "이건 케토시스네" → 팅커벨이 한 줄 확인("레이블 기록할까요?") → 동의 시 호출.
+- 저장: 최근 21일 내 매칭 smaXtec 알람 있으면 event_labels(verdict confirmed/modified, labeledBy=전문가), 없으면 clinical_observations 보존.
+- chat-learner도 동일 원칙으로 진단 신호의 clinical_observations 기록을 전문가 역할로 게이팅.
 
 번식 리마인더 5종 (24h batch, runBreedingReminders):
 - pregnancy_check_due, repeat_breeder_warning, dry_off_reminder, calving_imminent, long_open_days

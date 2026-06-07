@@ -341,4 +341,28 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
       required: ['treatmentId', 'outcome'],
     },
   },
+  {
+    name: 'record_expert_label',
+    description: '전문가 레이블 기록 (수의사·방역관 전용). 전문가가 특정 개체의 데이터를 보고 내린 진단·방역 판단을 고신뢰 학습 레이블로 기록한다. 최근 AI 알람과 매칭되면 정답 판정(confirmed/modified)으로 event_labels에 저장되어 모델 학습 루프에 직접 들어가고, 매칭 알람이 없으면 임상관찰로 보존된다. 농장주의 추측은 레이블로 삼지 않으므로 농장주는 이 도구에 접근할 수 없다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        animalId: { type: 'string', description: '동물 ID (필수)' },
+        diagnosis: { type: 'string', description: '전문가가 내린 진단명·판단 (필수). 예: 케토시스, 유방염, 구제역 의심' },
+        labelType: {
+          type: 'string',
+          enum: ['clinical', 'quarantine'],
+          description: '레이블 도메인: clinical(수의 진단) / quarantine(방역·전염병). 기본 clinical',
+        },
+        severity: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'critical'],
+          description: '심각도 (기본 medium)',
+        },
+        mappedAlarmType: { type: 'string', description: '이 진단에 대응하는 AI 알람 타입(있으면). 예: ketosis_risk, mastitis_risk, heat_stress. 생략 시 최근 알람과 자동 매칭' },
+        notes: { type: 'string', description: '판단 근거·비고 (센서 소견 등)' },
+      },
+      required: ['animalId', 'diagnosis'],
+    },
+  },
 ];
