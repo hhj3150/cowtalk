@@ -18,11 +18,43 @@ import {
 import { structureConversationNote } from '../../services/vet/conversation-note.service.js';
 import { buildVetDocument, VET_DOC_TYPES, VET_DOC_TITLES, type VetDocType, type VetDocModel } from '../../services/vet/document-builder.service.js';
 import { renderVetDocumentPdf } from '../../services/vet/document-pdf.service.js';
+import { getVetProfile, upsertVetProfile } from '../../services/vet/vet-profile.service.js';
+import { sendDocument, listDeliveries } from '../../services/vet/document-delivery.service.js';
 
 export const vetRouter = Router();
 
 vetRouter.use(authenticate);
 vetRouter.use(requireRole('veterinarian'));
+
+// ── 수의사 면허/병원 마스터 (문서 발행 시 자동 기입) ──
+
+// GET /api/vet/profile — 내 면허/병원 정보
+vetRouter.get('/profile', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const profile = await getVetProfile(req.user!.userId);
+    res.json({ success: true, data: profile });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const vetProfileSchema = z.object({
+  licenseNumber: z.string().max(50).optional().nullable(),
+  clinicName: z.string().max(200).optional().nullable(),
+  clinicAddress: z.string().max(500).optional().nullable(),
+  clinicPhone: z.string().max(30).optional().nullable(),
+});
+
+// PUT /api/vet/profile — 면허/병원 정보 등록·수정
+vetRouter.put('/profile', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = vetProfileSchema.parse(req.body ?? {});
+    const saved = await upsertVetProfile(req.user!.userId, input);
+    res.json({ success: true, data: saved });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // GET /api/vet/farms — 수의사가 접근 가능한 목장 목록
 vetRouter.get('/farms', async (req: Request, res: Response, next: NextFunction) => {
@@ -268,11 +300,17 @@ async function loadVetDocument(
     throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
   }
   const issuer = await getVetIssuer(userId);
+  const profile = await getVetProfile(userId);
   return buildVetDocument({
     docType: docTypeRaw,
     visit: data.visit,
     snapshot: data.snapshot,
-    issuer: { name: issuer?.name ?? '담당 수의사', email: issuer?.email ?? null },
+    issuer: {
+      name: issuer?.name ?? '담당 수의사',
+      email: issuer?.email ?? null,
+      licenseNumber: profile?.licenseNumber ?? null,
+      clinicName: profile?.clinicName ?? null,
+    },
   });
 }
 
@@ -300,6 +338,57 @@ vetRouter.get('/visits/:visitId/documents/:docType/pdf', async (req: Request, re
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${title}_${visitId.slice(0, 8)}.pdf`)}; filename="${fileName}"`);
     await renderVetDocumentPdf(model, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 5단계 — 보내기 (발행 문서를 농장주에게 전달)
+
+const sendDocSchema = z.object({ note: z.string().max(500).optional() });
+
+// POST /api/vet/visits/:visitId/documents/:docType/send — 문서 전달
+vetRouter.post('/visits/:visitId/documents/:docType/send', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    const docType = String(req.params.docType ?? '');
+    if (!isVetDocType(docType)) {
+      throw new BadRequestError(`지원하지 않는 문서 유형입니다: ${docType}`);
+    }
+    const userId = req.user!.userId;
+    const farmIds = req.user?.farmIds ?? [];
+    const data = await getVisitDocumentData(visitId);
+    if (!data) {
+      throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+    }
+    if (!(await vetCanAccessFarm(data.farmId, farmIds, userId))) {
+      throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
+    }
+    const { note } = sendDocSchema.parse(req.body ?? {});
+    const result = await sendDocument({
+      visitId, farmId: data.farmId, docType, sentBy: userId, note,
+    });
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/vet/visits/:visitId/deliveries — 전달 이력
+vetRouter.get('/visits/:visitId/deliveries', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    const userId = req.user!.userId;
+    const farmIds = req.user?.farmIds ?? [];
+    const farmId = await getVisitFarmId(visitId);
+    if (!farmId) {
+      throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+    }
+    if (!(await vetCanAccessFarm(farmId, farmIds, userId))) {
+      throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
+    }
+    const data = await listDeliveries(visitId);
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }

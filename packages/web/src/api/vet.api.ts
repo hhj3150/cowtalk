@@ -1,5 +1,5 @@
 // 수의사 진료센터 API 클라이언트 (1~4단계)
-import { apiGet, apiPost, apiPatch, apiClient } from './client';
+import { apiGet, apiPost, apiPatch, apiPut, apiClient } from './client';
 
 export interface VetFarm {
   farm_id: string;
@@ -165,7 +165,41 @@ export const vetApi = {
     );
     return res.data;
   },
+  // 면허/병원 마스터
+  getProfile: () => apiGet<VetProfile | null>('/vet/profile'),
+  saveProfile: (payload: VetProfilePayload) => apiPut<VetProfile>('/vet/profile', payload),
+  // 5단계 — 보내기
+  sendDocument: (visitId: string, docType: VetDocType, note?: string) =>
+    apiPost<SendDocumentResult>(`/vet/visits/${visitId}/documents/${docType}/send`, { note }),
+  listDeliveries: (visitId: string) => apiGet<VetDelivery[]>(`/vet/visits/${visitId}/deliveries`),
 };
+
+// 면허/병원 마스터
+export interface VetProfile {
+  licenseNumber: string | null;
+  clinicName: string | null;
+  clinicAddress: string | null;
+  clinicPhone: string | null;
+  updatedAt?: string | null;
+}
+export type VetProfilePayload = Omit<VetProfile, 'updatedAt'>;
+
+// 5단계 — 전달
+export interface SendDocumentResult {
+  deliveryId: string;
+  pushDelivered: number;
+}
+export interface VetDelivery {
+  delivery_id: string;
+  doc_type: VetDocType;
+  doc_title: string;
+  recipient_name: string | null;
+  channel: string;
+  note: string | null;
+  status: string;
+  push_delivered: number;
+  sent_at: string;
+}
 
 // 4단계 — 공식 문서 모델 (서버 document-builder와 동일 형태)
 export const VET_DOC_TYPES = ['medical_record', 'prescription', 'diagnosis'] as const;

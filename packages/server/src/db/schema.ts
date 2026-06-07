@@ -1791,3 +1791,35 @@ export const veterinaryVisitRevisions = pgTable('veterinary_visit_revisions', {
 }, (table) => [
   index('veterinary_visit_revisions_visit_id_idx').on(table.visitId),
 ]);
+
+// 수의사 면허/병원 마스터 (문서 발행 시 면허번호·병원정보 자동 기입) — user 1:1.
+export const veterinarianProfiles = pgTable('veterinarian_profiles', {
+  profileId: uuid('profile_id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.userId).unique(),
+  licenseNumber: varchar('license_number', { length: 50 }),
+  clinicName: varchar('clinic_name', { length: 200 }),
+  clinicAddress: text('clinic_address'),
+  clinicPhone: varchar('clinic_phone', { length: 30 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('veterinarian_profiles_user_id_idx').on(table.userId),
+]);
+
+// 발행 문서 전달 이력 (5단계 보내기) — 발행 사실 영속화 + 채널/수신자 기록.
+export const veterinaryDocumentDeliveries = pgTable('veterinary_document_deliveries', {
+  deliveryId: uuid('delivery_id').primaryKey().defaultRandom(),
+  visitId: uuid('visit_id').notNull().references(() => veterinaryVisits.visitId),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  docType: varchar('doc_type', { length: 30 }).notNull(), // medical_record, prescription, diagnosis
+  sentBy: uuid('sent_by').notNull().references(() => users.userId),
+  recipientName: varchar('recipient_name', { length: 100 }),
+  channel: varchar('channel', { length: 20 }).notNull().default('in_app'),
+  note: text('note'),
+  status: varchar('status', { length: 20 }).notNull().default('sent'),
+  pushDelivered: integer('push_delivered').notNull().default(0), // best-effort 푸시 전송 수
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('veterinary_document_deliveries_visit_id_idx').on(table.visitId),
+  index('veterinary_document_deliveries_farm_id_idx').on(table.farmId),
+]);

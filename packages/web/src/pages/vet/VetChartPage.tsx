@@ -179,6 +179,23 @@ export default function VetChartPage(): React.JSX.Element {
     w.print();
   }
 
+  // 5단계 — 보내기
+  const [sendNote, setSendNote] = useState('');
+  const deliveriesQuery = useQuery({
+    queryKey: ['vet', 'deliveries', docVisitId],
+    queryFn: () => vetApi.listDeliveries(docVisitId),
+    enabled: !!docVisitId,
+  });
+  const sendMutation = useMutation({
+    mutationFn: () => vetApi.sendDocument(docVisitId, docType, sendNote.trim() || undefined),
+    onSuccess: (res) => {
+      setNotice(`${VET_DOC_LABELS[docType]}를 농장주에게 보냈습니다.${res.pushDelivered > 0 ? ` (푸시 ${res.pushDelivered}건)` : ''}`);
+      setSendNote('');
+      void qc.invalidateQueries({ queryKey: ['vet', 'deliveries', docVisitId] });
+    },
+    onError: () => setNotice('보내기에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+  });
+
   const structureMutation = useMutation({
     mutationFn: () => vetApi.structureConversationNote(farmId, animalId, rawNote),
     onSuccess: (res) => { setAiResult(res); setNotice(null); },
@@ -233,8 +250,6 @@ export default function VetChartPage(): React.JSX.Element {
     }
     saveMutation.mutate();
   }
-
-  const todo = (label: string) => () => setNotice(`"${label}"는 다음 단계에서 제공됩니다 (1단계는 골격 + 진료 저장/불러오기).`);
 
   const ctx = ctxQuery.data;
   const animalTag = (ctx?.animal_snapshot?.['ear_tag_number'] as string) ?? animalId.slice(0, 8);
@@ -568,6 +583,42 @@ export default function VetChartPage(): React.JSX.Element {
                 </VetButton>
                 <VetButton onClick={() => docQuery.data && printDocument(docQuery.data)} title="프린트">프린트</VetButton>
               </div>
+
+              {/* 5단계 — 보내기 */}
+              <Section title="농장주에게 보내기">
+                <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                  {VET_DOC_LABELS[docType]}를 농장주에게 전달합니다(앱 알림). 전달 사실은 이력에 기록됩니다.
+                </p>
+                <Field label="전달 메모 (선택)" value={sendNote} onChange={setSendNote} />
+                <div className="mt-2">
+                  <VetButton
+                    variant="primary"
+                    disabled={sendMutation.isPending}
+                    onClick={() => sendMutation.mutate()}
+                    title="보내기"
+                  >
+                    {sendMutation.isPending ? '보내는 중…' : `${VET_DOC_LABELS[docType]} 보내기`}
+                  </VetButton>
+                </div>
+
+                <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--ct-border)' }}>
+                  <h3 className="mb-1 text-xs font-bold" style={{ color: 'var(--ct-text)' }}>전달 이력</h3>
+                  {deliveriesQuery.data && deliveriesQuery.data.length === 0 && (
+                    <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>전달 이력이 없습니다.</p>
+                  )}
+                  <ul className="space-y-1">
+                    {(deliveriesQuery.data ?? []).map((d) => (
+                      <li key={d.delivery_id} className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                        <span className="font-medium" style={{ color: 'var(--ct-text)' }}>{d.doc_title}</span>
+                        {' · '}{new Date(d.sent_at).toLocaleString('ko-KR')}
+                        {d.recipient_name ? ` · ${d.recipient_name}` : ''}
+                        {d.push_delivered > 0 ? ` · 푸시 ${d.push_delivered}건` : ''}
+                        {d.note ? ` · ${d.note}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Section>
             </>
           )}
         </div>
@@ -583,7 +634,7 @@ export default function VetChartPage(): React.JSX.Element {
           {saveMutation.isPending ? '저장 중…' : '저장하기'}
         </VetButton>
         <VetButton onClick={() => { setTab('history'); setNotice('과거기록 탭에서 진료기록을 선택해 수정하세요.'); }} title="수정하기">수정</VetButton>
-        <VetButton onClick={todo('보내기')} title="보내기">보내기</VetButton>
+        <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록과 문서를 선택해 보내세요.'); }} title="보내기">보내기</VetButton>
         <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록을 선택해 프린트하세요.'); }} title="프린트하기">프린트</VetButton>
         <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록을 선택해 PDF로 발행하세요.'); }} title="PDF 발행">PDF</VetButton>
       </div>

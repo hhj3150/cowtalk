@@ -55,6 +55,7 @@ const VetCenterDashboard = lazy(() => import('@web/pages/vet/VetCenterDashboard'
 const VetFarmsPage = lazy(() => import('@web/pages/vet/VetFarmsPage'));
 const VetFarmAnimalsPage = lazy(() => import('@web/pages/vet/VetFarmAnimalsPage'));
 const VetChartPage = lazy(() => import('@web/pages/vet/VetChartPage'));
+const VetProfilePage = lazy(() => import('@web/pages/vet/VetProfilePage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -161,6 +162,7 @@ export function App(): React.JSX.Element {
               <Route path="/vet/schedule" element={<VisitSchedulePage />} />
               {/* 수의사 진료센터 — 수의사 전용 */}
               <Route path="/vet" element={<RequireRole roles={['veterinarian']}><VetCenterDashboard /></RequireRole>} />
+              <Route path="/vet/profile" element={<RequireRole roles={['veterinarian']}><VetProfilePage /></RequireRole>} />
               <Route path="/vet/farms" element={<RequireRole roles={['veterinarian']}><VetFarmsPage /></RequireRole>} />
               <Route path="/vet/farms/:farmId/animals" element={<RequireRole roles={['veterinarian']}><VetFarmAnimalsPage /></RequireRole>} />
               <Route path="/vet/farms/:farmId/animals/:animalId/chart" element={<RequireRole roles={['veterinarian']}><VetChartPage /></RequireRole>} />
