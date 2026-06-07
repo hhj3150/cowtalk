@@ -1735,6 +1735,8 @@ export const veterinaryVisits = pgTable('veterinary_visits', {
   aiConfidenceScore: real('ai_confidence_score'),
   veterinarianConfirmedAiNote: boolean('veterinarian_confirmed_ai_note').notNull().default(false),
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  // ── 수정 이력 (3단계) — 현재 개정 번호 (수정 시마다 +1, revisions 이력과 연동) ──
+  revisionCount: integer('revision_count').notNull().default(0),
   // ── 현장 기록 메타 ──
   inputMethod: varchar('input_method', { length: 20 }).notNull().default('manual'), // manual, quick_select, voice, conversation, mixed
   fieldVisitLocation: text('field_visit_location'),
@@ -1772,4 +1774,20 @@ export const veterinaryVisitSnapshots = pgTable('veterinary_visit_snapshots', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('veterinary_visit_snapshots_visit_id_idx').on(table.visitId),
+]);
+
+// 진료기록 수정 이력 (3단계) — 의무기록 불변성/감사추적.
+// 수정 시 '수정 전 값(previousValuesJson)' + 변경 필드 + 수정자/사유/시각을 보존한다.
+// snapshot(자동 호출 데이터)은 원진료 시점 그대로 동결 유지 — 수정은 수의사 입력 필드에만 적용.
+export const veterinaryVisitRevisions = pgTable('veterinary_visit_revisions', {
+  revisionId: uuid('revision_id').primaryKey().defaultRandom(),
+  visitId: uuid('visit_id').notNull().references(() => veterinaryVisits.visitId),
+  revisionNumber: integer('revision_number').notNull(),
+  editedBy: uuid('edited_by').notNull().references(() => users.userId),
+  editReason: text('edit_reason'),
+  previousValuesJson: jsonb('previous_values_json'), // 수정 전 값 (변경된 필드만)
+  changedFields: jsonb('changed_fields'),            // string[] — 변경된 필드 키 목록
+  editedAt: timestamp('edited_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('veterinary_visit_revisions_visit_id_idx').on(table.visitId),
 ]);

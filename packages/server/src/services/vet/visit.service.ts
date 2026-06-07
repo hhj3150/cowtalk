@@ -3,7 +3,8 @@
 
 import { getDb } from '../../config/database.js';
 import {
-  veterinaryVisits, veterinaryVisitSnapshots, farms, animals, userFarmAccess,
+  veterinaryVisits, veterinaryVisitSnapshots, veterinaryVisitRevisions,
+  farms, animals, userFarmAccess,
 } from '../../db/schema.js';
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
@@ -179,4 +180,133 @@ export async function getVisitDetail(visitId: string): Promise<unknown | null> {
   if (!visit) return null;
   const [snapshot] = await db.select().from(veterinaryVisitSnapshots).where(eq(veterinaryVisitSnapshots.visitId, visitId)).limit(1);
   return { visit, snapshot: snapshot ?? null };
+}
+
+// ── 진료기록 접근 검증용 — visit의 소속 농장 ID 조회 ──
+export async function getVisitFarmId(visitId: string): Promise<string | null> {
+  const db = getDb();
+  const [v] = await db.select({ farmId: veterinaryVisits.farmId })
+    .from(veterinaryVisits).where(eq(veterinaryVisits.visitId, visitId)).limit(1);
+  return v?.farmId ?? null;
+}
+
+// ── 3단계: 진료기록 수정 / 이력관리 ──
+
+// 수의사 입력 필드만 수정 대상 (자동 호출 snapshot은 동결 유지).
+export const EDITABLE_VISIT_FIELDS = [
+  'visitReason', 'chiefComplaint', 'farmerStatement', 'physicalExam', 'clinicalFindings',
+  'differentialDiagnosis', 'finalDiagnosis', 'treatment', 'prescription', 'medication',
+  'withdrawalPeriod', 'prognosis', 'followUpDate', 'farmerInstruction', 'quarantineRequired',
+  'veterinarianNotes', 'status',
+] as const;
+export type EditableVisitField = (typeof EDITABLE_VISIT_FIELDS)[number];
+
+export interface VisitRevisionDiff {
+  readonly previousValues: Record<string, unknown>;
+  readonly changedFields: string[];
+  readonly hasChanges: boolean;
+}
+
+// 값 동등 비교 — null 정규화 + boolean/문자열 안전 비교 (DB 문자열 ↔ 입력 타입 차이 흡수)
+function valuesEqual(a: unknown, b: unknown): boolean {
+  const av = a ?? null;
+  const bv = b ?? null;
+  if (av === null && bv === null) return true;
+  if (av === null || bv === null) return false;
+  if (typeof av === 'boolean' || typeof bv === 'boolean') return Boolean(av) === Boolean(bv);
+  return String(av) === String(bv);
+}
+
+// 순수 함수 — 기존 값과 패치를 비교해 변경 필드/수정 전 값 산출 (DB 불필요, 단위 테스트 대상).
+export function diffEditableFields(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): VisitRevisionDiff {
+  const previousValues: Record<string, unknown> = {};
+  const changedFields: string[] = [];
+  for (const field of EDITABLE_VISIT_FIELDS) {
+    if (!(field in patch)) continue;          // 제공된 필드만 검토
+    const next = patch[field];
+    if (next === undefined) continue;
+    const prev = existing[field] ?? null;
+    if (!valuesEqual(prev, next)) {
+      previousValues[field] = prev;
+      changedFields.push(field);
+    }
+  }
+  return { previousValues, changedFields, hasChanges: changedFields.length > 0 };
+}
+
+export interface UpdateVisitInput {
+  readonly visitId: string;
+  readonly editorId: string;
+  readonly editReason?: string;
+  readonly patch: Partial<Record<EditableVisitField, unknown>>;
+}
+
+export interface UpdateVisitResult {
+  readonly visitId: string;
+  readonly revisionNumber: number;
+  readonly changedFields: string[];
+}
+
+// 진료기록 수정 — 수정 전 값을 revisions에 보존한 뒤 갱신. snapshot은 건드리지 않음.
+export async function updateVisit(input: UpdateVisitInput): Promise<UpdateVisitResult | null> {
+  const db = getDb();
+  const [existing] = await db.select().from(veterinaryVisits)
+    .where(eq(veterinaryVisits.visitId, input.visitId)).limit(1);
+  if (!existing) return null;
+
+  const diff = diffEditableFields(existing as unknown as Record<string, unknown>, input.patch);
+  if (!diff.hasChanges) {
+    // 변경 없음 — 이력 생성 없이 현재 개정 번호 반환 (멱등)
+    return { visitId: input.visitId, revisionNumber: existing.revisionCount ?? 0, changedFields: [] };
+  }
+
+  const nextRevision = (existing.revisionCount ?? 0) + 1;
+
+  // 1) 수정 전 값 이력 보존
+  await db.insert(veterinaryVisitRevisions).values({
+    visitId: input.visitId,
+    revisionNumber: nextRevision,
+    editedBy: input.editorId,
+    editReason: input.editReason ?? null,
+    previousValuesJson: diff.previousValues,
+    changedFields: diff.changedFields,
+  });
+
+  // 2) 진료기록 갱신 (변경된 편집 필드만)
+  const updateValues: Partial<typeof veterinaryVisits.$inferInsert> = {
+    revisionCount: nextRevision,
+    updatedAt: new Date(),
+  };
+  const mutable = updateValues as Record<string, unknown>;
+  for (const field of diff.changedFields) {
+    mutable[field] = input.patch[field as EditableVisitField] ?? null;
+  }
+  await db.update(veterinaryVisits).set(updateValues).where(eq(veterinaryVisits.visitId, input.visitId));
+
+  logger.info(
+    { visitId: input.visitId, revision: nextRevision, changed: diff.changedFields, editor: input.editorId },
+    '[VetCenter] 진료기록 수정 + 수정 전 값 이력 보존',
+  );
+  return { visitId: input.visitId, revisionNumber: nextRevision, changedFields: diff.changedFields };
+}
+
+// ── 진료기록 수정 이력 목록 (최신 개정 우선) ──
+export async function listVisitRevisions(visitId: string): Promise<unknown[]> {
+  const db = getDb();
+  const rows = await db.select().from(veterinaryVisitRevisions)
+    .where(eq(veterinaryVisitRevisions.visitId, visitId))
+    .orderBy(desc(veterinaryVisitRevisions.revisionNumber))
+    .limit(100);
+  return rows.map((r) => ({
+    revision_id: r.revisionId,
+    revision_number: r.revisionNumber,
+    edited_by: r.editedBy,
+    edit_reason: r.editReason,
+    changed_fields: (r.changedFields as string[] | null) ?? [],
+    previous_values: (r.previousValuesJson as Record<string, unknown> | null) ?? {},
+    edited_at: r.editedAt,
+  }));
 }

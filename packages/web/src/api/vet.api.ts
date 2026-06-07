@@ -1,5 +1,5 @@
-// 수의사 진료센터 API 클라이언트 (1단계)
-import { apiGet, apiPost } from './client';
+// 수의사 진료센터 API 클라이언트 (1~3단계)
+import { apiGet, apiPost, apiPatch } from './client';
 
 export interface VetFarm {
   farm_id: string;
@@ -107,6 +107,38 @@ export interface ConversationNoteResult {
   ai_disclaimer: string;
 }
 
+// 3단계 — 진료기록 수정/이력
+export type EditableVisitPayload = Pick<SaveVisitPayload,
+  | 'visitReason' | 'chiefComplaint' | 'farmerStatement' | 'physicalExam' | 'clinicalFindings'
+  | 'differentialDiagnosis' | 'finalDiagnosis' | 'treatment' | 'prescription' | 'medication'
+  | 'withdrawalPeriod' | 'prognosis' | 'followUpDate' | 'farmerInstruction' | 'quarantineRequired'
+  | 'veterinarianNotes' | 'status'>;
+
+export interface UpdateVisitPayload extends EditableVisitPayload {
+  editReason?: string;
+}
+
+export interface UpdateVisitResult {
+  visitId: string;
+  revisionNumber: number;
+  changedFields: string[];
+}
+
+export interface VisitRevision {
+  revision_id: string;
+  revision_number: number;
+  edited_by: string;
+  edit_reason: string | null;
+  changed_fields: string[];
+  previous_values: Record<string, unknown>;
+  edited_at: string;
+}
+
+export interface VisitDetail {
+  visit: Record<string, unknown>;
+  snapshot: Record<string, unknown> | null;
+}
+
 export const vetApi = {
   listFarms: () => apiGet<VetFarm[]>('/vet/farms'),
   listAnimals: (farmId: string) => apiGet<VetAnimal[]>(`/vet/farms/${farmId}/animals`),
@@ -118,4 +150,9 @@ export const vetApi = {
     apiPost<{ visitId: string }>(`/vet/farms/${farmId}/animals/${animalId}/visits`, payload),
   structureConversationNote: (farmId: string, animalId: string, rawNote: string) =>
     apiPost<ConversationNoteResult>('/vet/ai/conversation-note', { farmId, animalId, rawNote }),
+  // 3단계
+  getVisit: (visitId: string) => apiGet<VisitDetail>(`/vet/visits/${visitId}`),
+  updateVisit: (visitId: string, payload: UpdateVisitPayload) =>
+    apiPatch<UpdateVisitResult>(`/vet/visits/${visitId}`, payload),
+  listRevisions: (visitId: string) => apiGet<VisitRevision[]>(`/vet/visits/${visitId}/revisions`),
 };

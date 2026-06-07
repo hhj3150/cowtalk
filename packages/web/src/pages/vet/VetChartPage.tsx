@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { vetApi, type SaveVisitPayload, type ConversationNoteResult, type StructuredNote } from '@web/api/vet.api';
+import { vetApi, type SaveVisitPayload, type EditableVisitPayload, type ConversationNoteResult, type StructuredNote } from '@web/api/vet.api';
 import { VetCard, VetButton, VetTabBar, KeyValueList } from './vet-ui';
 
 const CONFIRM_ITEMS = [
@@ -13,6 +13,25 @@ const CONFIRM_ITEMS = [
   { id: 'withdrawal', label: '휴약기간을 확인하고 농장주에게 고지했습니다.' },
   { id: 'quarantine', label: '필요한 경우 방역 신고 여부를 확인했습니다.' },
 ] as const;
+
+// 3단계 — 수정 가능 필드 + 한글 라벨 (수정 이력 표시에도 재사용)
+const EDIT_FIELDS: { key: keyof EditableVisitPayload; label: string; textarea?: boolean }[] = [
+  { key: 'chiefComplaint', label: '주증상' },
+  { key: 'physicalExam', label: '신체검사 소견', textarea: true },
+  { key: 'finalDiagnosis', label: '최종 진단' },
+  { key: 'treatment', label: '처치', textarea: true },
+  { key: 'prescription', label: '처방·투약' },
+  { key: 'withdrawalPeriod', label: '휴약기간' },
+  { key: 'prognosis', label: '예후' },
+  { key: 'farmerInstruction', label: '농장주 지시사항' },
+];
+const FIELD_LABELS: Record<string, string> = {
+  ...Object.fromEntries(EDIT_FIELDS.map((f) => [f.key, f.label])),
+  quarantineRequired: '방역 조치 필요', status: '상태', visitReason: '내원 사유',
+  farmerStatement: '농장주 진술', clinicalFindings: '임상 소견',
+  differentialDiagnosis: '감별진단', medication: '투약', veterinarianNotes: '수의사 메모',
+  followUpDate: '재진일',
+};
 
 const TABS = [
   { id: 'summary', label: '개체요약' },
@@ -47,6 +66,60 @@ export default function VetChartPage(): React.JSX.Element {
   const [rawNote, setRawNote] = useState('');
   const [aiResult, setAiResult] = useState<ConversationNoteResult | null>(null);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
+
+  // 3단계 — 수정 / 이력
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditableVisitPayload>({});
+  const [editReason, setEditReason] = useState('');
+  const setEditField = (k: keyof EditableVisitPayload, v: string | boolean) =>
+    setEditForm((p) => ({ ...p, [k]: v }));
+
+  const revisionsQuery = useQuery({
+    queryKey: ['vet', 'revisions', editingVisitId],
+    queryFn: () => vetApi.listRevisions(editingVisitId as string),
+    enabled: !!editingVisitId,
+  });
+
+  const openEditMutation = useMutation({
+    mutationFn: (visitId: string) => vetApi.getVisit(visitId),
+    onSuccess: (detail, visitId) => {
+      const v = detail.visit;
+      setEditingVisitId(visitId);
+      setEditReason('');
+      setEditForm({
+        chiefComplaint: (v.chiefComplaint as string) ?? '',
+        physicalExam: (v.physicalExam as string) ?? '',
+        finalDiagnosis: (v.finalDiagnosis as string) ?? '',
+        treatment: (v.treatment as string) ?? '',
+        prescription: (v.prescription as string) ?? '',
+        withdrawalPeriod: (v.withdrawalPeriod as string) ?? '',
+        prognosis: (v.prognosis as string) ?? '',
+        farmerInstruction: (v.farmerInstruction as string) ?? '',
+        quarantineRequired: Boolean(v.quarantineRequired),
+        status: (v.status as 'draft' | 'saved' | 'finalized') ?? 'saved',
+      });
+      setNotice(null);
+    },
+    onError: () => setNotice('진료기록을 불러오지 못했습니다.'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => vetApi.updateVisit(editingVisitId as string, {
+      ...editForm,
+      editReason: editReason.trim() || undefined,
+    }),
+    onSuccess: (res) => {
+      if (res.changedFields.length === 0) {
+        setNotice('변경된 내용이 없습니다.');
+        return;
+      }
+      const names = res.changedFields.map((f) => FIELD_LABELS[f] ?? f).join(', ');
+      setNotice(`진료기록 수정 완료 (개정 ${res.revisionNumber}판 · 변경: ${names}). 수정 전 값은 이력에 보존되었습니다.`);
+      void qc.invalidateQueries({ queryKey: ['vet', 'visits', farmId, animalId] });
+      void qc.invalidateQueries({ queryKey: ['vet', 'revisions', editingVisitId] });
+    },
+    onError: () => setNotice('수정에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+  });
 
   const structureMutation = useMutation({
     mutationFn: () => vetApi.structureConversationNote(farmId, animalId, rawNote),
@@ -163,11 +236,82 @@ export default function VetChartPage(): React.JSX.Element {
             )}
             <ul className="space-y-2">
               {(visitsQuery.data ?? []).map((v) => (
-                <li key={v.visit_id} className="rounded-lg p-2 text-sm" style={{ border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}>
-                  <div className="font-medium">{new Date(v.visit_datetime).toLocaleString('ko-KR')}</div>
-                  <div style={{ color: 'var(--ct-text-secondary)' }}>
-                    {v.final_diagnosis ?? v.chief_complaint ?? '기록'} · {v.status}
-                  </div>
+                <li key={v.visit_id} className="rounded-lg" style={{ border: '1px solid var(--ct-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => (editingVisitId === v.visit_id ? setEditingVisitId(null) : openEditMutation.mutate(v.visit_id))}
+                    className="w-full p-2 text-left text-sm"
+                    style={{ color: 'var(--ct-text)' }}
+                    aria-expanded={editingVisitId === v.visit_id}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{new Date(v.visit_datetime).toLocaleString('ko-KR')}</span>
+                      <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                        {editingVisitId === v.visit_id ? '닫기 ▲' : '수정 ▾'}
+                      </span>
+                    </div>
+                    <div style={{ color: 'var(--ct-text-secondary)' }}>
+                      {v.final_diagnosis ?? v.chief_complaint ?? '기록'} · {v.status}
+                    </div>
+                  </button>
+
+                  {editingVisitId === v.visit_id && (
+                    <div className="space-y-3 border-t p-3" style={{ borderColor: 'var(--ct-border)' }}>
+                      {openEditMutation.isPending && (
+                        <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>불러오는 중…</p>
+                      )}
+                      {EDIT_FIELDS.map((f) => (
+                        <Field
+                          key={f.key}
+                          label={f.label}
+                          value={(editForm[f.key] as string) ?? ''}
+                          onChange={(val) => setEditField(f.key, val)}
+                          textarea={f.textarea}
+                        />
+                      ))}
+                      <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(editForm.quarantineRequired)}
+                          onChange={(e) => setEditField('quarantineRequired', e.target.checked)}
+                        />
+                        방역 조치 필요
+                      </label>
+                      <Field label="수정 사유 (의무기록 — 권장)" value={editReason} onChange={setEditReason} />
+                      <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                        수정해도 진료 시점 snapshot(자동 호출 데이터)은 동결 유지됩니다. 수정 전 값은 이력에 보존됩니다.
+                      </p>
+                      <VetButton
+                        variant="primary"
+                        disabled={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate()}
+                        title="수정 저장"
+                      >
+                        {updateMutation.isPending ? '수정 중…' : '수정 저장'}
+                      </VetButton>
+
+                      {/* 수정 이력 */}
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--ct-border)' }}>
+                        <h3 className="mb-1 text-xs font-bold" style={{ color: 'var(--ct-text)' }}>수정 이력</h3>
+                        {revisionsQuery.isLoading && (
+                          <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>불러오는 중…</p>
+                        )}
+                        {revisionsQuery.data && revisionsQuery.data.length === 0 && (
+                          <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>수정 이력이 없습니다.</p>
+                        )}
+                        <ul className="space-y-1">
+                          {(revisionsQuery.data ?? []).map((r) => (
+                            <li key={r.revision_id} className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                              <span className="font-medium" style={{ color: 'var(--ct-text)' }}>개정 {r.revision_number}판</span>
+                              {' · '}{new Date(r.edited_at).toLocaleString('ko-KR')}
+                              {' · 변경: '}{r.changed_fields.map((f) => FIELD_LABELS[f] ?? f).join(', ') || '—'}
+                              {r.edit_reason ? ` · 사유: ${r.edit_reason}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -303,7 +447,7 @@ export default function VetChartPage(): React.JSX.Element {
         <VetButton variant="primary" onClick={handleSave} disabled={saveMutation.isPending} title="저장하기">
           {saveMutation.isPending ? '저장 중…' : '저장하기'}
         </VetButton>
-        <VetButton onClick={todo('수정하기')} title="수정하기">수정</VetButton>
+        <VetButton onClick={() => { setTab('history'); setNotice('과거기록 탭에서 진료기록을 선택해 수정하세요.'); }} title="수정하기">수정</VetButton>
         <VetButton onClick={todo('보내기')} title="보내기">보내기</VetButton>
         <VetButton onClick={todo('프린트하기')} title="프린트하기">프린트</VetButton>
         <VetButton onClick={todo('PDF 발행')} title="PDF 발행">PDF</VetButton>

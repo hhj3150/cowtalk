@@ -12,6 +12,7 @@ import { buildClinicalContext } from '../../services/vet/clinical-context.servic
 import {
   listAccessibleFarms, listFarmAnimals, vetCanAccessFarm,
   saveVisit, listAnimalVisits, getVisitDetail,
+  updateVisit, listVisitRevisions, getVisitFarmId,
 } from '../../services/vet/visit.service.js';
 import { structureConversationNote } from '../../services/vet/conversation-note.service.js';
 
@@ -170,6 +171,74 @@ vetRouter.get('/visits/:visitId', async (req: Request, res: Response, next: Next
       throw new NotFoundError('진료기록을 찾을 수 없습니다.');
     }
     res.json({ success: true, data: detail });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 3단계 — 진료기록 수정/이력관리
+
+// 수정 가능 필드 (수의사 입력만, snapshot은 동결 유지)
+const updateVisitSchema = z.object({
+  editReason: z.string().max(500).optional(),
+  visitReason: z.string().optional(),
+  chiefComplaint: z.string().optional(),
+  farmerStatement: z.string().optional(),
+  physicalExam: z.string().optional(),
+  clinicalFindings: z.string().optional(),
+  differentialDiagnosis: z.string().optional(),
+  finalDiagnosis: z.string().optional(),
+  treatment: z.string().optional(),
+  prescription: z.string().optional(),
+  medication: z.string().optional(),
+  withdrawalPeriod: z.string().optional(),
+  prognosis: z.string().optional(),
+  followUpDate: z.string().optional(),
+  farmerInstruction: z.string().optional(),
+  quarantineRequired: z.boolean().optional(),
+  veterinarianNotes: z.string().optional(),
+  status: z.enum(['draft', 'saved', 'finalized']).optional(),
+});
+
+// PATCH /api/vet/visits/:visitId — 진료기록 수정 (수정 전 값 이력 보존)
+vetRouter.patch('/visits/:visitId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    const userId = req.user!.userId;
+    const farmIds = req.user?.farmIds ?? [];
+    const farmId = await getVisitFarmId(visitId);
+    if (!farmId) {
+      throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+    }
+    if (!(await vetCanAccessFarm(farmId, farmIds, userId))) {
+      throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
+    }
+    const { editReason, ...patch } = updateVisitSchema.parse(req.body ?? {});
+    const result = await updateVisit({ visitId, editorId: userId, editReason, patch });
+    if (!result) {
+      throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/vet/visits/:visitId/revisions — 수정 이력 (최신 개정 우선)
+vetRouter.get('/visits/:visitId/revisions', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const visitId = String(req.params.visitId ?? '');
+    const userId = req.user!.userId;
+    const farmIds = req.user?.farmIds ?? [];
+    const farmId = await getVisitFarmId(visitId);
+    if (!farmId) {
+      throw new NotFoundError('진료기록을 찾을 수 없습니다.');
+    }
+    if (!(await vetCanAccessFarm(farmId, farmIds, userId))) {
+      throw new ForbiddenError('이 진료기록에 접근 권한이 없습니다.');
+    }
+    const data = await listVisitRevisions(visitId);
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
