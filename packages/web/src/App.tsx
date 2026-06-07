@@ -56,6 +56,7 @@ const VetFarmsPage = lazy(() => import('@web/pages/vet/VetFarmsPage'));
 const VetFarmAnimalsPage = lazy(() => import('@web/pages/vet/VetFarmAnimalsPage'));
 const VetChartPage = lazy(() => import('@web/pages/vet/VetChartPage'));
 const VetProfilePage = lazy(() => import('@web/pages/vet/VetProfilePage'));
+const VetStatsPage = lazy(() => import('@web/pages/vet/VetStatsPage'));
 const FarmerDocumentsPage = lazy(() => import('@web/pages/farmer/FarmerDocumentsPage'));
 
 const queryClient = new QueryClient({
@@ -164,6 +165,7 @@ export function App(): React.JSX.Element {
               {/* 수의사 진료센터 — 수의사 전용 */}
               <Route path="/vet" element={<RequireRole roles={['veterinarian']}><VetCenterDashboard /></RequireRole>} />
               <Route path="/vet/profile" element={<RequireRole roles={['veterinarian']}><VetProfilePage /></RequireRole>} />
+              <Route path="/vet/stats" element={<RequireRole roles={['veterinarian']}><VetStatsPage /></RequireRole>} />
               <Route path="/documents" element={<RequireRole roles={['farmer']}><FarmerDocumentsPage /></RequireRole>} />
               <Route path="/vet/farms" element={<RequireRole roles={['veterinarian']}><VetFarmsPage /></RequireRole>} />
               <Route path="/vet/farms/:farmId/animals" element={<RequireRole roles={['veterinarian']}><VetFarmAnimalsPage /></RequireRole>} />

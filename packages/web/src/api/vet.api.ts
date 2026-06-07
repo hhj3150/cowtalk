@@ -172,6 +172,8 @@ export const vetApi = {
   sendDocument: (visitId: string, docType: VetDocType, note?: string) =>
     apiPost<SendDocumentResult>(`/vet/visits/${visitId}/documents/${docType}/send`, { note }),
   listDeliveries: (visitId: string) => apiGet<VetDelivery[]>(`/vet/visits/${visitId}/deliveries`),
+  // 진료 통계
+  getStats: () => apiGet<VetStats>('/vet/stats'),
   // 8단계 — KAHIS 약물보고
   getDrugReport: (visitId: string) => apiGet<DrugReport | null>(`/vet/visits/${visitId}/drug-report`),
   saveDrugReport: (visitId: string, payload: DrugReportPayload) =>
@@ -179,6 +181,17 @@ export const vetApi = {
   submitDrugReport: (visitId: string) =>
     apiPost<{ status: string; receiptNo: string | null; testMode?: boolean }>(`/vet/visits/${visitId}/drug-report/submit`),
 };
+
+// 진료 통계
+export interface VetStats {
+  total_visits: number;
+  visits_30d: number;
+  documents_sent: number;
+  drug_reports_submitted: number;
+  prescription_target_count: number;
+  diagnosis_distribution: Array<{ diagnosis: string; count: number }>;
+  recent_trend: Array<{ date: string; count: number }>;
+}
 
 // 8단계 — KAHIS 약물보고
 export interface DrugReportPayload {

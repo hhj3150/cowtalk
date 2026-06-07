@@ -23,6 +23,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'vet-cases',    label: '진료 큐',       href: '/vet/cases',              icon: 'Stethoscope',     roles: ['master','veterinarian'],                                                    order: 40,  group: 'core' },
   { id: 'vet-schedule', label: '왕진 일정',     href: '/vet/schedule',           icon: 'CalendarClock',   roles: ['master','veterinarian'],                                                    order: 45,  group: 'core' },
   { id: 'vet-profile',  label: '면허·병원 정보', href: '/vet/profile',           icon: 'Stethoscope',     roles: ['master','veterinarian'],                                                    order: 46,  group: 'core' },
+  { id: 'vet-stats',    label: '진료 통계',     href: '/vet/stats',              icon: 'Activity',        roles: ['master','veterinarian'],                                                    order: 47,  group: 'analytics' },
   { id: 'sensor-cmp',   label: '센서 비교',     href: '/sensor/compare',         icon: 'Activity',        roles: ['master','veterinarian','government_admin'],                                order: 50,  group: 'analytics' },
   { id: 'region-map',   label: '지역 지도',     href: '/regional-map',           icon: 'Map',             roles: ['master','government_admin','quarantine_officer'],                          order: 55,  group: 'analytics' },
   { id: 'epi-dash',     label: '방역 대시보드', href: '/epidemiology/dashboard', icon: 'ShieldAlert',     roles: ['master','government_admin','quarantine_officer'],                          order: 60,  group: 'analytics' },

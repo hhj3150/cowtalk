@@ -24,6 +24,7 @@ import { sendDocument, listDeliveries } from '../../services/vet/document-delive
 import {
   getDrugReport, upsertDrugReport, submitDrugReport,
 } from '../../services/vet/drug-report.service.js';
+import { getVetStats } from '../../services/vet/vet-stats.service.js';
 
 export const vetRouter = Router();
 
@@ -55,6 +56,17 @@ vetRouter.put('/profile', async (req: Request, res: Response, next: NextFunction
     const input = vetProfileSchema.parse(req.body ?? {});
     const saved = await upsertVetProfile(req.user!.userId, input);
     res.json({ success: true, data: saved });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/vet/stats — 진료 통계 (접근 가능 농장 기준)
+vetRouter.get('/stats', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmIds = req.user?.farmIds ?? [];
+    const data = await getVetStats(farmIds);
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
