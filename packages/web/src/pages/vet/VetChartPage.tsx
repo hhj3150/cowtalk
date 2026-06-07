@@ -4,8 +4,15 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { vetApi, type SaveVisitPayload } from '@web/api/vet.api';
+import { vetApi, type SaveVisitPayload, type ConversationNoteResult, type StructuredNote } from '@web/api/vet.api';
 import { VetCard, VetButton, VetTabBar, KeyValueList } from './vet-ui';
+
+const CONFIRM_ITEMS = [
+  { id: 'diagnosis', label: '최종 진단을 확인했습니다.' },
+  { id: 'prescription', label: '처방 및 투약 내용을 확인했습니다.' },
+  { id: 'withdrawal', label: '휴약기간을 확인하고 농장주에게 고지했습니다.' },
+  { id: 'quarantine', label: '필요한 경우 방역 신고 여부를 확인했습니다.' },
+] as const;
 
 const TABS = [
   { id: 'summary', label: '개체요약' },
@@ -36,16 +43,65 @@ export default function VetChartPage(): React.JSX.Element {
   const [form, setForm] = useState<SaveVisitPayload>({ status: 'saved', inputMethod: 'manual' });
   const setField = (k: keyof SaveVisitPayload, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }));
 
+  // 2단계 — 대화형 기록
+  const [rawNote, setRawNote] = useState('');
+  const [aiResult, setAiResult] = useState<ConversationNoteResult | null>(null);
+  const [checks, setChecks] = useState<Record<string, boolean>>({});
+
+  const structureMutation = useMutation({
+    mutationFn: () => vetApi.structureConversationNote(farmId, animalId, rawNote),
+    onSuccess: (res) => { setAiResult(res); setNotice(null); },
+    onError: () => setNotice('AI 정리에 실패했습니다 (AI 엔진 비가용 또는 개체 확인 불가).'),
+  });
+
+  function applyDraft(n: StructuredNote): void {
+    setForm((p) => ({
+      ...p,
+      chiefComplaint: n.chief_complaint || p.chiefComplaint,
+      physicalExam: n.physical_exam || p.physicalExam,
+      differentialDiagnosis: n.differential_diagnosis || p.differentialDiagnosis,
+      finalDiagnosis: n.final_diagnosis || p.finalDiagnosis,
+      treatment: n.treatment || p.treatment,
+      prescription: n.prescription || p.prescription,
+      medication: n.medication || p.medication,
+      withdrawalPeriod: n.withdrawal_period || p.withdrawalPeriod,
+      prognosis: n.prognosis || p.prognosis,
+      farmerInstruction: n.farmer_instruction || p.farmerInstruction,
+      quarantineRequired: n.quarantine_required,
+      rawConversationNote: rawNote,
+      inputMethod: 'conversation',
+      aiStructuredNote: n as unknown as Record<string, unknown>,
+    }));
+    setNotice('AI 초안을 진료입력에 적용했습니다. 최종 진단·처방·투약을 확인하고 저장하세요.');
+    setTab('input');
+  }
+
   const saveMutation = useMutation({
-    mutationFn: () => vetApi.saveVisit(farmId, animalId, form),
+    mutationFn: () => vetApi.saveVisit(farmId, animalId, {
+      ...form,
+      veterinarianConfirmedAiNote: form.inputMethod === 'conversation',
+    }),
     onSuccess: (res) => {
       setNotice(`진료기록 저장 완료 (ID: ${res.visitId.slice(0, 8)}…). 저장 시점 데이터가 snapshot으로 동결되었습니다.`);
       setForm({ status: 'saved', inputMethod: 'manual' });
+      setRawNote(''); setAiResult(null); setChecks({});
       void qc.invalidateQueries({ queryKey: ['vet', 'visits', farmId, animalId] });
       setTab('history');
     },
     onError: () => setNotice('저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
   });
+
+  function handleSave(): void {
+    if (form.inputMethod === 'conversation') {
+      const allChecked = CONFIRM_ITEMS.every((c) => checks[c.id]);
+      if (!allChecked) {
+        setNotice('대화형 기록 저장 전 필수 확인 항목을 모두 체크하세요.');
+        setTab('input');
+        return;
+      }
+    }
+    saveMutation.mutate();
+  }
 
   const todo = (label: string) => () => setNotice(`"${label}"는 다음 단계에서 제공됩니다 (1단계는 골격 + 진료 저장/불러오기).`);
 
@@ -136,6 +192,27 @@ export default function VetChartPage(): React.JSX.Element {
             <input type="checkbox" checked={form.quarantineRequired ?? false} onChange={(e) => setField('quarantineRequired', e.target.checked)} />
             방역 조치 필요
           </label>
+
+          {form.inputMethod === 'conversation' && (
+            <div className="rounded-lg p-3" style={{ border: '1px solid var(--ct-warning, #f59e0b)' }}>
+              <p className="mb-2 text-xs font-bold" style={{ color: 'var(--ct-warning, #f59e0b)' }}>
+                AI 정리 초안입니다. 저장 전 아래를 확인하세요 (전부 체크해야 저장 가능).
+              </p>
+              <div className="space-y-1.5">
+                {CONFIRM_ITEMS.map((c) => (
+                  <label key={c.id} className="flex items-start gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+                    <input
+                      type="checkbox"
+                      checked={checks[c.id] ?? false}
+                      onChange={(e) => setChecks((p) => ({ ...p, [c.id]: e.target.checked }))}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
             저장 시 목장·개체·번식·이력·센서·공공데이터가 이 시점의 snapshot으로 함께 동결됩니다.
           </p>
@@ -143,12 +220,72 @@ export default function VetChartPage(): React.JSX.Element {
       )}
 
       {tab === 'conversation' && (
-        <VetCard>
-          <p className="text-sm" style={{ color: 'var(--ct-text)' }}>🎙 대화형 현장 진료기록은 <b>2단계</b>에서 제공됩니다.</p>
-          <p className="mt-1 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
-            “3150번 분만 후 3일째 식욕저하, 체온 39.8도, 산후 자궁염 의심…” 처럼 말하면 AI가 진료차트로 정리합니다.
-          </p>
-        </VetCard>
+        <div className="space-y-3">
+          <VetCard>
+            <h2 className="mb-2 text-sm font-bold" style={{ color: 'var(--ct-text)' }}>대화형 현장 진료기록</h2>
+            <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+              소 옆에서 말하듯 입력하면 AI가 진료차트 초안으로 정리합니다. (음성 입력은 다음 단계)
+            </p>
+            <textarea
+              rows={4}
+              value={rawNote}
+              onChange={(e) => setRawNote(e.target.value)}
+              placeholder="예: 분만 후 3일째 식욕저하, 체온 39.8도, 악취 나는 자궁분비물. 산후 자궁염 의심. 항생제와 소염제 투여, 3일 뒤 재진."
+              className="w-full rounded-lg px-3 py-2 text-base"
+              style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}
+            />
+            <div className="mt-2">
+              <VetButton
+                variant="primary"
+                disabled={structureMutation.isPending || rawNote.trim().length === 0}
+                onClick={() => structureMutation.mutate()}
+                title="AI 정리"
+              >
+                {structureMutation.isPending ? 'AI 정리 중…' : 'AI로 정리하기'}
+              </VetButton>
+            </div>
+          </VetCard>
+
+          {aiResult && (
+            <>
+              <div
+                className="rounded-lg p-2 text-xs"
+                style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-warning, #f59e0b)', color: 'var(--ct-warning, #f59e0b)' }}
+              >
+                {aiResult.ai_disclaimer}
+              </div>
+
+              <Section title="① 수의사가 말한 내용">
+                <KeyValueList data={aiResult.source_separation.veterinarian_spoken_content} />
+              </Section>
+              <Section title="② CowTalk가 자동으로 불러온 데이터">
+                <KeyValueList data={aiResult.source_separation.cowtalk_auto_data} />
+              </Section>
+              <Section title="③ AI 제안 (수의사 최종 확인 필요)">
+                <KeyValueList data={aiResult.source_separation.ai_suggestions} />
+              </Section>
+
+              <Section title="정리된 진료차트 초안">
+                <KeyValueList data={aiResult.structured_note as unknown as Record<string, unknown>} />
+                {aiResult.structured_note.missing_required_fields.length > 0 && (
+                  <p className="mt-2 text-xs" style={{ color: 'var(--ct-warning, #f59e0b)' }}>
+                    누락: {aiResult.structured_note.missing_required_fields.join(', ')}
+                  </p>
+                )}
+                {aiResult.structured_note.safety_warnings.length > 0 && (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--ct-danger, #ef4444)' }}>
+                    ⚠ {aiResult.structured_note.safety_warnings.join(' · ')}
+                  </p>
+                )}
+                <div className="mt-3">
+                  <VetButton variant="primary" onClick={() => applyDraft(aiResult.structured_note)} title="진료입력에 적용">
+                    진료입력에 적용 →
+                  </VetButton>
+                </div>
+              </Section>
+            </>
+          )}
+        </div>
       )}
 
       {tab === 'documents' && (
@@ -163,7 +300,7 @@ export default function VetChartPage(): React.JSX.Element {
         style={{ background: 'var(--ct-bg, #0b0b12)', borderTop: '1px solid var(--ct-border)' }}
       >
         <VetButton onClick={() => { void ctxQuery.refetch(); void visitsQuery.refetch(); }} title="불러오기">불러오기</VetButton>
-        <VetButton variant="primary" onClick={() => { setTab('input'); saveMutation.mutate(); }} disabled={saveMutation.isPending} title="저장하기">
+        <VetButton variant="primary" onClick={handleSave} disabled={saveMutation.isPending} title="저장하기">
           {saveMutation.isPending ? '저장 중…' : '저장하기'}
         </VetButton>
         <VetButton onClick={todo('수정하기')} title="수정하기">수정</VetButton>

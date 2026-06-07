@@ -90,6 +90,9 @@ export interface SaveVisitInput {
   readonly inputMethod?: string;
   readonly rawConversationNote?: string;
   readonly fieldVisitLocation?: string;
+  // 2단계 — 대화형 기록
+  readonly aiStructuredNote?: Record<string, unknown>;
+  readonly veterinarianConfirmedAiNote?: boolean;
 }
 
 export async function saveVisit(input: SaveVisitInput): Promise<{ visitId: string } | null> {
@@ -126,6 +129,9 @@ export async function saveVisit(input: SaveVisitInput): Promise<{ visitId: strin
     inputMethod: input.inputMethod ?? 'manual',
     rawConversationNote: input.rawConversationNote ?? null,
     fieldVisitLocation: input.fieldVisitLocation ?? null,
+    aiStructuredNoteJson: input.aiStructuredNote ?? null,
+    veterinarianConfirmedAiNote: input.veterinarianConfirmedAiNote ?? false,
+    confirmedAt: input.veterinarianConfirmedAiNote ? new Date() : null,
   }).returning({ visitId: veterinaryVisits.visitId });
 
   if (!visit) return null;

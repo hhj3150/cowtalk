@@ -71,6 +71,40 @@ export interface SaveVisitPayload {
   inputMethod?: 'manual' | 'quick_select' | 'voice' | 'conversation' | 'mixed';
   rawConversationNote?: string;
   fieldVisitLocation?: string;
+  aiStructuredNote?: Record<string, unknown>;
+  veterinarianConfirmedAiNote?: boolean;
+}
+
+export interface StructuredNote {
+  animal_identifier: string;
+  visit_reason: string;
+  chief_complaint: string;
+  farmer_statement: string;
+  physical_exam: string;
+  clinical_findings: string;
+  differential_diagnosis: string;
+  final_diagnosis: string;
+  treatment: string;
+  medication: string;
+  prescription: string;
+  withdrawal_period: string;
+  prognosis: string;
+  follow_up_date: string;
+  farmer_instruction: string;
+  quarantine_required: boolean;
+  document_suggestions: string[];
+  missing_required_fields: string[];
+  safety_warnings: string[];
+}
+
+export interface ConversationNoteResult {
+  structured_note: StructuredNote;
+  source_separation: {
+    veterinarian_spoken_content: Record<string, unknown>;
+    cowtalk_auto_data: Record<string, unknown>;
+    ai_suggestions: Record<string, unknown>;
+  };
+  ai_disclaimer: string;
 }
 
 export const vetApi = {
@@ -82,4 +116,6 @@ export const vetApi = {
     apiGet<VetVisit[]>(`/vet/farms/${farmId}/animals/${animalId}/visits`),
   saveVisit: (farmId: string, animalId: string, payload: SaveVisitPayload) =>
     apiPost<{ visitId: string }>(`/vet/farms/${farmId}/animals/${animalId}/visits`, payload),
+  structureConversationNote: (farmId: string, animalId: string, rawNote: string) =>
+    apiPost<ConversationNoteResult>('/vet/ai/conversation-note', { farmId, animalId, rawNote }),
 };

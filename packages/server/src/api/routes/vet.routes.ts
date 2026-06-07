@@ -13,6 +13,7 @@ import {
   listAccessibleFarms, listFarmAnimals, vetCanAccessFarm,
   saveVisit, listAnimalVisits, getVisitDetail,
 } from '../../services/vet/visit.service.js';
+import { structureConversationNote } from '../../services/vet/conversation-note.service.js';
 
 export const vetRouter = Router();
 
@@ -104,6 +105,8 @@ const saveVisitSchema = z.object({
   inputMethod: z.enum(['manual', 'quick_select', 'voice', 'conversation', 'mixed']).optional(),
   rawConversationNote: z.string().optional(),
   fieldVisitLocation: z.string().optional(),
+  aiStructuredNote: z.record(z.unknown()).optional(),
+  veterinarianConfirmedAiNote: z.boolean().optional(),
 });
 
 // POST /api/vet/farms/:farmId/animals/:animalId/visits — 진료 저장 (snapshot 동결)
@@ -127,6 +130,32 @@ vetRouter.post('/farms/:farmId/animals/:animalId/visits', async (req: Request, r
       throw new BadRequestError('개체를 찾을 수 없거나 해당 목장 소속이 아닙니다.');
     }
     res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const conversationNoteSchema = z.object({
+  farmId: z.string().uuid(),
+  animalId: z.string().uuid(),
+  rawNote: z.string().min(1, '진료 내용을 입력하세요').max(5000),
+});
+
+// POST /api/vet/ai/conversation-note — 자연어 진료 내용 → 구조화 진료차트 초안
+// AI는 정리/초안만. 최종 진단·처방·투약은 수의사가 확인 후 확정.
+vetRouter.post('/ai/conversation-note', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { farmId, animalId, rawNote } = conversationNoteSchema.parse(req.body ?? {});
+    const userId = req.user!.userId;
+    const farmIds = req.user?.farmIds ?? [];
+    if (!(await vetCanAccessFarm(farmId, farmIds, userId))) {
+      throw new ForbiddenError('이 목장에 접근 권한이 없습니다.');
+    }
+    const result = await structureConversationNote({ farmId, animalId, rawNote });
+    if (!result) {
+      throw new BadRequestError('진료기록 정리에 실패했습니다 (개체 확인 불가 또는 AI 엔진 비가용).');
+    }
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
