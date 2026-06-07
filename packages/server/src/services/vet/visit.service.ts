@@ -1,0 +1,340 @@
+// 수의사 진료센터 — 진료기록 저장/조회 서비스
+// 저장 시 clinical-context를 snapshot으로 동결한다 (발행 후 불변 보장의 기반).
+
+import { getDb } from '../../config/database.js';
+import {
+  veterinaryVisits, veterinaryVisitSnapshots, veterinaryVisitRevisions,
+  farms, animals, userFarmAccess, users,
+} from '../../db/schema.js';
+import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
+import { logger } from '../../lib/logger.js';
+import { buildClinicalContext, extractSnapshotSections } from './clinical-context.service.js';
+
+// ── 수의사 접근 가능 농장 목록 ──
+// farmIds가 토큰에 있으면 그것, 없으면(multi_farm 수의사) userFarmAccess 또는 전체 활성 농장.
+export async function listAccessibleFarms(farmIds: readonly string[]): Promise<unknown[]> {
+  const db = getDb();
+  const base = farmIds.length > 0
+    ? db.select().from(farms).where(and(inArray(farms.farmId, [...farmIds]), isNull(farms.deletedAt)))
+    : db.select().from(farms).where(isNull(farms.deletedAt));
+  const rows = await base.orderBy(desc(farms.updatedAt)).limit(500);
+  return rows.map((f) => ({
+    farm_id: f.farmId,
+    farm_name: f.name,
+    owner_name: f.ownerName ?? null,
+    address: f.address ?? null,
+    region_id: f.regionId ?? null,
+    current_head_count: f.currentHeadCount ?? null,
+  }));
+}
+
+// 수의사가 특정 농장에 접근 가능한지 확인
+export async function vetCanAccessFarm(
+  farmId: string, farmIds: readonly string[], userId: string,
+): Promise<boolean> {
+  if (farmIds.includes(farmId)) return true;
+  const db = getDb();
+  // userFarmAccess에 명시 권한이 있으면 허용
+  const access = await db.select({ farmId: userFarmAccess.farmId })
+    .from(userFarmAccess)
+    .where(and(eq(userFarmAccess.userId, userId), eq(userFarmAccess.farmId, farmId)))
+    .limit(1);
+  if (access.length > 0) return true;
+  // multi_farm 수의사(토큰 farmIds 비어있음)는 전체 농장 접근 허용 (1단계 정책)
+  return farmIds.length === 0;
+}
+
+// ── 농장 내 개체 목록 (문제 개체 우선) ──
+export async function listFarmAnimals(farmId: string): Promise<unknown[]> {
+  const db = getDb();
+  const rows = await db.select()
+    .from(animals)
+    .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active'), isNull(animals.deletedAt)))
+    .orderBy(desc(animals.updatedAt))
+    .limit(2000);
+  return rows.map((a) => ({
+    animal_id: a.animalId,
+    ear_tag_number: a.earTag,
+    trace_id: a.traceId ?? null,
+    name: a.name ?? null,
+    breed: a.breed,
+    sex: a.sex,
+    parity: a.parity,
+    days_in_milk: a.daysInMilk ?? null,
+    lactation_status: a.lactationStatus,
+    status: a.status,
+  }));
+}
+
+// ── 진료 저장 (visit + snapshot 동결) ──
+export interface SaveVisitInput {
+  readonly farmId: string;
+  readonly animalId: string;
+  readonly veterinarianId: string;
+  readonly visitReason?: string;
+  readonly chiefComplaint?: string;
+  readonly farmerStatement?: string;
+  readonly physicalExam?: string;
+  readonly clinicalFindings?: string;
+  readonly differentialDiagnosis?: string;
+  readonly finalDiagnosis?: string;
+  readonly treatment?: string;
+  readonly prescription?: string;
+  readonly medication?: string;
+  readonly withdrawalPeriod?: string;
+  readonly prognosis?: string;
+  readonly followUpDate?: string;
+  readonly farmerInstruction?: string;
+  readonly quarantineRequired?: boolean;
+  readonly veterinarianNotes?: string;
+  readonly status?: string;
+  readonly inputMethod?: string;
+  readonly rawConversationNote?: string;
+  readonly fieldVisitLocation?: string;
+  // 2단계 — 대화형 기록
+  readonly aiStructuredNote?: Record<string, unknown>;
+  readonly veterinarianConfirmedAiNote?: boolean;
+}
+
+export async function saveVisit(input: SaveVisitInput): Promise<{ visitId: string } | null> {
+  const db = getDb();
+
+  // 저장 시점 clinical-context 조립 → snapshot 동결
+  const ctx = await buildClinicalContext(input.farmId, input.animalId);
+  if (!ctx) {
+    return null; // 개체/농장 불일치
+  }
+  const snap = extractSnapshotSections(ctx);
+
+  const [visit] = await db.insert(veterinaryVisits).values({
+    farmId: input.farmId,
+    animalId: input.animalId,
+    veterinarianId: input.veterinarianId,
+    visitReason: input.visitReason ?? null,
+    chiefComplaint: input.chiefComplaint ?? null,
+    farmerStatement: input.farmerStatement ?? null,
+    physicalExam: input.physicalExam ?? null,
+    clinicalFindings: input.clinicalFindings ?? null,
+    differentialDiagnosis: input.differentialDiagnosis ?? null,
+    finalDiagnosis: input.finalDiagnosis ?? null,
+    treatment: input.treatment ?? null,
+    prescription: input.prescription ?? null,
+    medication: input.medication ?? null,
+    withdrawalPeriod: input.withdrawalPeriod ?? null,
+    prognosis: input.prognosis ?? null,
+    followUpDate: input.followUpDate ?? null,
+    farmerInstruction: input.farmerInstruction ?? null,
+    quarantineRequired: input.quarantineRequired ?? false,
+    veterinarianNotes: input.veterinarianNotes ?? null,
+    status: input.status ?? 'saved',
+    inputMethod: input.inputMethod ?? 'manual',
+    rawConversationNote: input.rawConversationNote ?? null,
+    fieldVisitLocation: input.fieldVisitLocation ?? null,
+    aiStructuredNoteJson: input.aiStructuredNote ?? null,
+    veterinarianConfirmedAiNote: input.veterinarianConfirmedAiNote ?? false,
+    confirmedAt: input.veterinarianConfirmedAiNote ? new Date() : null,
+  }).returning({ visitId: veterinaryVisits.visitId });
+
+  if (!visit) return null;
+
+  await db.insert(veterinaryVisitSnapshots).values({
+    visitId: visit.visitId,
+    farmSnapshotJson: snap.farmSnapshotJson,
+    animalSnapshotJson: snap.animalSnapshotJson,
+    reproductionSnapshotJson: snap.reproductionSnapshotJson,
+    healthHistorySnapshotJson: snap.healthHistorySnapshotJson,
+    sensorSnapshotJson: snap.sensorSnapshotJson,
+    publicDataSnapshotJson: snap.publicDataSnapshotJson,
+  });
+
+  logger.info({ visitId: visit.visitId, farmId: input.farmId, animalId: input.animalId, vet: input.veterinarianId }, '[VetCenter] 진료기록 저장 + snapshot 동결');
+  return { visitId: visit.visitId };
+}
+
+// ── 개체별 과거 진료기록 목록 ──
+export async function listAnimalVisits(animalId: string): Promise<unknown[]> {
+  const db = getDb();
+  const rows = await db.select()
+    .from(veterinaryVisits)
+    .where(eq(veterinaryVisits.animalId, animalId))
+    .orderBy(desc(veterinaryVisits.visitDatetime))
+    .limit(50);
+  return rows.map((v) => ({
+    visit_id: v.visitId,
+    visit_datetime: v.visitDatetime,
+    visit_reason: v.visitReason,
+    chief_complaint: v.chiefComplaint,
+    final_diagnosis: v.finalDiagnosis,
+    treatment: v.treatment,
+    prescription: v.prescription,
+    withdrawal_period: v.withdrawalPeriod,
+    status: v.status,
+    input_method: v.inputMethod,
+  }));
+}
+
+// ── 진료 상세 (snapshot 포함) ──
+export async function getVisitDetail(visitId: string): Promise<unknown | null> {
+  const db = getDb();
+  const [visit] = await db.select().from(veterinaryVisits).where(eq(veterinaryVisits.visitId, visitId)).limit(1);
+  if (!visit) return null;
+  const [snapshot] = await db.select().from(veterinaryVisitSnapshots).where(eq(veterinaryVisitSnapshots.visitId, visitId)).limit(1);
+  return { visit, snapshot: snapshot ?? null };
+}
+
+// ── 진료기록 접근 검증용 — visit의 소속 농장 ID 조회 ──
+export async function getVisitFarmId(visitId: string): Promise<string | null> {
+  const db = getDb();
+  const [v] = await db.select({ farmId: veterinaryVisits.farmId })
+    .from(veterinaryVisits).where(eq(veterinaryVisits.visitId, visitId)).limit(1);
+  return v?.farmId ?? null;
+}
+
+// ── 4단계: 문서 발행용 — visit + snapshot 원본 행 조회 (camelCase) ──
+export interface VisitDocumentData {
+  readonly visit: Record<string, unknown>;
+  readonly snapshot: Record<string, unknown> | null;
+  readonly farmId: string;
+}
+export async function getVisitDocumentData(visitId: string): Promise<VisitDocumentData | null> {
+  const db = getDb();
+  const [visit] = await db.select().from(veterinaryVisits)
+    .where(eq(veterinaryVisits.visitId, visitId)).limit(1);
+  if (!visit) return null;
+  const [snapshot] = await db.select().from(veterinaryVisitSnapshots)
+    .where(eq(veterinaryVisitSnapshots.visitId, visitId)).limit(1);
+  return {
+    visit: visit as unknown as Record<string, unknown>,
+    snapshot: (snapshot as unknown as Record<string, unknown>) ?? null,
+    farmId: visit.farmId,
+  };
+}
+
+// ── 발행자(수의사) 정보 — 면허번호는 미보유(수기 기입란) ──
+export async function getVetIssuer(userId: string): Promise<{ name: string; email: string | null } | null> {
+  const db = getDb();
+  const [u] = await db.select({ name: users.name, email: users.email })
+    .from(users).where(eq(users.userId, userId)).limit(1);
+  return u ? { name: u.name, email: u.email } : null;
+}
+
+// ── 3단계: 진료기록 수정 / 이력관리 ──
+
+// 수의사 입력 필드만 수정 대상 (자동 호출 snapshot은 동결 유지).
+export const EDITABLE_VISIT_FIELDS = [
+  'visitReason', 'chiefComplaint', 'farmerStatement', 'physicalExam', 'clinicalFindings',
+  'differentialDiagnosis', 'finalDiagnosis', 'treatment', 'prescription', 'medication',
+  'withdrawalPeriod', 'prognosis', 'followUpDate', 'farmerInstruction', 'quarantineRequired',
+  'veterinarianNotes', 'status',
+] as const;
+export type EditableVisitField = (typeof EDITABLE_VISIT_FIELDS)[number];
+
+export interface VisitRevisionDiff {
+  readonly previousValues: Record<string, unknown>;
+  readonly changedFields: string[];
+  readonly hasChanges: boolean;
+}
+
+// 값 동등 비교 — null 정규화 + boolean/문자열 안전 비교 (DB 문자열 ↔ 입력 타입 차이 흡수)
+function valuesEqual(a: unknown, b: unknown): boolean {
+  const av = a ?? null;
+  const bv = b ?? null;
+  if (av === null && bv === null) return true;
+  if (av === null || bv === null) return false;
+  if (typeof av === 'boolean' || typeof bv === 'boolean') return Boolean(av) === Boolean(bv);
+  return String(av) === String(bv);
+}
+
+// 순수 함수 — 기존 값과 패치를 비교해 변경 필드/수정 전 값 산출 (DB 불필요, 단위 테스트 대상).
+export function diffEditableFields(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): VisitRevisionDiff {
+  const previousValues: Record<string, unknown> = {};
+  const changedFields: string[] = [];
+  for (const field of EDITABLE_VISIT_FIELDS) {
+    if (!(field in patch)) continue;          // 제공된 필드만 검토
+    const next = patch[field];
+    if (next === undefined) continue;
+    const prev = existing[field] ?? null;
+    if (!valuesEqual(prev, next)) {
+      previousValues[field] = prev;
+      changedFields.push(field);
+    }
+  }
+  return { previousValues, changedFields, hasChanges: changedFields.length > 0 };
+}
+
+export interface UpdateVisitInput {
+  readonly visitId: string;
+  readonly editorId: string;
+  readonly editReason?: string;
+  readonly patch: Partial<Record<EditableVisitField, unknown>>;
+}
+
+export interface UpdateVisitResult {
+  readonly visitId: string;
+  readonly revisionNumber: number;
+  readonly changedFields: string[];
+}
+
+// 진료기록 수정 — 수정 전 값을 revisions에 보존한 뒤 갱신. snapshot은 건드리지 않음.
+export async function updateVisit(input: UpdateVisitInput): Promise<UpdateVisitResult | null> {
+  const db = getDb();
+  const [existing] = await db.select().from(veterinaryVisits)
+    .where(eq(veterinaryVisits.visitId, input.visitId)).limit(1);
+  if (!existing) return null;
+
+  const diff = diffEditableFields(existing as unknown as Record<string, unknown>, input.patch);
+  if (!diff.hasChanges) {
+    // 변경 없음 — 이력 생성 없이 현재 개정 번호 반환 (멱등)
+    return { visitId: input.visitId, revisionNumber: existing.revisionCount ?? 0, changedFields: [] };
+  }
+
+  const nextRevision = (existing.revisionCount ?? 0) + 1;
+
+  // 1) 수정 전 값 이력 보존
+  await db.insert(veterinaryVisitRevisions).values({
+    visitId: input.visitId,
+    revisionNumber: nextRevision,
+    editedBy: input.editorId,
+    editReason: input.editReason ?? null,
+    previousValuesJson: diff.previousValues,
+    changedFields: diff.changedFields,
+  });
+
+  // 2) 진료기록 갱신 (변경된 편집 필드만)
+  const updateValues: Partial<typeof veterinaryVisits.$inferInsert> = {
+    revisionCount: nextRevision,
+    updatedAt: new Date(),
+  };
+  const mutable = updateValues as Record<string, unknown>;
+  for (const field of diff.changedFields) {
+    mutable[field] = input.patch[field as EditableVisitField] ?? null;
+  }
+  await db.update(veterinaryVisits).set(updateValues).where(eq(veterinaryVisits.visitId, input.visitId));
+
+  logger.info(
+    { visitId: input.visitId, revision: nextRevision, changed: diff.changedFields, editor: input.editorId },
+    '[VetCenter] 진료기록 수정 + 수정 전 값 이력 보존',
+  );
+  return { visitId: input.visitId, revisionNumber: nextRevision, changedFields: diff.changedFields };
+}
+
+// ── 진료기록 수정 이력 목록 (최신 개정 우선) ──
+export async function listVisitRevisions(visitId: string): Promise<unknown[]> {
+  const db = getDb();
+  const rows = await db.select().from(veterinaryVisitRevisions)
+    .where(eq(veterinaryVisitRevisions.visitId, visitId))
+    .orderBy(desc(veterinaryVisitRevisions.revisionNumber))
+    .limit(100);
+  return rows.map((r) => ({
+    revision_id: r.revisionId,
+    revision_number: r.revisionNumber,
+    edited_by: r.editedBy,
+    edit_reason: r.editReason,
+    changed_fields: (r.changedFields as string[] | null) ?? [],
+    previous_values: (r.previousValuesJson as Record<string, unknown> | null) ?? {},
+    edited_at: r.editedAt,
+  }));
+}

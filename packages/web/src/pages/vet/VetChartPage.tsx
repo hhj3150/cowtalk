@@ -1,0 +1,768 @@
+// /vet/farms/:farmId/animals/:animalId/chart — 개체 중심 진료차트 (1단계)
+// 탭: 개체요약 / 센서·이력 / 과거기록 / 진료입력 / 대화형(2단계) / 문서(4단계)
+// 하단 항상 접근 가능한 액션바: 불러오기·저장·수정·보내기·프린트·PDF발행
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  vetApi, VET_DOC_TYPES, VET_DOC_LABELS,
+  type SaveVisitPayload, type EditableVisitPayload, type ConversationNoteResult, type StructuredNote,
+  type VetDocType, type VetDocModel, type DrugReportPayload,
+} from '@web/api/vet.api';
+
+const EMPTY_DRUG: DrugReportPayload = { isPrescriptionTarget: false };
+import { VetCard, VetButton, VetTabBar, KeyValueList } from './vet-ui';
+
+const CONFIRM_ITEMS = [
+  { id: 'diagnosis', label: '최종 진단을 확인했습니다.' },
+  { id: 'prescription', label: '처방 및 투약 내용을 확인했습니다.' },
+  { id: 'withdrawal', label: '휴약기간을 확인하고 농장주에게 고지했습니다.' },
+  { id: 'quarantine', label: '필요한 경우 방역 신고 여부를 확인했습니다.' },
+] as const;
+
+// 3단계 — 수정 가능 필드 + 한글 라벨 (수정 이력 표시에도 재사용)
+const EDIT_FIELDS: { key: keyof EditableVisitPayload; label: string; textarea?: boolean }[] = [
+  { key: 'chiefComplaint', label: '주증상' },
+  { key: 'physicalExam', label: '신체검사 소견', textarea: true },
+  { key: 'finalDiagnosis', label: '최종 진단' },
+  { key: 'treatment', label: '처치', textarea: true },
+  { key: 'prescription', label: '처방·투약' },
+  { key: 'withdrawalPeriod', label: '휴약기간' },
+  { key: 'prognosis', label: '예후' },
+  { key: 'farmerInstruction', label: '농장주 지시사항' },
+];
+const FIELD_LABELS: Record<string, string> = {
+  ...Object.fromEntries(EDIT_FIELDS.map((f) => [f.key, f.label])),
+  quarantineRequired: '방역 조치 필요', status: '상태', visitReason: '내원 사유',
+  farmerStatement: '농장주 진술', clinicalFindings: '임상 소견',
+  differentialDiagnosis: '감별진단', medication: '투약', veterinarianNotes: '수의사 메모',
+  followUpDate: '재진일',
+};
+
+const TABS = [
+  { id: 'summary', label: '개체요약' },
+  { id: 'sensor', label: '센서·이력' },
+  { id: 'history', label: '과거기록' },
+  { id: 'input', label: '진료입력' },
+  { id: 'conversation', label: '대화형' },
+  { id: 'documents', label: '문서' },
+] as const;
+
+export default function VetChartPage(): React.JSX.Element {
+  const { farmId = '', animalId = '' } = useParams();
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<string>('summary');
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const ctxQuery = useQuery({
+    queryKey: ['vet', 'clinical-context', farmId, animalId],
+    queryFn: () => vetApi.clinicalContext(farmId, animalId),
+    enabled: !!farmId && !!animalId,
+  });
+  const visitsQuery = useQuery({
+    queryKey: ['vet', 'visits', farmId, animalId],
+    queryFn: () => vetApi.listVisits(farmId, animalId),
+    enabled: !!farmId && !!animalId,
+  });
+
+  const [form, setForm] = useState<SaveVisitPayload>({ status: 'saved', inputMethod: 'manual' });
+  const setField = (k: keyof SaveVisitPayload, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }));
+
+  // 2단계 — 대화형 기록
+  const [rawNote, setRawNote] = useState('');
+  const [aiResult, setAiResult] = useState<ConversationNoteResult | null>(null);
+  const [checks, setChecks] = useState<Record<string, boolean>>({});
+
+  // 3단계 — 수정 / 이력
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditableVisitPayload>({});
+  const [editReason, setEditReason] = useState('');
+  const setEditField = (k: keyof EditableVisitPayload, v: string | boolean) =>
+    setEditForm((p) => ({ ...p, [k]: v }));
+
+  const revisionsQuery = useQuery({
+    queryKey: ['vet', 'revisions', editingVisitId],
+    queryFn: () => vetApi.listRevisions(editingVisitId as string),
+    enabled: !!editingVisitId,
+  });
+
+  const openEditMutation = useMutation({
+    mutationFn: (visitId: string) => vetApi.getVisit(visitId),
+    onSuccess: (detail, visitId) => {
+      const v = detail.visit;
+      setEditingVisitId(visitId);
+      setEditReason('');
+      setEditForm({
+        chiefComplaint: (v.chiefComplaint as string) ?? '',
+        physicalExam: (v.physicalExam as string) ?? '',
+        finalDiagnosis: (v.finalDiagnosis as string) ?? '',
+        treatment: (v.treatment as string) ?? '',
+        prescription: (v.prescription as string) ?? '',
+        withdrawalPeriod: (v.withdrawalPeriod as string) ?? '',
+        prognosis: (v.prognosis as string) ?? '',
+        farmerInstruction: (v.farmerInstruction as string) ?? '',
+        quarantineRequired: Boolean(v.quarantineRequired),
+        status: (v.status as 'draft' | 'saved' | 'finalized') ?? 'saved',
+      });
+      setNotice(null);
+    },
+    onError: () => setNotice('진료기록을 불러오지 못했습니다.'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => vetApi.updateVisit(editingVisitId as string, {
+      ...editForm,
+      editReason: editReason.trim() || undefined,
+    }),
+    onSuccess: (res) => {
+      if (res.changedFields.length === 0) {
+        setNotice('변경된 내용이 없습니다.');
+        return;
+      }
+      const names = res.changedFields.map((f) => FIELD_LABELS[f] ?? f).join(', ');
+      setNotice(`진료기록 수정 완료 (개정 ${res.revisionNumber}판 · 변경: ${names}). 수정 전 값은 이력에 보존되었습니다.`);
+      void qc.invalidateQueries({ queryKey: ['vet', 'visits', farmId, animalId] });
+      void qc.invalidateQueries({ queryKey: ['vet', 'revisions', editingVisitId] });
+    },
+    onError: () => setNotice('수정에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+  });
+
+  // 4단계 — 공식 문서 발행
+  const [docVisitId, setDocVisitId] = useState<string>('');
+  const [docType, setDocType] = useState<VetDocType>('medical_record');
+
+  const docQuery = useQuery({
+    queryKey: ['vet', 'document', docVisitId, docType],
+    queryFn: () => vetApi.getDocument(docVisitId, docType),
+    enabled: !!docVisitId && !!docType,
+  });
+
+  const downloadMutation = useMutation({
+    mutationFn: () => vetApi.downloadDocumentPdf(docVisitId, docType),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cowtalk_${docType}_${docVisitId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+    onError: () => setNotice('PDF 다운로드에 실패했습니다.'),
+  });
+
+  function printDocument(model: VetDocModel): void {
+    const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] ?? c));
+    const header = model.header_pairs.map((p) => `<tr><th>${esc(p.key)}</th><td>${esc(p.value)}</td></tr>`).join('');
+    const sections = model.sections.map((sec) => {
+      const pairs = (sec.pairs ?? []).map((p) => `<tr><th>${esc(p.key)}</th><td>${esc(p.value)}</td></tr>`).join('');
+      const paras = (sec.paragraphs ?? []).map((t) => `<p>${esc(t)}</p>`).join('');
+      return `<h2>${esc(sec.heading)}</h2>${pairs ? `<table>${pairs}</table>` : ''}${paras}`;
+    }).join('');
+    const issuer = model.issuer;
+    const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(model.doc_title)}</title>
+      <style>body{font-family:'Malgun Gothic',sans-serif;color:#212121;padding:32px;max-width:720px;margin:auto}
+      h1{text-align:center;color:#1B5E20}h2{color:#1B5E20;border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:20px;font-size:15px}
+      table{width:100%;border-collapse:collapse;margin:6px 0}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:13px}
+      th{background:#F1F8E9;width:140px;color:#0277BD}.sig{margin-top:28px;border-top:1px solid #ccc;padding-top:12px;font-size:13px;line-height:2}
+      .foot{margin-top:20px;color:#888;font-size:11px}</style></head>
+      <body><h1>${esc(model.doc_title)}</h1>
+      <p style="text-align:center;color:#888;font-size:12px">CowTalk 진료센터</p>
+      <table>${header}</table>${sections}
+      <div class="sig">발행일: ${esc(model.issue_date)}<br>동물병원/소속: ${esc(issuer.clinicName ?? '(            )')}<br>
+      수의사 면허번호: ${esc(issuer.licenseNumber ?? '(            )')}<br>수의사 성명: ${esc(issuer.name)} (서명 또는 인)</div>
+      <div class="foot">${model.footer_notes.map(esc).join('<br>')}</div></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { setNotice('프린트 창을 열 수 없습니다 (팝업 차단 확인).'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+  }
+
+  // 5단계 — 보내기
+  const [sendNote, setSendNote] = useState('');
+  const deliveriesQuery = useQuery({
+    queryKey: ['vet', 'deliveries', docVisitId],
+    queryFn: () => vetApi.listDeliveries(docVisitId),
+    enabled: !!docVisitId,
+  });
+  const sendMutation = useMutation({
+    mutationFn: () => vetApi.sendDocument(docVisitId, docType, sendNote.trim() || undefined),
+    onSuccess: (res) => {
+      setNotice(`${VET_DOC_LABELS[docType]}를 농장주에게 보냈습니다.${res.pushDelivered > 0 ? ` (푸시 ${res.pushDelivered}건)` : ''}`);
+      setSendNote('');
+      void qc.invalidateQueries({ queryKey: ['vet', 'deliveries', docVisitId] });
+    },
+    onError: () => setNotice('보내기에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+  });
+
+  // 8단계 — KAHIS 약물보고
+  const [drugForm, setDrugForm] = useState<DrugReportPayload>(EMPTY_DRUG);
+  const setDrug = (k: keyof DrugReportPayload, v: string | boolean) => setDrugForm((p) => ({ ...p, [k]: v }));
+  const drugReportQuery = useQuery({
+    queryKey: ['vet', 'drug-report', docVisitId],
+    queryFn: () => vetApi.getDrugReport(docVisitId),
+    enabled: !!docVisitId,
+  });
+  useEffect(() => {
+    const r = drugReportQuery.data;
+    setDrugForm(r
+      ? {
+          drugName: r.drug_name ?? '', drugCode: r.drug_code ?? '',
+          isPrescriptionTarget: r.is_prescription_target, dosage: r.dosage ?? '',
+          route: r.route ?? '', withdrawalNote: r.withdrawal_note ?? '',
+          administeredAt: r.administered_at ?? '',
+        }
+      : EMPTY_DRUG);
+  }, [drugReportQuery.data, docVisitId]);
+
+  const saveDrugMutation = useMutation({
+    mutationFn: () => vetApi.saveDrugReport(docVisitId, drugForm),
+    onSuccess: (res) => {
+      setNotice(res.validation.ok
+        ? '약물보고 저장됨 — KAHIS 제출 가능합니다.'
+        : `임시 저장됨. 제출 전 필수 항목: ${res.validation.missing.join(', ')}`);
+      void qc.invalidateQueries({ queryKey: ['vet', 'drug-report', docVisitId] });
+    },
+    onError: () => setNotice('약물보고 저장에 실패했습니다.'),
+  });
+  const submitDrugMutation = useMutation({
+    mutationFn: () => vetApi.submitDrugReport(docVisitId),
+    onSuccess: (r) => {
+      setNotice(`KAHIS 약물보고 제출 완료 (${r.status}${r.receiptNo ? `, 접수 ${r.receiptNo}` : ''}${r.testMode ? ' · 테스트모드' : ''}).`);
+      void qc.invalidateQueries({ queryKey: ['vet', 'drug-report', docVisitId] });
+    },
+    onError: () => setNotice('제출 실패 — 처방대상 약물은 약품명·용량·투약일·휴약기간이 모두 필요합니다.'),
+  });
+
+  const structureMutation = useMutation({
+    mutationFn: () => vetApi.structureConversationNote(farmId, animalId, rawNote),
+    onSuccess: (res) => { setAiResult(res); setNotice(null); },
+    onError: () => setNotice('AI 정리에 실패했습니다 (AI 엔진 비가용 또는 개체 확인 불가).'),
+  });
+
+  function applyDraft(n: StructuredNote): void {
+    setForm((p) => ({
+      ...p,
+      chiefComplaint: n.chief_complaint || p.chiefComplaint,
+      physicalExam: n.physical_exam || p.physicalExam,
+      differentialDiagnosis: n.differential_diagnosis || p.differentialDiagnosis,
+      finalDiagnosis: n.final_diagnosis || p.finalDiagnosis,
+      treatment: n.treatment || p.treatment,
+      prescription: n.prescription || p.prescription,
+      medication: n.medication || p.medication,
+      withdrawalPeriod: n.withdrawal_period || p.withdrawalPeriod,
+      prognosis: n.prognosis || p.prognosis,
+      farmerInstruction: n.farmer_instruction || p.farmerInstruction,
+      quarantineRequired: n.quarantine_required,
+      rawConversationNote: rawNote,
+      inputMethod: 'conversation',
+      aiStructuredNote: n as unknown as Record<string, unknown>,
+    }));
+    setNotice('AI 초안을 진료입력에 적용했습니다. 최종 진단·처방·투약을 확인하고 저장하세요.');
+    setTab('input');
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => vetApi.saveVisit(farmId, animalId, {
+      ...form,
+      veterinarianConfirmedAiNote: form.inputMethod === 'conversation',
+    }),
+    onSuccess: (res) => {
+      setNotice(`진료기록 저장 완료 (ID: ${res.visitId.slice(0, 8)}…). 저장 시점 데이터가 snapshot으로 동결되었습니다.`);
+      setForm({ status: 'saved', inputMethod: 'manual' });
+      setRawNote(''); setAiResult(null); setChecks({});
+      void qc.invalidateQueries({ queryKey: ['vet', 'visits', farmId, animalId] });
+      setTab('history');
+    },
+    onError: () => setNotice('저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+  });
+
+  function handleSave(): void {
+    if (form.inputMethod === 'conversation') {
+      const allChecked = CONFIRM_ITEMS.every((c) => checks[c.id]);
+      if (!allChecked) {
+        setNotice('대화형 기록 저장 전 필수 확인 항목을 모두 체크하세요.');
+        setTab('input');
+        return;
+      }
+    }
+    saveMutation.mutate();
+  }
+
+  const ctx = ctxQuery.data;
+  const animalTag = (ctx?.animal_snapshot?.['ear_tag_number'] as string) ?? animalId.slice(0, 8);
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-3 p-1 pb-28">
+      <header className="space-y-1">
+        <Link to={`/vet/farms/${farmId}/animals`} className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>← 개체 목록</Link>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--ct-text)' }}>진료차트 · {animalTag}번</h1>
+        {(ctx?.current_withdrawal_status?.['in_withdrawal'] === true) && (
+          <p className="text-sm font-semibold" style={{ color: 'var(--ct-warning, #f59e0b)' }}>⚠ 휴약기간 진행 중 — 출하 전 확인 필요</p>
+        )}
+      </header>
+
+      {notice && (
+        <div className="rounded-lg p-3 text-sm" style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}>
+          {notice}
+        </div>
+      )}
+
+      <VetTabBar tabs={TABS} active={tab} onChange={setTab} />
+
+      {ctxQuery.isLoading && <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>통합 진료 데이터 불러오는 중…</p>}
+      {ctxQuery.isError && <p className="text-sm" style={{ color: 'var(--ct-danger, #ef4444)' }}>개체 데이터를 불러오지 못했습니다.</p>}
+
+      {ctx && tab === 'summary' && (
+        <div className="space-y-3">
+          <Section title="목장"><KeyValueList data={ctx.farm_snapshot} /></Section>
+          <Section title="개체"><KeyValueList data={ctx.animal_snapshot} /></Section>
+          <Section title="번식"><KeyValueList data={ctx.reproduction_snapshot} /></Section>
+        </div>
+      )}
+
+      {ctx && tab === 'sensor' && (
+        <div className="space-y-3">
+          <Section title="센서 현황"><KeyValueList data={ctx.sensor_snapshot} /></Section>
+          <Section title="활성 알림">
+            {ctx.active_alerts.length === 0
+              ? <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>활성 알림 없음</p>
+              : <ul className="space-y-1 text-sm" style={{ color: 'var(--ct-text)' }}>
+                  {ctx.active_alerts.map((a, i) => (
+                    <li key={i}>· {String(a['event_type'])} ({String(a['severity'])})</li>
+                  ))}
+                </ul>}
+          </Section>
+          <Section title="공공데이터"><KeyValueList data={ctx.public_data_snapshot} /></Section>
+        </div>
+      )}
+
+      {ctx && tab === 'history' && (
+        <div className="space-y-3">
+          <Section title="질병·치료 이력"><KeyValueList data={ctx.health_history_snapshot} /></Section>
+          <Section title="과거 진료기록">
+            {visitsQuery.isLoading && <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>불러오는 중…</p>}
+            {visitsQuery.data && visitsQuery.data.length === 0 && (
+              <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>아직 진료기록이 없습니다.</p>
+            )}
+            <ul className="space-y-2">
+              {(visitsQuery.data ?? []).map((v) => (
+                <li key={v.visit_id} className="rounded-lg" style={{ border: '1px solid var(--ct-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => (editingVisitId === v.visit_id ? setEditingVisitId(null) : openEditMutation.mutate(v.visit_id))}
+                    className="w-full p-2 text-left text-sm"
+                    style={{ color: 'var(--ct-text)' }}
+                    aria-expanded={editingVisitId === v.visit_id}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{new Date(v.visit_datetime).toLocaleString('ko-KR')}</span>
+                      <span className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                        {editingVisitId === v.visit_id ? '닫기 ▲' : '수정 ▾'}
+                      </span>
+                    </div>
+                    <div style={{ color: 'var(--ct-text-secondary)' }}>
+                      {v.final_diagnosis ?? v.chief_complaint ?? '기록'} · {v.status}
+                    </div>
+                  </button>
+
+                  {editingVisitId === v.visit_id && (
+                    <div className="space-y-3 border-t p-3" style={{ borderColor: 'var(--ct-border)' }}>
+                      {openEditMutation.isPending && (
+                        <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>불러오는 중…</p>
+                      )}
+                      {EDIT_FIELDS.map((f) => (
+                        <Field
+                          key={f.key}
+                          label={f.label}
+                          value={(editForm[f.key] as string) ?? ''}
+                          onChange={(val) => setEditField(f.key, val)}
+                          textarea={f.textarea}
+                        />
+                      ))}
+                      <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(editForm.quarantineRequired)}
+                          onChange={(e) => setEditField('quarantineRequired', e.target.checked)}
+                        />
+                        방역 조치 필요
+                      </label>
+                      <Field label="수정 사유 (의무기록 — 권장)" value={editReason} onChange={setEditReason} />
+                      <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                        수정해도 진료 시점 snapshot(자동 호출 데이터)은 동결 유지됩니다. 수정 전 값은 이력에 보존됩니다.
+                      </p>
+                      <VetButton
+                        variant="primary"
+                        disabled={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate()}
+                        title="수정 저장"
+                      >
+                        {updateMutation.isPending ? '수정 중…' : '수정 저장'}
+                      </VetButton>
+
+                      {/* 수정 이력 */}
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--ct-border)' }}>
+                        <h3 className="mb-1 text-xs font-bold" style={{ color: 'var(--ct-text)' }}>수정 이력</h3>
+                        {revisionsQuery.isLoading && (
+                          <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>불러오는 중…</p>
+                        )}
+                        {revisionsQuery.data && revisionsQuery.data.length === 0 && (
+                          <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>수정 이력이 없습니다.</p>
+                        )}
+                        <ul className="space-y-1">
+                          {(revisionsQuery.data ?? []).map((r) => (
+                            <li key={r.revision_id} className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                              <span className="font-medium" style={{ color: 'var(--ct-text)' }}>개정 {r.revision_number}판</span>
+                              {' · '}{new Date(r.edited_at).toLocaleString('ko-KR')}
+                              {' · 변경: '}{r.changed_fields.map((f) => FIELD_LABELS[f] ?? f).join(', ') || '—'}
+                              {r.edit_reason ? ` · 사유: ${r.edit_reason}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        </div>
+      )}
+
+      {tab === 'input' && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }}
+          className="space-y-3"
+        >
+          <Field label="주증상" value={form.chiefComplaint ?? ''} onChange={(v) => setField('chiefComplaint', v)} />
+          <Field label="신체검사 소견" value={form.physicalExam ?? ''} onChange={(v) => setField('physicalExam', v)} textarea />
+          <Field label="최종 진단" value={form.finalDiagnosis ?? ''} onChange={(v) => setField('finalDiagnosis', v)} />
+          <Field label="처치" value={form.treatment ?? ''} onChange={(v) => setField('treatment', v)} textarea />
+          <Field label="처방·투약" value={form.prescription ?? ''} onChange={(v) => setField('prescription', v)} />
+          <Field label="휴약기간" value={form.withdrawalPeriod ?? ''} onChange={(v) => setField('withdrawalPeriod', v)} />
+          <Field label="예후" value={form.prognosis ?? ''} onChange={(v) => setField('prognosis', v)} />
+          <Field label="농장주 지시사항" value={form.farmerInstruction ?? ''} onChange={(v) => setField('farmerInstruction', v)} />
+          <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+            <input type="checkbox" checked={form.quarantineRequired ?? false} onChange={(e) => setField('quarantineRequired', e.target.checked)} />
+            방역 조치 필요
+          </label>
+
+          {form.inputMethod === 'conversation' && (
+            <div className="rounded-lg p-3" style={{ border: '1px solid var(--ct-warning, #f59e0b)' }}>
+              <p className="mb-2 text-xs font-bold" style={{ color: 'var(--ct-warning, #f59e0b)' }}>
+                AI 정리 초안입니다. 저장 전 아래를 확인하세요 (전부 체크해야 저장 가능).
+              </p>
+              <div className="space-y-1.5">
+                {CONFIRM_ITEMS.map((c) => (
+                  <label key={c.id} className="flex items-start gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+                    <input
+                      type="checkbox"
+                      checked={checks[c.id] ?? false}
+                      onChange={(e) => setChecks((p) => ({ ...p, [c.id]: e.target.checked }))}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+            저장 시 목장·개체·번식·이력·센서·공공데이터가 이 시점의 snapshot으로 함께 동결됩니다.
+          </p>
+        </form>
+      )}
+
+      {tab === 'conversation' && (
+        <div className="space-y-3">
+          <VetCard>
+            <h2 className="mb-2 text-sm font-bold" style={{ color: 'var(--ct-text)' }}>대화형 현장 진료기록</h2>
+            <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+              소 옆에서 말하듯 입력하면 AI가 진료차트 초안으로 정리합니다. (음성 입력은 다음 단계)
+            </p>
+            <textarea
+              rows={4}
+              value={rawNote}
+              onChange={(e) => setRawNote(e.target.value)}
+              placeholder="예: 분만 후 3일째 식욕저하, 체온 39.8도, 악취 나는 자궁분비물. 산후 자궁염 의심. 항생제와 소염제 투여, 3일 뒤 재진."
+              className="w-full rounded-lg px-3 py-2 text-base"
+              style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}
+            />
+            <div className="mt-2">
+              <VetButton
+                variant="primary"
+                disabled={structureMutation.isPending || rawNote.trim().length === 0}
+                onClick={() => structureMutation.mutate()}
+                title="AI 정리"
+              >
+                {structureMutation.isPending ? 'AI 정리 중…' : 'AI로 정리하기'}
+              </VetButton>
+            </div>
+          </VetCard>
+
+          {aiResult && (
+            <>
+              <div
+                className="rounded-lg p-2 text-xs"
+                style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-warning, #f59e0b)', color: 'var(--ct-warning, #f59e0b)' }}
+              >
+                {aiResult.ai_disclaimer}
+              </div>
+
+              <Section title="① 수의사가 말한 내용">
+                <KeyValueList data={aiResult.source_separation.veterinarian_spoken_content} />
+              </Section>
+              <Section title="② CowTalk가 자동으로 불러온 데이터">
+                <KeyValueList data={aiResult.source_separation.cowtalk_auto_data} />
+              </Section>
+              <Section title="③ AI 제안 (수의사 최종 확인 필요)">
+                <KeyValueList data={aiResult.source_separation.ai_suggestions} />
+              </Section>
+
+              <Section title="정리된 진료차트 초안">
+                <KeyValueList data={aiResult.structured_note as unknown as Record<string, unknown>} />
+                {aiResult.structured_note.missing_required_fields.length > 0 && (
+                  <p className="mt-2 text-xs" style={{ color: 'var(--ct-warning, #f59e0b)' }}>
+                    누락: {aiResult.structured_note.missing_required_fields.join(', ')}
+                  </p>
+                )}
+                {aiResult.structured_note.safety_warnings.length > 0 && (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--ct-danger, #ef4444)' }}>
+                    ⚠ {aiResult.structured_note.safety_warnings.join(' · ')}
+                  </p>
+                )}
+                <div className="mt-3">
+                  <VetButton variant="primary" onClick={() => applyDraft(aiResult.structured_note)} title="진료입력에 적용">
+                    진료입력에 적용 →
+                  </VetButton>
+                </div>
+              </Section>
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === 'documents' && (
+        <div className="space-y-3">
+          <VetCard>
+            <h2 className="mb-2 text-sm font-bold" style={{ color: 'var(--ct-text)' }}>공식 문서 발행</h2>
+            <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+              저장된 진료기록을 선택하면 진료기록부·처방전·진단서를 미리보고 PDF/프린트로 발행할 수 있습니다.
+              (발행 시점 동결 데이터 기반, 면허번호·서명란은 발행 수의사가 확인)
+            </p>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium" style={{ color: 'var(--ct-text-secondary)' }}>진료기록 선택</span>
+              <select
+                value={docVisitId}
+                onChange={(e) => setDocVisitId(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-base"
+                style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}
+              >
+                <option value="">— 진료기록을 선택하세요 —</option>
+                {(visitsQuery.data ?? []).map((v) => (
+                  <option key={v.visit_id} value={v.visit_id}>
+                    {new Date(v.visit_datetime).toLocaleDateString('ko-KR')} · {v.final_diagnosis ?? v.chief_complaint ?? '기록'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {VET_DOC_TYPES.map((t) => (
+                <VetButton
+                  key={t}
+                  variant={docType === t ? 'primary' : 'default'}
+                  onClick={() => setDocType(t)}
+                  title={VET_DOC_LABELS[t]}
+                >
+                  {VET_DOC_LABELS[t]}
+                </VetButton>
+              ))}
+            </div>
+          </VetCard>
+
+          {!docVisitId && (
+            <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>먼저 진료기록을 선택하세요.</p>
+          )}
+          {docVisitId && docQuery.isLoading && (
+            <p className="text-sm" style={{ color: 'var(--ct-text-secondary)' }}>문서 미리보기 불러오는 중…</p>
+          )}
+          {docVisitId && docQuery.isError && (
+            <p className="text-sm" style={{ color: 'var(--ct-danger, #ef4444)' }}>문서를 불러오지 못했습니다.</p>
+          )}
+
+          {docVisitId && docQuery.data && (
+            <>
+              <Section title={`${docQuery.data.doc_title} 미리보기`}>
+                <KeyValueList data={Object.fromEntries(docQuery.data.header_pairs.map((p) => [p.key, p.value]))} />
+                {docQuery.data.sections.map((sec, i) => (
+                  <div key={i} className="mt-3">
+                    <h3 className="mb-1 text-xs font-bold" style={{ color: 'var(--ct-text)' }}>{sec.heading}</h3>
+                    {sec.pairs && sec.pairs.length > 0 && (
+                      <KeyValueList data={Object.fromEntries(sec.pairs.map((p) => [p.key, p.value]))} />
+                    )}
+                    {(sec.paragraphs ?? []).map((t, j) => (
+                      <p key={j} className="text-sm" style={{ color: 'var(--ct-text)' }}>{t}</p>
+                    ))}
+                  </div>
+                ))}
+                <p className="mt-3 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                  발행일 {docQuery.data.issue_date} · 수의사 {docQuery.data.issuer.name}
+                </p>
+              </Section>
+              <div className="flex flex-wrap gap-2">
+                <VetButton
+                  variant="primary"
+                  disabled={downloadMutation.isPending}
+                  onClick={() => downloadMutation.mutate()}
+                  title="PDF 저장"
+                >
+                  {downloadMutation.isPending ? '생성 중…' : 'PDF 저장'}
+                </VetButton>
+                <VetButton onClick={() => docQuery.data && printDocument(docQuery.data)} title="프린트">프린트</VetButton>
+              </div>
+
+              {/* 5단계 — 보내기 */}
+              <Section title="농장주에게 보내기">
+                <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                  {VET_DOC_LABELS[docType]}를 농장주에게 전달합니다(앱 알림). 전달 사실은 이력에 기록됩니다.
+                </p>
+                <Field label="전달 메모 (선택)" value={sendNote} onChange={setSendNote} />
+                <div className="mt-2">
+                  <VetButton
+                    variant="primary"
+                    disabled={sendMutation.isPending}
+                    onClick={() => sendMutation.mutate()}
+                    title="보내기"
+                  >
+                    {sendMutation.isPending ? '보내는 중…' : `${VET_DOC_LABELS[docType]} 보내기`}
+                  </VetButton>
+                </div>
+
+                <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--ct-border)' }}>
+                  <h3 className="mb-1 text-xs font-bold" style={{ color: 'var(--ct-text)' }}>전달 이력</h3>
+                  {deliveriesQuery.data && deliveriesQuery.data.length === 0 && (
+                    <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>전달 이력이 없습니다.</p>
+                  )}
+                  <ul className="space-y-1">
+                    {(deliveriesQuery.data ?? []).map((d) => (
+                      <li key={d.delivery_id} className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                        <span className="font-medium" style={{ color: 'var(--ct-text)' }}>{d.doc_title}</span>
+                        {' · '}{new Date(d.sent_at).toLocaleString('ko-KR')}
+                        {d.recipient_name ? ` · ${d.recipient_name}` : ''}
+                        {d.push_delivered > 0 ? ` · 푸시 ${d.push_delivered}건` : ''}
+                        {d.note ? ` · ${d.note}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Section>
+            </>
+          )}
+
+          {docVisitId && (
+            <Section title="KAHIS 약물사용 보고">
+              <p className="mb-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                처방대상 약물은 약품명·용량·투약일·휴약기간이 모두 필요합니다(오남용 방지). 저장 후 KAHIS로 제출합니다.
+              </p>
+              <label className="mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(drugForm.isPrescriptionTarget)}
+                  onChange={(e) => setDrug('isPrescriptionTarget', e.target.checked)}
+                />
+                처방대상 약물(항생제 등)
+              </label>
+              <Field label="약품명" value={drugForm.drugName ?? ''} onChange={(v) => setDrug('drugName', v)} />
+              <Field label="약품 코드 (선택)" value={drugForm.drugCode ?? ''} onChange={(v) => setDrug('drugCode', v)} />
+              <Field label="용법·용량" value={drugForm.dosage ?? ''} onChange={(v) => setDrug('dosage', v)} />
+              <Field label="투여경로 (선택)" value={drugForm.route ?? ''} onChange={(v) => setDrug('route', v)} />
+              <Field label="휴약기간" value={drugForm.withdrawalNote ?? ''} onChange={(v) => setDrug('withdrawalNote', v)} />
+              <label className="block space-y-1">
+                <span className="text-xs font-medium" style={{ color: 'var(--ct-text-secondary)' }}>투약일</span>
+                <input
+                  type="date"
+                  value={drugForm.administeredAt ?? ''}
+                  onChange={(e) => setDrug('administeredAt', e.target.value)}
+                  className="w-full rounded-lg px-3 py-2 text-base"
+                  style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' }}
+                />
+              </label>
+
+              {drugReportQuery.data && (
+                <p className="mt-2 text-xs" style={{ color: 'var(--ct-text-secondary)' }}>
+                  상태: {drugReportQuery.data.status}
+                  {drugReportQuery.data.receipt_no ? ` · 접수 ${drugReportQuery.data.receipt_no}` : ''}
+                </p>
+              )}
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                <VetButton
+                  disabled={saveDrugMutation.isPending}
+                  onClick={() => saveDrugMutation.mutate()}
+                  title="약물보고 저장"
+                >
+                  {saveDrugMutation.isPending ? '저장 중…' : '저장'}
+                </VetButton>
+                <VetButton
+                  variant="primary"
+                  disabled={submitDrugMutation.isPending || !drugReportQuery.data}
+                  onClick={() => submitDrugMutation.mutate()}
+                  title="KAHIS 제출"
+                >
+                  {submitDrugMutation.isPending ? '제출 중…' : 'KAHIS 제출'}
+                </VetButton>
+              </div>
+            </Section>
+          )}
+        </div>
+      )}
+
+      {/* 항상 접근 가능한 현장 액션바 */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-20 flex gap-2 overflow-x-auto p-2"
+        style={{ background: 'var(--ct-bg, #0b0b12)', borderTop: '1px solid var(--ct-border)' }}
+      >
+        <VetButton onClick={() => { void ctxQuery.refetch(); void visitsQuery.refetch(); }} title="불러오기">불러오기</VetButton>
+        <VetButton variant="primary" onClick={handleSave} disabled={saveMutation.isPending} title="저장하기">
+          {saveMutation.isPending ? '저장 중…' : '저장하기'}
+        </VetButton>
+        <VetButton onClick={() => { setTab('history'); setNotice('과거기록 탭에서 진료기록을 선택해 수정하세요.'); }} title="수정하기">수정</VetButton>
+        <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록과 문서를 선택해 보내세요.'); }} title="보내기">보내기</VetButton>
+        <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록을 선택해 프린트하세요.'); }} title="프린트하기">프린트</VetButton>
+        <VetButton onClick={() => { setTab('documents'); setNotice('문서 탭에서 진료기록을 선택해 PDF로 발행하세요.'); }} title="PDF 발행">PDF</VetButton>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <VetCard>
+      <h2 className="mb-2 text-sm font-bold" style={{ color: 'var(--ct-text)' }}>{title}</h2>
+      {children}
+    </VetCard>
+  );
+}
+
+function Field({
+  label, value, onChange, textarea = false,
+}: {
+  label: string; value: string; onChange: (v: string) => void; textarea?: boolean;
+}): React.JSX.Element {
+  const common = {
+    value,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value),
+    className: 'w-full rounded-lg px-3 py-2 text-base',
+    style: { background: 'var(--ct-card)', border: '1px solid var(--ct-border)', color: 'var(--ct-text)' } as React.CSSProperties,
+  };
+  return (
+    <label className="block space-y-1">
+      <span className="text-xs font-medium" style={{ color: 'var(--ct-text-secondary)' }}>{label}</span>
+      {textarea ? <textarea rows={2} {...common} /> : <input type="text" {...common} />}
+    </label>
+  );
+}
