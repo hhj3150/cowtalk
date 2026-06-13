@@ -354,7 +354,7 @@ DB 영속화:
 
 ## MCP 도구 체계 (2026-04-03 Phase 4 완료)
 
-팅커벨 AI가 사용하는 도구 20개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
+팅커벨 AI가 사용하는 도구 23개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
 
 | 도메인 | 도구명 | 유형 | 설명 |
 |--------|--------|------|------|
@@ -370,6 +370,8 @@ DB 영속화:
 | repro | record_insemination | 기록 | 수정 기록 |
 | repro | record_pregnancy_check | 기록 | 임신감정 기록 |
 | repro | recommend_insemination_window | 추천 | 수정 적기 + 정액 추천 |
+| repro | schedule_sync_protocol | 기록 | 발정동기화 프로토콜 처방 (OVSYNCH/PG/G6G/Double OVSYNCH) → 투여·수정 일정 자동 생성 |
+| repro | query_sync_today | 조회 | 오늘 예정된 발정동기화 처치 목록 (호르몬 투여·수정 일정) |
 | public_data | query_traceability | 조회 | 이력제 실시간 조회 (EKAPE) |
 | public_data | query_grade | 조회 | 등급판정 결과 (EKAPE) |
 | public_data | query_auction_prices | 조회 | 경락가격 시세 (EKAPE) |
