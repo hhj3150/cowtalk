@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
 import { evaluateEngine, compareEngines, getAccuracyTrend, evaluateByRole, getPerformanceOverview } from '../../intelligence-loop/model-evaluator.js';
 import { analyzeThresholds } from '../../intelligence-loop/threshold-learner.js';
+import { getRecommendationAccuracy } from '../../services/breeding/recommendation-tracking.service.js';
 
 export const aiPerformanceRouter = Router();
 
@@ -26,6 +27,17 @@ aiPerformanceRouter.get('/performance', async (req: Request, res: Response, next
       const data = await getPerformanceOverview({ from, to });
       res.json({ success: true, data });
     }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /ai/performance/recommendation-accuracy — 정액 추천 정확도 (채택률 + 수태율 lift)
+aiPerformanceRouter.get('/performance/recommendation-accuracy', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.query.farmId as string | undefined;
+    const data = await getRecommendationAccuracy(farmId);
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
