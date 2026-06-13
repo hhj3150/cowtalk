@@ -183,6 +183,7 @@ ${v4Lines.join('\n')}`);
     "reasoning": "판단 근거"
   },
   "risks": ["위험 요소 1", "위험 요소 2"],
+  "contributing_factors": ["판단에 결정적으로 기여한 요인 1 (예: 체온 39.8°C로 정상 초과)", "기여 요인 2"],
   "actions": {
     "farmer": "농장주 조언",
     "veterinarian": "수의사 조언",

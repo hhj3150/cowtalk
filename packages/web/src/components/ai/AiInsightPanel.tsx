@@ -11,6 +11,7 @@ interface Props {
   readonly recommendations?: readonly string[];
   readonly source: string;
   readonly severity?: string;
+  readonly contributingFactors?: readonly string[];
   readonly dataReferences?: readonly string[];
   readonly isLoading?: boolean;
 }
@@ -51,6 +52,7 @@ export function AiInsightPanel({
   recommendations = [],
   source,
   severity,
+  contributingFactors,
   dataReferences,
   isLoading,
 }: Props): React.JSX.Element {
@@ -106,6 +108,17 @@ export function AiInsightPanel({
                 <span className="mt-0.5">•</span>
                 {rec}
               </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {contributingFactors && contributingFactors.length > 0 && (
+        <div className="mt-3 border-t pt-2" style={{ borderColor: 'rgba(29, 158, 117, 0.2)' }}>
+          <p className="mb-1 text-[10px] font-medium" style={{ color: 'var(--ct-text-secondary)' }}>핵심 기여 요인</p>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {contributingFactors.map((factor, i) => (
+              <li key={i} className="text-[11px]" style={{ color: 'var(--ct-text)' }}>{factor}</li>
             ))}
           </ul>
         </div>

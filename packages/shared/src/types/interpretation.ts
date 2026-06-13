@@ -19,6 +19,7 @@ export interface AnimalInterpretation {
   readonly interpretation: InterpretationDetail;
   readonly risks: readonly string[];
   readonly actions: Readonly<Record<Role, string>>;
+  readonly contributingFactors: readonly string[]; // 결론을 뒷받침한 핵심 기여 요인 (CLAUDE.md 필수)
   readonly dataReferences: readonly string[];  // 근거 데이터
 
   // 메타
