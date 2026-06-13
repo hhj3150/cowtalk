@@ -12,6 +12,7 @@ vi.mock('@server/api/middleware/auth.js', () => ({
     next();
   },
   optionalAuth: (_req: any, _res: any, next: any) => next(),
+  requireRole: () => (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock('@server/api/middleware/rbac.js', () => ({
