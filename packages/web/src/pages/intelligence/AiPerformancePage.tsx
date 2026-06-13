@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { KpiCard } from '@web/components/data/KpiCard';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
-import { usePerformanceOverview, useAccuracyTrend, useRoleFeedbackStats } from '@web/hooks/useAiPerformance';
+import { usePerformanceOverview, useAccuracyTrend, useRoleFeedbackStats, useRecommendationAccuracy } from '@web/hooks/useAiPerformance';
+import { RecommendationAccuracyCard } from '@web/components/intelligence/RecommendationAccuracyCard';
 import { useAuthStore } from '@web/stores/auth.store';
 import type { EngineMetrics } from '@web/api/ai-performance.api';
 
@@ -126,6 +127,7 @@ function TrendTable({ engineType }: { readonly engineType: string }): React.JSX.
 export default function AiPerformancePage(): React.JSX.Element {
   const { data, isLoading } = usePerformanceOverview();
   const { data: roleStats, isLoading: rolesLoading } = useRoleFeedbackStats();
+  const { data: recAccuracy, isLoading: recLoading } = useRecommendationAccuracy();
   const [selectedEngine, setSelectedEngine] = useState('estrus');
   const userRole = useAuthStore((s) => s.user?.role);
 
@@ -150,6 +152,9 @@ export default function AiPerformancePage(): React.JSX.Element {
           Intelligence Loop 피드백 기반 AI 정확도 분석
         </p>
       </div>
+
+      {/* 정액 추천 정확도 — 엔진 평가와 독립된 번식 도메인 지표 (자체 빈 상태 처리) */}
+      <RecommendationAccuracyCard data={recAccuracy} isLoading={recLoading} />
 
       {/* 최소 데이터 경고 */}
       {!showCards && (

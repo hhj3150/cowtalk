@@ -39,6 +39,19 @@ export interface ThresholdSuggestion {
   };
 }
 
+// 정액 추천 정확도 (서버 RecommendationAccuracy 미러링).
+export interface RecommendationAccuracy {
+  readonly totalBatches: number;
+  readonly actionedBatches: number;
+  readonly adherenceRate: number | null; // 0~100, actioned 중 추천정액 사용 비율
+  readonly adherenceStatus: 'ok' | 'data_insufficient';
+  readonly recommendedConceptionRate: number | null; // 추천-사용 그룹 수태율 (0~100)
+  readonly recommendedDecided: number;
+  readonly nonRecommendedConceptionRate: number | null; // 비추천-사용 그룹 수태율
+  readonly nonRecommendedDecided: number;
+  readonly lift: number | null; // 추천CR − 비추천CR (퍼센트 포인트)
+}
+
 export interface PerformanceOverview {
   readonly engines: readonly EngineMetrics[];
   readonly totalPredictions: number;
@@ -70,6 +83,10 @@ export function getRoleFeedbackStats(params?: {
   to?: string;
 }): Promise<readonly RoleFeedbackStats[]> {
   return apiGet<readonly RoleFeedbackStats[]>('/ai/performance/roles', params);
+}
+
+export function getRecommendationAccuracy(farmId?: string): Promise<RecommendationAccuracy> {
+  return apiGet<RecommendationAccuracy>('/ai/performance/recommendation-accuracy', farmId ? { farmId } : undefined);
 }
 
 export function getThresholds(engineType: string): Promise<ThresholdSuggestion> {

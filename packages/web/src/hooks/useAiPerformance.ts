@@ -24,6 +24,14 @@ export function useAccuracyTrend(engineType: string, months?: number) {
   });
 }
 
+export function useRecommendationAccuracy(farmId?: string) {
+  return useQuery({
+    queryKey: ['ai', 'recommendation-accuracy', farmId ?? null],
+    queryFn: () => aiApi.getRecommendationAccuracy(farmId),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useRoleFeedbackStats(params?: {
   from?: string;
   to?: string;
