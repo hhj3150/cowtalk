@@ -62,3 +62,11 @@ sk-*.hwpx
 sk-*.docx
 # 루트에 sk로 시작하는 모든 파일 (API 키 추정)
 /sk.*
+
+# Folder-sync collision copies (e.g. "file 2.ts") — never commit
+*\ [0-9].ts
+*\ [0-9].tsx
+*\ [0-9].js
+*\ [0-9].cjs
+*\ [0-9].mjs
+*\ [0-9].json
