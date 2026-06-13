@@ -41,7 +41,8 @@ export const REPORT_CONFIG = {
   LOGO_PATH: path.join(__dirname, '../../../public/cowtalk-logo.png'),
 
   AI: {
-    MODEL: 'claude-sonnet-4-20250514',
+    // Sonnet 4.0(2026-06-15 deprecated) → Sonnet 4.6. Sonnet 계열은 temperature 유지.
+    MODEL: 'claude-sonnet-4-6',
     MAX_TOKENS: 4096,
     TEMPERATURE: 0.2,
   },
