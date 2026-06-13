@@ -2,12 +2,15 @@
 // AnimalProfile → 구조화된 프롬프트
 
 import type { AnimalProfile, Role, V4AnalysisSummary } from '@cowtalk/shared';
+import type { FarmBreedingSettings } from '../../db/schema.js';
 import { ROLE_CONTEXT } from './system-prompt.js';
+import { buildFarmBreedingContext } from './farm-settings-context.js';
 
 export function buildAnimalPrompt(
   profile: AnimalProfile,
   role: Role,
   v4Analysis: V4AnalysisSummary | null,
+  farmSettings?: FarmBreedingSettings | null,
 ): string {
   const sections: string[] = [];
 
@@ -21,6 +24,9 @@ export function buildAnimalPrompt(
 - 산차: ${String(profile.parity)}
 - 생년월일: ${profile.birthDate ? profile.birthDate.toISOString().split('T')[0] : '미상'}
 - 농장: ${profile.farmName} (${profile.region})`);
+
+  // 1.5 목장 번식 설정 (CLAUDE.md: AI는 반드시 목장 고유 번식 파라미터를 참조)
+  sections.push(buildFarmBreedingContext(farmSettings));
 
   // 2. 최신 센서 데이터
   const s = profile.latestSensor;
