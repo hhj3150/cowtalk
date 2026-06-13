@@ -195,6 +195,7 @@ function mapClaudeToAnimalInterpretation(
     },
     risks: asStringArray(parsed.risks),
     actions: parseActions(parsed.actions),
+    contributingFactors: deriveContributingFactors(parsed.contributing_factors, v4Result),
     dataReferences: asStringArray(parsed.data_references),
     severity: asSeverity(parsed.severity) || v4Result.severity,
     confidence: asConfidence(interpretation?.confidence),
@@ -202,6 +203,29 @@ function mapClaudeToAnimalInterpretation(
     processingTimeMs,
     v4Analysis: v4Result.analysis,
   };
+}
+
+// v4 신호를 문자열로 정규화 (pregnancy.signals 는 객체일 수 있어 description 추출)
+export function signalText(s: string | { readonly description?: string }): string {
+  return typeof s === 'string' ? s : (s.description ?? '');
+}
+
+function collectV4Signals(v4Result: V4FusionResult): string[] {
+  return [
+    ...v4Result.estrus.signals,
+    ...v4Result.disease.signals,
+    ...v4Result.pregnancy.signals.map(signalText),
+  ].filter((s) => s.length > 0);
+}
+
+// 기여 요인: Claude가 주면 그대로, 없으면 v4 신호에서 도출 (CLAUDE.md 필수 필드 보장)
+export function deriveContributingFactors(
+  raw: unknown,
+  v4Result: V4FusionResult,
+): readonly string[] {
+  const fromClaude = asStringArray(raw);
+  if (fromClaude.length > 0) return fromClaude;
+  return collectV4Signals(v4Result);
 }
 
 function buildV4FallbackAnimalInterpretation(
@@ -223,6 +247,7 @@ function buildV4FallbackAnimalInterpretation(
     },
     risks: v4Result.disease.signals.filter((s) => s.includes('의심')),
     actions: v4Result.fallbackActions as Record<Role, string>,
+    contributingFactors: collectV4Signals(v4Result),
     dataReferences: buildV4DataReferences(profile),
     severity: v4Result.severity,
     confidence: v4Result.estrus.confidence,

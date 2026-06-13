@@ -174,6 +174,7 @@ function SectionRenderer({
             risks={Array.isArray(interpretation.risks) ? interpretation.risks as string[] : []}
             source={String(interpretation.source ?? 'v4_fallback')}
             severity={typeof interpretation.severity === 'string' ? interpretation.severity : undefined}
+            contributingFactors={Array.isArray(interpretation.contributingFactors) ? interpretation.contributingFactors as string[] : undefined}
             dataReferences={Array.isArray(interpretation.dataReferences) ? interpretation.dataReferences as string[] : undefined}
           />
         </Section>
