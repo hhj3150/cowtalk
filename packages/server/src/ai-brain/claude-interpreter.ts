@@ -15,6 +15,8 @@ import type {
 } from '@cowtalk/shared';
 import { callClaudeForAnalysis } from './claude-client.js';
 import { buildAnimalPrompt } from './prompts/animal-prompt.js';
+import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
+import type { FarmBreedingSettings } from '../db/schema.js';
 import { buildFarmPrompt } from './prompts/farm-prompt.js';
 import { buildRegionalPrompt } from './prompts/regional-prompt.js';
 import { buildEpidemicPrompt } from './prompts/epidemic-prompt.js';
@@ -39,11 +41,21 @@ export async function interpretAnimal(
   // 1. v4 보조 분석 (항상 실행 — 빠르고 로컬)
   const v4Result = runV4Analysis(profile);
 
+  // 1.5 목장 번식 설정 로드 (CLAUDE.md: AI는 반드시 목장 고유 파라미터 참조).
+  // 번식 설정은 숫자 파라미터로 PII가 없어 비식별 프로필과 함께 전송해도 안전.
+  // 실패해도 해석은 계속 — 렌더러가 null이면 기본값 블록을 생성.
+  let farmSettings: FarmBreedingSettings | null = null;
+  try {
+    farmSettings = await getFarmBreedingSettings(profile.farmId);
+  } catch (err) {
+    logger.warn({ err, farmId: profile.farmId }, '목장 번식 설정 로드 실패 — 기본값으로 진행');
+  }
+
   // 2. 비식별화: Claude API 전송 전 개체·농장 식별자를 해시 토큰으로 치환
   const { profile: safeProfile, rehydrateRecord } = createAnimalDeidentifier(profile);
 
   // 3. Claude API 해석 (비식별 프로필만 외부 전송)
-  const prompt = buildAnimalPrompt(safeProfile, role, v4Result.analysis);
+  const prompt = buildAnimalPrompt(safeProfile, role, v4Result.analysis, farmSettings);
   const claudeResult = await callClaudeForAnalysis(prompt);
 
   if (claudeResult) {
