@@ -1583,6 +1583,30 @@ export const toolAuditLog = pgTable('tool_audit_log', {
   index('tool_audit_log_request_id_idx').on(table.requestId),
 ]);
 
+// 정액 추천 기록 — 추천 정확도 추적 (추천 vs 실제 사용 vs 임신 결과 사후 분석)
+export const semenRecommendations = pgTable('semen_recommendations', {
+  recommendationId:   uuid('recommendation_id').primaryKey().defaultRandom(),
+  batchId:            uuid('batch_id').notNull(),                         // 한 번의 추천 호출(N개 후보) 묶음
+  animalId:           uuid('animal_id').notNull().references(() => animals.animalId),
+  farmId:             uuid('farm_id').notNull(),
+  semenId:            varchar('semen_id', { length: 64 }).notNull(),
+  rank:               integer('rank').notNull(),                          // 1 = 최상위 추천
+  score:              real('score').notNull(),
+  estimatedInbreeding: real('estimated_inbreeding').notNull(),
+  inbreedingRisk:     varchar('inbreeding_risk', { length: 10 }).notNull(), // low/medium/high
+  pastConceptionRate: real('past_conception_rate'),                       // null = 표본 부족
+  pastSampleSize:     integer('past_sample_size').notNull().default(0),
+  learningBonus:      real('learning_bonus').notNull().default(0),
+  heatDetectedAt:     timestamp('heat_detected_at', { withTimezone: true }),
+  recommendedAt:      timestamp('recommended_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('semen_recommendations_animal_id_idx').on(table.animalId),
+  index('semen_recommendations_farm_id_idx').on(table.farmId),
+  index('semen_recommendations_semen_id_idx').on(table.semenId),
+  index('semen_recommendations_batch_id_idx').on(table.batchId),
+  index('semen_recommendations_recommended_at_idx').on(table.recommendedAt),
+]);
+
 export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   labelId:           uuid('label_id').primaryKey().defaultRandom(),
   alarmSignature:    varchar('alarm_signature', { length: 200 }).notNull().unique(), // animalId:type:YYYY-MM-DD
