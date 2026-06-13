@@ -92,7 +92,7 @@ xaiRouter.get('/system', (_req: Request, res: Response) => {
       components: [
         {
           name: 'Claude AI 해석 엔진',
-          model: 'claude-opus-4-5 / claude-sonnet-4-6',
+          model: 'claude-opus-4-8 / claude-sonnet-4-6',
           provider: 'Anthropic',
           role: '센서 데이터 + 공공데이터 → 자연어 해석 + 역할별 액션 생성',
           fallback: 'v4 룰 엔진 (로컬)',

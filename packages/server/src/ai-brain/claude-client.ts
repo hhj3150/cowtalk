@@ -8,6 +8,7 @@ import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
 import { executeToolWithGateway, TOOL_DOMAIN_MAP, ROLE_TOOL_ACCESS, type ToolCallContext } from './tools/tool-gateway.js';
+import { temperatureParam } from './claude-model-params.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -88,7 +89,8 @@ export async function callClaudeForAnalysis(
     const response = await anthropic.messages.create({
       model,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_ANALYSIS,
-      temperature: 0.3,
+      // 모델별 분기: Opus 4.7+/Fable 은 temperature 미지원(400) → 제거. Sonnet 등은 포함.
+      ...temperatureParam(model, 0.3),
       system: buildCachedSystem(SYSTEM_PROMPT),
       messages: [{ role: 'user', content: prompt }],
     });
