@@ -10,6 +10,7 @@ import {
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { getFarmSemenPerformance, type SemenPerformance } from './breeding-feedback.service.js';
+import { recordSemenRecommendations } from './recommendation-tracking.service.js';
 import { computeCR } from '../metrics/fertility-service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
@@ -476,6 +477,16 @@ export async function getBreedingAdvice(
   // 9. 센서 패턴 기반 수태 예측 (비동기, 실패해도 무시)
   const sensorInsight = await computeSensorInsight(animalId).catch(() => null);
 
+  const topRecommendations = sorted.slice(0, 5);
+
+  // 10. 추천 기록 (fire-and-forget) — 추천 정확도 추적용. 응답을 막지 않는다.
+  void recordSemenRecommendations({
+    animalId: animal.animalId,
+    farmId: animal.farmId,
+    heatDetectedAt: heatTime,
+    recommendations: topRecommendations,
+  });
+
   return {
     animalId: animal.animalId,
     earTag: animal.earTag,
@@ -489,7 +500,7 @@ export async function getBreedingAdvice(
     windowStartTime: new Date(heatTime.getTime() + windowStart * 3_600_000).toISOString(),
     windowEndTime: new Date(heatTime.getTime() + windowEnd * 3_600_000).toISOString(),
     warnings,
-    recommendations: sorted.slice(0, 5),
+    recommendations: topRecommendations,
     sensorInsight,
     farmSettings: {
       pregnancyCheckDays: farmSettings.pregnancyCheckDays ?? 28,
