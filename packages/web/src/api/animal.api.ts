@@ -45,6 +45,26 @@ export function getAnimalDetail(animalId: string, role?: string): Promise<Animal
   return apiGet<AnimalDetailData>(`/animals/${animalId}`, role ? { role } : undefined);
 }
 
+// ===========================
+// AI 해석 (캐시 우선 + 백그라운드 재계산)
+// status='computing' 이면 프론트가 폴링하여 'ready' 결과를 받는다.
+// ===========================
+
+export interface AnimalInterpretationResult {
+  readonly status: 'ready' | 'computing';
+  readonly interpretation: Record<string, unknown> | null;
+}
+
+export function getAnimalInterpretation(
+  animalId: string,
+  role?: string,
+): Promise<AnimalInterpretationResult> {
+  return apiGet<AnimalInterpretationResult>(
+    `/animals/${animalId}/interpretation`,
+    role ? { role } : undefined,
+  );
+}
+
 export function createAnimal(data: Record<string, unknown>): Promise<AnimalSummary> {
   return apiPost<AnimalSummary>('/animals', data);
 }

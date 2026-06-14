@@ -2,7 +2,7 @@
 // 프로파일 빌드 → v4 보조 분석 → Claude 해석 → 알림 → 캐시 → 서빙
 
 import type {
-  Role,
+  Role, AnimalProfile,
   AnimalInterpretation, FarmInterpretation,
   RegionalInterpretation, TenantInterpretation,
 } from '@cowtalk/shared';
@@ -35,6 +35,15 @@ export async function analyzeAnimal(
     return null;
   }
 
+  return analyzeAnimalProfile(profile, role);
+}
+
+// 미리 빌드한 프로필로 해석 — 해석 캐시 워커가 프로필을 1회만 빌드하도록 분리.
+// (analyzeAnimal = buildAnimalProfile + analyzeAnimalProfile)
+export async function analyzeAnimalProfile(
+  profile: AnimalProfile,
+  role: Role = 'farmer',
+): Promise<AnimalInterpretation> {
   const interpretation = await interpretAnimal(profile, role);
 
   // 알림 처리

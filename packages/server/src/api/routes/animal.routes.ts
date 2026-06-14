@@ -15,7 +15,7 @@ import {
 } from '../../services/animal/animal-mdm.service.js';
 import { z } from 'zod';
 import type { Role } from '@cowtalk/shared';
-import { getAnimalDetail } from '../../serving/dashboard.service.js';
+import { getOrTriggerInterpretation } from '../../serving/interpretation-cache.service.js';
 import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords, vaccineRecords, vaccineSchedules } from '../../db/schema.js';
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
@@ -356,19 +356,19 @@ animalRouter.post(
   },
 );
 
-// GET /animals/:animalId/interpretation — AI 해석 (별도 비동기 로드)
+// GET /animals/:animalId/interpretation — AI 해석 (캐시 우선 + 백그라운드 재계산)
+// 캐시 히트면 { status:'ready', interpretation } 을 즉시 반환(<1s).
+// 미스면 { status:'computing', interpretation:null } 을 반환하고 백그라운드로 계산.
+// 프론트는 computing 동안 폴링하여 ready 결과를 수신한다.
 animalRouter.get('/:animalId/interpretation', requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const animalId = req.params.animalId as string;
-    const role = req.user?.role as Role;
+    const role = (req.user?.role ?? 'farmer') as Role;
 
-    const aiPromise = getAnimalDetail(animalId, role);
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
-    const interpretation = await Promise.race([aiPromise, timeoutPromise]);
-
-    res.json({ success: true, data: interpretation });
+    const result = await getOrTriggerInterpretation(animalId, role);
+    res.json({ success: true, data: result });
   } catch {
-    res.json({ success: true, data: null });
+    res.json({ success: true, data: { status: 'computing', interpretation: null } });
   }
 });
 
