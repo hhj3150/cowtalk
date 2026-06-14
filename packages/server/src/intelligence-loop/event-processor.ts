@@ -5,6 +5,7 @@ import { analyzeAnimal, analyzeFarm } from '../ai-brain/index.js';
 import { logger } from '../lib/logger.js';
 import type { Role } from '@cowtalk/shared';
 import { isEpidemicRelevantEvent } from '../epidemic/cluster-detector.js';
+import { recordFarmEventFeedback } from './event-feedback.js';
 
 // 이벤트 타입 → AI 예측 타입 매핑
 const EVENT_TO_ENGINE_MAP: Record<string, string> = {
@@ -25,6 +26,10 @@ interface FarmEvent {
   readonly description: string;
   readonly severity: string;
   readonly metadata?: Record<string, unknown>;
+  /** 기록자 user uuid — feedback 적재에 필요(없으면 적재 스킵) */
+  readonly recordedBy?: string;
+  /** 기록자 역할 — feedback.source_role */
+  readonly sourceRole?: string;
 }
 
 interface ProcessResult {
@@ -115,65 +120,35 @@ export async function processBatchEvents(events: readonly FarmEvent[]): Promise<
 }
 
 /**
- * 이벤트 → 예측 피드백 기록
- * 사용자가 기록한 이벤트(질병, 발정 등)를 AI 예측의 정확도 검증에 활용
+ * 이벤트 → 예측 피드백 기록 (열린 루프 닫기)
+ * 사용자가 기록한 이벤트(질병, 발정 등)를 정답 feedback 으로 적재하고 예측 정확도 평가에 활용.
+ * 행위자(recordedBy/sourceRole) 없는 이벤트는 데이터 무결성을 위해 적재 스킵.
  */
 async function recordEventAsFeedback(event: FarmEvent, engineType: string): Promise<boolean> {
   try {
-    // 이벤트 타입별 피드백 매핑
-    const feedbackMapping = buildFeedbackMapping(event, engineType);
-    if (!feedbackMapping) return false;
+    if (!event.recordedBy || !event.sourceRole) {
+      logger.debug(
+        { eventId: event.eventId, engineType },
+        'Event without actor (recordedBy/sourceRole) — feedback skipped',
+      );
+      return false;
+    }
 
-    // TODO: DB에 피드백 저장 — predictions + outcome_evaluations 테이블
-    // 현재는 로그 기록만
-    logger.info(
-      { eventId: event.eventId, engineType, feedbackType: feedbackMapping.feedbackType },
-      'Event recorded as AI feedback',
-    );
+    const result = await recordFarmEventFeedback({
+      eventId: event.eventId,
+      farmId: event.farmId,
+      animalId: event.animalId,
+      eventType: event.eventType,
+      subType: event.subType,
+      description: event.description,
+      sourceRole: event.sourceRole,
+      recordedBy: event.recordedBy,
+    });
 
-    return true;
+    return result !== null;
   } catch (error) {
     logger.error({ eventId: event.eventId, error }, 'Failed to record event as feedback');
     return false;
-  }
-}
-
-function buildFeedbackMapping(event: FarmEvent, engineType: string) {
-  switch (event.eventType) {
-    case 'health':
-      return {
-        feedbackType: 'disease_confirmation',
-        engineType,
-        isPositiveConfirmation: true,
-        details: { diagnosis: event.subType, severity: event.severity },
-      };
-    case 'breeding':
-      if (event.subType === '발정') {
-        return {
-          feedbackType: 'estrus_confirmation',
-          engineType: 'estrus',
-          isPositiveConfirmation: true,
-          details: { detectedBy: 'farmer_observation' },
-        };
-      }
-      if (event.subType === '수정') {
-        return {
-          feedbackType: 'breeding_record',
-          engineType: 'estrus',
-          isPositiveConfirmation: true,
-          details: event.metadata,
-        };
-      }
-      return null;
-    case 'treatment':
-      return {
-        feedbackType: 'treatment_outcome',
-        engineType: 'disease',
-        isPositiveConfirmation: false,
-        details: { treatment: event.description },
-      };
-    default:
-      return null;
   }
 }
 

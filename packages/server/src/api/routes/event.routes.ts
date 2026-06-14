@@ -6,44 +6,26 @@ import { authenticate } from '../middleware/auth.js';
 import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farmEvents, animals } from '../../db/schema.js';
-import { eq, and, desc, count, sql } from 'drizzle-orm';
+import { eq, and, desc, count } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { recordFarmEventFeedback } from '../../intelligence-loop/event-feedback.js';
 
 /**
- * AX-LOOP-01 드라이런 — 사용자 farm_event 기록 직후, 같은 동물의 최근 7일
- * sovereign 예측 중 아직 outcome_evaluations 가 없는 건수를 측정만 한다.
- *
- * 목적: 사용자 입력 → AI 평가 자동 전이 배선의 잠재 매칭량을 실측 확보해
- *      후속 PR(실 recordOutcome 적재)의 사이즈를 정량화한다. DB 쓰기 0.
+ * 열린 루프 닫기 — 사용자 farm_event 를 정답 feedback 으로 적재하고 같은 동물의
+ * 미평가 예측을 즉시 매칭(outcome_evaluations)한다. event 기록 UX 를 막지 않도록
+ * fire-and-forget(비차단). 정답 신호가 아닌 이벤트는 recordFarmEventFeedback 이 no-op.
  */
-async function measureFarmEventMatchCandidates(animalId: string | null, eventId: string): Promise<void> {
-  if (!animalId) return;
-  try {
-    const db = getDb();
-    const rows = await db.execute(sql`
-      SELECT COUNT(*) AS count
-      FROM predictions p
-      WHERE p.engine_type = 'sovereign_v1'
-        AND p.animal_id = ${animalId}
-        AND p.created_at >= NOW() - INTERVAL '7 days'
-        AND NOT EXISTS (
-          SELECT 1 FROM outcome_evaluations oe
-          WHERE oe.prediction_id = p.prediction_id
-        )
-    `);
-    const candidateCount = Number(
-      (rows as unknown as Array<{ count: string | number }>)[0]?.count ?? 0,
-    );
-    logger.info(
-      { eventId, animalId, candidateCount },
-      '[AX-LOOP] farm_event → prediction match candidates (dry-run, sovereign_v1, 7d, unevaluated)',
-    );
-  } catch (err) {
+function recordEventFeedbackAsync(input: {
+  eventId: string; farmId: string; animalId: string | null;
+  eventType: string; subType: string | null; description: string;
+  sourceRole: string; recordedBy: string;
+}): void {
+  void recordFarmEventFeedback(input).catch((err) =>
     logger.warn(
-      { err: (err as Error).message, eventId },
-      '[AX-LOOP] match candidate dry-run failed',
-    );
-  }
+      { err: (err as Error).message, eventId: input.eventId },
+      '[AX-LOOP] farm_event → feedback 적재 실패',
+    ),
+  );
 }
 
 export const eventRouter = Router();
@@ -102,9 +84,18 @@ eventRouter.post('/', async (req: Request, res: Response, next: NextFunction) =>
       })
       .returning();
 
-    // AX-LOOP-01 드라이런 — 사용자 farm_event 직후 잠재 매칭 후보만 카운트 (DB 쓰기 0, fire-and-forget).
+    // 열린 루프 닫기 — farm_event → feedback 적재 + 예측 매칭 (fire-and-forget, 응답 비차단).
     if (event) {
-      void measureFarmEventMatchCandidates(event.animalId, event.eventId);
+      recordEventFeedbackAsync({
+        eventId: event.eventId,
+        farmId: event.farmId,
+        animalId: event.animalId,
+        eventType: event.eventType,
+        subType: event.subType,
+        description: event.description,
+        sourceRole: req.user!.role,
+        recordedBy,
+      });
     }
 
     res.status(201).json({ success: true, data: event });
@@ -135,6 +126,20 @@ eventRouter.post('/bulk', async (req: Request, res: Response, next: NextFunction
       .insert(farmEvents)
       .values(values)
       .returning();
+
+    // 열린 루프 닫기 — 각 이벤트를 feedback 으로 적재 + 예측 매칭 (fire-and-forget).
+    for (const ev of created) {
+      recordEventFeedbackAsync({
+        eventId: ev.eventId,
+        farmId: ev.farmId,
+        animalId: ev.animalId,
+        eventType: ev.eventType,
+        subType: ev.subType,
+        description: ev.description,
+        sourceRole: req.user!.role,
+        recordedBy,
+      });
+    }
 
     res.status(201).json({ success: true, data: { created: created.length, events: created } });
   } catch (error) {
