@@ -45,7 +45,11 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
   ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-8'),
-  ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(4000),
+  // adaptive thinking 활성화 시 thinking 토큰이 max_tokens 를 잠식 → JSON 답변 잘림 방지 위해 상향.
+  // 비-스트리밍 messages.create 는 ~16K 이하 권장(SDK 타임아웃). 8000 = thinking + JSON 여유.
+  ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(8000),
+  // deep(Opus) 분석 경로 effort — 임상추론 깊이. high=기본, max=정확도 최우선(비용↑).
+  ANTHROPIC_ANALYSIS_EFFORT: z.enum(['low', 'medium', 'high', 'max']).default('high'),
   ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
   // 채팅 온도 — 임상·번식·방역 답변은 정확도 > 창의성 (0.4 권장)
   // 도구 결과 종합용 final wrap-up 라운드는 더 낮춤 (0.3)

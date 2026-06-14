@@ -8,7 +8,7 @@ import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
 import { executeToolWithGateway, TOOL_DOMAIN_MAP, ROLE_TOOL_ACCESS, type ToolCallContext } from './tools/tool-gateway.js';
-import { temperatureParam } from './claude-model-params.js';
+import { temperatureParam, thinkingParam, effortParam } from './claude-model-params.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -85,12 +85,24 @@ export async function callClaudeForAnalysis(
   const model = useDeep ? config.ANTHROPIC_MODEL_DEEP : config.ANTHROPIC_MODEL;
   const startTime = Date.now();
 
+  // deep(Opus) 경로만 adaptive thinking + effort 로 임상추론 품질↑.
+  // fast 추출 경로(useDeep=false, Sonnet)는 지연·비용 위해 현행 유지(thinking 미적용).
+  // ⚠️ adaptive thinking 토큰이 max_tokens 를 잠식하므로 ANTHROPIC_MAX_TOKENS_ANALYSIS 상향 전제.
+  const reasoningParams = useDeep
+    ? {
+        ...thinkingParam(model, config.ANTHROPIC_THINKING_BUDGET),
+        ...effortParam(model, config.ANTHROPIC_ANALYSIS_EFFORT),
+      }
+    : {};
+
   try {
     const response = await anthropic.messages.create({
       model,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_ANALYSIS,
       // 모델별 분기: Opus 4.7+/Fable 은 temperature 미지원(400) → 제거. Sonnet 등은 포함.
       ...temperatureParam(model, 0.3),
+      // deep 경로: adaptive thinking + output_config.effort (Opus 4.8). temperature 와 상호배타(Opus 는 둘 다 미지원→temperatureParam 이 {} 반환).
+      ...reasoningParams,
       system: buildCachedSystem(SYSTEM_PROMPT),
       messages: [{ role: 'user', content: prompt }],
     });
@@ -107,8 +119,11 @@ export async function callClaudeForAnalysis(
     logger.info({
       model: response.model,
       engine: useDeep ? 'opus' : 'sonnet',
+      reasoning: useDeep ? reasoningParams : undefined,
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
+      maxTokens: config.ANTHROPIC_MAX_TOKENS_ANALYSIS,
+      stopReason: response.stop_reason,
       durationMs,
     }, 'Claude analysis completed');
 
