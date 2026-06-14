@@ -1719,3 +1719,21 @@ export const cameraTrackingEvents = pgTable('camera_tracking_events', {
   index('idx_cte_animal').on(table.animalId),
   index('idx_cte_status').on(table.trackingStatus),
 ]);
+
+// ======================================================================
+// AI 해석 캐시 — deep(Opus) 해석 결과 영속화 (재계산 throwaway 제거)
+// GET /animals/:id/interpretation 은 이 테이블을 즉시 서빙하고,
+// profile_hash 가 바뀌었을 때만 백그라운드로 재계산한다.
+// 키: (animal_id, role, model) 1행 upsert + profile_hash 로 staleness 판별.
+// ======================================================================
+
+export const animalInterpretations = pgTable('animal_interpretations', {
+  animalId:    uuid('animal_id').notNull().references(() => animals.animalId),
+  role:        varchar('role', { length: 30 }).notNull(),
+  model:       varchar('model', { length: 64 }).notNull(),       // 결과를 생성한 모델 (캐시 무효화 키)
+  profileHash: varchar('profile_hash', { length: 64 }).notNull(), // 프로필 변경 감지용 sha256
+  result:      jsonb('result').notNull(),                         // AnimalInterpretation 직렬화
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('animal_interpretations_key_idx').on(table.animalId, table.role, table.model),
+]);

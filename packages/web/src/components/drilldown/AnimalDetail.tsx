@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAnimalDetail } from '@web/hooks/useAnimal';
+import { useAnimalDetail, useAnimalInterpretation } from '@web/hooks/useAnimal';
 import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { TraceSection } from '@web/components/trace/TraceSection';
 import { InseminationPanel } from '@web/components/breeding/InseminationPanel';
@@ -62,6 +62,7 @@ export function AnimalDetail({ animalId }: Props): React.JSX.Element {
   const navigate = useNavigate();
   const role = useEffectiveRole() ?? 'farmer';
   const { data, isLoading, error, refetch } = useAnimalDetail(animalId);
+  const { data: interpData } = useAnimalInterpretation(animalId);
 
   if (isLoading) return <LoadingSkeleton lines={8} />;
   if (error) return <ErrorFallback error={error as Error} onRetry={() => { refetch(); }} />;
@@ -71,7 +72,7 @@ export function AnimalDetail({ animalId }: Props): React.JSX.Element {
   if (!rawData?.animalId && !rawData?.animal) return <div className="text-sm text-gray-400">개체를 찾을 수 없습니다.</div>;
 
   const animal = (rawData.animal ?? rawData) as unknown as Record<string, unknown> & { earTag: string; breedType: string; breed: string; parity: number; sex: string; status: string; farmName: string; traceId: string | null; farmId: string; latestTemperature: number | null; latestActivity: number | null; latestRumination: number | null };
-  const interpretation = (rawData.interpretation ?? null) as Record<string, unknown> | null;
+  const interpretation = (interpData?.interpretation ?? null) as Record<string, unknown> | null;
   const metrics = SENSOR_ORDER_BY_ROLE[role];
   const sections = SECTIONS_BY_ROLE[role];
 
@@ -130,6 +131,7 @@ export function AnimalDetail({ animalId }: Props): React.JSX.Element {
           animalId={animalId}
           animal={animal as unknown as Record<string, unknown>}
           interpretation={interpretation}
+          interpretationStatus={interpData?.status}
           role={role}
           metrics={metrics}
           data={data as unknown as Record<string, unknown>}
@@ -145,6 +147,7 @@ function SectionRenderer({
   animalId,
   animal,
   interpretation,
+  interpretationStatus,
   role,
   metrics,
   data,
@@ -153,6 +156,7 @@ function SectionRenderer({
   animalId: string;
   animal: Record<string, unknown>;
   interpretation: Record<string, unknown> | null;
+  interpretationStatus?: 'ready' | 'computing';
   role: Role;
   metrics: readonly { key: string; label: string; color: string; unit: string }[];
   data: Record<string, unknown>;
@@ -166,17 +170,28 @@ function SectionRenderer({
       );
 
     case 'ai':
-      return interpretation ? (
+      if (interpretation) {
+        return (
+          <Section title="AI 해석">
+            <AiInsightPanel
+              summary={String(interpretation.summary ?? '')}
+              interpretation={String(interpretation.interpretation ?? '')}
+              risks={Array.isArray(interpretation.risks) ? interpretation.risks as string[] : []}
+              source={String(interpretation.source ?? 'v4_fallback')}
+              severity={typeof interpretation.severity === 'string' ? interpretation.severity : undefined}
+              contributingFactors={Array.isArray(interpretation.contributingFactors) ? interpretation.contributingFactors as string[] : undefined}
+              dataReferences={Array.isArray(interpretation.dataReferences) ? interpretation.dataReferences as string[] : undefined}
+            />
+          </Section>
+        );
+      }
+      // 아직 캐시 미스 — 백그라운드 계산 중. 폴링으로 곧 갱신됨.
+      return interpretationStatus === 'computing' ? (
         <Section title="AI 해석">
-          <AiInsightPanel
-            summary={String(interpretation.summary ?? '')}
-            interpretation={String(interpretation.interpretation ?? '')}
-            risks={Array.isArray(interpretation.risks) ? interpretation.risks as string[] : []}
-            source={String(interpretation.source ?? 'v4_fallback')}
-            severity={typeof interpretation.severity === 'string' ? interpretation.severity : undefined}
-            contributingFactors={Array.isArray(interpretation.contributingFactors) ? interpretation.contributingFactors as string[] : undefined}
-            dataReferences={Array.isArray(interpretation.dataReferences) ? interpretation.dataReferences as string[] : undefined}
-          />
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-green-600" aria-hidden="true" />
+            AI 해석 생성 중… (잠시 후 자동 표시됩니다)
+          </div>
         </Section>
       ) : <></>;
 
