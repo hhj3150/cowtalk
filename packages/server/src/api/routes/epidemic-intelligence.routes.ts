@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { farms, smaxtecEvents } from '../../db/schema.js';
@@ -38,11 +39,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 epidemicIntelligenceRouter.use((req: Request, _res: Response, next: NextFunction) => {
   const farmIdsParam = req.query.farmIds as string | undefined;
   const farmId = req.query.farmId as string | undefined;
-  let ids: readonly string[] = [];
-  if (farmIdsParam) ids = farmIdsParam.split(',').filter((id) => UUID_RE.test(id));
-  else if (farmId && farmId.includes(',')) ids = farmId.split(',').filter((id) => UUID_RE.test(id));
-  else if (farmId && UUID_RE.test(farmId)) ids = [farmId];
-  epidemicFarmIdsStorage.run(ids, () => next());
+  let requested: readonly string[] = [];
+  if (farmIdsParam) requested = farmIdsParam.split(',').filter((id) => UUID_RE.test(id));
+  else if (farmId && farmId.includes(',')) requested = farmId.split(',').filter((id) => UUID_RE.test(id));
+  else if (farmId && UUID_RE.test(farmId)) requested = [farmId];
+  // 배정 스코프 실링 강제 — 미선택(기본) 요청이 전국으로 누수되지 않도록 한다.
+  const effective = resolveScopedFarmIds(requested, scopedFarmIds(req));
+  epidemicFarmIdsStorage.run(effective, () => next());
 });
 
 function getEpidemicFarmFilter(column: typeof farms.farmId | typeof smaxtecEvents.farmId = farms.farmId): ReturnType<typeof inArray> | undefined {

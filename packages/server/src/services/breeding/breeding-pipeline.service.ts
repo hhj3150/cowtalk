@@ -61,17 +61,22 @@ export function dedupCalvingDates(dates: readonly Date[]): Date[] {
 // 메인: getBreedingPipeline
 // ===========================
 
-export async function getBreedingPipeline(farmId?: string): Promise<BreedingPipelineData> {
+export async function getBreedingPipeline(
+  farmId?: string,
+  farmIdsScope?: readonly string[],
+): Promise<BreedingPipelineData> {
   const db = getDb();
   const now = new Date();
   const since365d = new Date(now.getTime() - 365 * MS_PER_DAY);
 
-  // 1. 활성 암소 조회
+  // 1. 활성 암소 조회 — farmIdsScope(다중 농장 스코프) 우선, 없으면 farmId(단일), 둘 다 없으면 전체
   const animalConditions = [
     eq(animals.status, 'active'),
     isNull(animals.deletedAt),
   ];
-  if (farmId) {
+  if (farmIdsScope && farmIdsScope.length > 0) {
+    animalConditions.push(inArray(animals.farmId, [...farmIdsScope]));
+  } else if (farmId) {
     animalConditions.push(eq(animals.farmId, farmId));
   }
 

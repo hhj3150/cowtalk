@@ -3,7 +3,8 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requireFarmAccess } from '../middleware/rbac.js';
+import { requireFarmAccess, scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
+import { ForbiddenError } from '../../lib/errors.js';
 import { getDb } from '../../config/database.js';
 import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, farmSemenInventory } from '../../db/schema.js';
 import { eq, and, desc, count, sql } from 'drizzle-orm';
@@ -26,7 +27,12 @@ breedingRouter.use(authenticate);
 breedingRouter.get('/pipeline', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.query.farmId as string | undefined;
-    const data = await getBreedingPipeline(farmId || undefined);
+    // 배정 스코프 실링 — 미선택 요청이 전국으로 누수되지 않도록 한다.
+    const requested = farmId ? [farmId] : [];
+    const effective = resolveScopedFarmIds(requested, scopedFarmIds(req));
+    const data = effective.length > 0
+      ? await getBreedingPipeline(undefined, effective)
+      : await getBreedingPipeline(undefined);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -37,6 +43,11 @@ breedingRouter.get('/pipeline', async (req: Request, res: Response, next: NextFu
 breedingRouter.get('/pipeline/:farmId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.params.farmId as string;
+    // 배정 스코프 밖 농장 직접 조회 차단
+    const scope = scopedFarmIds(req);
+    if (scope !== null && !scope.includes(farmId)) {
+      throw new ForbiddenError('접근 권한이 없는 농장입니다');
+    }
     const data = await getBreedingPipeline(farmId);
     res.json({ success: true, data });
   } catch (error) {
