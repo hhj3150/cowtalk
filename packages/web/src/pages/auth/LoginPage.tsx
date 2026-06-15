@@ -308,6 +308,11 @@ const ROLE_PRESETS: readonly RolePreset[] = [
   },
 ];
 
+// 데모 시드 계정 공통 비밀번호 (packages/server/src/db/seed.ts: test1234).
+// quick-login은 개발 환경에서만 동작하므로, 프로덕션 데모에서는 역할 카드가
+// 이 비밀번호로 정상 로그인(/auth/login)에 자동 폴백한다. 실서비스 자격증명 아님.
+const DEMO_SEED_PASSWORD = 'test1234';
+
 // ── 피처 카드 ──
 
 interface FeatureCard {
@@ -372,10 +377,18 @@ export default function LoginPage(): React.JSX.Element {
   async function handleQuickLogin(preset: RolePreset): Promise<void> {
     setQuickLoggingEmail(preset.email);
     try {
+      // 개발 환경: 무비밀번호 quick-login
       await quickLogin({ email: preset.email });
       navigate('/', { replace: true });
+      return;
     } catch {
-      // 에러 시 폼으로 fallback
+      // 프로덕션: quick-login이 404로 차단됨 → 시드 계정 정상 로그인으로 자동 폴백
+    }
+    try {
+      await login({ email: preset.email, password: DEMO_SEED_PASSWORD });
+      navigate('/', { replace: true });
+    } catch {
+      // 정상 로그인도 실패 → 이메일만 폼에 채우고 수동 입력 유도
       setEmail(preset.email);
       setQuickLoggingEmail(null);
     }
