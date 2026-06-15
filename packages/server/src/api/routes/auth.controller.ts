@@ -305,7 +305,6 @@ interface OnboardingInput {
   name: string;
   email: string;
   password: string;
-  role: Role;
   farm?: {
     name: string;
     address?: string;
@@ -325,12 +324,14 @@ export async function onboarding(req: Request, res: Response): Promise<void> {
   }
 
   // 2. 계정 생성
+  // 보안: 공개 self-register이므로 역할은 항상 farmer로 강제한다.
+  // 관리자·수의사·방역관 계정은 인증된 관리자만 /auth/register로 생성할 수 있다.
   const passwordHash = await hashPassword(input.password);
   const user = await createUser({
     name: input.name,
     email: input.email,
     passwordHash,
-    role: input.role,
+    role: 'farmer',
     status: 'active',
   });
 
