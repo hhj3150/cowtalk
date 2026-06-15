@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { animalQuerySchema, createAnimalSchema, updateAnimalSchema, changeAnimalStatusSchema, assignSensorSchema } from '@cowtalk/shared';
 import {
@@ -20,7 +20,7 @@ import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calvingEvents, dryOffRecords, vaccineRecords, vaccineSchedules } from '../../db/schema.js';
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
 import { GradeConnector } from '../../pipeline/connectors/public-data/grade.connector.js';
-import { eq, and, sql, desc, count } from 'drizzle-orm';
+import { eq, and, sql, desc, count, inArray } from 'drizzle-orm';
 
 // 이력추적 커넥터 싱글톤 (매 요청마다 생성하지 않음)
 let traceConnector: TraceabilityConnector | null = null;
@@ -50,6 +50,11 @@ animalRouter.get('/', requirePermission('animal', 'read'), validate({ query: ani
     const conditions = [eq(animals.status, status)];
     if (farmId) {
       conditions.push(eq(animals.farmId, farmId));
+    }
+    // 데이터 격리: 배정된 농장 개체만 (관리 역할/미배정은 scoped=null → 전체)
+    const scoped = scopedFarmIds(req);
+    if (scoped) {
+      conditions.push(inArray(animals.farmId, [...scoped]));
     }
     if (search) {
       conditions.push(
@@ -133,6 +138,13 @@ animalRouter.get('/:animalId', requirePermission('animal', 'read'), async (req: 
       .where(eq(animals.animalId, animalId));
 
     if (!animal) {
+      res.status(404).json({ success: false, error: '동물을 찾을 수 없습니다' });
+      return;
+    }
+
+    // 데이터 격리: 배정 범위 밖 개체는 존재를 노출하지 않고 404
+    const scoped = scopedFarmIds(req);
+    if (scoped && !scoped.includes(animal.farmId)) {
       res.status(404).json({ success: false, error: '동물을 찾을 수 없습니다' });
       return;
     }

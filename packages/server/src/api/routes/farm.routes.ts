@@ -3,12 +3,12 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { farmQuerySchema, farmCreateSchema, farmUpdateSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { farms, animals, smaxtecEvents, regions } from '../../db/schema.js';
-import { eq, and, sql, count, gt } from 'drizzle-orm';
+import { eq, and, sql, count, gt, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
 import { getHerdTotal, getHerdPerFarm } from '../../services/metrics/herd-service.js';
@@ -26,7 +26,13 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
     const offset = (page - 1) * limit;
     const status = (req.query.status as string) || 'all';
 
-    const statusFilter = status !== 'all' ? eq(farms.status, status) : undefined;
+    // 데이터 격리: 배정된 농장만 (관리 역할/미배정은 scoped=null → 전체)
+    const scoped = scopedFarmIds(req);
+    const conditions = [
+      ...(status !== 'all' ? [eq(farms.status, status)] : []),
+      ...(scoped ? [inArray(farms.farmId, [...scoped])] : []),
+    ];
+    const statusFilter = conditions.length > 0 ? and(...conditions) : undefined;
 
     const farmList = await db
       .select({
@@ -75,9 +81,14 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
 });
 
 // GET /farms/summary — KPI 집계 (목장 관리 대시보드용)
-farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+farmRouter.get('/summary', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
+
+    // 데이터 격리: 배정된 농장 집계만 (관리 역할/미배정은 scoped=null → 전체)
+    const scoped = scopedFarmIds(req);
+    const farmScope = scoped ? inArray(farms.farmId, [...scoped]) : undefined;
+    const animalScope = scoped ? inArray(animals.farmId, [...scoped]) : undefined;
 
     const [farmCounts] = await db
       .select({
@@ -85,7 +96,8 @@ farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Reque
         active: sql<number>`COUNT(*) FILTER (WHERE ${farms.status} = 'active')`,
         inactive: sql<number>`COUNT(*) FILTER (WHERE ${farms.status} != 'active')`,
       })
-      .from(farms);
+      .from(farms)
+      .where(farmScope);
 
     const [animalCounts] = await db
       .select({
@@ -93,10 +105,10 @@ farmRouter.get('/summary', requirePermission('farm', 'read'), async (_req: Reque
         withSensor: sql<number>`COUNT(*) FILTER (WHERE ${animals.currentDeviceId} IS NOT NULL AND ${animals.currentDeviceId} != '')`,
       })
       .from(animals)
-      .where(eq(animals.status, 'active'));
+      .where(animalScope ? and(eq(animals.status, 'active'), animalScope) : eq(animals.status, 'active'));
 
     // 두수 단일 소스 — D7/D9 라이브 카운트 (BUG-007).
-    const liveHerd = await getHerdTotal();
+    const liveHerd = await getHerdTotal(scoped ? { farmIds: scoped } : {});
     const totalHeadCount = liveHerd.total;
 
     res.json({
@@ -142,6 +154,13 @@ farmRouter.get('/:farmId', requirePermission('farm', 'read'), async (req: Reques
   try {
     const db = getDb();
     const farmId = req.params.farmId as string;
+
+    // 데이터 격리: 배정 범위 밖 농장은 존재를 노출하지 않고 404
+    const scoped = scopedFarmIds(req);
+    if (scoped && !scoped.includes(farmId)) {
+      res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      return;
+    }
 
     const [farm] = await db
       .select({

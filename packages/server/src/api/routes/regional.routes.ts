@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { scopedFarmIds } from '../middleware/rbac.js';
 import type { Role } from '@cowtalk/shared';
 import { analyzeRegion } from '../../ai-brain/index.js';
 import { getDb } from '../../config/database.js';
@@ -18,9 +19,15 @@ regionalRouter.use(authenticate);
 // GET /regional/summary — 지역별 요약
 // 지역 지도는 모든 인증 사용자에게 개방 (읽기 전용, 보안 위험 없음)
 // 역할 전환 시 JWT 재발급 없이도 접근 가능하도록 RBAC 제거
-regionalRouter.get('/summary', async (_req: Request, res: Response, next: NextFunction) => {
+regionalRouter.get('/summary', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
+
+    // 데이터 격리: 배정된 농장이 속한 지역만 집계 (관리 역할/미배정은 scoped=null → 전체)
+    const scoped = scopedFarmIds(req);
+    const farmJoin = scoped
+      ? and(eq(regions.regionId, farms.regionId), inArray(farms.farmId, [...scoped]))
+      : eq(regions.regionId, farms.regionId);
 
     const summary = await db
       .select({
@@ -31,7 +38,7 @@ regionalRouter.get('/summary', async (_req: Request, res: Response, next: NextFu
         farmCount: count(farms.farmId),
       })
       .from(regions)
-      .leftJoin(farms, eq(regions.regionId, farms.regionId))
+      .leftJoin(farms, farmJoin)
       .groupBy(regions.regionId, regions.province, regions.district, regions.code);
 
     res.json({ success: true, data: summary });
@@ -53,6 +60,11 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
     const db = getDb();
     const mode = (req.query.mode as string) ?? 'status';
 
+    // 데이터 격리: 배정된 농장 마커만 (관리 역할/미배정은 scoped=null → 전체)
+    const scoped = scopedFarmIds(req);
+    const farmScope = scoped ? inArray(farms.farmId, [...scoped]) : undefined;
+    const animalScope = scoped ? inArray(animals.farmId, [...scoped]) : undefined;
+
     const baseFarms = await db
       .select({
         farmId: farms.farmId,
@@ -62,14 +74,14 @@ regionalRouter.get('/map', async (req: Request, res: Response, next: NextFunctio
         status: farms.status,
       })
       .from(farms)
-      .where(eq(farms.status, 'active'));
+      .where(farmScope ? and(eq(farms.status, 'active'), farmScope) : eq(farms.status, 'active'));
 
     // 라이브 두수 (D7, BUG-007) — farmId별 active 동물 카운트.
     // currentHeadCount(D8 격하)는 마커 totalAnimals 산출에 사용 안 함 (사용자 노출 = 라이브, D9).
     const animalRows = await db
       .select({ farmId: animals.farmId })
       .from(animals)
-      .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
+      .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt), animalScope));
     const liveCountByFarm = new Map<string, number>();
     for (const a of animalRows) {
       liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
@@ -150,7 +162,8 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
       return;
     }
 
-    // 해당 지역 농장 목록
+    // 해당 지역 농장 목록 (데이터 격리: 배정 농장만, 관리 역할/미배정은 전체)
+    const scoped = scopedFarmIds(req);
     const farmList = await db
       .select({
         farmId: farms.farmId,
@@ -159,7 +172,9 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
         status: farms.status,
       })
       .from(farms)
-      .where(eq(farms.regionId, regionId));
+      .where(scoped
+        ? and(eq(farms.regionId, regionId), inArray(farms.farmId, [...scoped]))
+        : eq(farms.regionId, regionId));
 
     // 라이브 두수 (D7, BUG-007) — 지역 내 농장 활성 동물 합. D9 사용자 노출은 라이브만.
     // 0농장 region이면 실측 0두 (전체 fallback 차단).
