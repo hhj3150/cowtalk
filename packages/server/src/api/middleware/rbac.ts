@@ -85,8 +85,11 @@ export function requireFarmAccess(
 
 /**
  * 요청 사용자가 접근 가능한 farmId 목록을 반환한다 (데이터 격리용).
- * - null = 제한 없음 (전체 조회): 관리 역할(government_admin·quarantine_officer) 또는 미배정 사용자
- * - 배열 = 해당 farmId들로만 스코프
+ * **배정 우선(assignment-first) 규칙**:
+ * - `user_farm_access`로 농장이 **배정돼 있으면 역할 불문** 그 농장들로만 스코프(배열 반환).
+ *   → 수의사·농장주뿐 아니라 "특정 농장만 담당"하는 행정관·방역관 계정도 격리된다.
+ * - **배정이 없으면** 제한 없음(`null` = 전체 조회): 마스터·전국 역할 및 미배정 사용자.
+ *   master(하원장님)는 배정이 없으므로 전체 유지.
  *
  * 목록·집계 라우트(farms, animals, regional 등)에서
  * `WHERE inArray(farmId, scoped)` 필터로 사용한다.
@@ -96,15 +99,11 @@ export function scopedFarmIds(req: Request): readonly string[] | null {
   if (!req.user) {
     return null;
   }
-  const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (adminRoles.includes(req.user.role)) {
-    return null;
-  }
   const farmIds = req.user.farmIds ?? [];
-  if (farmIds.length === 0) {
-    return null;
+  if (farmIds.length > 0) {
+    return farmIds;
   }
-  return farmIds;
+  return null;
 }
 
 /** farmIds를 JWT 기준으로 강제 필터링하는 미들웨어 */
