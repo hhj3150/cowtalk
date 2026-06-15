@@ -20,6 +20,9 @@ import {
 } from './alert/alert-manager.js';
 import { sendBatchNotifications } from './alert/notification.js';
 import { logger } from '../lib/logger.js';
+import { config } from '../config/index.js';
+import { hashProfile } from '../serving/interpretation-hash.js';
+import { upsertCachedInterpretation } from '../db/repositories/interpretation-cache.repo.js';
 
 // ===========================
 // 개체 분석
@@ -57,6 +60,21 @@ export async function analyzeAnimalProfile(
     for (const alert of sorted) {
       markAlertSent(alert);
     }
+  }
+
+  // 계산 결과를 해석 캐시에 적재 — GET /animals/:id/interpretation 이 재계산 없이 재사용.
+  // event-processor(알람 발생 시)·캐시 워커·향후 스케줄 분석 등 모든 계산 경로가 자동으로
+  // 캐시를 채운다 → "알람 → 개체 열면 즉시 AI 해석"(CLAUDE.md 알람→행동 완결). 실패해도 분석은 계속.
+  try {
+    await upsertCachedInterpretation({
+      animalId: profile.animalId,
+      role,
+      model: config.ANTHROPIC_MODEL_DEEP,
+      profileHash: hashProfile(profile),
+      result: interpretation,
+    });
+  } catch (err) {
+    logger.warn({ err, animalId: profile.animalId }, '해석 캐시 적재 실패 — 분석은 계속');
   }
 
   return interpretation;

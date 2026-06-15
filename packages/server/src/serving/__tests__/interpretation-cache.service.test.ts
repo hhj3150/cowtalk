@@ -86,11 +86,11 @@ describe('triggerRecompute — throwaway 제거', () => {
 
     await triggerRecompute('a1', 'farmer');
 
+    // analyzeAnimalProfile 이 캐시 적재까지 담당하므로, 호출 자체가 0이면 재계산·재적재 모두 0건.
     expect(analyzeAnimalProfile).not.toHaveBeenCalled();
-    expect(upsertCachedInterpretation).not.toHaveBeenCalled();
   });
 
-  it('프로필 해시가 다르면(stale) 재계산하고 캐시에 upsert 한다', async () => {
+  it('프로필 해시가 다르면(stale) 재계산한다 (캐시 적재는 analyzeAnimalProfile 내부)', async () => {
     vi.mocked(getCachedInterpretation).mockResolvedValue({
       animalId: 'a1', role: 'farmer', model: 'claude-opus-4-8',
       profileHash: 'STALE_DIFFERENT_HASH', result: interp, updatedAt: new Date(),
@@ -99,18 +99,13 @@ describe('triggerRecompute — throwaway 제거', () => {
     await triggerRecompute('a1', 'farmer');
 
     expect(analyzeAnimalProfile).toHaveBeenCalledTimes(1);
-    expect(upsertCachedInterpretation).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(upsertCachedInterpretation).mock.calls[0]?.[0]).toMatchObject({
-      animalId: 'a1', role: 'farmer', model: 'claude-opus-4-8',
-      profileHash: hashAnimalProfile(profile), result: interp,
-    });
+    expect(vi.mocked(analyzeAnimalProfile).mock.calls[0]).toEqual([profile, 'farmer']);
   });
 
-  it('캐시가 없으면(최초) 재계산하고 upsert 한다', async () => {
+  it('캐시가 없으면(최초) 재계산한다', async () => {
     vi.mocked(getCachedInterpretation).mockResolvedValue(null);
     await triggerRecompute('a1', 'farmer');
     expect(analyzeAnimalProfile).toHaveBeenCalledTimes(1);
-    expect(upsertCachedInterpretation).toHaveBeenCalledTimes(1);
   });
 
   it('동시 호출은 중복방지로 한 번만 재계산한다', async () => {
