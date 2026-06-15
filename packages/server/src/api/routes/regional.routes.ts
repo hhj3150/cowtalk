@@ -5,7 +5,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { scopedFarmIds } from '../middleware/rbac.js';
 import type { Role } from '@cowtalk/shared';
-import { analyzeRegion } from '../../ai-brain/index.js';
+import { getOrTriggerRegionalInterpretation } from '../../serving/regional-interpretation-cache.service.js';
 import { getDb } from '../../config/database.js';
 import { regions, farms, smaxtecEvents, animals } from '../../db/schema.js';
 import { eq, count, and, gte, inArray, isNull } from 'drizzle-orm';
@@ -183,10 +183,14 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
       ? await getHerdTotal({ farmIds: regionFarmIds })
       : computeHerd(0, 'live');
 
-    // AI 해석 시도
+    // AI 해석 — 캐시 우선(<1s), 미스면 백그라운드 계산하며 'computing' 반환.
+    // 기존 ~40초 동기 블로킹 제거. interpretation 필드는 obj|null 유지(하위호환) + status 추가.
     let interpretation = null;
+    let interpretationStatus: 'ready' | 'computing' = 'computing';
     try {
-      interpretation = await analyzeRegion(regionId, role);
+      const cacheResult = await getOrTriggerRegionalInterpretation(regionId, role);
+      interpretation = cacheResult.interpretation;
+      interpretationStatus = cacheResult.status;
     } catch {
       // AI 해석 실패 시 기본 데이터만
     }
@@ -199,6 +203,7 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
         totalFarms: farmList.length,
         totalAnimals: regionHerd.total,
         interpretation,
+        interpretationStatus,
       },
     });
   } catch (error) {

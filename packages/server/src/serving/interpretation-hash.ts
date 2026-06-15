@@ -24,6 +24,11 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
+// 임의 프로필(객체)을 결정적으로 해시 — animal/regional 등 모든 캐시가 공용.
+export function hashProfile(value: unknown): string {
+  return createHash('sha256').update(stableStringify(value)).digest('hex');
+}
+
 export function hashAnimalProfile(profile: AnimalProfile): string {
-  return createHash('sha256').update(stableStringify(profile)).digest('hex');
+  return hashProfile(profile);
 }
