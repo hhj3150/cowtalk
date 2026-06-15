@@ -3,9 +3,9 @@
 
 CREATE TABLE IF NOT EXISTS diagnosis_history (
   id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  animal_id     uuid NOT NULL REFERENCES animals(id) ON DELETE CASCADE,
-  farm_id       uuid REFERENCES farms(id) ON DELETE SET NULL,
-  requested_by  uuid REFERENCES users(id) ON DELETE SET NULL,
+  animal_id     uuid NOT NULL REFERENCES animals(animal_id) ON DELETE CASCADE,
+  farm_id       uuid REFERENCES farms(farm_id) ON DELETE SET NULL,
+  requested_by  uuid REFERENCES users(user_id) ON DELETE SET NULL,
   symptoms      text[] DEFAULT '{}',
   candidates    jsonb NOT NULL DEFAULT '[]',
   urgency_level text NOT NULL DEFAULT 'routine',
