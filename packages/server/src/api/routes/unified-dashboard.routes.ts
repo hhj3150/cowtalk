@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { enforceFarmScope, scopedFarmIds } from '../middleware/rbac.js';
+import { scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js';
@@ -65,7 +65,8 @@ import type {
 export const unifiedDashboardRouter = Router();
 
 unifiedDashboardRouter.use(authenticate);
-unifiedDashboardRouter.use(enforceFarmScope);
+// 농장 스코프는 아래 farmIdsStorage 미들웨어가 scopedFarmIds(req) 실링과 함께 강제한다.
+// (구 enforceFarmScope는 Express 5에서 req.query 주입이 소실돼 무력 → 사용 중단)
 
 // ===========================
 // 유틸
@@ -113,6 +114,15 @@ function farmCondition(
   return eq(column, farmId);
 }
 
+// 두수·알림 집계용 스코프 — farmCondition을 우회하는 getHerdTotal/getAlertCountForWidget이
+// 다중 농장 스코프를 무시하지 않도록 farmIdsStorage를 단일 소스로 읽는다.
+function currentFarmScope(farmId: string | null): { farmIds?: readonly string[] } {
+  const stored = farmIdsStorage.getStore();
+  if (stored && stored.length > 0) return { farmIds: stored };
+  if (farmId) return { farmIds: [farmId] };
+  return {};
+}
+
 // WHERE 절에서 undefined 제거 — 빈 결과도 안전하게 처리
 function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | undefined {
   const valid = conditions.filter((c): c is SqlCondition => c !== undefined);
@@ -132,25 +142,21 @@ unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) =>
   const farmId = (req.query.farmId as string | undefined) ?? null;
   const farmIdsParam = req.query.farmIds as string | undefined;
 
-  let ids: readonly string[] = [];
-
-  // farmIds 파라미터 (명시적 배열)
+  // 1. 클라이언트가 요청한 farmIds (명시적 선택)
+  let requested: readonly string[] = [];
   if (farmIdsParam) {
-    ids = farmIdsParam.split(',').filter((id) => UUID_REGEX.test(id));
-    req.query.farmId = undefined as unknown as string;
+    requested = farmIdsParam.split(',').filter((id) => UUID_REGEX.test(id));
+  } else if (farmId && farmId.includes(',')) {
+    requested = farmId.split(',').filter((id) => UUID_REGEX.test(id));
+  } else if (farmId && UUID_REGEX.test(farmId)) {
+    requested = [farmId];
   }
-  // farmId에 쉼표가 포함된 경우 (레거시 지원)
-  else if (farmId && farmId.includes(',')) {
-    ids = farmId.split(',').filter((id) => UUID_REGEX.test(id));
-    req.query.farmId = undefined as unknown as string;
-  }
-  // 단일 farmId도 farmIdsStorage에 포함 → 모든 라우트가 자동 필터링
-  else if (farmId && UUID_REGEX.test(farmId)) {
-    ids = [farmId];
-  }
+
+  // 2. 배정 스코프 실링과 합성 (배정 우선 — 제한 사용자는 전국 누수 불가)
+  const effective = resolveScopedFarmIds(requested, scopedFarmIds(req));
 
   // AsyncLocalStorage로 요청별 격리 — 동시 요청 간 간섭 없음
-  farmIdsStorage.run(ids, () => {
+  farmIdsStorage.run(effective, () => {
     next();
   });
 });
@@ -553,7 +559,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
 
   // 병렬 쿼리: 기본 통계, 심각도별 알림, 농장 랭킹, 이벤트 분포, 최근 긴급, 어제 알림 수
   // 두수는 herd-service 단일 소스 (D7, BUG-007). 알림은 alert-aggregator (D3, Part 2).
-  const farmScope = farmId ? { farmIds: [farmId] } : {};
+  const farmScope = currentFarmScope(farmId);
   const [
     farmCountResult,
     herdLive,
@@ -2379,7 +2385,7 @@ async function queryHerdOverview(
   _today: Date,
 ): Promise<HerdOverview> {
   // 두수 단일 소스 — D7/D9 라이브 (BUG-007).
-  const herd = await getHerdTotal(farmId ? { farmIds: [farmId] } : {});
+  const herd = await getHerdTotal(currentFarmScope(farmId));
 
   // 센서 장착: 활성 동물 중 smaXtec 이벤트가 있는 동물 수
   const [sensorCount] = await db.select({
@@ -2391,7 +2397,7 @@ async function queryHerdOverview(
 
   // 미확인 알림 / 건강 이상 — alert-aggregator 단일 소스 (D3, BUG-007 Part 2).
   // window=24h, ackedFilter=false (미확인만). 878 vs 874 모순 해소.
-  const farmScope = farmId ? { farmIds: [farmId] } : {};
+  const farmScope = currentFarmScope(farmId);
   const [alertResult, healthResult] = await Promise.all([
     getAlertCountForWidget('main_24h_alerts', farmScope),
     getAlertCountForWidget('main_health_issues', farmScope),

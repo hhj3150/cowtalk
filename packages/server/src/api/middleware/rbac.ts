@@ -106,6 +106,36 @@ export function scopedFarmIds(req: Request): readonly string[] | null {
   return null;
 }
 
+/**
+ * 대시보드 라우터용 **유효 farmIds** 계산 — 클라이언트 요청과 배정 스코프(실링)를 합성한다.
+ *
+ * 배경: 대시보드 라우터들은 요청별 `AsyncLocalStorage`(farmIdsStorage)에 farmIds를 담아
+ * 모든 하위 쿼리를 필터링한다. 과거엔 `enforceFarmScope`가 `req.query.farmIds`를 주입해
+ * 기본 스코프를 넣었으나, **Express 5에서 `req.query`는 getter라 주입이 소실**된다.
+ * → 미선택(기본) 요청이 전국으로 누수됐다. 이 헬퍼가 storage 시드 단계에서 실링을 강제한다.
+ *
+ * 규칙(배정 우선):
+ * - `scope === null` (마스터·관리역할·미배정): 요청대로. 빈 배열이면 전체 조회.
+ * - `scope = [...]` (배정된 사용자): 요청∩스코프. 단 교집합이 비면(스코프 밖 농장만 요청)
+ *   **전체로 확대하지 않고** 배정 농장 전체로 폴백한다. → 제한 사용자는 절대 전국을 못 본다.
+ *
+ * @param requested 클라이언트가 보낸 farmIds (없으면 빈 배열)
+ * @param scope     scopedFarmIds(req) 결과 (배정 농장 또는 null=무제한)
+ */
+export function resolveScopedFarmIds(
+  requested: readonly string[],
+  scope: readonly string[] | null,
+): readonly string[] {
+  if (scope === null) {
+    return requested;
+  }
+  if (requested.length === 0) {
+    return scope;
+  }
+  const intersection = requested.filter((id) => scope.includes(id));
+  return intersection.length > 0 ? intersection : scope;
+}
+
 /** farmIds를 JWT 기준으로 강제 필터링하는 미들웨어 */
 export function enforceFarmScope(
   req: Request,
