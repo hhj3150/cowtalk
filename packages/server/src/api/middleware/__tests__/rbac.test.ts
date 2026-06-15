@@ -14,13 +14,23 @@ describe('scopedFarmIds', () => {
     expect(scopedFarmIds(makeReq(undefined))).toBeNull();
   });
 
-  it('government_admin(마스터)은 null — 전체 농장 조회', () => {
+  it('government_admin(마스터)이 미배정이면 null — 전체 농장 조회', () => {
     const req = makeReq({ userId: 'u1', role: 'government_admin', farmIds: [] });
     expect(scopedFarmIds(req)).toBeNull();
   });
 
-  it('quarantine_officer(방역관)은 null — 전국 조회', () => {
+  it('배정 우선: government_admin이라도 농장 배정되면 그 농장만 스코프', () => {
+    const req = makeReq({ userId: 'u1b', role: 'government_admin', farmIds: ['fa', 'fb'] });
+    expect(scopedFarmIds(req)).toEqual(['fa', 'fb']);
+  });
+
+  it('배정 우선: quarantine_officer(방역관)도 농장 배정되면 그 농장만 스코프', () => {
     const req = makeReq({ userId: 'u2', role: 'quarantine_officer', farmIds: ['f1'] });
+    expect(scopedFarmIds(req)).toEqual(['f1']);
+  });
+
+  it('quarantine_officer가 미배정이면 null — 전국 조회', () => {
+    const req = makeReq({ userId: 'u2b', role: 'quarantine_officer', farmIds: [] });
     expect(scopedFarmIds(req)).toBeNull();
   });
 

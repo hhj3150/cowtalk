@@ -164,13 +164,13 @@ async function buildDashboardForRole(role: Role, farmIds?: string[]): Promise<Da
   try {
     switch (role) {
       case 'farmer':
-        return await buildFarmerDashboard(farmIds?.[0]);
+        return await buildFarmerDashboard(farmIds);
       case 'veterinarian':
         return await buildVetDashboard(farmIds);
       case 'government_admin':
-        return await buildAdminDashboard();
+        return await buildAdminDashboard(farmIds);
       case 'quarantine_officer':
-        return await buildQuarantineOfficerDashboard();
+        return await buildQuarantineOfficerDashboard(farmIds);
       default:
         return buildFallback(role);
     }
@@ -196,35 +196,44 @@ function buildFallback(role: Role): DashboardData {
 // 1. 농장주 대시보드
 // ===========================
 
-async function buildFarmerDashboard(farmId?: string): Promise<DashboardData> {
+async function buildFarmerDashboard(farmIds?: string[]): Promise<DashboardData> {
   const db = getDb();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const oneDayAgo = new Date();
   oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-  let targetFarmId = farmId;
-  if (!targetFarmId) {
+  // 배정 농장 집합(배정 우선 합산). 미배정이면 첫 활성 농장 1개(데모/단일 농장주).
+  let farmSet: string[] = farmIds && farmIds.length > 0 ? [...farmIds] : [];
+  if (farmSet.length === 0) {
     const [firstFarm] = await db.select({ farmId: farms.farmId }).from(farms).where(eq(farms.status, 'active')).limit(1);
-    targetFarmId = firstFarm?.farmId;
+    if (firstFarm) farmSet = [firstFarm.farmId];
+  }
+  if (farmSet.length === 0) return buildFallback('farmer');
+
+  const eventScope = inArray(smaxtecEvents.farmId, farmSet);
+
+  // 농장 표시명: 단일이면 농장명, 다중이면 "N개 농장 합산"
+  let farmLabel = '내 농장';
+  if (farmSet.length === 1) {
+    const [farmInfo] = await db.select({ name: farms.name }).from(farms).where(eq(farms.farmId, farmSet[0]!));
+    farmLabel = farmInfo?.name ?? '내 농장';
+  } else {
+    farmLabel = `${farmSet.length}개 농장 합산`;
   }
 
-  if (!targetFarmId) return buildFallback('farmer');
-
-  const [farmInfo] = await db.select().from(farms).where(eq(farms.farmId, targetFarmId));
-
-  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 농장주 scope.
-  const herd = await getHerdTotal({ farmIds: [targetFarmId] });
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 배정 농장 합산.
+  const herd = await getHerdTotal({ farmIds: farmSet });
 
   const [sensorCount] = await db.select({ count: count() }).from(sensorDevices)
     .where(and(eq(sensorDevices.status, 'active'), isNull(sensorDevices.removeDate)));
 
   const [todayEventCount] = await db.select({ count: count() }).from(smaxtecEvents)
-    .where(and(eq(smaxtecEvents.farmId, targetFarmId), gt(smaxtecEvents.detectedAt, oneDayAgo)));
+    .where(and(eventScope, gt(smaxtecEvents.detectedAt, oneDayAgo)));
 
   const [healthWarnings] = await db.select({ count: count() }).from(smaxtecEvents)
     .where(and(
-      eq(smaxtecEvents.farmId, targetFarmId),
+      eventScope,
       gt(smaxtecEvents.detectedAt, sevenDaysAgo),
       sql`${smaxtecEvents.eventType} IN ('health_warning', 'temperature_warning')`,
     ));
@@ -236,7 +245,7 @@ async function buildFarmerDashboard(farmId?: string): Promise<DashboardData> {
     detectedAt: smaxtecEvents.detectedAt,
     animalId: smaxtecEvents.animalId,
   }).from(smaxtecEvents)
-    .where(and(eq(smaxtecEvents.farmId, targetFarmId), gt(smaxtecEvents.detectedAt, oneDayAgo)))
+    .where(and(eventScope, gt(smaxtecEvents.detectedAt, oneDayAgo)))
     .orderBy(desc(smaxtecEvents.detectedAt))
     .limit(10);
 
@@ -263,12 +272,12 @@ async function buildFarmerDashboard(farmId?: string): Promise<DashboardData> {
     alerts: [],
     insights: [{
       title: '농장 현황',
-      description: `${farmInfo?.name ?? '내 농장'}에서 ${totalAnimals}마리를 사육 중입니다. 센서 ${totalSensors}대 활성. 최근 24시간 이벤트 ${todayEvents}건${healthWarnCount > 0 ? `, 건강 주의 ${healthWarnCount}건` : ''}.`,
+      description: `${farmLabel}에서 ${totalAnimals}마리를 사육 중입니다. 센서 ${totalSensors}대 활성. 최근 24시간 이벤트 ${todayEvents}건${healthWarnCount > 0 ? `, 건강 주의 ${healthWarnCount}건` : ''}.`,
       source: 'db_aggregate',
     }],
     roleData: {
-      farmName: farmInfo?.name ?? '',
-      farmId: targetFarmId,
+      farmName: farmLabel,
+      farmId: farmSet.length === 1 ? farmSet[0] : null,
       sensorRate: totalAnimals > 0 ? Math.round((totalSensors / totalAnimals) * 100) : 0,
       recentEvents: recentEvents.map((e) => ({
         eventId: e.eventId,
@@ -481,21 +490,28 @@ async function buildVetDashboard(farmIds?: string[]): Promise<DashboardData> {
 // 4. 행정관 대시보드
 // ===========================
 
-async function buildAdminDashboard(): Promise<DashboardData> {
+async function buildAdminDashboard(farmIds?: string[]): Promise<DashboardData> {
   const db = getDb();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [farmCount] = await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
-  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 마스터 scope (전체).
-  const masterHerd = await getHerdTotal();
+  // 배정 우선: 농장 배정된 행정 계정은 그 농장만, 미배정(마스터)은 전체.
+  const scoped = farmIds && farmIds.length > 0 ? farmIds : null;
+  const evScope = scoped ? inArray(smaxtecEvents.farmId, scoped) : undefined;
+  const farmScope = scoped ? inArray(farms.farmId, scoped) : undefined;
+
+  const [farmCount] = await db.select({ count: count() }).from(farms)
+    .where(scoped ? and(eq(farms.status, 'active'), farmScope) : eq(farms.status, 'active'));
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 배정 시 그 농장 합산, 미배정은 전체.
+  const masterHerd = await getHerdTotal(scoped ? { farmIds: scoped } : {});
   const [eventCount] = await db.select({ count: count() }).from(smaxtecEvents)
-    .where(gt(smaxtecEvents.detectedAt, sevenDaysAgo));
+    .where(and(gt(smaxtecEvents.detectedAt, sevenDaysAgo), evScope));
 
   const warningFarms = await db.selectDistinct({ farmId: smaxtecEvents.farmId }).from(smaxtecEvents)
     .where(and(
       gt(smaxtecEvents.detectedAt, sevenDaysAgo),
       sql`${smaxtecEvents.severity} IN ('high', 'critical')`,
+      evScope,
     ));
 
   const topFarms = await db.select({
@@ -505,14 +521,14 @@ async function buildAdminDashboard(): Promise<DashboardData> {
     regionId: farms.regionId,
   }).from(smaxtecEvents)
     .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
-    .where(gt(smaxtecEvents.detectedAt, sevenDaysAgo))
+    .where(and(gt(smaxtecEvents.detectedAt, sevenDaysAgo), evScope))
     .groupBy(smaxtecEvents.farmId, farms.name, farms.regionId)
     .orderBy(sql`count(*) DESC`)
     .limit(10);
 
   const eventByType = await db.select({ eventType: smaxtecEvents.eventType, count: count() })
     .from(smaxtecEvents)
-    .where(gt(smaxtecEvents.detectedAt, sevenDaysAgo))
+    .where(and(gt(smaxtecEvents.detectedAt, sevenDaysAgo), evScope))
     .groupBy(smaxtecEvents.eventType)
     .orderBy(sql`count(*) DESC`)
     .limit(5);
@@ -564,19 +580,26 @@ async function buildAdminDashboard(): Promise<DashboardData> {
 // 5. 방역관 대시보드
 // ===========================
 
-async function buildQuarantineOfficerDashboard(): Promise<DashboardData> {
+async function buildQuarantineOfficerDashboard(farmIds?: string[]): Promise<DashboardData> {
   const db = getDb();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const threeDaysAgo = new Date();
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
-  const [farmCount] = await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
+  // 배정 우선: 농장 배정된 방역 계정은 그 농장만, 미배정(전국 방역관)은 전체.
+  const scoped = farmIds && farmIds.length > 0 ? farmIds : null;
+  const evScope = scoped ? inArray(smaxtecEvents.farmId, scoped) : undefined;
+  const farmScope = scoped ? inArray(farms.farmId, scoped) : undefined;
+
+  const [farmCount] = await db.select({ count: count() }).from(farms)
+    .where(scoped ? and(eq(farms.status, 'active'), farmScope) : eq(farms.status, 'active'));
 
   const [tempAnomalyCount] = await db.select({ count: count() }).from(smaxtecEvents)
     .where(and(
       gt(smaxtecEvents.detectedAt, sevenDaysAgo),
       eq(smaxtecEvents.eventType, 'temperature_warning'),
+      evScope,
     ));
 
   const healthWarningsByFarm = await db.select({
@@ -588,6 +611,7 @@ async function buildQuarantineOfficerDashboard(): Promise<DashboardData> {
     .where(and(
       gt(smaxtecEvents.detectedAt, threeDaysAgo),
       sql`${smaxtecEvents.eventType} IN ('health_warning', 'temperature_warning')`,
+      evScope,
     ))
     .groupBy(smaxtecEvents.farmId, farms.name)
     .orderBy(sql`count(*) DESC`)
