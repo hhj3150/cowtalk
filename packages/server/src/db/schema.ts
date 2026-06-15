@@ -1737,3 +1737,15 @@ export const animalInterpretations = pgTable('animal_interpretations', {
 }, (table) => [
   uniqueIndex('animal_interpretations_key_idx').on(table.animalId, table.role, table.model),
 ]);
+
+// 지역 AI 해석 캐시 — animalInterpretations 의 지역 단위 대응 (region_id 합성 가능 → FK 없음)
+export const regionalInterpretations = pgTable('regional_interpretations', {
+  regionId:    varchar('region_id', { length: 64 }).notNull(),
+  role:        varchar('role', { length: 30 }).notNull(),
+  model:       varchar('model', { length: 64 }).notNull(),
+  profileHash: varchar('profile_hash', { length: 64 }).notNull(),
+  result:      jsonb('result').notNull(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('regional_interpretations_key_idx').on(table.regionId, table.role, table.model),
+]);
