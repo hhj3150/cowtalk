@@ -12,7 +12,7 @@ import {
   prescriptions, prescriptionItems, drugDatabase,
   vaccineSchedules, sensorDevices, regions,
 } from '../../db/schema.js';
-import { eq, count, sql, gt, and, desc, isNull } from 'drizzle-orm';
+import { eq, count, sql, gt, and, desc, isNull, inArray } from 'drizzle-orm';
 import { getHerdTotal } from '../../services/metrics/herd-service.js';
 
 export const dashboardRouter = Router();
@@ -166,7 +166,7 @@ async function buildDashboardForRole(role: Role, farmIds?: string[]): Promise<Da
       case 'farmer':
         return await buildFarmerDashboard(farmIds?.[0]);
       case 'veterinarian':
-        return await buildVetDashboard();
+        return await buildVetDashboard(farmIds);
       case 'government_admin':
         return await buildAdminDashboard();
       case 'quarantine_officer':
@@ -285,21 +285,29 @@ async function buildFarmerDashboard(farmId?: string): Promise<DashboardData> {
 // 2. 수의사 대시보드
 // ===========================
 
-async function buildVetDashboard(): Promise<DashboardData> {
+async function buildVetDashboard(farmIds?: string[]): Promise<DashboardData> {
   const db = getDb();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const oneDayAgo = new Date();
   oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-  const [farmCount] = await db.select({ count: count() }).from(farms).where(eq(farms.status, 'active'));
-  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 수의사 scope (전체).
-  const vetHerd = await getHerdTotal();
+  // 데이터 격리: 담당 농장 배정 시 그 농장만, 미배정이면 전체 (scoped=null).
+  const scoped = farmIds && farmIds.length > 0 ? farmIds : null;
+  const evScope = scoped ? inArray(smaxtecEvents.farmId, scoped) : undefined;
+  const farmScope = scoped ? inArray(farms.farmId, scoped) : undefined;
+  const rxScope = scoped ? inArray(prescriptions.farmId, scoped) : undefined;
+
+  const [farmCount] = await db.select({ count: count() }).from(farms)
+    .where(scoped ? and(eq(farms.status, 'active'), farmScope) : eq(farms.status, 'active'));
+  // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 담당 농장 scope (미배정=전체).
+  const vetHerd = await getHerdTotal(scoped ? { farmIds: scoped } : {});
 
   const [healthEventCount] = await db.select({ count: count() }).from(smaxtecEvents)
     .where(and(
       gt(smaxtecEvents.detectedAt, sevenDaysAgo),
       sql`${smaxtecEvents.eventType} IN ('health_warning', 'temperature_warning', 'drinking_warning')`,
+      evScope,
     ));
 
   const urgentAnimals = await db.select({
@@ -315,6 +323,7 @@ async function buildVetDashboard(): Promise<DashboardData> {
     .where(and(
       gt(smaxtecEvents.detectedAt, oneDayAgo),
       sql`${smaxtecEvents.severity} IN ('high', 'critical')`,
+      evScope,
     ))
     .orderBy(desc(smaxtecEvents.detectedAt))
     .limit(20);
@@ -326,7 +335,7 @@ async function buildVetDashboard(): Promise<DashboardData> {
     eventCount: count(),
   }).from(smaxtecEvents)
     .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
-    .where(gt(smaxtecEvents.detectedAt, sevenDaysAgo))
+    .where(and(gt(smaxtecEvents.detectedAt, sevenDaysAgo), evScope))
     .groupBy(smaxtecEvents.farmId, farms.name)
     .orderBy(sql`count(*) DESC`)
     .limit(10);
@@ -337,11 +346,12 @@ async function buildVetDashboard(): Promise<DashboardData> {
     farmId: smaxtecEvents.farmId,
     eventCount: count(),
   }).from(smaxtecEvents)
-    .where(gt(smaxtecEvents.detectedAt, todayStart))
+    .where(and(gt(smaxtecEvents.detectedAt, todayStart), evScope))
     .groupBy(smaxtecEvents.farmId);
   const todayCountMap = new Map(todayFarmEvents.map((f) => [f.farmId, Number(f.eventCount)]));
 
-  const [rxCount] = await db.select({ count: count() }).from(prescriptions).where(eq(prescriptions.status, 'active'));
+  const [rxCount] = await db.select({ count: count() }).from(prescriptions)
+    .where(scoped ? and(eq(prescriptions.status, 'active'), rxScope) : eq(prescriptions.status, 'active'));
 
   // 활성 처방전 상세 목록 (처방 + 약품 정보 JOIN)
   const prescriptionList = await db.select({
@@ -358,7 +368,7 @@ async function buildVetDashboard(): Promise<DashboardData> {
   }).from(prescriptions)
     .innerJoin(prescriptionItems, eq(prescriptionItems.prescriptionId, prescriptions.prescriptionId))
     .innerJoin(drugDatabase, eq(prescriptionItems.drugId, drugDatabase.drugId))
-    .where(eq(prescriptions.status, 'active'))
+    .where(and(eq(prescriptions.status, 'active'), rxScope))
     .orderBy(desc(prescriptions.prescribedAt))
     .limit(20);
 
@@ -372,6 +382,7 @@ async function buildVetDashboard(): Promise<DashboardData> {
     .where(and(
       gt(smaxtecEvents.detectedAt, oneDayAgo),
       sql`${smaxtecEvents.severity} IN ('high', 'critical')`,
+      evScope,
     ))
     .orderBy(desc(smaxtecEvents.detectedAt))
     .limit(100);

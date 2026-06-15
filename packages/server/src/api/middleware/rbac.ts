@@ -83,6 +83,30 @@ export function requireFarmAccess(
   next();
 }
 
+/**
+ * 요청 사용자가 접근 가능한 farmId 목록을 반환한다 (데이터 격리용).
+ * - null = 제한 없음 (전체 조회): 관리 역할(government_admin·quarantine_officer) 또는 미배정 사용자
+ * - 배열 = 해당 farmId들로만 스코프
+ *
+ * 목록·집계 라우트(farms, animals, regional 등)에서
+ * `WHERE inArray(farmId, scoped)` 필터로 사용한다.
+ * enforceFarmScope(req.query 변형)와 달리 라우트가 직접 호출해 DB 쿼리에 강제 적용한다.
+ */
+export function scopedFarmIds(req: Request): readonly string[] | null {
+  if (!req.user) {
+    return null;
+  }
+  const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
+  if (adminRoles.includes(req.user.role)) {
+    return null;
+  }
+  const farmIds = req.user.farmIds ?? [];
+  if (farmIds.length === 0) {
+    return null;
+  }
+  return farmIds;
+}
+
 /** farmIds를 JWT 기준으로 강제 필터링하는 미들웨어 */
 export function enforceFarmScope(
   req: Request,
