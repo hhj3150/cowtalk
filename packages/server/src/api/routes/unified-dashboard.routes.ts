@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { enforceFarmScope } from '../middleware/rbac.js';
+import { enforceFarmScope, scopedFarmIds } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js';
@@ -992,16 +992,20 @@ function buildRecommendations(
 // GET /api/unified-dashboard/farms
 // ===========================
 
-unifiedDashboardRouter.get('/farms', async (_req: Request, res: Response, next: NextFunction) => {
+unifiedDashboardRouter.get('/farms', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
+    // 데이터 격리: 셀렉터·드롭다운에 배정된 농장만 노출 (미배정/마스터는 전체)
+    const scoped = scopedFarmIds(req);
     const farmList = await db.select({
       farmId: farms.farmId,
       name: farms.name,
       currentHeadCount: farms.currentHeadCount,
     })
       .from(farms)
-      .where(eq(farms.status, 'active'))
+      .where(scoped
+        ? and(eq(farms.status, 'active'), inArray(farms.farmId, [...scoped]))
+        : eq(farms.status, 'active'))
       .orderBy(farms.name);
 
     res.json({ success: true, data: { farms: farmList, total: farmList.length } });
