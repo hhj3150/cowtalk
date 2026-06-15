@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS threshold_suggestions (
   computed_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_ts_alarm_type ON threshold_suggestions(alarm_type);
-CREATE INDEX idx_ts_farm_id ON threshold_suggestions(farm_id);
-CREATE INDEX idx_ts_computed_at ON threshold_suggestions(computed_at);
+CREATE INDEX IF NOT EXISTS idx_ts_alarm_type ON threshold_suggestions(alarm_type);
+CREATE INDEX IF NOT EXISTS idx_ts_farm_id ON threshold_suggestions(farm_id);
+CREATE INDEX IF NOT EXISTS idx_ts_computed_at ON threshold_suggestions(computed_at);
 -- 알람타입+농장 당 최신 1건만 의미 있으므로 UNIQUE는 걸지 않음 (이력 보존)
