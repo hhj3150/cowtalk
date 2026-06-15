@@ -14,10 +14,7 @@ import { logger } from '../lib/logger.js';
 import { buildAnimalProfile } from '../pipeline/profile-builder.js';
 import { analyzeAnimalProfile } from '../ai-brain/index.js';
 import { hashAnimalProfile } from './interpretation-hash.js';
-import {
-  getCachedInterpretation,
-  upsertCachedInterpretation,
-} from '../db/repositories/interpretation-cache.repo.js';
+import { getCachedInterpretation } from '../db/repositories/interpretation-cache.repo.js';
 import type { AnimalInterpretation, Role } from '@cowtalk/shared';
 
 export type InterpretationStatus = 'ready' | 'computing';
@@ -85,11 +82,9 @@ async function recomputeIfStale(animalId: string, role: Role): Promise<void> {
     return; // 프로필 변경 없음 → 재계산 불필요
   }
 
-  const interpretation = await analyzeAnimalProfile(profile, role);
-  if (!interpretation) return;
-
-  await upsertCachedInterpretation({ animalId, role, model, profileHash, result: interpretation });
-  logger.info({ animalId, role, model }, '[InterpretationCache] 해석 갱신 완료');
+  // analyzeAnimalProfile 이 계산 결과를 캐시에 적재한다(모든 계산 경로 공통). 워커는 트리거만.
+  await analyzeAnimalProfile(profile, role);
+  logger.info({ animalId, role, model }, '[InterpretationCache] 해석 갱신 트리거 완료');
 }
 
 // 테스트 격리용 — 모듈 레벨 inFlight 초기화
