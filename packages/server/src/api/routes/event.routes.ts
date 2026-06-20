@@ -28,6 +28,38 @@ function recordEventFeedbackAsync(input: {
   );
 }
 
+/**
+ * 벌크 이벤트 입력 → farmEvents insert 값 (순수 함수).
+ * ⚠️ animalId 를 반드시 포함한다 — 누락 시 모든 벌크 이벤트가 농장 단위로만 적재돼
+ * 개체별 예측 매칭(열린 루프)이 스킵된다. 단건 POST 와 동일하게 개체를 연결한다.
+ */
+export function mapBulkEventToInsertValues(
+  e: Record<string, unknown>,
+  recordedBy: string,
+): {
+  farmId: string;
+  animalId: string | null;
+  description: string;
+  eventType: string;
+  subType: string | null;
+  severity: string;
+  eventDate: Date;
+  recordedBy: string;
+  metadata: Record<string, unknown>;
+} {
+  return {
+    farmId: e.farmId as string,
+    animalId: (e.animalId as string) ?? null,
+    description: (e.description as string) ?? `${String(e.eventType)}: ${String(e.subType ?? '')}`,
+    eventType: (e.eventType as string) ?? 'observation',
+    subType: (e.subType as string) ?? null,
+    severity: (e.severity as string) ?? 'normal',
+    eventDate: e.eventDate ? new Date(e.eventDate as string) : new Date(),
+    recordedBy,
+    metadata: (e.metadata as Record<string, unknown>) ?? {},
+  };
+}
+
 export const eventRouter = Router();
 
 eventRouter.use(authenticate);
@@ -111,16 +143,9 @@ eventRouter.post('/bulk', async (req: Request, res: Response, next: NextFunction
     const { events } = req.body;
     const recordedBy = req.user!.userId;
 
-    const values = (events as Array<Record<string, unknown>>).map((e) => ({
-      farmId: e.farmId as string,
-      description: (e.description as string) ?? `${String(e.eventType)}: ${String(e.subType ?? '')}`,
-      eventType: (e.eventType as string) ?? 'observation',
-      subType: (e.subType as string) ?? null,
-      severity: (e.severity as string) ?? 'normal',
-      eventDate: e.eventDate ? new Date(e.eventDate as string) : new Date(),
-      recordedBy,
-      metadata: (e.metadata as Record<string, unknown>) ?? {},
-    }));
+    const values = (events as Array<Record<string, unknown>>).map((e) =>
+      mapBulkEventToInsertValues(e, recordedBy),
+    );
 
     const created = await db
       .insert(farmEvents)
