@@ -726,6 +726,47 @@ All endpoints require authentication.
 
 ---
 
+## 26. Public Stats
+
+로그인 페이지 히어로 섹션용 공개 통계. **인증 불필요.** 5분 인메모리 캐시.
+
+### GET `/api/public/stats`
+
+실 DB에서 집계한 농장/두수/센서/누적 이벤트 등을 반환한다.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "totalFarms": 199,
+    "totalCattle": 10813,
+    "totalSensors": 8940,
+    "totalEvents": 527053,
+    "aiEngines": 6,
+    "monitoring": "24/7",
+    "todayAlerts": 12,
+    "roleStats": [
+      { "role": "farmer", "userCount": 1, "farmCount": 0, "cattleCount": 0 }
+    ]
+  }
+}
+```
+
+| 필드 | 설명 | 소스 |
+|------|------|------|
+| `totalFarms` | 활성 농장 수 | `farms` status=active |
+| `totalCattle` | 활성 개체 수 | `animals` status=active |
+| `totalSensors` | 센서 부착 개체 수 | `animals` currentDeviceId NOT NULL |
+| `totalEvents` | 누적 모니터링 이벤트 | `smaxtec_events` count |
+| `aiEngines` | CowTalk AI 엔진 수 | `AI_ENGINES` 상수 길이 (하드코딩 아님) |
+| `monitoring` | 모니터링 상태 | 고정 `"24/7"` (연속 가동) |
+| `todayAlerts` | 최근 24시간 알림 수 | `smaxtec_events` detectedAt > now-24h |
+
+> 주의: `totalFarms`/`totalCattle`는 전체 active 레코드 카운트로, 시드+smaXtec 동기화 데이터를 포함한다(실고객 수와 다를 수 있음). farms 테이블에 demo/real 구분 플래그는 없다.
+
+---
+
 ## Roles
 
 | Role | Description |
