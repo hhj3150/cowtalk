@@ -10,6 +10,8 @@ import {
 } from '../ai-brain/prompts/conversation-prompt.js';
 import { resolveContext, type DetectedType } from './context-builder.js';
 import { getRoleTone } from './role-tone.js';
+import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
+import type { FarmBreedingSettings } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
 import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
@@ -71,6 +73,25 @@ function buildUiLangDirective(uiLang: string | undefined): string {
   return `\n\n## UI 언어 힌트\n사용자가 인터페이스에서 **${langName}**를 선택했습니다. 사용자 메시지에 명시적 언어 전환 요청이 없으면 **${langName}**로 응답하세요. 입력 내용이 다른 언어로 보이더라도 UI 선택을 우선 신호로 간주하세요 (단, "answer in English" 같이 명시 요청이 있으면 그 요청이 최우선).`;
 }
 
+/**
+ * 대화 맥락에 특정 농장이 있을 때(animal/farm) 그 농장의 번식 설정을 로드한다.
+ * animal 해석 경로와 동일하게 목장 고유 발정재귀일·수정적기 등을 프롬프트에 주입하기 위함.
+ * 실패는 비치명적 — undefined 반환 시 프롬프트는 설정 블록 없이 진행한다.
+ */
+async function loadFarmBreedingSettings(
+  context: ChatContext,
+): Promise<FarmBreedingSettings | undefined> {
+  if (context.type !== 'animal' && context.type !== 'farm') return undefined;
+  const farmId = context.profile.farmId;
+  if (!farmId) return undefined;
+  try {
+    return await getFarmBreedingSettings(farmId);
+  } catch (err) {
+    logger.warn({ err, farmId }, '[Chat] 목장 번식 설정 로드 실패 — 주입 생략');
+    return undefined;
+  }
+}
+
 export async function handleChatMessage(
   request: ChatMessageRequest,
 ): Promise<ChatResponse> {
@@ -110,9 +131,10 @@ export async function handleChatMessage(
   void getLabelContextForEventType;
   void formatLabelContext;
 
-  // 3. 프롬프트 빌드
+  // 3. 프롬프트 빌드 (목장 번식 설정 주입 — animal/farm 맥락일 때만)
+  const farmBreedingSettings = await loadFarmBreedingSettings(context);
   const prompt = buildConversationPrompt(
-    question, role, context, conversationHistory, { labelContext },
+    question, role, context, conversationHistory, { labelContext, farmBreedingSettings },
   );
 
   // 3. 역할별 톤 설정
@@ -293,8 +315,9 @@ export async function handleChatStream(
     }
   }
 
+  const farmBreedingSettings = await loadFarmBreedingSettings(context);
   const prompt = buildConversationPrompt(
-    question, role, context, conversationHistory, { streaming: true, labelContext },
+    question, role, context, conversationHistory, { streaming: true, labelContext, farmBreedingSettings },
   ) + textDocumentsBlock;
 
   const roleTone = getRoleTone(role);
