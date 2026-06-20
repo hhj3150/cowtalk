@@ -4,7 +4,9 @@
 
 import type { AnimalProfile, FarmProfile, Role, BreedingPipelineData } from '@cowtalk/shared';
 import type { GlobalContext } from '../../pipeline/profile-builder.js';
+import type { FarmBreedingSettings } from '../../db/schema.js';
 import { ROLE_CONTEXT } from './system-prompt.js';
+import { buildFarmBreedingContext } from './farm-settings-context.js';
 import {
   computeComparisonStats,
   computePersonalBaseline,
@@ -77,7 +79,11 @@ export function buildConversationPrompt(
   role: Role,
   context: ChatContext,
   conversationHistory: readonly ConversationTurn[],
-  options?: { readonly streaming?: boolean; readonly labelContext?: string },
+  options?: {
+    readonly streaming?: boolean;
+    readonly labelContext?: string;
+    readonly farmBreedingSettings?: FarmBreedingSettings | null;
+  },
 ): string {
   const sections: string[] = [];
 
@@ -85,11 +91,24 @@ export function buildConversationPrompt(
   const roleCtx = ROLE_CONTEXT[role] ?? '일반 관점';
   sections.push(`## 역할: ${roleCtx}`);
 
+  // 목장 번식 설정 — 특정 농장이 맥락에 있을 때만(animal/farm) 주입.
+  // animal 해석 경로(animal-prompt)와 동일하게, AI가 일반론이 아니라
+  // 이 목장 고유의 발정재귀일·수정적기·임신감정 시기 기준으로 판단하게 한다.
+  const hasFarmScope = context.type === 'animal' || context.type === 'farm';
+  const injectBreedingSettings =
+    hasFarmScope && options?.farmBreedingSettings !== undefined;
+
   // 대화 맥락 데이터
   if (context.type === 'animal') {
     sections.push(buildAnimalContext(context.profile));
+    if (injectBreedingSettings) {
+      sections.push(buildFarmBreedingContext(options?.farmBreedingSettings));
+    }
   } else if (context.type === 'farm') {
     sections.push(buildFarmContext(context.profile));
+    if (injectBreedingSettings) {
+      sections.push(buildFarmBreedingContext(options?.farmBreedingSettings));
+    }
   } else if (context.type === 'quarantine') {
     sections.push(buildQuarantineContextPrompt(context.quarantineData));
   } else if (context.type === 'global') {
