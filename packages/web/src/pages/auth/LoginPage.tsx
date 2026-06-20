@@ -44,9 +44,12 @@ interface Strings {
   readonly heroLine2: string;
   readonly statFarms: string;
   readonly statCattle: string;
+  readonly statSensors: string;
+  readonly statEvents: string;
   readonly statMonitoring: string;
   // BUG-008 amend: statDetection 제거 (hardcoded '95%+' marketing copy 차단).
   readonly statEngines: string;
+  readonly statDataCaption: string;
   readonly roleVet: string;
   readonly roleFarmer: string;
   readonly roleAdmin: string;
@@ -85,8 +88,11 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     heroLine2: 'CowTalk이 행동으로 바꿉니다.',
     statFarms: '농장',
     statCattle: '소',
+    statSensors: '센서 두수',
+    statEvents: '누적 이벤트',
     statMonitoring: '24/7',
     statEngines: 'AI 엔진',
+    statDataCaption: '실시간 DB 집계 · 5분 갱신',
     roleVet: '수의사',
     roleFarmer: '목장주',
     roleAdmin: '행정관',
@@ -123,8 +129,11 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     heroLine2: 'CowTalk turns it into action.',
     statFarms: 'Farms',
     statCattle: 'Cattle',
+    statSensors: 'Sensors',
+    statEvents: 'Total events',
     statMonitoring: 'Monitoring',
     statEngines: 'AI engines',
+    statDataCaption: 'Live DB · refreshed every 5 min',
     roleVet: 'Veterinarian',
     roleFarmer: 'Farmer',
     roleAdmin: 'Government',
@@ -161,8 +170,11 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     heroLine2: 'CowTalk превращает их в действия.',
     statFarms: 'Ферм',
     statCattle: 'Коров',
+    statSensors: 'Датчиков',
+    statEvents: 'Всего событий',
     statMonitoring: 'Мониторинг',
     statEngines: 'ИИ-модулей',
+    statDataCaption: 'Живая БД · обновление каждые 5 мин',
     roleVet: 'Ветеринар',
     roleFarmer: 'Фермер',
     roleAdmin: 'Администратор',
@@ -199,8 +211,11 @@ const I18N: Readonly<Record<Lang, Strings>> = {
     heroLine2: 'CowTalk ularni harakatga aylantiradi.',
     statFarms: 'Ferma',
     statCattle: 'Qoramol',
+    statSensors: 'Sensorlar',
+    statEvents: 'Jami hodisalar',
     statMonitoring: 'Monitoring',
     statEngines: 'AI dvigatel',
+    statDataCaption: 'Jonli MB · har 5 daqiqada yangilanadi',
     roleVet: 'Veterinar',
     roleFarmer: 'Fermer',
     roleAdmin: 'Ma\'mur',
@@ -248,6 +263,7 @@ interface PublicStats {
   readonly totalFarms: number;
   readonly totalCattle: number;
   readonly totalSensors: number;
+  readonly totalEvents: number;
   // BUG-008 amend: detectionAccuracy 제거 (server도 동일).
   readonly aiEngines: number;
   readonly monitoring: string;
@@ -360,6 +376,7 @@ export default function LoginPage(): React.JSX.Element {
           totalFarms: 146,
           totalCattle: 7124,
           totalSensors: 6800,
+          totalEvents: 0,
           aiEngines: 6,
           monitoring: '24/7',
           todayAlerts: 0,
@@ -408,12 +425,10 @@ export default function LoginPage(): React.JSX.Element {
     navigate('/demo');
   }
 
-  // 히어로 수치
+  // 히어로 수치 — 숫자형은 count-up 애니메이션(StatItem count), 비숫자(24/7)는 value 문자열.
   const heroFarms = stats?.totalFarms?.toLocaleString() ?? '...';
-  const heroCattle = stats?.totalCattle?.toLocaleString() ?? '...';
   const heroMonitoring = stats?.monitoring ?? '24/7';
   // BUG-008 amend: heroDetection 제거 (hardcoded '95%+' 가짜 정확도 차단).
-  const heroEngines = String(stats?.aiEngines ?? 6);
 
   const features: readonly FeatureCard[] = [
     { title: t.feature1Title, description: t.feature1Desc },
@@ -536,10 +551,12 @@ export default function LoginPage(): React.JSX.Element {
             {t.heroLine1} {t.heroLine2}
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <StatItem value={heroFarms} label={t.statFarms} />
-            <StatItem value={heroCattle} label={t.statCattle} />
+            <StatItem count={stats?.totalFarms} label={t.statFarms} />
+            <StatItem count={stats?.totalCattle} label={t.statCattle} />
+            <StatItem count={stats?.totalSensors} label={t.statSensors} />
             <StatItem value={heroMonitoring} label={t.statMonitoring} />
           </div>
+          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', margin: '8px 0 0' }}>{t.statDataCaption}</p>
         </div>
       )}
 
@@ -807,22 +824,25 @@ export default function LoginPage(): React.JSX.Element {
           {t.heroLine2}
         </p>
 
-        {/* Stats bar — 실제 DB 데이터 */}
+        {/* Stats bar — 실제 DB 데이터 (count-up 애니메이션) */}
         <div
           style={{
             display: 'flex',
             gap: 32,
             marginTop: 32,
-            marginBottom: 36,
+            marginBottom: 8,
             flexWrap: 'wrap',
             justifyContent: 'center',
           }}
         >
-          <StatItem value={heroFarms} label={t.statFarms} />
-          <StatItem value={heroCattle} label={t.statCattle} />
+          <StatItem count={stats?.totalFarms} label={t.statFarms} />
+          <StatItem count={stats?.totalCattle} label={t.statCattle} />
+          <StatItem count={stats?.totalSensors} label={t.statSensors} />
+          <StatItem count={stats?.totalEvents} label={t.statEvents} />
           <StatItem value={heroMonitoring} label={t.statMonitoring} />
-          <StatItem value={heroEngines} label={t.statEngines} />
+          <StatItem count={stats?.aiEngines} label={t.statEngines} />
         </div>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', margin: '0 0 36px' }}>{t.statDataCaption}</p>
 
         {/* Feature cards grid */}
         <div
@@ -916,16 +936,49 @@ export default function LoginPage(): React.JSX.Element {
 
 // ── Stats item ──
 
+// 0 → target 까지 ease-out 카운트업. prefers-reduced-motion 시 즉시 표시.
+function useCountUp(target: number | undefined, durationMs = 1200): string {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (target == null || !Number.isFinite(target)) return;
+    const reduce =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || target <= 0) {
+      setVal(target ?? 0);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number): void => {
+      const p = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      setVal(Math.round(target * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    // 방어: 백그라운드 탭 등으로 rAF가 스로틀되면 카운트업이 0에 멈출 수 있다.
+    // 애니메이션 종료 시점에 최종값을 한 번 더 보장(idempotent).
+    const settle = setTimeout(() => { setVal(target); }, durationMs + 80);
+    return () => { cancelAnimationFrame(raf); clearTimeout(settle); };
+  }, [target, durationMs]);
+  return val.toLocaleString();
+}
+
 function StatItem({
   value,
+  count,
   label,
 }: {
-  readonly value: string;
+  readonly value?: string;
+  readonly count?: number;
   readonly label: string;
 }): React.JSX.Element {
+  const animated = useCountUp(count);
+  const display = count != null && Number.isFinite(count) ? animated : (value ?? '...');
   return (
     <div style={{ textAlign: 'center' }}>
-      <p style={{ fontSize: 32, fontWeight: 700, color: '#86efac', margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 32, fontWeight: 700, color: '#86efac', margin: 0 }}>{display}</p>
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', margin: '2px 0 0' }}>{label}</p>
     </div>
   );
