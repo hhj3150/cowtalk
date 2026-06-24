@@ -2,10 +2,12 @@
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
 import { sql, count, desc, gte, eq, and } from 'drizzle-orm';
+import { logger } from '../../lib/logger.js';
+import { insertFalsePositiveCandidatesPilot } from '../../intelligence-loop/auto-labeler.service.js';
 
 export const adminRouter = Router();
 
@@ -445,3 +447,36 @@ adminRouter.get('/audit-log', async (req: Request, res: Response, next: NextFunc
     next(error);
   }
 });
+
+// POST /admin/fp-labeling-pilot — fp_candidate 시범 100건 적재 (master 전용, 1회 호출당) — DATA-05-B
+// body 없음. 항상 windowDays=14, pilotLimit=100(내부 HARD_PILOT_CAP).
+// 멱등 아님(매 호출당 새 100건 시도) — 단 onConflictDoNothing 으로 중복 시그니처는 스킵.
+// L12 의 adminRouter.use(authenticate) 가 이미 인증을 강제하므로 requireRole 만 추가.
+adminRouter.post(
+  '/fp-labeling-pilot',
+  requireRole('government_admin'),
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await insertFalsePositiveCandidatesPilot({
+        windowDays: 14,
+        pilotLimit: 100,
+      });
+      logger.info(
+        {
+          windowDays: result.windowDays,
+          pilotLimit: result.pilotLimit,
+          examined: result.examined,
+          inserted: result.inserted,
+          skippedConflict: result.skippedConflict,
+          skippedNullAnimal: result.skippedNullAnimal,
+          insertedSamples: result.insertedSamples,
+          durationMs: result.durationMs,
+        },
+        '[admin] FP labeling pilot completed',
+      );
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
