@@ -1,10 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import {
   isDairyBreed,
+  breedFamily,
   getDairyMatingReadiness,
   DAIRY_DATA_SOURCES,
   type DairyDataSource,
 } from '../dairy-sire-provider.js';
+
+describe('breedFamily — 표기 차이 견고성', () => {
+  it("'Holstein'·'holstein'·'젖소'는 dairy로 같은 계열", () => {
+    expect(breedFamily('Holstein')).toBe('dairy');
+    expect(breedFamily('holstein')).toBe('dairy');
+    expect(breedFamily('젖소')).toBe('dairy');
+    expect(breedFamily('Holstein')).toBe(breedFamily('holstein'));
+  });
+  it("'한우'·'Hanwoo'는 beef", () => {
+    expect(breedFamily('한우')).toBe('beef');
+    expect(breedFamily('Hanwoo')).toBe('beef');
+  });
+  it('알 수 없으면 unknown', () => {
+    expect(breedFamily(null)).toBe('unknown');
+    expect(breedFamily('')).toBe('unknown');
+    expect(breedFamily('Wagyu교잡')).toBe('unknown');
+  });
+});
 
 describe('isDairyBreed', () => {
   it('젖소 계열을 인식한다', () => {

@@ -66,6 +66,21 @@ export function isDairyBreed(breed: string | null | undefined): boolean {
   return DAIRY_BREED_TOKENS.some((t) => b.includes(t.toLowerCase()));
 }
 
+export type BreedFamily = 'dairy' | 'beef' | 'unknown';
+
+/**
+ * 품종 문자열을 계열로 정규화한다.
+ * 'Holstein'·'홀스타인'·'젖소' → dairy, '한우'·'Hanwoo'·'육우' → beef.
+ * 정액 추천에서 'Holstein' 카탈로그와 'holstein' 개체처럼 표기가 달라도 매칭되게 한다.
+ */
+export function breedFamily(breed: string | null | undefined): BreedFamily {
+  if (isDairyBreed(breed)) return 'dairy';
+  if (breed && BEEF_BREED_TOKENS.some((t) => breed.toLowerCase().includes(t.toLowerCase()))) {
+    return 'beef';
+  }
+  return 'unknown';
+}
+
 export interface DairyMatingReadiness {
   readonly applicable: true;
   readonly overall: 'ready' | 'partial' | 'minimal';

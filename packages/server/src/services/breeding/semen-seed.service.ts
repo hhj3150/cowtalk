@@ -8,11 +8,12 @@
 //  공공데이터 API: https://apis.data.go.kr/1390906/brblInfo_gong/getList_brblInfo
 
 import { getDb } from '../../config/database.js';
-import { semenCatalog } from '../../db/schema.js';
-import { eq, count } from 'drizzle-orm';
+import { semenCatalog, farmSemenInventory, animals } from '../../db/schema.js';
+import { eq, count, isNull, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { config } from '../../config/index.js';
 import { SemenConnector } from '../../pipeline/connectors/public-data/semen.connector.js';
+import { breedFamily, type BreedFamily } from './dairy-sire-provider.js';
 
 // ===========================
 // 젖소 종모우 기초 데이터 (KAI 보증씨수소 + 해외 주요 종모우)
@@ -201,6 +202,87 @@ export async function seedSemenCatalog(): Promise<{ seeded: number; skipped: num
 
   logger.info({ seeded, total: allBulls.length }, '[SemenSeed] 씨수소 카탈로그 시딩 완료');
   return { seeded, skipped: Number(existingCount) };
+}
+
+// ===========================
+// 농장 보유 정액 시딩 — 추천이 실제로 뜨려면 farm_semen_inventory 가 필요
+// 농장의 사육 품종(개체 breed_type)에 맞는 카탈로그 정액을 자동 배정한다(품종 계열 일치).
+// 멱등: 이미 보유 정액이 있는 농장은 건너뛴다.
+// ===========================
+
+const INVENTORY_QTY_BY_RANK = [25, 20, 15, 12, 8] as const; // 상위 정액일수록 많이 보유
+
+export async function seedFarmSemenInventory(): Promise<{ farmsSeeded: number; rowsInserted: number }> {
+  const db = getDb();
+
+  // 1. 카탈로그를 품종 계열로 분류
+  const catalog = await db
+    .select({ semenId: semenCatalog.semenId, breed: semenCatalog.breed })
+    .from(semenCatalog)
+    .where(eq(semenCatalog.isActive, true));
+
+  const byFamily = new Map<BreedFamily, string[]>();
+  for (const c of catalog) {
+    const fam = breedFamily(c.breed);
+    if (fam === 'unknown') continue;
+    const arr = byFamily.get(fam) ?? [];
+    arr.push(c.semenId);
+    byFamily.set(fam, arr);
+  }
+  if (byFamily.size === 0) {
+    logger.warn('[SemenInventory] 카탈로그가 비어있음 — 인벤토리 시딩 스킵');
+    return { farmsSeeded: 0, rowsInserted: 0 };
+  }
+
+  // 2. 농장별 사육 품종 계열 판별 (개체 breed_type 다수결: dairy 우선)
+  const farmBreedRows = await db
+    .select({
+      farmId: animals.farmId,
+      breedType: animals.breedType,
+      cnt: sql<number>`count(*)::int`,
+    })
+    .from(animals)
+    .where(isNull(animals.deletedAt))
+    .groupBy(animals.farmId, animals.breedType);
+
+  const farmFamily = new Map<string, BreedFamily>();
+  for (const r of farmBreedRows) {
+    const fam: BreedFamily = r.breedType === 'beef' ? 'beef' : 'dairy';
+    // dairy 우선: 한 농장에 혼재 시 젖소로 본다(데모 단순화)
+    if (!farmFamily.has(r.farmId) || fam === 'dairy') farmFamily.set(r.farmId, fam);
+  }
+
+  let farmsSeeded = 0;
+  let rowsInserted = 0;
+
+  for (const [farmId, fam] of farmFamily) {
+    const bulls = (byFamily.get(fam) ?? []).slice(0, INVENTORY_QTY_BY_RANK.length);
+    if (bulls.length === 0) continue;
+
+    // 멱등: 이미 보유 정액이 있으면 스킵
+    const [existing] = await db
+      .select({ value: count() })
+      .from(farmSemenInventory)
+      .where(eq(farmSemenInventory.farmId, farmId));
+    if (Number(existing?.value ?? 0) > 0) continue;
+
+    for (let i = 0; i < bulls.length; i++) {
+      try {
+        await db.insert(farmSemenInventory).values({
+          farmId,
+          semenId: bulls[i]!,
+          quantity: INVENTORY_QTY_BY_RANK[i] ?? 10,
+        });
+        rowsInserted++;
+      } catch (err) {
+        logger.debug({ err, farmId }, '[SemenInventory] 인벤토리 삽입 오류');
+      }
+    }
+    farmsSeeded++;
+  }
+
+  logger.info({ farmsSeeded, rowsInserted }, '[SemenInventory] 농장 보유 정액 시딩 완료');
+  return { farmsSeeded, rowsInserted };
 }
 
 // ===========================

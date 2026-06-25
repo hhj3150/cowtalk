@@ -14,7 +14,7 @@ import { recordSemenRecommendations } from './recommendation-tracking.service.js
 import { computeCR } from '../metrics/fertility-service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
-import { isDairyBreed, getDairyMatingReadiness, type DairyMatingReadiness } from './dairy-sire-provider.js';
+import { isDairyBreed, getDairyMatingReadiness, breedFamily, type DairyMatingReadiness } from './dairy-sire-provider.js';
 
 // ===========================
 // 타입
@@ -375,7 +375,7 @@ export async function getBreedingAdvice(
   // 7. 목장 보유 정액 조회 (동일 품종만)
   // ⚠️ 한우 씨수소 API(15101999)는 한우 전용
   // 젖소는 젖소 정액만, 한우는 한우 정액만 추천
-  const inventory = await db.select({
+  const inventoryRaw = await db.select({
     semenId: semenCatalog.semenId,
     bullName: semenCatalog.bullName,
     bullRegistration: semenCatalog.bullRegistration,
@@ -389,10 +389,16 @@ export async function getBreedingAdvice(
     .where(and(
       eq(farmSemenInventory.farmId, animal.farmId),
       sql`${farmSemenInventory.quantity} > 0`,
-      // 품종 일치 필터: 한우 소에 젖소 정액 추천 방지, 반대도 마찬가지
-      sql`LOWER(${semenCatalog.breed}) = LOWER(${animal.breed})`,
     ))
     .orderBy(desc(farmSemenInventory.quantity));
+
+  // 품종 계열(family) 일치 필터: 한우 소에 젖소 정액 추천 방지(반대도).
+  // 표기 차이('Holstein' vs 'holstein' vs '젖소')에 견고하도록 SQL 동등비교 대신 계열로 매칭.
+  // 개체 품종을 알 수 없으면(unknown) 보유 정액 전체를 대상으로 둔다.
+  const targetFamily = breedFamily(animal.breed);
+  const inventory = targetFamily === 'unknown'
+    ? inventoryRaw
+    : inventoryRaw.filter((inv) => breedFamily(inv.breed) === targetFamily);
 
   // 8. 각 정액에 대해 점수 계산 + 추천 순위
   const recommendations: SemenRecommendation[] = await Promise.all(

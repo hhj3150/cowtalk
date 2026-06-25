@@ -234,6 +234,19 @@ async function loadTreatmentOutcomeWeights(
   return result;
 }
 
+// ── 확률 보정 (불확실성 prior) ──
+
+/**
+ * 정규화 분모에 더할 불확실성 질량(Dirichlet prior).
+ * 근거가 약할수록(데이터 품질 낮음) prior를 키워 확률을 끌어내린다.
+ * → 후보가 하나뿐이어도 근거가 약하면 100%로 부풀지 않는다(정직한 확률).
+ */
+export function uncertaintyPrior(
+  dataQuality: DifferentialDiagnosisResult['dataQuality'],
+): number {
+  return dataQuality === 'good' ? 10 : dataQuality === 'limited' ? 30 : 60;
+}
+
 // ── 근거 분류 ──
 
 function classifyEvidence(
@@ -352,14 +365,17 @@ export async function getDifferentialDiagnosis(
     }
   }
 
-  // 확률 정규화
+  // 확률 정규화 — 불확실성 prior 적용(약한 근거 → 과대확신 방지).
+  // 분모 = 후보 점수 합 + prior. 근거가 강할수록 prior 영향이 작아 상대확률에 수렴.
   const totalScore = scored.reduce((sum, s) => sum + s.score, 0);
+  const prior = uncertaintyPrior(dataQuality);
+  const denom = totalScore + prior;
   const candidates: DiagnosisCandidate[] = scored
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((s) => {
       const profile = DISEASE_PROFILES[s.disease]!;
-      const probability = totalScore > 0 ? Math.round((s.score / totalScore) * 100) : 0;
+      const probability = denom > 0 ? Math.round((s.score / denom) * 100) : 0;
 
       const evidence: SensorEvidence[] = Object.entries(profile.sensorPattern).map(([metric, pattern]) => {
         const data = sensorData.get(metric);
