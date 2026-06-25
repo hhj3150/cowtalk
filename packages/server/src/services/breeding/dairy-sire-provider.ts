@@ -81,6 +81,27 @@ export function breedFamily(breed: string | null | undefined): BreedFamily {
   return 'unknown';
 }
 
+export interface DairySourceFlags {
+  readonly dhi?: boolean;       // 젖소 검정데이터(DHI) 연동 여부
+  readonly pedigree?: boolean;  // 종축개량협회 혈통 연동 여부
+}
+
+/**
+ * 외부 연동 플래그(환경설정)를 공급원 상태에 반영한다.
+ * 데이터 거버넌스가 확정되면 플래그만 true로 바꾸면 해당 공급원이 'live'가 된다.
+ * (코드 변경 없이 운영 설정만으로 추천 신뢰도 상승 — 미래지향 확장점)
+ */
+export function applySourceFlags(
+  sources: readonly DairyDataSource[],
+  flags: DairySourceFlags,
+): DairyDataSource[] {
+  return sources.map((s) => {
+    if (s.id === 'dhi_test' && flags.dhi) return { ...s, status: 'live' };
+    if (s.id === 'kaia_pedigree' && flags.pedigree) return { ...s, status: 'live' };
+    return s;
+  });
+}
+
 export interface DairyMatingReadiness {
   readonly applicable: true;
   readonly overall: 'ready' | 'partial' | 'minimal';

@@ -41,6 +41,11 @@ const envSchema = z.object({
   // 공공데이터 API
   PUBLIC_DATA_API_KEY: z.string().optional(),
 
+  // 젖소 정액추천 외부 데이터 연동 플래그 (데이터 거버넌스 확정 시 true로 전환 — 코드 변경 불필요)
+  // 켜지면 dairy-sire-provider의 해당 공급원이 live가 되어 추천 신뢰도가 자동 상승한다.
+  DAIRY_DHI_ENABLED: z.coerce.boolean().default(false),        // 젖소 검정데이터(DHI) 연동
+  DAIRY_PEDIGREE_ENABLED: z.coerce.boolean().default(false),    // 한국종축개량협회 혈통 연동
+
   // Anthropic Claude API — 이중 모델 구성
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),

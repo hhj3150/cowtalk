@@ -14,7 +14,11 @@ import { recordSemenRecommendations } from './recommendation-tracking.service.js
 import { computeCR } from '../metrics/fertility-service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
-import { isDairyBreed, getDairyMatingReadiness, breedFamily, type DairyMatingReadiness } from './dairy-sire-provider.js';
+import {
+  isDairyBreed, getDairyMatingReadiness, breedFamily, applySourceFlags,
+  DAIRY_DATA_SOURCES, type DairyMatingReadiness,
+} from './dairy-sire-provider.js';
+import { config } from '../../config/index.js';
 
 // ===========================
 // 타입
@@ -516,7 +520,13 @@ export async function getBreedingAdvice(
       estrusRecurrenceDays: farmSettings.estrusRecurrenceDays ?? 21,
     },
     // 젖소면 추천 신뢰도 + 연동 대기 공급원을 함께 노출(과장 금지). 한우는 undefined.
-    dataReadiness: isDairyBreed(animal.breed) ? getDairyMatingReadiness() : undefined,
+    // 외부 연동 플래그(config)를 반영 — DHI·혈통이 켜지면 신뢰도가 자동 상승.
+    dataReadiness: isDairyBreed(animal.breed)
+      ? getDairyMatingReadiness(applySourceFlags(DAIRY_DATA_SOURCES, {
+          dhi: config.DAIRY_DHI_ENABLED,
+          pedigree: config.DAIRY_PEDIGREE_ENABLED,
+        }))
+      : undefined,
   };
 }
 

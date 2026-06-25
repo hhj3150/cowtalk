@@ -3,9 +3,30 @@ import {
   isDairyBreed,
   breedFamily,
   getDairyMatingReadiness,
+  applySourceFlags,
   DAIRY_DATA_SOURCES,
   type DairyDataSource,
 } from '../dairy-sire-provider.js';
+
+describe('applySourceFlags — config 플래그로 공급원 자동 전환', () => {
+  it('플래그가 없으면 원본 상태 유지 (dhi·혈통 pending)', () => {
+    const r = getDairyMatingReadiness(applySourceFlags(DAIRY_DATA_SOURCES, {}));
+    expect(r.confidence).toBe('low');
+  });
+
+  it('DHI+혈통 플래그를 켜면 코드 변경 없이 신뢰도 high로 상승', () => {
+    const sources = applySourceFlags(DAIRY_DATA_SOURCES, { dhi: true, pedigree: true });
+    const r = getDairyMatingReadiness(sources);
+    expect(r.confidence).toBe('high');
+    expect(r.overall).toBe('ready');
+    expect(r.pendingSources).toHaveLength(0);
+  });
+
+  it('혈통만 켜면 medium (부분 상승)', () => {
+    const r = getDairyMatingReadiness(applySourceFlags(DAIRY_DATA_SOURCES, { pedigree: true }));
+    expect(r.confidence).toBe('medium');
+  });
+});
 
 describe('breedFamily — 표기 차이 견고성', () => {
   it("'Holstein'·'holstein'·'젖소'는 dairy로 같은 계열", () => {
