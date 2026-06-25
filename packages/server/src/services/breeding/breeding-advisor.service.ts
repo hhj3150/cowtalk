@@ -14,6 +14,7 @@ import { recordSemenRecommendations } from './recommendation-tracking.service.js
 import { computeCR } from '../metrics/fertility-service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
+import { isDairyBreed, getDairyMatingReadiness, type DairyMatingReadiness } from './dairy-sire-provider.js';
 
 // ===========================
 // 타입
@@ -47,6 +48,8 @@ export interface BreedingAdvice {
     readonly pregnancyCheckDays: number;
     readonly estrusRecurrenceDays: number;
   };
+  // 젖소 개체일 때만 채워짐 — 추천 신뢰도 + 향후 연동 대기 공급원(정직한 공개)
+  readonly dataReadiness?: DairyMatingReadiness;
 }
 
 export interface SemenRecommendation {
@@ -506,6 +509,8 @@ export async function getBreedingAdvice(
       pregnancyCheckDays: farmSettings.pregnancyCheckDays ?? 28,
       estrusRecurrenceDays: farmSettings.estrusRecurrenceDays ?? 21,
     },
+    // 젖소면 추천 신뢰도 + 연동 대기 공급원을 함께 노출(과장 금지). 한우는 undefined.
+    dataReadiness: isDairyBreed(animal.breed) ? getDairyMatingReadiness() : undefined,
   };
 }
 
