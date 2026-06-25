@@ -14,6 +14,11 @@ import { recordSemenRecommendations } from './recommendation-tracking.service.js
 import { computeCR } from '../metrics/fertility-service.js';
 import { PedigreeConnector, type PedigreeRecord } from '../../pipeline/connectors/public-data/pedigree.connector.js';
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
+import {
+  isDairyBreed, getDairyMatingReadiness, breedFamily, applySourceFlags,
+  DAIRY_DATA_SOURCES, type DairyMatingReadiness,
+} from './dairy-sire-provider.js';
+import { config } from '../../config/index.js';
 
 // ===========================
 // 타입
@@ -47,6 +52,8 @@ export interface BreedingAdvice {
     readonly pregnancyCheckDays: number;
     readonly estrusRecurrenceDays: number;
   };
+  // 젖소 개체일 때만 채워짐 — 추천 신뢰도 + 향후 연동 대기 공급원(정직한 공개)
+  readonly dataReadiness?: DairyMatingReadiness;
 }
 
 export interface SemenRecommendation {
@@ -372,7 +379,7 @@ export async function getBreedingAdvice(
   // 7. 목장 보유 정액 조회 (동일 품종만)
   // ⚠️ 한우 씨수소 API(15101999)는 한우 전용
   // 젖소는 젖소 정액만, 한우는 한우 정액만 추천
-  const inventory = await db.select({
+  const inventoryRaw = await db.select({
     semenId: semenCatalog.semenId,
     bullName: semenCatalog.bullName,
     bullRegistration: semenCatalog.bullRegistration,
@@ -386,10 +393,16 @@ export async function getBreedingAdvice(
     .where(and(
       eq(farmSemenInventory.farmId, animal.farmId),
       sql`${farmSemenInventory.quantity} > 0`,
-      // 품종 일치 필터: 한우 소에 젖소 정액 추천 방지, 반대도 마찬가지
-      sql`LOWER(${semenCatalog.breed}) = LOWER(${animal.breed})`,
     ))
     .orderBy(desc(farmSemenInventory.quantity));
+
+  // 품종 계열(family) 일치 필터: 한우 소에 젖소 정액 추천 방지(반대도).
+  // 표기 차이('Holstein' vs 'holstein' vs '젖소')에 견고하도록 SQL 동등비교 대신 계열로 매칭.
+  // 개체 품종을 알 수 없으면(unknown) 보유 정액 전체를 대상으로 둔다.
+  const targetFamily = breedFamily(animal.breed);
+  const inventory = targetFamily === 'unknown'
+    ? inventoryRaw
+    : inventoryRaw.filter((inv) => breedFamily(inv.breed) === targetFamily);
 
   // 8. 각 정액에 대해 점수 계산 + 추천 순위
   const recommendations: SemenRecommendation[] = await Promise.all(
@@ -506,6 +519,14 @@ export async function getBreedingAdvice(
       pregnancyCheckDays: farmSettings.pregnancyCheckDays ?? 28,
       estrusRecurrenceDays: farmSettings.estrusRecurrenceDays ?? 21,
     },
+    // 젖소면 추천 신뢰도 + 연동 대기 공급원을 함께 노출(과장 금지). 한우는 undefined.
+    // 외부 연동 플래그(config)를 반영 — DHI·혈통이 켜지면 신뢰도가 자동 상승.
+    dataReadiness: isDairyBreed(animal.breed)
+      ? getDairyMatingReadiness(applySourceFlags(DAIRY_DATA_SOURCES, {
+          dhi: config.DAIRY_DHI_ENABLED,
+          pedigree: config.DAIRY_PEDIGREE_ENABLED,
+        }))
+      : undefined,
   };
 }
 

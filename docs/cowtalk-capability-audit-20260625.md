@@ -1,0 +1,122 @@
+# CowTalk 구현 현황 기반 기능 명세서 (코드 감사)
+
+> 목적: 경기도 인수위 브리핑을 **실제 구현된 기능**에 근거하게 만들기 위한 코드 감사 결과.
+> 방법: 코드베이스 정밀 감사(파일:라인 증거). 마케팅 주장과 실제 코드를 1:1 대조.
+> 분류: ✅ 내재(구현·실DB) / 🟡 부분구현 / 🔴 향후 보강(미구현·미연동)
+
+---
+
+## 0. 한 줄 결론
+
+**브리핑에서 주장한 핵심 기능 대부분이 실제로 구현돼 있고 실DB 기반이다.**
+단, 경기도(젖소) 맥락에서 **2가지는 "향후 보강"으로 정직하게 분리**해야 한다:
+**① 젖소 정액 추천(현재 한우 전용) ② 감별진단 최종 확률 계산(부분).**
+
+---
+
+## 1. ✅ 내재 기능 — "현재 작동, 자신 있게 시연"
+
+### 1-1. 팅커벨 AI (MCP 도구 23개)
+| 검증 항목 | 상태 | 근거 |
+|---|---|---|
+| 도구 23개 정의 | ✅ | `ai-brain/tools/tool-definitions.ts` (23개 정확) |
+| 23개 모두 실행 구현 (stub 0개) | ✅ | `tool-executor.ts` (각 case 실함수) |
+| 역할별 접근제어(RBAC) | ✅ | `tool-gateway.ts` ROLE_TOOL_ACCESS (4역할 차등) |
+| 감사 로그 자동 기록 | ✅ | `schema.ts` tool_audit_log + writeAuditLog |
+| 실시간 스트리밍 | ✅ | `claude-client.ts` messages.stream + TTFT 계측 |
+| 프롬프트 캐싱(시스템+도구) | ✅ | `claude-client.ts` cache_control ephemeral |
+| 도구 병렬 실행 | ✅ | `claude-client.ts` Promise.all |
+| 환각 방지(출처 기록 의무) | ✅ | `chat-service.ts` data_references 강제 |
+| 방역 모드 자동 활성화 | ✅ | `context-builder.ts` 40+키워드, 역할별 차등 |
+| 음성 입력(Web Speech) + 웨이크워드 | ✅ | `useVoiceInput.ts`·`useWakeWord.ts`·`MicButton.tsx` |
+| 음성 답변(TTS) | ✅ | 서버 `audio/tts.service.ts` + OpenAI TTS 설정 |
+
+### 1-2. 방역/역학
+| 기능 | 상태 | 근거 |
+|---|---|---|
+| 3단계 드릴다운 대시보드(전국→시도→농장→개체) | ✅ | `quarantine-dashboard.service.ts`, `national-situation.service.ts` |
+| 146농장 실좌표 지도 | ✅ | `NationalMiniMap.tsx` + `getAllMapFarms()` |
+| **확산 시뮬레이션 — 진짜 SEIR 미분방정식** | ✅ | `spread-simulator.ts` (R0·잠복기·감염기간, 이동제한 시나리오) |
+| 접촉망 추적(실 이동이력 우선) | ✅ | `contact-tracer.ts` (animalTransfers 우선) |
+| 역학조사 DB 영속화 + 6항목 자동수집 | ✅ | `investigations` 테이블 + repository CRUD |
+| KAHIS 보고(상태관리 draft→submitted) | ✅ | `kahis_reports` 테이블 + service CRUD |
+| 좌표→시도 매핑 | ✅ | `province-mapper.ts` 경계박스 |
+
+### 1-3. 번식 AI 루프
+| 기능 | 상태 | 근거 |
+|---|---|---|
+| 6단계 칸반(실DB) | ✅ | `breeding-pipeline.service.ts` |
+| 수정 적기 추천(AM-PM 규칙) | ✅ | `breeding-advisor.service.ts` |
+| 발정동기화 4종(OVSYNCH/PG/G6G/Double) 일정 자동생성 | ✅ | `sync-protocol.service.ts` |
+| 번식 KPI(수태율·공태일·분만간격 등) | ✅ | `breeding-pipeline.service.ts` |
+
+### 1-4. 센서 / 조기감지 / 공공데이터 / 역할
+| 기능 | 상태 | 근거 |
+|---|---|---|
+| 센서 수집(5분, smaXtec Data API) | ✅ | `pipeline/orchestrator.ts` |
+| 조기 질병감지 DSI(0~100, ≥70 경보) | ✅ | `earlyDetection/disease-detection.engine.ts` |
+| 공공데이터 — 이력제(EKAPE 실연동) | ✅ | `connectors/public-data/traceability.connector.ts` |
+| 공공데이터 — 등급판정·경락가격 | ✅ | `grade.connector.ts` |
+| 4역할 RBAC(farmer/vet/quarantine/gov) | ✅ | `middleware/rbac.ts` + `shared/constants/roles.ts` |
+| 전문가 학습 루프(event_labels/clinical_observations) | ✅ | `record_expert_label` + `chat-learner.ts` |
+
+---
+
+## 2. 🟡 부분 구현 — "되지만 고도화 필요"
+
+| 기능 | 상태 | 비고 |
+|---|---|---|
+| **감별진단 확률 계산** | ✅ (2026-06-25 보정) | 감사 오판 정정 — 점수→정규화→확률%→근거분류→긴급도 **이미 완전 구현**. 추가로 **불확실성 prior 보정**(약한 근거 단일후보가 100%로 부풀던 아티팩트 제거) + 치료결과 학습 가중치(`loadTreatmentOutcomeWeights`). `differential-diagnosis.service.ts` |
+| 역학조사 기상 데이터 | 🟡 | 일부 mock값 → 실 기상 API 연동 필요 |
+| 주간 발열 추이(과거분) | 🟡 | 당주만 실데이터, 과거는 추정 → 히스토리 적재 권장 |
+| 접촉망(이동이력 없을 때) | 🟡 | 지역 fallback → 실 이동데이터 적재 시 자동 전환 |
+
+---
+
+## 3. 🔴 향후 보강 — "정직하게 로드맵으로"
+
+| 기능 | 상태 | 경기도 영향 |
+|---|---|---|
+| **젖소 정액(씨수소) 추천** | 🟡 **내부데이터 기반 동작 + 어댑터 준비됨** (2026-06-25 보강) | 추천 엔진은 품종 무관으로 이미 동작. **데이터 공급원 어댑터 레이어**(`dairy-sire-provider.ts`)로 현재 카우톡 내부·등급 데이터 기반 추천(신뢰도 표시), 혈통(종축개량협회)·DHI 연동 시 status만 'live'로 바꾸면 정밀화 — 엔진 변경 불필요 |
+| 한우 외 종모우(해외 CDCB/CRV 등) | 🔴 | 수출·고도화 단계 |
+| 농장식별번호·일부 공공API | 🟡/🔴 | 코드는 있으나 활용신청·키 설정 전제 |
+
+### 젖소 정액 추천 데이터 의존성 & 준비 상태 (어댑터 레이어)
+`packages/server/src/services/breeding/dairy-sire-provider.ts` — 4개 공급원을 어댑터로 추상화, 가용성을 정직하게 보고:
+
+| 공급원 | 상태 | 연동 시 효과 |
+|---|---|---|
+| 카우톡 생육·번식 데이터 | ✅ live | 목장 수정·임신감정·센서·생육 (현재 가동) |
+| 축산물품질평가원 등급 | ✅ live | 산육/도체 성적 보강 (EKAPE 커넥터) |
+| 젖소 검정데이터(DHI) | 🟡 pending | 종모우 딸소 능력·암소 산유능력 |
+| 한국종축개량협회 혈통 | 🟡 pending (공개데이터 미전환) | 정밀 근교계수·유전능력 평가 |
+
+→ 현재 추천 신뢰도: **low(minimal)** — 내부+등급 기반. 혈통+DHI 연동 시 자동 **high(ready)**.
+→ **운영 전환은 환경변수 하나** (`DAIRY_DHI_ENABLED`, `DAIRY_PEDIGREE_ENABLED`) — 데이터 거버넌스 확정 시 `true`로 바꾸면 코드 변경 없이 신뢰도·추천 정밀도가 자동 상승.
+→ 추천 응답에 `dataReadiness`(신뢰도+대기 공급원) 포함 → UI·팅커벨이 "현재 기반 / 향후 정밀화"를 정직하게 노출.
+
+**데모 작동성(2026-06-25 보강):**
+- 젖소 카탈로그(`DAIRY_BULLS_SEED`, 홀스타인 13두)는 이미 존재 → **농장 보유정액 시드**(`seedFarmSemenInventory`)로 젖소 농가에 자동 배정 → 추천이 실제로 출력됨.
+- 품종 매칭을 **계열(family) 기반**으로 변경 → 'Holstein'(카탈로그) vs 'holstein'/'젖소'(개체) 표기 차이에 견고.
+- 결과: **시연에서 젖소 정액 추천 출력 가능**(내부데이터 기반·신뢰도 표시). 혈통·DHI 연동 시 정밀화는 데이터 거버넌스(종축개량협회 공개·MOU) 과제.
+
+---
+
+## 4. 브리핑 반영 가이드
+
+**자신 있게 "현재 가능"으로 시연/주장:**
+방역 대시보드 · SEIR 확산 시뮬 · 역학조사/KAHIS · 접촉망 · 팅커벨(23도구·음성·방역모드) · 번식 칸반/동기화 · 조기감지 DSI · 공공데이터(이력제/등급/경락) · 4역할 RBAC · 전문가 학습루프
+
+**"향후 보강(로드맵)"으로 분리해 정직하게:**
+🔴 젖소 정액 추천(경기 젖소 핵심) · 🟡 감별진단 확률 고도화 · 🟡 기상 실연동 · 🟡 주간 히스토리
+
+> 원칙: 인수위는 "다 된다"보다 **"이건 됐고, 이건 로드맵"**을 더 신뢰한다.
+> 특히 젖소 정액 추천은 경기도 맥락의 핵심이므로 **반드시 로드맵으로 명시**(과장 금지).
+
+---
+
+## 5. 시연 직결 주의 (대본 연동)
+
+- ~~"423번 감별진단" 강도 조절~~ → **시연 가능**: 확률 계산 완전 구현 + 과대확신 보정 완료. 근거테이블(✓/✗/—)·확인검사·긴급도 함께 출력.
+- ~~정액 추천 시연 회피~~ → **젖소 정액 추천 시연 가능**(2026-06-25): 농장 보유정액 시드 + 품종 family 매칭으로 추천이 실제 출력. "현재 내부데이터 기반(신뢰도 표시), 혈통·DHI 연동 시 정밀화" 멘트와 함께 시연하면 정직 + 미래지향 메시지 동시 전달.
+- 음성 시연은 가능하나 브라우저 Web Speech 의존 → 현장 네트워크/브라우저 사전 점검.

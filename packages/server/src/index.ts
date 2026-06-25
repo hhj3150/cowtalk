@@ -9,7 +9,7 @@ import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
 import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
 import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
 import { startReportCleanup, stopReportCleanup } from './services/report/cleanup.js';
-import { seedSemenCatalog } from './services/breeding/semen-seed.service.js';
+import { seedSemenCatalog, seedFarmSemenInventory } from './services/breeding/semen-seed.service.js';
 import { createSocketServer } from './realtime/socket-server.js';
 import { runAutoMigrations } from './db/auto-migrate.js';
 
@@ -34,10 +34,12 @@ const server = httpServer.listen(config.PORT, () => {
   // 만료 보고서 자동 정리 (매 시간)
   startReportCleanup();
 
-  // 씨수소 카탈로그 시딩 (DB 비어있을 때만 자동 실행)
-  seedSemenCatalog().catch((err) => {
-    logger.error({ err }, '[SemenSeed] 카탈로그 시딩 실패');
-  });
+  // 씨수소 카탈로그 시딩 → 농장 보유 정액 시딩 (추천이 실제로 뜨도록)
+  seedSemenCatalog()
+    .then(() => seedFarmSemenInventory())
+    .catch((err) => {
+      logger.error({ err }, '[SemenSeed] 카탈로그/인벤토리 시딩 실패');
+    });
 
   // 파이프라인 자동 시작 (smaXtec 크레덴셜이 있을 때만)
   if (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD) {
