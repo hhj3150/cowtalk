@@ -560,6 +560,72 @@ const briefingCardBase: React.CSSProperties = {
 
 const EMPTY_HERD = { totalAnimals: 0, sensorAttached: 0, activeAlerts: 0, healthIssues: 0 } as const;
 
+// ── 상황 요약 히어로 — 행정관이 3초 안에 "안정/주의/위험" 파악 ──
+function SituationSummaryStrip({ herd, farmCount, updatedAt, onChipClick }: {
+  herd: { totalAnimals: number; sensorAttached: number; activeAlerts: number; healthIssues: number };
+  farmCount: number;
+  updatedAt: string;
+  onChipClick?: (kind: 'alerts' | 'health') => void;
+}): React.JSX.Element {
+  const level = herd.healthIssues >= 3 || herd.activeAlerts >= 5
+    ? 'critical'
+    : herd.activeAlerts > 0 || herd.healthIssues > 0
+      ? 'warn'
+      : 'stable';
+  const T = {
+    critical: { c: '#ef4444', label: '위험', msg: '긴급 조치가 필요한 신호가 있습니다' },
+    warn: { c: '#f59e0b', label: '주의', msg: '확인이 필요한 알림이 있습니다' },
+    stable: { c: '#22c55e', label: '안정', msg: '전 농장 안정 — 위험 신호 없음' },
+  }[level];
+  const sensorPct = herd.totalAnimals > 0 ? Math.round((herd.sensorAttached / herd.totalAnimals) * 100) : 0;
+
+  const Chip = ({ label, value, accent, onClick }: { label: string; value: string; accent?: string; onClick?: () => void }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      aria-label={`${label} ${value}`}
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 14px',
+        background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', border: '1px solid var(--ct-border)',
+        borderRadius: 10, cursor: onClick ? 'pointer' : 'default', textAlign: 'left', minWidth: 84,
+      }}
+    >
+      <span style={{ fontSize: 11, color: 'var(--ct-text-muted)', whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: 18, fontWeight: 800, color: accent ?? 'var(--ct-text)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{value}</span>
+    </button>
+  );
+
+  return (
+    <div
+      className="ct-fade-up"
+      style={{
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14,
+        padding: '14px 18px', borderRadius: 14,
+        background: `linear-gradient(90deg, ${T.c}1a, transparent 60%)`,
+        border: '1px solid var(--ct-border)', borderLeft: `4px solid ${T.c}`,
+        boxShadow: level === 'critical' ? `0 0 0 1px ${T.c}33, 0 6px 24px ${T.c}22` : 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: '1 1 auto' }}>
+        <span aria-hidden style={{ width: 12, height: 12, borderRadius: '50%', background: T.c, boxShadow: `0 0 12px ${T.c}`, flex: '0 0 auto' }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ fontSize: 20, fontWeight: 900, color: T.c, letterSpacing: '-0.3px' }}>{T.label}</span>
+            <span style={{ fontSize: 13, color: 'var(--ct-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{T.msg}</span>
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>관리 {farmCount}개 농장 · {herd.totalAnimals.toLocaleString()}두 · 센서 {sensorPct}% 가동 · {updatedAt} 기준</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
+        <Chip label="활성 알림" value={`${herd.activeAlerts}건`} accent={herd.activeAlerts > 0 ? '#f59e0b' : undefined} onClick={onChipClick ? () => onChipClick('alerts') : undefined} />
+        <Chip label="건강 이상" value={`${herd.healthIssues}두`} accent={herd.healthIssues > 0 ? '#ef4444' : undefined} onClick={onChipClick ? () => onChipClick('health') : undefined} />
+        <Chip label="센서 가동" value={`${herd.sensorAttached}/${herd.totalAnimals}`} />
+      </div>
+    </div>
+  );
+}
+
 const TODO_MAP: Record<string, string> = {
   fertility: 'estrus', health: 'temperature_high', feeding: 'rumination_decrease', system: 'ALL',
 };
@@ -806,6 +872,18 @@ export default function UnifiedDashboard(): React.JSX.Element {
         <div style={{ padding: 24 }}><LoadingSkeleton lines={8} /></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14 }}>
+          {/* ── 상황 요약 히어로 (3초 파악) ── */}
+          <SectionErrorBoundary label="상황 요약">
+            <SituationSummaryStrip
+              herd={data?.herdOverview ?? EMPTY_HERD}
+              farmCount={farmsData?.farms?.length ?? 0}
+              updatedAt={lastUpdated}
+              onChipClick={(kind) => setDrilldown(kind === 'health'
+                ? { eventType: 'health_warning', label: '건강 이상' }
+                : { eventType: 'ALL', label: '활성 알림' })}
+            />
+          </SectionErrorBoundary>
+
           {/* ── 전염병 배너 ── */}
           <SectionErrorBoundary label="전염병 배너">
             <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
