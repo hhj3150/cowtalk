@@ -83,7 +83,11 @@ export interface ResolvedFarm {
   readonly regionId: string | null;
 }
 
-async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise<ResolvedFarm[]> {
+async function getActiveFarmsWithProvince(
+  db: ReturnType<typeof getDb>,
+  farmIds?: readonly string[],
+): Promise<ResolvedFarm[]> {
+  const scoped = farmIds && farmIds.length > 0;
   const farmRows = await db
     .select({
       farmId: farms.farmId,
@@ -93,7 +97,7 @@ async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise
       regionId: farms.regionId,
     })
     .from(farms)
-    .where(eq(farms.status, 'active'));
+    .where(scoped ? and(eq(farms.status, 'active'), inArray(farms.farmId, [...farmIds!])) : eq(farms.status, 'active'));
 
   const regionIds = farmRows
     .map((f) => f.regionId)
@@ -129,13 +133,15 @@ async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise
   });
 }
 
-export async function getNationalSituation(): Promise<NationalSituationData> {
+export async function getNationalSituation(
+  opts: { farmIds?: readonly string[] } = {},
+): Promise<NationalSituationData> {
   try {
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // 1+2. 전체 활성 농장 + 시도 판별 — 드릴다운과 동일한 공통 로직(카운트 불일치 방지)
-    const farmsWithProvince = await getActiveFarmsWithProvince(db);
+    const farmsWithProvince = await getActiveFarmsWithProvince(db, opts.farmIds);
     const allFarmIds = farmsWithProvince.map((f) => f.farmId);
 
     // 2.5. 라이브 두수 (D7, BUG-007) — farmId별 활성 동물 카운트.

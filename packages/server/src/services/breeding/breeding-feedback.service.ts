@@ -121,14 +121,17 @@ export interface AnimalConceptionRate {
 // 수태율 통계 조회
 // ===========================
 
-export async function computeConceptionStats(farmId?: string): Promise<ConceptionStats> {
+export async function computeConceptionStats(farmId?: string, farmIds?: readonly string[]): Promise<ConceptionStats> {
   const db = getDb();
   const cutoff = new Date(Date.now() - 365 * 86_400_000); // 최근 1년
 
   try {
-    const farmFilter = farmId
-      ? sql`AND be.farm_id = ${farmId}`
-      : sql``;
+    // 데이터 레벨 스코프: farmIds(다중) 우선 → farmId(단일) → 전체
+    const farmFilter = (farmIds && farmIds.length > 0)
+      ? sql`AND be.farm_id IN (${sql.join(farmIds.map((id) => sql`${id}`), sql`, `)})`
+      : farmId
+        ? sql`AND be.farm_id = ${farmId}`
+        : sql``;
 
     // 전체 수태율
     const overallRows = await db.execute(sql`
