@@ -907,6 +907,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
               selectedFarmId={selectedFarmId}
               onFarmClick={(fid) => selectFarm(fid)}
               totalHeadOverride={data?.herdOverview?.totalAnimals}
+              height={isMobile ? 240 : 340}
             />
           </SectionErrorBoundary>
           )}
