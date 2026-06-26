@@ -274,8 +274,8 @@ export default function HerdGroupPage(): React.JSX.Element {
                         <div>
                           <span style={{
                             fontSize: 10, padding: '1px 6px', borderRadius: 4,
-                            background: m.lactationStatus === 'dry' ? 'rgba(234,179,8,0.15)' : m.lactationStatus === 'milking' ? 'rgba(34,197,94,0.15)' : 'var(--ct-bg)',
-                            color: m.lactationStatus === 'dry' ? '#eab308' : m.lactationStatus === 'milking' ? '#22c55e' : 'var(--ct-text-muted)',
+                            background: (m.lactationStatus === 'dry' || m.lactationStatus === 'dry_off') ? 'rgba(234,179,8,0.15)' : (m.lactationStatus === 'milking' || m.lactationStatus === 'lactating') ? 'rgba(34,197,94,0.15)' : 'var(--ct-bg)',
+                            color: (m.lactationStatus === 'dry' || m.lactationStatus === 'dry_off') ? '#eab308' : (m.lactationStatus === 'milking' || m.lactationStatus === 'lactating') ? '#22c55e' : 'var(--ct-text-muted)',
                           }}>
                             {m.lactationStatus}
                           </span>

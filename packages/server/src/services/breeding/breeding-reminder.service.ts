@@ -264,7 +264,8 @@ async function checkDryOffReminders(): Promise<number> {
       WHERE pc.result = 'pregnant'
         AND a.status = 'active'
         AND a.deleted_at IS NULL
-        AND a.lactation_status = 'milking'
+        AND (lower(coalesce(a.lactation_status,'')) IN ('milking','lactating','lactating_cow')
+             OR (coalesce(a.parity,0) >= 1 AND lower(coalesce(a.lactation_status,'')) NOT IN ('dry','dry_off','dry_cow','heifer','young_cow')))
       ORDER BY pc.animal_id, pc.check_date DESC
     `);
 
@@ -432,7 +433,9 @@ async function checkLongOpenDays(): Promise<number> {
       .where(and(
         eq(animals.status, 'active'),
         isNull(animals.deletedAt),
-        eq(animals.lactationStatus, 'milking'),
+        // 착유우 — enum 변형(milking/lactating) 흡수 + lactationStatus 누락 시 분만경험으로 추론
+        sql`(lower(coalesce(${animals.lactationStatus},'')) in ('milking','lactating','lactating_cow')
+             or (coalesce(${animals.parity},0) >= 1 and lower(coalesce(${animals.lactationStatus},'')) not in ('dry','dry_off','dry_cow','heifer','young_cow')))`,
         gte(animals.daysInMilk, 150), // 초기 필터 (세팅별로 재검사)
       ));
 

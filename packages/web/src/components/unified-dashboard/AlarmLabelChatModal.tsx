@@ -1852,8 +1852,8 @@ export function AlarmLabelChatModal({ animalId, initialEventId, onClose }: Props
                 {
                   label: '비유상태',
                   value: (
-                    animalInfo.lactationStatus === 'milking' ? '착유중' :
-                    animalInfo.lactationStatus === 'dry' ? '건유' :
+                    (animalInfo.lactationStatus === 'milking' || animalInfo.lactationStatus === 'lactating') ? '착유중' :
+                    (animalInfo.lactationStatus === 'dry' || animalInfo.lactationStatus === 'dry_off') ? '건유' :
                     animalInfo.lactationStatus === 'pregnant' ? '임신중' :
                     animalInfo.lactationStatus === 'open' ? '공태' :
                     animalInfo.lactationStatus === 'heifer' ? '육성우' :

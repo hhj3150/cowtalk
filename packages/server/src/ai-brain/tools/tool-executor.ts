@@ -12,6 +12,7 @@ import { eq, and, desc, gte, ilike, inArray, isNull, or } from 'drizzle-orm';
 import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 import { getBreedingPipeline } from '../../services/breeding/breeding-pipeline.service.js';
 import { computeHerd } from '../../services/metrics/herd-service.js';
+import { countHerdGroups } from '../../services/metrics/herd-group.js';
 import {
   getBreedingAdvice,
   recordInsemination,
@@ -327,13 +328,15 @@ async function queryFarmSummary(input: Record<string, unknown>): Promise<unknown
 
   // 두수 — herd-service 단일 소스 (D7, BUG-007).
   const animalRows = await db
-    .select({ animalId: animals.animalId, sex: animals.sex, lactationStatus: animals.lactationStatus })
+    .select({ animalId: animals.animalId, sex: animals.sex, lactationStatus: animals.lactationStatus, parity: animals.parity, daysInMilk: animals.daysInMilk })
     .from(animals)
     .where(and(eq(animals.farmId, targetFarm.farmId), eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
   const totalHead = computeHerd(animalRows.length).total;
-  const milking = animalRows.filter((a) => a.lactationStatus === 'milking').length;
-  const dry = animalRows.filter((a) => a.lactationStatus === 'dry').length;
+  // 우군 분류 단일 기준 (enum 변형 흡수 + lactationStatus 누락 시 parity·DIM 추론)
+  const grp = countHerdGroups(animalRows);
+  const milking = grp.milking;
+  const dry = grp.dry;
 
   // 최근 24시간 알림 수
   const since24h = new Date(Date.now() - 86_400_000);
@@ -1182,13 +1185,15 @@ async function handleGetFarmKpis(input: Record<string, unknown>): Promise<unknow
 
   // 두수 — herd-service 단일 소스 (D7, BUG-007).
   const animalRows = await db
-    .select({ lactationStatus: animals.lactationStatus })
+    .select({ lactationStatus: animals.lactationStatus, parity: animals.parity, daysInMilk: animals.daysInMilk })
     .from(animals)
     .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
   const totalHead = computeHerd(animalRows.length).total;
-  const milking = animalRows.filter((a) => a.lactationStatus === 'milking').length;
-  const dry = animalRows.filter((a) => a.lactationStatus === 'dry').length;
+  // 우군 분류 단일 기준 (enum 변형 흡수 + lactationStatus 누락 시 parity·DIM 추론)
+  const grp = countHerdGroups(animalRows);
+  const milking = grp.milking;
+  const dry = grp.dry;
 
   // 번식 KPI
   let breedingKpis: unknown = null;

@@ -11,8 +11,9 @@ import {
 import { resolveContext, type DetectedType } from './context-builder.js';
 import { getNationalSituation } from '../services/epidemiology/national-situation.service.js';
 import { getDb } from '../config/database.js';
-import { smaxtecEvents } from '../db/schema.js';
-import { and, inArray, gte, sql } from 'drizzle-orm';
+import { smaxtecEvents, animals } from '../db/schema.js';
+import { and, inArray, gte, sql, eq, isNull } from 'drizzle-orm';
+import { countHerdGroups } from '../services/metrics/herd-group.js';
 import { getRoleTone } from './role-tone.js';
 import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
@@ -235,6 +236,32 @@ async function buildScopedOverviewBlock(farmIds: readonly string[]): Promise<str
   }
 }
 
+// 단일 농장 선택 시 — 그 농장의 실시간 펄스를 선제 주입(우군구성·번식·건강).
+// smaXtec 대시보드가 가장 먼저 보여주는 Herd overview + Fertility를 동일 기준으로 융합.
+async function buildFarmPulseBlock(farmId: string): Promise<string | null> {
+  try {
+    const db = getDb();
+    const [animalRows, sig] = await Promise.all([
+      db.select({ lactationStatus: animals.lactationStatus, parity: animals.parity, daysInMilk: animals.daysInMilk })
+        .from(animals)
+        .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active'), isNull(animals.deletedAt))),
+      fetchScopedSignals([farmId]).catch(() => ({ estrus: 0, calving: 0, health: 0, insemDue: 0 })),
+    ]);
+    const total = animalRows.length;
+    if (total === 0) return null;
+    const g = countHerdGroups(animalRows);
+    return [
+      '## 이 농장 실시간 펄스 (선제 제공 — smaXtec 우군구성과 동일 기준)',
+      `- 우군: 총 ${total}두 — 착유우 ${g.milking}두 · 건유우 ${g.dry}두 · 육성우 ${g.heifer}두`,
+      `- 번식·건강 신호(최근 7일): 발정 ${sig.estrus}두 · 분만임박/분만 ${sig.calving}두 · 건강이상(반추·체온) ${sig.health}두`,
+      '농장 전반 현황·우군·번식 질문은 위 데이터로 바로 답하세요. 특정 개체 드릴다운만 도구를 호출하세요.',
+    ].join('\n');
+  } catch (err) {
+    logger.warn({ err, farmId }, '[Chat] 농장 펄스 생성 실패 — 생략');
+    return null;
+  }
+}
+
 export async function handleChatStream(
   request: ChatMessageRequest,
   callbacks: StreamCallbacks,
@@ -298,10 +325,11 @@ export async function handleChatStream(
   if (farmId) {
     snapshotPromise = getFarmLearningSnapshot(farmId, 30).catch(() => null);
   }
-  // 지역 스코프가 켜져 있으면 그 범위 요약을 병렬로 미리 준비 (선제적 종합)
+  // 지역 스코프가 켜져 있으면 그 범위 요약을, 단일 농장이면 농장 펄스를 병렬로 미리 준비 (선제적 종합)
   const overviewPromise = request.farmIds && request.farmIds.length > 0
     ? buildScopedOverviewBlock(request.farmIds)
     : null;
+  const farmPulsePromise = !overviewPromise && farmId ? buildFarmPulseBlock(farmId) : null;
   try {
     const resolved = await resolveContext(
       question, farmId, animalId, role, dashboardContext,
@@ -372,6 +400,7 @@ export async function handleChatStream(
 
   const farmBreedingSettings = await loadFarmBreedingSettings(context);
   const scopedOverview = overviewPromise ? await overviewPromise : null;
+  const farmPulse = farmPulsePromise ? await farmPulsePromise : null;
 
   // 응답 후 학습 루프 — 직전 답변을 정정·반박하면 즉시 보정해 다시 답하도록 지시.
   const hasPriorAnswer = conversationHistory.some((m) => m.role === 'assistant');
@@ -383,7 +412,7 @@ export async function handleChatStream(
 
   const prompt = buildConversationPrompt(
     question, role, context, conversationHistory, { streaming: true, labelContext, farmBreedingSettings },
-  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '') + correctionDirective;
+  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '') + (farmPulse ? `\n\n${farmPulse}` : '') + correctionDirective;
 
   const roleTone = getRoleTone(role);
   // 스트리밍: JSON 강제 제거, 자연어 텍스트 응답
