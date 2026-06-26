@@ -64,6 +64,23 @@ async function main(): Promise<void> {
       console.info(`  - 센서 장착 보강 + 백신 접종기록 ${vrows.length}건`);
     }
 
+    // 공태일·분만간격 현실화: 각 암소에 분만 2회(이전 ~460일 전 + 최근 ~70~130일 전)
+    //  - 최근 분만 → open 개체 daysInStage(공태일)가 999 기본값 대신 실제 경과일
+    //  - 두 분만 간격 → 분만간격 KPI가 정상 범위(~380~410일)로 산출
+    const calvMark = await sql`SELECT count(*)::int AS c FROM smaxtec_events WHERE external_event_id LIKE 'DEMO-CALV%'`;
+    if (Number(calvMark[0]?.c ?? 0) === 0) {
+      const calvRows = animals.flatMap((a) => {
+        const recent = rand(70, 130);
+        const prev = recent + rand(380, 410); // 직전 분만 = 최근 분만 + 정상 분만간격
+        return [
+          { animalId: a.animalId, farmId: a.farmId, eventType: 'calving', externalEventId: `DEMO-CALV0-${a.animalId}`, confidence: 0.96, severity: 'low', detectedAt: daysAgo(prev), acknowledged: true },
+          { animalId: a.animalId, farmId: a.farmId, eventType: 'calving', externalEventId: `DEMO-CALV-${a.animalId}`, confidence: 0.96, severity: 'low', detectedAt: daysAgo(recent), acknowledged: true },
+        ];
+      });
+      if (calvRows.length > 0) await db.insert(schema.smaxtecEvents).values(calvRows);
+      console.info(`  - 분만 이벤트 ${calvRows.length}건(공태일·분만간격 현실화)`);
+    }
+
     // 멱등: 이미 데모 알림이 있으면 스킵
     const existing = await db.select({ c: schema.alerts.alertId }).from(schema.alerts).limit(1);
     if (existing.length > 0) { console.info('이미 신호가 존재 — 스킵'); return; }
