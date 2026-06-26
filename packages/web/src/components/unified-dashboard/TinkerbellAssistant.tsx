@@ -674,6 +674,7 @@ export function TinkerbellAssistant({
   // FLOW-02 Step2.5: 채팅 컨텍스트·제안은 유효 역할(시뮬레이션 반영)을 따른다.
   const effectiveRole = useEffectiveRole();
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds); // 지역(그룹) 필터 스코프 — AI 답변도 이 범위로 한정
   // 지역(시도) 명령용 — 농장 목록(시도 포함) + 선택 액션 + 네비게이션
   const navigate = useNavigate();
   const { data: farmsForRegion } = useDashboardFarms();
@@ -802,6 +803,16 @@ export function TinkerbellAssistant({
       ? `\n\n${formatSovereignContext(sovereignStats)}`
       : '';
 
+    // 지역(그룹) 필터가 켜져 있으면 AI 답변을 그 범위로 강제 한정 (대시보드 스코프와 일치).
+    // 도구가 전국 데이터를 반환해도 모델이 이 범위 밖 농장을 언급하지 않도록 하드 지시.
+    let scopeDirective = '';
+    if (!animalContext && selectedFarmIds.length > 0) {
+      const scopeFarms = (farmsForRegion?.farms ?? []).filter((f) => selectedFarmIds.includes(f.farmId));
+      const provs = Array.from(new Set(scopeFarms.map((f) => f.province).filter((p): p is string => !!p)));
+      const label = provs.length === 1 ? provs[0]! : `선택한 ${selectedFarmIds.length}개 농장`;
+      scopeDirective = `\n\n[필터 적용됨] 현재 대시보드는 ${label}(${selectedFarmIds.length}개 농장)으로 한정돼 있습니다. 반드시 이 범위만 답하세요. 도구 조회 결과에 다른 시도·농장이 섞여 있으면 무시하고 ${label} 농장만 다루세요. 이 범위에 해당 데이터가 없으면 "${label}에는 현재 해당 사항이 없습니다"라고 답하세요.`;
+    }
+
     // 다층 타임아웃 변수 — try/catch 양쪽에서 정리 필요
     let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -811,7 +822,7 @@ export function TinkerbellAssistant({
       const payload = {
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
-          : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}\n\n질문: ${question}`,
+          : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}${scopeDirective}\n\n질문: ${question}`,
         role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
         animalId: animalIdForChat ?? undefined,
@@ -1015,7 +1026,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, effectiveRole, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate]);
+  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
