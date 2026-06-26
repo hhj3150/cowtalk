@@ -50,6 +50,7 @@ export interface ChatMessageRequest {
   readonly question: string;
   readonly role: Role;
   readonly farmId: string | null;
+  readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
   readonly animalId: string | null;
   readonly userId?: string;
   readonly conversationHistory: readonly ConversationTurn[];
@@ -381,6 +382,7 @@ export async function handleChatStream(
       userId: request.userId,
       role,
       farmId: farmId ?? undefined,
+      farmIds: request.farmIds && request.farmIds.length > 0 ? request.farmIds : undefined,
     },
     { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );

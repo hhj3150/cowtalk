@@ -93,6 +93,7 @@ export interface ToolCallContext {
   readonly userId?: string;
   readonly role: Role | string;
   readonly farmId?: string;
+  readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
   readonly requestId?: string; // 동일 대화의 여러 tool 호출 그룹핑
 }
 
@@ -176,7 +177,7 @@ export async function executeToolWithGateway(
 
   try {
     resultText = await Promise.race([
-      executeTool(toolName, input, { userId: context.userId, role: String(context.role), farmId: context.farmId }),
+      executeTool(toolName, input, { userId: context.userId, role: String(context.role), farmId: context.farmId, farmIds: context.farmIds }),
       new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`도구 '${toolName}' 실행 타임아웃 (${TOOL_TIMEOUT_MS / 1000}초 초과)`)),

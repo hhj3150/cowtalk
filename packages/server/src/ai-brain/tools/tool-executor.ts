@@ -42,6 +42,7 @@ export interface ExecutorContext {
   readonly userId?: string;
   readonly role?: string;
   readonly farmId?: string;
+  readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구를 이 농장들로 데이터 레벨 한정
 }
 
 // ===========================
@@ -93,7 +94,7 @@ export async function executeTool(
         result = await handleQueryWeather(input);
         break;
       case 'query_quarantine_dashboard':
-        result = await handleQueryQuarantineDashboard(input);
+        result = await handleQueryQuarantineDashboard(input, context);
         break;
       case 'query_national_situation':
         result = await handleQueryNationalSituation(input);
@@ -836,9 +837,9 @@ function getThiRecommendation(level: string): string {
 // 7f. 방역 대시보드 조회
 // ===========================
 
-async function handleQueryQuarantineDashboard(_input: Record<string, unknown>): Promise<unknown> {
+async function handleQueryQuarantineDashboard(_input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   try {
-    const data = await getQuarantineDashboard();
+    const data = await getQuarantineDashboard(context?.farmIds && context.farmIds.length > 0 ? { farmIds: context.farmIds } : {});
     return {
       riskLevel: data.kpi.riskLevel,
       totalAnimals: data.kpi.totalAnimals,

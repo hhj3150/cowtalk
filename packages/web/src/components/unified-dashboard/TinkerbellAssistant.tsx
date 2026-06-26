@@ -841,6 +841,7 @@ export function TinkerbellAssistant({
     const buildScopeDir = (label: string, n: number) =>
       `\n\n[범위 한정] 현재 대화는 ${label}(${n}개 농장)으로 한정됩니다. 반드시 이 범위만 답하세요. 도구 조회 결과에 다른 시도·농장이 섞여 있으면 무시하고 ${label} 농장만 다루세요. 이 범위에 해당 데이터가 없으면 "${label}에는 현재 해당 사항이 없습니다"라고 답하세요.`;
     let scopeDirective = '';
+    let scopeFarmIds: readonly string[] = []; // 서버 도구 데이터 레벨 스코프로 전송
     if (!animalContext) {
       const qRegion = findRegionFarms(question, farmsForRegion?.farms ?? []);
       if (qRegion && qRegion.farmIds.length > 0) {
@@ -849,11 +850,13 @@ export function TinkerbellAssistant({
           selectFarmGroup(qRegion.farmIds);
         }
         scopeDirective = buildScopeDir(qRegion.label, qRegion.farmIds.length);
+        scopeFarmIds = qRegion.farmIds;
       } else if (selectedFarmIds.length > 0) {
         const scopeFarms = (farmsForRegion?.farms ?? []).filter((f) => selectedFarmIds.includes(f.farmId));
         const provs = Array.from(new Set(scopeFarms.map((f) => f.province).filter((p): p is string => !!p)));
         const label = provs.length === 1 ? provs[0]! : `선택한 ${selectedFarmIds.length}개 농장`;
         scopeDirective = buildScopeDir(label, selectedFarmIds.length);
+        scopeFarmIds = selectedFarmIds;
       }
     }
 
@@ -869,6 +872,8 @@ export function TinkerbellAssistant({
           : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}${scopeDirective}\n\n질문: ${question}`,
         role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
+        // 지역(그룹) 스코프 — 서버 집계 도구를 이 농장들로 데이터 레벨 한정 (방역 대시보드 등)
+        farmIds: scopeFarmIds.length > 0 ? [...scopeFarmIds] : undefined,
         animalId: animalIdForChat ?? undefined,
         dashboardContext: animalContext
           ? `${animalContext}`
