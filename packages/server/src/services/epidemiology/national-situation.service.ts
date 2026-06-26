@@ -8,7 +8,7 @@ import { farms, smaxtecEvents, regions, alerts, animals } from '../../db/schema.
 import { getLiveCountByFarm } from '../metrics/herd-service.js';
 import { eq, and, gte, sql, inArray, isNull } from 'drizzle-orm';
 import type { RiskLevel } from './quarantine-dashboard.service.js';
-import { latLngToProvince, PROVINCE_CENTERS } from './province-mapper.js';
+import { resolveFarmProvince, PROVINCE_CENTERS } from './province-mapper.js';
 import { logger } from '../../lib/logger.js';
 
 // ===========================
@@ -95,6 +95,7 @@ async function getActiveFarmsWithProvince(
       lat: farms.lat,
       lng: farms.lng,
       regionId: farms.regionId,
+      address: farms.address,
     })
     .from(farms)
     .where(scoped ? and(eq(farms.status, 'active'), inArray(farms.farmId, [...farmIds!])) : eq(farms.status, 'active'));
@@ -118,7 +119,7 @@ async function getActiveFarmsWithProvince(
     const region = f.regionId ? regionMap.get(f.regionId) : undefined;
     const dbProvince = region?.province;
     const isValidProvince = !!(dbProvince && dbProvince !== '전국' && PROVINCE_CENTERS[dbProvince]);
-    const province = isValidProvince ? dbProvince! : latLngToProvince(f.lat, f.lng);
+    const province = resolveFarmProvince({ regionProvince: dbProvince, address: f.address, lat: f.lat, lng: f.lng });
     const district = (isValidProvince && region?.district) ? region.district : '미분류';
     return {
       farmId: f.farmId,
