@@ -4,8 +4,10 @@
 // 데이터: 전국 농장/두수 통계 + 시도별 현황 + 방역 성과 + 정책 지원 대상
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
 import { useIsMobile } from '@web/hooks/useIsMobile';
+import { ProvinceFarmListPanel } from '@web/components/epidemiology/ProvinceFarmListPanel';
 
 // ── 타입 ─────────────────────────────────────────────────────────────
 
@@ -100,6 +102,8 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
   const [national, setNational] = useState<NationalSituationData | null>(null);
   const [metrics, setMetrics] = useState<EarlyDetectionMetrics | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'provinces' | 'policy' | 'performance'>('overview');
+  const [drillProvince, setDrillProvince] = useState<string | null>(null);
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -342,7 +346,10 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
                 ? Math.round((prov.monitoredAnimals / prov.totalAnimals) * 100)
                 : 0;
               return (
-                <div key={prov.province} style={{
+                <button key={prov.province} type="button"
+                  onClick={() => setDrillProvince(prov.province)}
+                  aria-label={`${prov.province} 농장 드릴다운`}
+                  style={{
                   padding: '10px 14px',
                   borderRadius: 8,
                   background: 'var(--ct-bg)',
@@ -350,6 +357,9 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
+                  width: '100%',
+                  textAlign: 'left',
+                  cursor: 'pointer',
                 }}>
                   {/* 위험 등급 dot */}
                   <div style={{
@@ -384,11 +394,21 @@ export function GovAdminDashboard({ onFarmClick: _onFarmClick }: Props): React.J
                       )}
                     </div>
                   </div>
-                </div>
+                  <span style={{ fontSize: 14, color: 'var(--ct-text-muted)', flexShrink: 0 }}>›</span>
+                </button>
               );
             })}
           </div>
         </div>
+      )}
+
+      {/* 시도 클릭 → 농장 드릴다운 (방역관 대시보드와 동일 패널 재사용) */}
+      {drillProvince && (
+        <ProvinceFarmListPanel
+          province={drillProvince}
+          onClose={() => setDrillProvince(null)}
+          onAnimalSelect={(animalId) => { setDrillProvince(null); navigate(`/animals/${animalId}`); }}
+        />
       )}
 
       {/* ── 탭: 정책 지원 ── */}
