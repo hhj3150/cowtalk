@@ -25,9 +25,10 @@ regionalRouter.get('/summary', async (req: Request, res: Response, next: NextFun
 
     // 데이터 격리: 배정된 농장이 속한 지역만 집계 (관리 역할/미배정은 scoped=null → 전체)
     const scoped = scopedFarmIds(req);
+    // status='active'를 JOIN 조건에 둬 비활성 농장은 NULL로 빠지고 count(farms.farmId)에서 제외 (타 화면과 동일 기준)
     const farmJoin = scoped
-      ? and(eq(regions.regionId, farms.regionId), inArray(farms.farmId, [...scoped]))
-      : eq(regions.regionId, farms.regionId);
+      ? and(eq(regions.regionId, farms.regionId), eq(farms.status, 'active'), inArray(farms.farmId, [...scoped]))
+      : and(eq(regions.regionId, farms.regionId), eq(farms.status, 'active'));
 
     const summary = await db
       .select({
