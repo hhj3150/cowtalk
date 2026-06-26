@@ -10,6 +10,7 @@ import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { farms, smaxtecEvents } from '../../db/schema.js';
 import { eq, count, sql, and, gte, inArray } from 'drizzle-orm';
+import { getLiveCountByFarm, getHerdTotal } from '../../services/metrics/herd-service.js';
 import type {
   EpidemicRiskLevel,
   TrendDirection,
@@ -161,17 +162,19 @@ async function queryActiveFarms(db: DbInstance): Promise<readonly FarmInfo[]> {
       name: farms.name,
       lat: farms.lat,
       lng: farms.lng,
-      headCount: farms.currentHeadCount,
     })
     .from(farms)
     .where(safeAnd(eq(farms.status, 'active'), getEpidemicFarmFilter()) ?? eq(farms.status, 'active'));
+
+  // 두수는 라이브 단일 소스 (D7/D9) — currentHeadCount(D8) 미사용
+  const liveByFarm = await getLiveCountByFarm();
 
   return rows.map((r) => ({
     farmId: r.farmId,
     name: r.name,
     lat: r.lat,
     lng: r.lng,
-    headCount: r.headCount,
+    headCount: liveByFarm.get(r.farmId) ?? 0,
   }));
 }
 
@@ -955,15 +958,15 @@ epidemicIntelligenceRouter.get('/drilldown/:farmId', async (req: Request, res: R
       return b.eventCount - a.eventCount;
     });
 
-    // 농장 정보
+    // 농장 정보 (두수는 라이브 단일 소스 D7/D9)
     const farmRows = await db
-      .select({ name: farms.name, headCount: farms.currentHeadCount })
+      .select({ name: farms.name })
       .from(farms)
       .where(eq(farms.farmId, farmId))
       .limit(1);
 
     const farmName = farmRows[0]?.name ?? '알 수 없음';
-    const headCount = farmRows[0]?.headCount ?? 0;
+    const headCount = (await getHerdTotal({ farmIds: [farmId] })).total;
     const feverCount = animalList.filter((a) => a.hasFever).length;
     const comorbidCount = animalList.filter((a) => a.hasFever && a.hasRuminationDrop).length;
 

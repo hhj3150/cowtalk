@@ -21,7 +21,7 @@ import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
-import { computeHerd, getHerdTotal } from '../../services/metrics/herd-service.js';
+import { computeHerd, getHerdTotal, getLiveCountByFarm } from '../../services/metrics/herd-service.js';
 import { computeAccuracy } from '../../services/metrics/ai-performance-service.js';
 import { getAlertCountForWidget } from '../../services/alerts/alert-aggregator.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
@@ -1007,7 +1007,6 @@ unifiedDashboardRouter.get('/farms', async (req: Request, res: Response, next: N
     const farmRows = await db.select({
       farmId: farms.farmId,
       name: farms.name,
-      currentHeadCount: farms.currentHeadCount,
       province: regions.province,
       lat: farms.lat,
       lng: farms.lng,
@@ -1019,11 +1018,14 @@ unifiedDashboardRouter.get('/farms', async (req: Request, res: Response, next: N
         : eq(farms.status, 'active'))
       .orderBy(farms.name);
 
+    // 두수는 라이브 단일 소스 (D7/D9) — 드롭다운·지도 마커 표시값
+    const liveByFarm = await getLiveCountByFarm(scoped ? { farmIds: [...scoped] } : {});
+
     // 시도(province) 부여 — regionId 없으면 좌표로 판별
     const farmList = farmRows.map((f) => ({
       farmId: f.farmId,
       name: f.name,
-      currentHeadCount: f.currentHeadCount,
+      currentHeadCount: liveByFarm.get(f.farmId) ?? 0, // 라이브 두수 (D7/D9)
       province: f.province ?? latLngToProvince(f.lat, f.lng),
     }));
 
@@ -1977,7 +1979,6 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
     const farmRows = await db.select({
       farmId: farms.farmId,
       farmName: farms.name,
-      headCount: farms.currentHeadCount,
     })
       .from(farms)
       .where(sql`${farms.farmId} IN (${sql.raw(farmIdsList)})`);

@@ -9,7 +9,7 @@ import { getOrTriggerRegionalInterpretation } from '../../serving/regional-inter
 import { getDb } from '../../config/database.js';
 import { regions, farms, smaxtecEvents, animals } from '../../db/schema.js';
 import { eq, count, and, gte, inArray, isNull } from 'drizzle-orm';
-import { getHerdTotal, computeHerd } from '../../services/metrics/herd-service.js';
+import { getHerdTotal, computeHerd, getLiveCountByFarm } from '../../services/metrics/herd-service.js';
 import { aggregateAlertsByFarm } from '../../services/alerts/alert-aggregator.js';
 
 export const regionalRouter = Router();
@@ -165,11 +165,10 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
 
     // 해당 지역 농장 목록 (데이터 격리: 배정 농장만, 관리 역할/미배정은 전체)
     const scoped = scopedFarmIds(req);
-    const farmList = await db
+    const farmRows = await db
       .select({
         farmId: farms.farmId,
         name: farms.name,
-        currentHeadCount: farms.currentHeadCount,
         status: farms.status,
       })
       .from(farms)
@@ -179,7 +178,15 @@ regionalRouter.get('/:regionId', async (req: Request, res: Response, next: NextF
 
     // 라이브 두수 (D7, BUG-007) — 지역 내 농장 활성 동물 합. D9 사용자 노출은 라이브만.
     // 0농장 region이면 실측 0두 (전체 fallback 차단).
-    const regionFarmIds = farmList.map((f) => f.farmId);
+    const regionFarmIds = farmRows.map((f) => f.farmId);
+    const liveByFarm = await getLiveCountByFarm({ farmIds: regionFarmIds });
+    // 농장 목록 두수도 라이브 단일 소스로 표기 (currentHeadCount D8 미노출)
+    const farmList = farmRows.map((f) => ({
+      farmId: f.farmId,
+      name: f.name,
+      currentHeadCount: liveByFarm.get(f.farmId) ?? 0,
+      status: f.status,
+    }));
     const regionHerd = regionFarmIds.length > 0
       ? await getHerdTotal({ farmIds: regionFarmIds })
       : computeHerd(0, 'live');

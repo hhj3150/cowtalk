@@ -5,6 +5,7 @@
 
 import { getDb } from '../../config/database.js';
 import { farms, smaxtecEvents, regions, alerts, animals } from '../../db/schema.js';
+import { getLiveCountByFarm } from '../metrics/herd-service.js';
 import { eq, and, gte, sql, inArray, isNull } from 'drizzle-orm';
 import type { RiskLevel } from './quarantine-dashboard.service.js';
 import { latLngToProvince, PROVINCE_CENTERS } from './province-mapper.js';
@@ -75,7 +76,8 @@ export interface ResolvedFarm {
   readonly farmName: string;
   readonly province: string;
   readonly district: string;
-  readonly currentHeadCount: number;
+  /** 라이브 두수 (D7/D9). currentHeadCount(D8)가 아니라 활성 동물 실측. */
+  readonly headCount: number;
   readonly lat: number | null;
   readonly lng: number | null;
   readonly regionId: string | null;
@@ -86,7 +88,6 @@ async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise
     .select({
       farmId: farms.farmId,
       farmName: farms.name,
-      currentHeadCount: farms.currentHeadCount,
       lat: farms.lat,
       lng: farms.lng,
       regionId: farms.regionId,
@@ -106,6 +107,8 @@ async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise
     : [];
 
   const regionMap = new Map(regionRows.map((r) => [r.regionId, r]));
+  // 두수는 라이브 단일 소스 (D7/D9) — currentHeadCount(D8) 직접 SELECT 금지
+  const liveByFarm = await getLiveCountByFarm();
 
   return farmRows.map((f) => {
     const region = f.regionId ? regionMap.get(f.regionId) : undefined;
@@ -118,7 +121,7 @@ async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise
       farmName: f.farmName,
       province,
       district,
-      currentHeadCount: f.currentHeadCount,
+      headCount: liveByFarm.get(f.farmId) ?? 0,
       lat: f.lat,
       lng: f.lng,
       regionId: f.regionId,
@@ -335,12 +338,12 @@ export async function getProvinceFarms(province: string): Promise<readonly Provi
 
     return allFarmRows.map((r) => {
       const feverCount = feverMap.get(r.farmId) ?? 0;
-      const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
+      const feverRate = r.headCount > 0 ? feverCount / r.headCount : 0;
       return {
         farmId: r.farmId,
         farmName: r.farmName,
         district: r.district,
-        currentHeadCount: r.currentHeadCount,
+        currentHeadCount: r.headCount, // 라이브 두수 (D7/D9)
         feverCount,
         riskLevel: calcRiskLevel(feverRate, feverCount >= 3 ? 1 : 0, 0),
         lat: r.lat ?? null,
@@ -401,14 +404,14 @@ export async function getAllMapFarms(): Promise<readonly MapFarmItem[]> {
       .filter((r) => r.lat != null && r.lng != null)
       .map((r) => {
         const feverCount = feverMap.get(r.farmId) ?? 0;
-        const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
+        const feverRate = r.headCount > 0 ? feverCount / r.headCount : 0;
 
         return {
           farmId: r.farmId,
           farmName: r.farmName,
           province: r.province,
           district: r.district,
-          currentHeadCount: r.currentHeadCount,
+          currentHeadCount: r.headCount, // 라이브 두수 (D7/D9)
           feverCount,
           riskLevel: calcRiskLevel(feverRate, feverCount >= 3 ? 1 : 0, 0),
           lat: r.lat!,
