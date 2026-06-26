@@ -595,6 +595,12 @@ function matchRegionCommand(
   const hasShow = /(보여|보기|필터|전환|봐|만\s|현황)/.test(text);
   if (!hasFarmWord || !hasShow) return null;
 
+  // 분석/데이터 질문(발열·수태·통계 등)은 가로채지 않고 AI로 전달한다.
+  // (이전 버그: "경기도 목장 중 발열현황은?" 이 '현황' 때문에 스코프 명령으로 오인돼
+  //  실제 답 대신 "N개 농장으로 필터링했습니다" 깡통 응답이 나갔음. 활성 필터 범위로 AI가 답하게 한다.)
+  const isAnalytic = /(발열|발정|수태|임신|번식|질병|폐사|치료|투약|백신|접종|두수|마리|등급|가격|시세|통계|분석|추세|평균|위험|얼마|며칠|몇|왜|어때|어떤|비교|추천|예측|순위|리포트|보고)/.test(text);
+  if (isAnalytic) return null;
+
   if (/전체|전국|모든/.test(text)) return { type: 'all' };
 
   for (const r of REGION_DEFS) {
@@ -1134,8 +1140,8 @@ export function TinkerbellAssistant({
           const result = await transcribeAudio(blob, uiLang);
           if (import.meta.env.DEV) console.log('[Whisper] 8) 전사 완료 — text:', result.text);
           const text = (result.text ?? '').trim();
-          if (text) {
-            const cleaned = cleanSttTranscript(text);
+          const cleaned = text ? cleanSttTranscript(text) : '';
+          if (cleaned.length >= 2) {
             askTinkerbell(cleaned, 'voice'); // iOS Whisper 경로 — 음성 입력
           } else {
             setState('idle');
@@ -1258,8 +1264,9 @@ export function TinkerbellAssistant({
 
     recognition.onend = () => {
       const rawText = transcriptRef.current.trim();
-      if (rawText) {
-        const cleaned = cleanSttTranscript(rawText);
+      const cleaned = rawText ? cleanSttTranscript(rawText) : '';
+      // 1글자 이하(예: TTS 에코·잡음 '은')는 질문으로 제출하지 않는다 — 오작동 방지
+      if (cleaned.length >= 2) {
         askTinkerbell(cleaned, 'voice'); // Web Speech API 경로 — 음성 입력
       } else {
         setState('idle');
@@ -2118,7 +2125,7 @@ export function TinkerbellAssistant({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleTextSubmit(); } }}
               onFocus={() => setIsExpanded(true)}
               placeholder={t('tb.placeholder.input')}
               disabled={state === 'thinking' || state === 'listening'}
@@ -2595,7 +2602,7 @@ export function TinkerbellAssistant({
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleTextSubmit(); } }}
           placeholder={state === 'listening' ? '듣는 중...' : '팅커벨에게 물어보세요...'}
           disabled={state === 'thinking' || state === 'listening'}
           style={{
