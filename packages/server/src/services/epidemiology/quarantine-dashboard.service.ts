@@ -397,10 +397,15 @@ async function fetchSensorStats(): Promise<{ sensored: number; total: number; to
 // 메인: getQuarantineDashboard
 // ===========================
 
-export async function getQuarantineDashboard(): Promise<QuarantineDashboardData> {
+export async function getQuarantineDashboard(
+  opts: { farmIds?: readonly string[] } = {},
+): Promise<QuarantineDashboardData> {
   try {
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // 데이터 레벨 스코프 — farmIds 지정 시 모든 농장 단위 출력을 그 농장들로 한정한다.
+    const scopeIds = opts.farmIds && opts.farmIds.length > 0 ? opts.farmIds : null;
+    const scope = scopeIds ? new Set(scopeIds) : null;
 
     const [sensorStats, feverByFarm, healthByFarm, hourlyFever24h, dsi7Days, activeAlerts, allFarms] =
       await Promise.all([
@@ -415,22 +420,38 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
           farmName: farms.name,
           lat: farms.lat,
           lng: farms.lng,
-        }).from(farms).where(eq(farms.status, 'active')),
+        }).from(farms).where(scope ? and(eq(farms.status, 'active'), inArray(farms.farmId, [...scopeIds!])) : eq(farms.status, 'active')),
       ]);
 
     // 위험농장 비율 분모 = 라이브 두수 (D7/D9). currentHeadCount(D8) 미사용.
-    const liveByFarm = await getLiveCountByFarm();
+    const liveByFarm = await getLiveCountByFarm(scope ? { farmIds: scopeIds! } : {});
 
-    const totalAnimals = sensorStats.totalAnimals;
-    const sensorRate = totalAnimals > 0 ? sensorStats.sensoredAnimals / totalAnimals : 0;
-    const feverAnimals = Array.from(feverByFarm.values()).reduce((s, f) => s + f.feverCount, 0);
+    // 스코프 지정 시 농장 단위 집계를 그 농장들로 한정 (top5RiskFarms는 allFarms가 이미 스코프됨)
+    const feverInScope = scope ? Array.from(feverByFarm.values()).filter((f) => scope.has(f.farmId)) : Array.from(feverByFarm.values());
+    const alertsInScope = scope ? activeAlerts.filter((a) => scope.has(a.farmId)) : activeAlerts;
+
+    let totalAnimals: number;
+    let sensoredAnimals: number;
+    if (scope) {
+      totalAnimals = Array.from(liveByFarm.values()).reduce((s, c) => s + c, 0);
+      const [sr] = await db
+        .select({ c: count(animals.animalId) })
+        .from(animals)
+        .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt), sql`${animals.currentDeviceId} is not null`, inArray(animals.farmId, [...scopeIds!])));
+      sensoredAnimals = Number(sr?.c ?? 0);
+    } else {
+      totalAnimals = sensorStats.totalAnimals;
+      sensoredAnimals = sensorStats.sensoredAnimals;
+    }
+    const sensorRate = totalAnimals > 0 ? sensoredAnimals / totalAnimals : 0;
+    const feverAnimals = feverInScope.reduce((s, f) => s + f.feverCount, 0);
     const feverRate = totalAnimals > 0 ? feverAnimals / totalAnimals : 0;
 
     // 집단 발열: 3두+ 발열 농장
-    const clusterFarms = Array.from(feverByFarm.values()).filter((f) => f.feverCount >= 3).length;
+    const clusterFarms = feverInScope.filter((f) => f.feverCount >= 3).length;
 
     // 법정전염병 의심: 우선순위 critical 경보 수
-    const legalSuspects = activeAlerts.filter((a) => a.priority === 'critical').length;
+    const legalSuspects = alertsInScope.filter((a) => a.priority === 'critical').length;
 
     const riskLevel = calcRiskLevel(feverRate, clusterFarms, legalSuspects);
 
@@ -498,7 +519,7 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
       top5RiskFarms,
       hourlyFever24h,
       dsi7Days,
-      activeAlerts,
+      activeAlerts: alertsInScope,
       computedAt: new Date().toISOString(),
     };
   } catch (err) {

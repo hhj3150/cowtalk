@@ -185,6 +185,8 @@ const chatDocumentSchema = z.object({
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
   farmId: z.string().uuid().optional(),
+  // 지역(그룹) 스코프 — 활성 지역 필터의 농장 id 목록. 집계 도구를 이 농장들로 데이터 레벨 한정.
+  farmIds: z.array(z.string().uuid()).max(5000).optional(),
   animalId: z.string().uuid().optional(),
   conversationHistory: z.array(z.object({
     role: z.enum(['user', 'assistant']),

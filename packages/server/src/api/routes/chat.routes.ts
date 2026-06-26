@@ -89,6 +89,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   const body = req.body as {
     question: string;
     farmId?: string;
+    farmIds?: string[];
     animalId?: string;
     conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
     dashboardContext?: string;
@@ -116,6 +117,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     question: sanitizeQuestion(body.question),
     role: req.user?.role as Role,
     farmId: body.farmId ?? null,
+    farmIds: Array.isArray(body.farmIds) && body.farmIds.length > 0 ? body.farmIds : undefined,
     animalId: body.animalId ?? null,
     userId: req.user?.userId,
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),

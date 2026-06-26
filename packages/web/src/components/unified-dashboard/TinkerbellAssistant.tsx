@@ -586,20 +586,27 @@ type RegionCommand =
   | { type: 'region'; label: string; farmIds: readonly string[] }
   | { type: 'region_empty'; label: string };
 
-/** 텍스트가 지역 보기 명령이면 해석한다. 아니면 null(→ AI로 전달). */
+/**
+ * 텍스트가 "순수 스코프 명령"이면 해석한다(대시보드만 그 지역으로 전환, AI 왕복 없음).
+ * 그 외(질문·분석·"현황은?" 등)는 null → AI가 실제로 답하도록 한다.
+ * 핵심: 명시적 스코프 동사(보여/보기/필터/전환/스코프)가 있어야만 명령으로 본다.
+ *   "현황"·"은/는" 같은 질문 표현은 더 이상 명령으로 가로채지 않는다(깡통 응답 원인 제거).
+ */
 function matchRegionCommand(
   text: string,
   farms: readonly { farmId: string; province?: string }[],
 ): RegionCommand | null {
   const hasFarmWord = /(목장|농장|대시보드)/.test(text);
-  const hasShow = /(보여|보기|필터|전환|봐|만\s|현황)/.test(text);
-  if (!hasFarmWord || !hasShow) return null;
+  const hasShowVerb = /(보여|보기|필터|전환|스코프)/.test(text); // 명시적 스코프 동사만
+  if (!hasFarmWord || !hasShowVerb) return null;
 
-  // 분석/데이터 질문(발열·수태·통계 등)은 가로채지 않고 AI로 전달한다.
-  // (이전 버그: "경기도 목장 중 발열현황은?" 이 '현황' 때문에 스코프 명령으로 오인돼
-  //  실제 답 대신 "N개 농장으로 필터링했습니다" 깡통 응답이 나갔음. 활성 필터 범위로 AI가 답하게 한다.)
+  // 분석/데이터 질문(발열·수태·통계 등)은 동사가 있어도 가로채지 않고 AI로.
   const isAnalytic = /(발열|발정|수태|임신|번식|질병|폐사|치료|투약|백신|접종|두수|마리|등급|가격|시세|통계|분석|추세|평균|위험|얼마|며칠|몇|왜|어때|어떤|비교|추천|예측|순위|리포트|보고)/.test(text);
   if (isAnalytic) return null;
+
+  // "현황/상황/정보/브리핑"은 상태·정보 요청 → 명령으로 가로채지 않고 AI가 답한다(+지역 자동 스코프).
+  // 순수 네비게이션("경기도 목장 보여줘")만 인터셉트로 남긴다.
+  if (/현황|상황|정보|브리핑|알려|설명/.test(text)) return null;
 
   if (/전체|전국|모든/.test(text)) return { type: 'all' };
 
@@ -609,6 +616,25 @@ function matchRegionCommand(
       return ids.length > 0
         ? { type: 'region', label: r.label, farmIds: ids }
         : { type: 'region_empty', label: r.label };
+    }
+  }
+  return null;
+}
+
+/**
+ * 질문 텍스트에 시도명이 있으면 해당 시도 농장 id를 반환(질문 자동 스코프용).
+ * 명령 여부와 무관 — "경기도 ... 현황은?" 같은 질문이 들어오면 대시보드를 그 지역으로
+ * 동기화하고 AI도 그 범위로 답하도록 하기 위한 감지기.
+ */
+function findRegionFarms(
+  text: string,
+  farms: readonly { farmId: string; province?: string }[],
+): { label: string; farmIds: readonly string[] } | null {
+  if (/전체|전국|모든/.test(text)) return null;
+  for (const r of REGION_DEFS) {
+    if (r.keys.some((k) => text.includes(k))) {
+      const ids = farms.filter((f) => (f.province ?? '').includes(r.core)).map((f) => f.farmId);
+      return { label: r.label, farmIds: ids };
     }
   }
   return null;
@@ -809,14 +835,29 @@ export function TinkerbellAssistant({
       ? `\n\n${formatSovereignContext(sovereignStats)}`
       : '';
 
-    // 지역(그룹) 필터가 켜져 있으면 AI 답변을 그 범위로 강제 한정 (대시보드 스코프와 일치).
-    // 도구가 전국 데이터를 반환해도 모델이 이 범위 밖 농장을 언급하지 않도록 하드 지시.
+    // 지역 스코프를 AI에 강제 — 도구가 전국 데이터를 반환해도 범위 밖 농장을 언급하지 않게.
+    //  (1) 질문이 특정 시도를 언급하면 → 대시보드도 그 지역으로 동기화하고 그 범위로 답함.
+    //  (2) 아니면 → 현재 활성 지역 필터(있으면) 범위로 답함.
+    const buildScopeDir = (label: string, n: number) =>
+      `\n\n[범위 한정] 현재 대화는 ${label}(${n}개 농장)으로 한정됩니다. 반드시 이 범위만 답하세요. 도구 조회 결과에 다른 시도·농장이 섞여 있으면 무시하고 ${label} 농장만 다루세요. 이 범위에 해당 데이터가 없으면 "${label}에는 현재 해당 사항이 없습니다"라고 답하세요.`;
     let scopeDirective = '';
-    if (!animalContext && selectedFarmIds.length > 0) {
-      const scopeFarms = (farmsForRegion?.farms ?? []).filter((f) => selectedFarmIds.includes(f.farmId));
-      const provs = Array.from(new Set(scopeFarms.map((f) => f.province).filter((p): p is string => !!p)));
-      const label = provs.length === 1 ? provs[0]! : `선택한 ${selectedFarmIds.length}개 농장`;
-      scopeDirective = `\n\n[필터 적용됨] 현재 대시보드는 ${label}(${selectedFarmIds.length}개 농장)으로 한정돼 있습니다. 반드시 이 범위만 답하세요. 도구 조회 결과에 다른 시도·농장이 섞여 있으면 무시하고 ${label} 농장만 다루세요. 이 범위에 해당 데이터가 없으면 "${label}에는 현재 해당 사항이 없습니다"라고 답하세요.`;
+    let scopeFarmIds: readonly string[] = []; // 서버 도구 데이터 레벨 스코프로 전송
+    if (!animalContext) {
+      const qRegion = findRegionFarms(question, farmsForRegion?.farms ?? []);
+      if (qRegion && qRegion.farmIds.length > 0) {
+        // 질문이 시도를 언급 → 대시보드 스코프 동기화(이미 같으면 no-op) + 그 범위로 답함
+        if ([...selectedFarmIds].join('|') !== [...qRegion.farmIds].join('|')) {
+          selectFarmGroup(qRegion.farmIds);
+        }
+        scopeDirective = buildScopeDir(qRegion.label, qRegion.farmIds.length);
+        scopeFarmIds = qRegion.farmIds;
+      } else if (selectedFarmIds.length > 0) {
+        const scopeFarms = (farmsForRegion?.farms ?? []).filter((f) => selectedFarmIds.includes(f.farmId));
+        const provs = Array.from(new Set(scopeFarms.map((f) => f.province).filter((p): p is string => !!p)));
+        const label = provs.length === 1 ? provs[0]! : `선택한 ${selectedFarmIds.length}개 농장`;
+        scopeDirective = buildScopeDir(label, selectedFarmIds.length);
+        scopeFarmIds = selectedFarmIds;
+      }
     }
 
     // 다층 타임아웃 변수 — try/catch 양쪽에서 정리 필요
@@ -831,6 +872,8 @@ export function TinkerbellAssistant({
           : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}${scopeDirective}\n\n질문: ${question}`,
         role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
+        // 지역(그룹) 스코프 — 서버 집계 도구를 이 농장들로 데이터 레벨 한정 (방역 대시보드 등)
+        farmIds: scopeFarmIds.length > 0 ? [...scopeFarmIds] : undefined,
         animalId: animalIdForChat ?? undefined,
         dashboardContext: animalContext
           ? `${animalContext}`
