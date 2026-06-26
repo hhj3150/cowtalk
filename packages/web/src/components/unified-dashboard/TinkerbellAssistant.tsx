@@ -839,7 +839,7 @@ export function TinkerbellAssistant({
     //  (1) 질문이 특정 시도를 언급하면 → 대시보드도 그 지역으로 동기화하고 그 범위로 답함.
     //  (2) 아니면 → 현재 활성 지역 필터(있으면) 범위로 답함.
     const buildScopeDir = (label: string, n: number) =>
-      `\n\n[범위 한정] 현재 대화는 ${label}(${n}개 농장)으로 한정됩니다. 반드시 이 범위만 답하세요. 도구 조회 결과에 다른 시도·농장이 섞여 있으면 무시하고 ${label} 농장만 다루세요. 이 범위에 해당 데이터가 없으면 "${label}에는 현재 해당 사항이 없습니다"라고 답하세요.`;
+      `\n\n[범위 한정] 현재 대화는 ${label}(${n}개 농장)으로 한정됩니다. 반드시 이 범위만 답하세요. 도구 결과에 다른 시도·농장이 섞이면 무시하고 ${label} 농장만 다루세요. 데이터가 없으면 "${label}에는 현재 해당 사항이 없습니다"라고 답하세요.\n[도구 선택] 지역 전체 현황은 query_national_situation(시도 요약, 가볍고 이미 이 지역 한정) 1개로 간결히 답하세요. query_farm_summary·get_farm_kpis는 특정 농장명이 있을 때만, query_breeding_stats는 번식을 명시적으로 물을 때만 쓰세요. 한 번에 최소한의 도구만 호출하세요(응답 지연 방지).`;
     let scopeDirective = '';
     let scopeFarmIds: readonly string[] = []; // 서버 도구 데이터 레벨 스코프로 전송
     if (!animalContext) {

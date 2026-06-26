@@ -9,6 +9,7 @@ import {
   type ConversationTurn,
 } from '../ai-brain/prompts/conversation-prompt.js';
 import { resolveContext, type DetectedType } from './context-builder.js';
+import { getNationalSituation } from '../services/epidemiology/national-situation.service.js';
 import { getRoleTone } from './role-tone.js';
 import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
@@ -182,8 +183,29 @@ export async function handleChatMessage(
 }
 
 // ===========================
-// SSE 스트리밍 대화
+// 선제적 지역 요약 (자비스 패턴) — 지역 스코프가 켜지면 그 범위 핵심 지표를
+// 프롬프트에 미리 넣어, AI가 느린 도구 왕복 없이 즉시·근거 있게 답하게 한다.
+// (지역 전체 현황 질문이 도구 타임아웃으로 멈추던 문제도 함께 해소)
 // ===========================
+
+async function buildScopedOverviewBlock(farmIds: readonly string[]): Promise<string | null> {
+  try {
+    const nat = await getNationalSituation({ farmIds });
+    const s = nat.nationalSummary;
+    const provLines = nat.provinces.map(
+      (p) => `  · ${p.province}: ${p.farmCount}농장 · ${p.totalAnimals}두 · 최근24h 발열 ${p.feverAnimals}두(${(p.feverRate * 100).toFixed(1)}%) · 위험등급 ${p.riskLevel} · 집단발열농장 ${p.clusterFarms}곳`,
+    );
+    return [
+      '## 현재 범위 실시간 요약 (선제 제공 — 이미 이 지역으로 한정됨)',
+      `- 합계: ${s.totalFarms}농장 · ${s.totalAnimals}두 · 최근24h 발열 ${s.feverAnimals}두(${(s.nationalFeverRate * 100).toFixed(1)}%)`,
+      ...(provLines.length > 0 ? ['- 시도별:', ...provLines] : []),
+      '지역 전체 현황·요약 질문은 위 데이터로 도구 없이 바로 답하세요. 특정 농장·개체 드릴다운이 필요할 때만 도구(이미 이 범위로 자동 한정됨)를 호출하세요.',
+    ].join('\n');
+  } catch (err) {
+    logger.warn({ err }, '[Chat] 선제 지역 요약 생성 실패 — 생략');
+    return null;
+  }
+}
 
 export async function handleChatStream(
   request: ChatMessageRequest,
@@ -248,6 +270,10 @@ export async function handleChatStream(
   if (farmId) {
     snapshotPromise = getFarmLearningSnapshot(farmId, 30).catch(() => null);
   }
+  // 지역 스코프가 켜져 있으면 그 범위 요약을 병렬로 미리 준비 (선제적 종합)
+  const overviewPromise = request.farmIds && request.farmIds.length > 0
+    ? buildScopedOverviewBlock(request.farmIds)
+    : null;
   try {
     const resolved = await resolveContext(
       question, farmId, animalId, role, dashboardContext,
@@ -317,9 +343,10 @@ export async function handleChatStream(
   }
 
   const farmBreedingSettings = await loadFarmBreedingSettings(context);
+  const scopedOverview = overviewPromise ? await overviewPromise : null;
   const prompt = buildConversationPrompt(
     question, role, context, conversationHistory, { streaming: true, labelContext, farmBreedingSettings },
-  ) + textDocumentsBlock;
+  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '');
 
   const roleTone = getRoleTone(role);
   // 스트리밍: JSON 강제 제거, 자연어 텍스트 응답
