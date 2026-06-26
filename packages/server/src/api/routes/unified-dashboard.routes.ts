@@ -16,7 +16,7 @@ import {
   pregnancyChecks, calvingEvents, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
-import { latLngToProvince } from '../../services/epidemiology/province-mapper.js';
+import { latLngToProvince, PROVINCE_CENTERS } from '../../services/epidemiology/province-mapper.js';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
@@ -1021,13 +1021,19 @@ unifiedDashboardRouter.get('/farms', async (req: Request, res: Response, next: N
     // 두수는 라이브 단일 소스 (D7/D9) — 드롭다운·지도 마커 표시값
     const liveByFarm = await getLiveCountByFarm(scoped ? { farmIds: [...scoped] } : {});
 
-    // 시도(province) 부여 — regionId 없으면 좌표로 판별
-    const farmList = farmRows.map((f) => ({
-      farmId: f.farmId,
-      name: f.name,
-      currentHeadCount: liveByFarm.get(f.farmId) ?? 0, // 라이브 두수 (D7/D9)
-      province: f.province ?? latLngToProvince(f.lat, f.lng),
-    }));
+    // 시도(province) 부여 — national-situation과 동일 규칙:
+    // regions.province가 유효 시도면 그 값, '전국' 등 무효값이거나 없으면 좌표로 판별.
+    // (이전 버그: f.province가 '전국'이면 ?? 폴백이 안 돼 '경기' 필터에서 누락 → 지역명령이 3개만 잡음)
+    const farmList = farmRows.map((f) => {
+      const dbP = f.province;
+      const valid = !!(dbP && dbP !== '전국' && PROVINCE_CENTERS[dbP]);
+      return {
+        farmId: f.farmId,
+        name: f.name,
+        currentHeadCount: liveByFarm.get(f.farmId) ?? 0, // 라이브 두수 (D7/D9)
+        province: valid ? dbP! : latLngToProvince(f.lat, f.lng),
+      };
+    });
 
     res.json({ success: true, data: { farms: farmList, total: farmList.length } });
   } catch (error) {
