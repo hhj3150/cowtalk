@@ -70,13 +70,13 @@ export async function executeTool(
         result = await queryFarmSummary(input);
         break;
       case 'query_breeding_stats':
-        result = await queryBreedingStats(input);
+        result = await queryBreedingStats(input, context);
         break;
       case 'query_sensor_data':
         result = await querySensorData(input);
         break;
       case 'query_conception_stats':
-        result = await handleQueryConceptionStats(input);
+        result = await handleQueryConceptionStats(input, context);
         break;
       case 'query_traceability':
         result = await handleQueryTraceability(input);
@@ -97,7 +97,7 @@ export async function executeTool(
         result = await handleQueryQuarantineDashboard(input, context);
         break;
       case 'query_national_situation':
-        result = await handleQueryNationalSituation(input);
+        result = await handleQueryNationalSituation(input, context);
         break;
       case 'record_insemination':
         result = await handleRecordInsemination(input);
@@ -360,11 +360,12 @@ async function queryFarmSummary(input: Record<string, unknown>): Promise<unknown
 // 4. 번식 통계
 // ===========================
 
-async function queryBreedingStats(input: Record<string, unknown>): Promise<unknown> {
+async function queryBreedingStats(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const farmId = input.farmId as string | undefined;
+  const scopeFarmIds = context?.farmIds && context.farmIds.length > 0 ? context.farmIds : undefined;
 
   try {
-    const pipeline = await getBreedingPipeline(farmId);
+    const pipeline = await getBreedingPipeline(farmId, scopeFarmIds);
     return {
       farmId: farmId ?? '전체',
       kpis: pipeline.kpis,
@@ -545,11 +546,12 @@ async function querySensorData(input: Record<string, unknown>): Promise<unknown>
 // 6. 수태율 통계
 // ===========================
 
-async function handleQueryConceptionStats(input: Record<string, unknown>): Promise<unknown> {
+async function handleQueryConceptionStats(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const farmId = input.farmId as string | undefined;
+  const scopeFarmIds = context?.farmIds && context.farmIds.length > 0 ? context.farmIds : undefined;
 
   try {
-    const stats = await computeConceptionStats(farmId);
+    const stats = await computeConceptionStats(farmId, scopeFarmIds);
     return {
       farmId: stats.farmId ?? '전체',
       farmName: stats.farmName,
@@ -870,8 +872,9 @@ async function handleQueryQuarantineDashboard(_input: Record<string, unknown>, c
 // 7g. 전국 방역 현황 조회
 // ===========================
 
-async function handleQueryNationalSituation(input: Record<string, unknown>): Promise<unknown> {
+async function handleQueryNationalSituation(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const province = input.province as string | undefined;
+  const scopeFarmIds = context?.farmIds && context.farmIds.length > 0 ? context.farmIds : undefined;
 
   try {
     if (province) {
@@ -889,7 +892,7 @@ async function handleQueryNationalSituation(input: Record<string, unknown>): Pro
       };
     }
 
-    const data = await getNationalSituation();
+    const data = await getNationalSituation(scopeFarmIds ? { farmIds: scopeFarmIds } : {});
     return {
       nationalSummary: {
         totalFarms: data.nationalSummary.totalFarms,
