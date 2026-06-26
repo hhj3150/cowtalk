@@ -7,6 +7,7 @@ import { farms, animals, sensorMeasurements, alerts, smaxtecEvents, vaccineRecor
 import { eq, gte, and, desc, count, sql, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { ALERT_THRESHOLDS, VACCINE_PROTOCOLS } from '@cowtalk/shared';
+import { getLiveCountByFarm } from '../metrics/herd-service.js';
 
 const FEVER_EVENT_TYPES = ['temperature_high', 'health_103', 'health_104', 'health_308', 'health_309'] as const;
 
@@ -364,7 +365,7 @@ async function fetchSensorStats(): Promise<{ sensored: number; total: number; to
   const db = getDb();
 
   const totalRow = await db
-    .select({ cnt: count(farms.farmId), heads: sql<number>`sum(${farms.currentHeadCount})` })
+    .select({ cnt: count(farms.farmId) })
     .from(farms)
     .where(eq(farms.status, 'active'));
 
@@ -412,11 +413,13 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
         db.select({
           farmId: farms.farmId,
           farmName: farms.name,
-          headCount: farms.currentHeadCount,
           lat: farms.lat,
           lng: farms.lng,
         }).from(farms).where(eq(farms.status, 'active')),
       ]);
+
+    // 위험농장 비율 분모 = 라이브 두수 (D7/D9). currentHeadCount(D8) 미사용.
+    const liveByFarm = await getLiveCountByFarm();
 
     const totalAnimals = sensorStats.totalAnimals;
     const sensorRate = totalAnimals > 0 ? sensorStats.sensoredAnimals / totalAnimals : 0;
@@ -442,7 +445,7 @@ export async function getQuarantineDashboard(): Promise<QuarantineDashboardData>
         const ruminationCount = health?.ruminationCount ?? 0;
         const otherHealthCount = health?.otherCount ?? 0;
         const uniqueAnimals = health?.animalIds.length ?? 0;
-        const headCount = Math.max(f.headCount, 1);
+        const headCount = Math.max(liveByFarm.get(f.farmId) ?? 0, 1);
 
         // 집단 발생 비율
         const groupRate = headCount > 0 ? uniqueAnimals / headCount : 0;

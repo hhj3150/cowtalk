@@ -6,6 +6,7 @@ import { getDb } from '../../config/database.js';
 import { farms, animalTransfers } from '../../db/schema.js';
 import { eq, and, gte, or } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { getLiveCountByFarm } from '../metrics/herd-service.js';
 
 // ===========================
 // 타입
@@ -151,12 +152,12 @@ export async function buildContactNetwork(
     name: farms.name,
     lat: farms.lat,
     lng: farms.lng,
-    currentHeadCount: farms.currentHeadCount,
   })
     .from(farms)
     .where(eq(farms.status, 'active'));
 
   const farmMap = new Map(farmRows.map((f) => [f.farmId, f]));
+  const liveByFarm = await getLiveCountByFarm(); // 라이브 두수 (D7/D9)
 
   // 에지 목록 구성
   const edgeMap = new Map<string, NetworkEdge>();
@@ -210,7 +211,7 @@ export async function buildContactNetwork(
       farmName: f.name,
       lat: f.lat,
       lng: f.lng,
-      headCount: f.currentHeadCount,
+      headCount: liveByFarm.get(f.farmId) ?? 0,
       riskLevel: getRiskLevel(fId),
       distanceFromSource: hopDistance.get(fId) ?? 99,
     });

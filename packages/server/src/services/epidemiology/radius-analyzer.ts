@@ -82,7 +82,6 @@ export async function analyzeRadius(
     name: farms.name,
     lat: farms.lat,
     lng: farms.lng,
-    currentHeadCount: farms.currentHeadCount,
   })
     .from(farms)
     .where(eq(farms.status, 'active'));
@@ -114,8 +113,10 @@ export async function analyzeRadius(
 
   const farmFeverCount = new Map<string, number>();
   const farmHasSensor = new Map<string, boolean>();
+  const farmLiveCount = new Map<string, number>(); // 라이브 두수 (D7/D9)
 
   for (const animal of farmAnimals) {
+    farmLiveCount.set(animal.farmId, (farmLiveCount.get(animal.farmId) ?? 0) + 1);
     if (feverAnimalIds.has(animal.animalId)) {
       farmFeverCount.set(animal.farmId, (farmFeverCount.get(animal.farmId) ?? 0) + 1);
     }
@@ -138,7 +139,7 @@ export async function analyzeRadius(
 
   const zones: RadiusZone[] = radiiKm.map((radiusKm) => {
     const inZone = nearbyFarms.filter((f) => f.distanceKm <= radiusKm);
-    const totalHead = inZone.reduce((sum, f) => sum + f.currentHeadCount, 0);
+    const totalHead = inZone.reduce((sum, f) => sum + (farmLiveCount.get(f.farmId) ?? 0), 0);
     const sensoredCount = inZone.filter((f) => farmHasSensor.get(f.farmId)).length;
     const feverFarms = inZone.filter((f) => (farmFeverCount.get(f.farmId) ?? 0) > 0);
     const feverTotal = feverFarms.reduce((sum, f) => sum + (farmFeverCount.get(f.farmId) ?? 0), 0);
@@ -159,7 +160,7 @@ export async function analyzeRadius(
         farmId: f.farmId,
         farmName: f.name,
         distanceKm: Math.round(f.distanceKm * 100) / 100,
-        headCount: f.currentHeadCount,
+        headCount: farmLiveCount.get(f.farmId) ?? 0,
         hasSensor: farmHasSensor.get(f.farmId) ?? false,
         feverCount: farmFeverCount.get(f.farmId) ?? 0,
         lat: f.lat,

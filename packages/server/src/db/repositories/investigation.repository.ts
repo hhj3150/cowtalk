@@ -1,8 +1,8 @@
 // 역학조사 DB 리포지토리
 // investigations 테이블 CRUD — cluster-repository.ts 패턴 준수
 
-import { eq, and, desc, gte } from 'drizzle-orm';
-import { investigations, farms } from '../schema.js';
+import { eq, and, desc, gte, sql } from 'drizzle-orm';
+import { investigations, farms, animals } from '../schema.js';
 import { getDb } from '../../config/database.js';
 import type {
   InvestigationStatus,
@@ -82,7 +82,8 @@ export async function getInvestigationById(
       farmPhone: farms.phone,
       farmLat: farms.lat,
       farmLng: farms.lng,
-      farmHeadCount: farms.currentHeadCount,
+      // 라이브 두수 (D7/D9) — currentHeadCount(D8) 대신 활성 동물 실측
+      farmHeadCount: sql<number>`(SELECT COUNT(*) FROM ${animals} WHERE ${animals.farmId} = ${farms.farmId} AND ${animals.status} = 'active' AND ${animals.deletedAt} IS NULL)`,
     })
     .from(investigations)
     .innerJoin(farms, eq(investigations.farmId, farms.farmId))

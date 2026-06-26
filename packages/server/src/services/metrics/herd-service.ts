@@ -119,6 +119,32 @@ export async function getHerdPerFarm(farmId: string): Promise<HerdResult> {
   return getHerdTotal({ farmIds: [farmId] });
 }
 
+/**
+ * 정책: live, farmId별 라이브 두수 Map (D7/D9).
+ *
+ * 다수 농장의 두수를 한 번에 — 역학(접촉망·반경·조사)·지도 마커·시도 드릴다운 등
+ * per-farm 표시 및 비율 분모용. currentHeadCount(D8) 직접 SELECT를 대체한다.
+ * - farmIds 미지정 = 전체 활성 농장.
+ * - 결과 Map에 없는 farmId = 활성 동물 0두 (caller가 ?? 0 처리).
+ */
+export async function getLiveCountByFarm(
+  opts: { farmIds?: readonly string[] } = {},
+): Promise<ReadonlyMap<string, number>> {
+  const db = getDb();
+  const conditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
+  if (opts.farmIds && opts.farmIds.length > 0) {
+    conditions.push(inArray(animals.farmId, [...opts.farmIds]));
+  }
+  const rows = await db
+    .select({ farmId: animals.farmId, cnt: count() })
+    .from(animals)
+    .where(and(...conditions))
+    .groupBy(animals.farmId);
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.farmId, Number(r.cnt));
+  return map;
+}
+
 // ─────────────────────────────────────────────────────────
 // DB wrapper — 등록 두수 (D8 명시적). 행정 리포트·등록 폼 전용.
 // 일반 UI 위젯에서는 사용 금지 (D9).
