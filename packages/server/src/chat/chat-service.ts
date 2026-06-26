@@ -10,6 +10,9 @@ import {
 } from '../ai-brain/prompts/conversation-prompt.js';
 import { resolveContext, type DetectedType } from './context-builder.js';
 import { getNationalSituation } from '../services/epidemiology/national-situation.service.js';
+import { getDb } from '../config/database.js';
+import { smaxtecEvents } from '../db/schema.js';
+import { and, inArray, gte, sql } from 'drizzle-orm';
 import { getRoleTone } from './role-tone.js';
 import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
@@ -188,9 +191,33 @@ export async function handleChatMessage(
 // (지역 전체 현황 질문이 도구 타임아웃으로 멈추던 문제도 함께 해소)
 // ===========================
 
+// 범위 내 번식·건강 핵심 신호 (경량 — 단일 그룹 쿼리). 방역·두수 외 발정·분만·건강.
+async function fetchScopedSignals(
+  farmIds: readonly string[],
+): Promise<{ estrus: number; calving: number; health: number; insemDue: number }> {
+  const db = getDb();
+  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ type: smaxtecEvents.eventType, c: sql<number>`count(distinct ${smaxtecEvents.animalId})` })
+    .from(smaxtecEvents)
+    .where(and(inArray(smaxtecEvents.farmId, [...farmIds]), gte(smaxtecEvents.detectedAt, since7d)))
+    .groupBy(smaxtecEvents.eventType);
+  let estrus = 0, calving = 0, health = 0, insemDue = 0;
+  for (const r of rows) {
+    const t = String(r.type); const n = Number(r.c);
+    if (t === 'estrus' || t === 'heat') { estrus += n; insemDue += n; }
+    else if (t.startsWith('calving')) calving += n;
+    else if (t.includes('health') || t.includes('temperature') || t.includes('rumination') || t === 'clinical_condition') health += n;
+  }
+  return { estrus, calving, health, insemDue };
+}
+
 async function buildScopedOverviewBlock(farmIds: readonly string[]): Promise<string | null> {
   try {
-    const nat = await getNationalSituation({ farmIds });
+    const [nat, sig] = await Promise.all([
+      getNationalSituation({ farmIds }),
+      fetchScopedSignals(farmIds).catch(() => ({ estrus: 0, calving: 0, health: 0, insemDue: 0 })),
+    ]);
     const s = nat.nationalSummary;
     const provLines = nat.provinces.map(
       (p) => `  · ${p.province}: ${p.farmCount}농장 · ${p.totalAnimals}두 · 최근24h 발열 ${p.feverAnimals}두(${(p.feverRate * 100).toFixed(1)}%) · 위험등급 ${p.riskLevel} · 집단발열농장 ${p.clusterFarms}곳`,
@@ -199,7 +226,8 @@ async function buildScopedOverviewBlock(farmIds: readonly string[]): Promise<str
       '## 현재 범위 실시간 요약 (선제 제공 — 이미 이 지역으로 한정됨)',
       `- 합계: ${s.totalFarms}농장 · ${s.totalAnimals}두 · 최근24h 발열 ${s.feverAnimals}두(${(s.nationalFeverRate * 100).toFixed(1)}%)`,
       ...(provLines.length > 0 ? ['- 시도별:', ...provLines] : []),
-      '지역 전체 현황·요약 질문은 위 데이터로 도구 없이 바로 답하세요. 특정 농장·개체 드릴다운이 필요할 때만 도구(이미 이 범위로 자동 한정됨)를 호출하세요.',
+      `- 번식·건강 신호(최근 7일): 발정 ${sig.estrus}두 · 분만임박/분만 ${sig.calving}두 · 건강이상(반추·체온 등) ${sig.health}두`,
+      '지역 전체 현황·요약·번식·방역 질문은 위 데이터로 도구 없이 바로 답하세요. 특정 농장·개체 드릴다운이 필요할 때만 도구(이미 이 범위로 자동 한정됨)를 호출하세요.',
     ].join('\n');
   } catch (err) {
     logger.warn({ err }, '[Chat] 선제 지역 요약 생성 실패 — 생략');
@@ -344,9 +372,18 @@ export async function handleChatStream(
 
   const farmBreedingSettings = await loadFarmBreedingSettings(context);
   const scopedOverview = overviewPromise ? await overviewPromise : null;
+
+  // 응답 후 학습 루프 — 직전 답변을 정정·반박하면 즉시 보정해 다시 답하도록 지시.
+  const hasPriorAnswer = conversationHistory.some((m) => m.role === 'assistant');
+  const isCorrection = hasPriorAnswer
+    && /(그건?\s*아니|그게\s*아니|아니야|아니에요|아닌데|틀렸|틀린|잘못|다시\s*봐|정정|오답|네\s*말이?\s*맞|wrong|not\s*right|incorrect)/i.test(question);
+  const correctionDirective = isCorrection
+    ? '\n\n[정정 감지] 사용자가 직전 답변을 정정·반박했습니다. 변명하지 말고 무엇을 잘못 봤는지 한 줄로 인정한 뒤, 정정을 반영해 다시 정확히 답하세요. 같은 실수를 반복하지 마세요. 사용자가 수의사·방역관이고 진단·방역 판단을 정정했다면 그 판단을 정답으로 받아들이고 record_expert_label 기록을 한 줄로 제안하세요.'
+    : '';
+
   const prompt = buildConversationPrompt(
     question, role, context, conversationHistory, { streaming: true, labelContext, farmBreedingSettings },
-  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '');
+  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '') + correctionDirective;
 
   const roleTone = getRoleTone(role);
   // 스트리밍: JSON 강제 제거, 자연어 텍스트 응답
