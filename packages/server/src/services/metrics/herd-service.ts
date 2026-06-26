@@ -15,7 +15,7 @@
 import { getDb } from '../../config/database.js';
 import { animals, farms } from '../../db/schema.js';
 import { and, eq, count, inArray, isNull, sql } from 'drizzle-orm';
-import { latLngToProvince, PROVINCE_CENTERS } from '../epidemiology/province-mapper.js';
+import { resolveFarmProvince, PROVINCE_CENTERS } from '../epidemiology/province-mapper.js';
 
 /**
  * 두수 출처. 정책 추적용 (D11):
@@ -198,13 +198,13 @@ const KOREAN_PROVINCES: readonly string[] = Object.keys(PROVINCE_CENTERS);
  * - 한국 경계 밖('해외')/'미분류' 좌표는 집계에서 제외.
  */
 export function aggregateHerdByProvince(
-  rows: ReadonlyArray<{ lat: number | null; lng: number | null }>,
+  rows: ReadonlyArray<{ lat: number | null; lng: number | null; address?: string | null }>,
 ): Map<string, HerdResult> {
   const counts = new Map<string, number>();
   for (const p of KOREAN_PROVINCES) counts.set(p, 0);
 
   for (const r of rows) {
-    const province = latLngToProvince(r.lat, r.lng);
+    const province = resolveFarmProvince({ address: r.address, lat: r.lat, lng: r.lng });
     if (counts.has(province)) {
       counts.set(province, (counts.get(province) ?? 0) + 1);
     }
@@ -227,7 +227,7 @@ export function aggregateHerdByProvince(
 export async function getHerdByProvince(): Promise<ReadonlyMap<string, HerdResult>> {
   const db = getDb();
   const rows = await db
-    .select({ lat: farms.lat, lng: farms.lng })
+    .select({ lat: farms.lat, lng: farms.lng, address: farms.address })
     .from(animals)
     .innerJoin(farms, eq(animals.farmId, farms.farmId))
     .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));

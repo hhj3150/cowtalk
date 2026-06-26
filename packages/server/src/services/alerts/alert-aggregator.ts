@@ -18,7 +18,7 @@
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farms } from '../../db/schema.js';
 import { and, eq, count, gte, inArray } from 'drizzle-orm';
-import { latLngToProvince, PROVINCE_CENTERS } from '../epidemiology/province-mapper.js';
+import { resolveFarmProvince, PROVINCE_CENTERS } from '../epidemiology/province-mapper.js';
 
 // ─────────────────────────────────────────────────────────
 // Public types
@@ -124,14 +124,14 @@ export function computeAlertCount(rawCount: number): AlertCountResult {
  * 9 시도 모두 결과에 포함 (0건도 'ok' "0"). 해외/미분류 좌표는 제외.
  */
 export function aggregateAlertRowsByProvince(
-  rows: ReadonlyArray<{ lat: number | null; lng: number | null }>,
+  rows: ReadonlyArray<{ lat: number | null; lng: number | null; address?: string | null }>,
 ): Map<string, AlertCountResult> {
   const counts = new Map<string, number>();
   const provinces = Object.keys(PROVINCE_CENTERS);
   for (const p of provinces) counts.set(p, 0);
 
   for (const r of rows) {
-    const province = latLngToProvince(r.lat, r.lng);
+    const province = resolveFarmProvince({ address: r.address, lat: r.lat, lng: r.lng });
     if (counts.has(province)) {
       counts.set(province, (counts.get(province) ?? 0) + 1);
     }
@@ -256,7 +256,7 @@ export async function aggregateAlertsByProvince(
 
   // farms.lat/lng JOIN — province-mapper로 시도 판별
   const rows = await db
-    .select({ lat: farms.lat, lng: farms.lng })
+    .select({ lat: farms.lat, lng: farms.lng, address: farms.address })
     .from(smaxtecEvents)
     .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
     .where(conditions.length > 0 ? and(...conditions) : undefined);
