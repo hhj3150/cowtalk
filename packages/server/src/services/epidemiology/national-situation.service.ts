@@ -61,54 +61,79 @@ function calcRiskLevel(feverRate: number, clusterFarms: number, legalSuspects: n
 
 const FEVER_EVENT_TYPES = ['temperature_high', 'health_103', 'health_104', 'health_308', 'health_309'] as const;
 
+// ===========================
+// 공통: 농장 → 시도/시군구 일관 판별 (단일 진실원천)
+//   규칙: regionId가 유효한 시도를 가리키면 그 값, 아니면 좌표 fallback.
+//   집계(getNationalSituation)와 드릴다운(getProvinceFarms/getProvinceDetail)이
+//   이 함수를 공유하므로 시도 카운트와 농장 목록이 절대 어긋나지 않는다.
+//   (이전 버그: 드릴다운이 regions JOIN + regionId IS NULL 만 봐서, regionId가
+//    '전국' 등 무효 시도를 가리키는 농장이 집계엔 잡히고 목록엔 빠졌음 — 52 vs 3)
+// ===========================
+
+export interface ResolvedFarm {
+  readonly farmId: string;
+  readonly farmName: string;
+  readonly province: string;
+  readonly district: string;
+  readonly currentHeadCount: number;
+  readonly lat: number | null;
+  readonly lng: number | null;
+  readonly regionId: string | null;
+}
+
+async function getActiveFarmsWithProvince(db: ReturnType<typeof getDb>): Promise<ResolvedFarm[]> {
+  const farmRows = await db
+    .select({
+      farmId: farms.farmId,
+      farmName: farms.name,
+      currentHeadCount: farms.currentHeadCount,
+      lat: farms.lat,
+      lng: farms.lng,
+      regionId: farms.regionId,
+    })
+    .from(farms)
+    .where(eq(farms.status, 'active'));
+
+  const regionIds = farmRows
+    .map((f) => f.regionId)
+    .filter((id): id is string => id != null);
+
+  const regionRows = regionIds.length > 0
+    ? await db
+        .select({ regionId: regions.regionId, province: regions.province, district: regions.district })
+        .from(regions)
+        .where(inArray(regions.regionId, regionIds))
+    : [];
+
+  const regionMap = new Map(regionRows.map((r) => [r.regionId, r]));
+
+  return farmRows.map((f) => {
+    const region = f.regionId ? regionMap.get(f.regionId) : undefined;
+    const dbProvince = region?.province;
+    const isValidProvince = !!(dbProvince && dbProvince !== '전국' && PROVINCE_CENTERS[dbProvince]);
+    const province = isValidProvince ? dbProvince! : latLngToProvince(f.lat, f.lng);
+    const district = (isValidProvince && region?.district) ? region.district : '미분류';
+    return {
+      farmId: f.farmId,
+      farmName: f.farmName,
+      province,
+      district,
+      currentHeadCount: f.currentHeadCount,
+      lat: f.lat,
+      lng: f.lng,
+      regionId: f.regionId,
+    };
+  });
+}
+
 export async function getNationalSituation(): Promise<NationalSituationData> {
   try {
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 1. 전체 활성 농장 조회 (regionId 유무 무관)
-    const allFarms = await db
-      .select({
-        farmId: farms.farmId,
-        lat: farms.lat,
-        lng: farms.lng,
-        currentHeadCount: farms.currentHeadCount,
-        regionId: farms.regionId,
-      })
-      .from(farms)
-      .where(eq(farms.status, 'active'));
-
-    // regionId가 있는 농장 → regions 테이블에서 시도 조회
-    const farmIdsWithRegion = allFarms
-      .filter((f) => f.regionId != null)
-      .map((f) => f.regionId!);
-
-    const regionRows = farmIdsWithRegion.length > 0
-      ? await db
-          .select({ regionId: regions.regionId, province: regions.province, district: regions.district })
-          .from(regions)
-          .where(inArray(regions.regionId, farmIdsWithRegion))
-      : [];
-
-    const regionMap = new Map(regionRows.map((r) => [r.regionId, r]));
-
-    // 2. 농장별 시도 판별 (regionId 우선 → 좌표 fallback)
-    interface FarmWithProvince {
-      farmId: string;
-      province: string;
-    }
-
-    const farmsWithProvince: FarmWithProvince[] = allFarms.map((f) => {
-      const region = f.regionId ? regionMap.get(f.regionId) : undefined;
-      const dbProvince = region?.province;
-      // "전국", "smaXtec 연동" 등 유효하지 않은 시도명이면 좌표 fallback
-      const isValidProvince = dbProvince && dbProvince !== '전국' && PROVINCE_CENTERS[dbProvince];
-      const province = isValidProvince ? dbProvince : latLngToProvince(f.lat, f.lng);
-      return {
-        farmId: f.farmId,
-        province,
-      };
-    });
+    // 1+2. 전체 활성 농장 + 시도 판별 — 드릴다운과 동일한 공통 로직(카운트 불일치 방지)
+    const farmsWithProvince = await getActiveFarmsWithProvince(db);
+    const allFarmIds = farmsWithProvince.map((f) => f.farmId);
 
     // 2.5. 라이브 두수 (D7, BUG-007) — farmId별 활성 동물 카운트.
     // currentHeadCount(D8 격하)는 시도 합계에 사용 안 함.
@@ -134,7 +159,6 @@ export async function getNationalSituation(): Promise<NationalSituationData> {
     }
 
     // 4. 전체 농장 발열 개체 집계 (24시간)
-    const allFarmIds = allFarms.map((f) => f.farmId);
     const feverRows = allFarmIds.length > 0
       ? await db
           .select({
@@ -283,55 +307,10 @@ export async function getProvinceFarms(province: string): Promise<readonly Provi
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 1. regionId가 있는 농장 (기존 방식)
-    const regionFarms = await db
-      .select({
-        farmId: farms.farmId,
-        farmName: farms.name,
-        district: regions.district,
-        currentHeadCount: farms.currentHeadCount,
-        lat: farms.lat,
-        lng: farms.lng,
-      })
-      .from(farms)
-      .innerJoin(regions, eq(farms.regionId, regions.regionId))
-      .where(
-        and(
-          eq(farms.status, 'active'),
-          eq(regions.province, province),
-        ),
-      )
-      .orderBy(farms.name);
-
-    // 2. regionId 없는 농장 중 좌표로 해당 시도에 속하는 것
-    const noRegionFarms = await db
-      .select({
-        farmId: farms.farmId,
-        farmName: farms.name,
-        currentHeadCount: farms.currentHeadCount,
-        lat: farms.lat,
-        lng: farms.lng,
-      })
-      .from(farms)
-      .where(
-        and(
-          eq(farms.status, 'active'),
-          isNull(farms.regionId),
-        ),
-      );
-
-    const coordFarms = noRegionFarms
-      .filter((f) => latLngToProvince(f.lat, f.lng) === province)
-      .map((f) => ({
-        farmId: f.farmId,
-        farmName: f.farmName,
-        district: '미분류',
-        currentHeadCount: f.currentHeadCount,
-        lat: f.lat,
-        lng: f.lng,
-      }));
-
-    const allFarmRows = [...regionFarms, ...coordFarms];
+    // 공통 판별로 해당 시도 농장 필터 → 집계(getNationalSituation) 카운트와 정확히 일치
+    const allFarmRows = (await getActiveFarmsWithProvince(db))
+      .filter((f) => f.province === province)
+      .sort((a, b) => a.farmName.localeCompare(b.farmName, 'ko'));
     if (allFarmRows.length === 0) return [];
 
     const farmIds = allFarmRows.map((r) => r.farmId);
@@ -395,37 +374,12 @@ export async function getAllMapFarms(): Promise<readonly MapFarmItem[]> {
     const db = getDb();
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 전체 활성 농장 (LEFT JOIN으로 region 정보 선택적 가져오기)
-    const farmRows = await db
-      .select({
-        farmId: farms.farmId,
-        farmName: farms.name,
-        currentHeadCount: farms.currentHeadCount,
-        lat: farms.lat,
-        lng: farms.lng,
-        regionId: farms.regionId,
-      })
-      .from(farms)
-      .where(eq(farms.status, 'active'));
-
-    if (farmRows.length === 0) return [];
-
-    // regionId가 있는 농장의 시도/시군구 조회
-    const regionIds = farmRows
-      .map((f) => f.regionId)
-      .filter((id): id is string => id != null);
-
-    const regionRows = regionIds.length > 0
-      ? await db
-          .select({ regionId: regions.regionId, province: regions.province, district: regions.district })
-          .from(regions)
-          .where(inArray(regions.regionId, regionIds))
-      : [];
-
-    const regionMap = new Map(regionRows.map((r) => [r.regionId, r]));
+    // 전체 활성 농장 + 시도/시군구 — 집계·드릴다운과 동일한 공통 판별
+    const resolved = await getActiveFarmsWithProvince(db);
+    if (resolved.length === 0) return [];
 
     // 농장별 발열 개체 수 (24시간)
-    const farmIds = farmRows.map((r) => r.farmId);
+    const farmIds = resolved.map((r) => r.farmId);
     const feverRows = await db
       .select({
         farmId: smaxtecEvents.farmId,
@@ -443,22 +397,17 @@ export async function getAllMapFarms(): Promise<readonly MapFarmItem[]> {
 
     const feverMap = new Map(feverRows.map((r) => [r.farmId, Number(r.feverCount)]));
 
-    return farmRows
+    return resolved
       .filter((r) => r.lat != null && r.lng != null)
       .map((r) => {
-        const region = r.regionId ? regionMap.get(r.regionId) : undefined;
-        const dbProvince = region?.province;
-        const isValidProvince = dbProvince && dbProvince !== '전국' && PROVINCE_CENTERS[dbProvince];
-        const province = isValidProvince ? dbProvince : latLngToProvince(r.lat, r.lng);
-        const district = (isValidProvince && region?.district) ? region.district : '미분류';
         const feverCount = feverMap.get(r.farmId) ?? 0;
         const feverRate = r.currentHeadCount > 0 ? feverCount / r.currentHeadCount : 0;
 
         return {
           farmId: r.farmId,
           farmName: r.farmName,
-          province,
-          district,
+          province: r.province,
+          district: r.district,
           currentHeadCount: r.currentHeadCount,
           feverCount,
           riskLevel: calcRiskLevel(feverRate, feverCount >= 3 ? 1 : 0, 0),
@@ -486,128 +435,53 @@ export async function getProvinceDetail(province: string): Promise<readonly Dist
     liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
   }
 
-  // regionId 있는 농장: 시군구별 farmId 목록 수집 (D7 집계 위해 농장 단위로 가져옴)
-  const farmInDistrict = await db
-    .select({
-      farmId: farms.farmId,
-      district: regions.district,
-    })
-    .from(farms)
-    .innerJoin(regions, eq(farms.regionId, regions.regionId))
-    .where(
-      and(
-        eq(farms.status, 'active'),
-        eq(regions.province, province),
-      ),
-    );
+  // 공통 판별로 해당 시도 농장 (집계·시도 드릴다운과 동일 — 시군구 합계 = 시도 카운트 보장)
+  const provinceFarms = (await getActiveFarmsWithProvince(db)).filter((f) => f.province === province);
+  if (provinceFarms.length === 0) return [];
 
-  // 시군구별 farmCount + 라이브 두수 집계
-  const districtAgg = new Map<string, { farmCount: number; totalAnimals: number }>();
-  for (const f of farmInDistrict) {
-    const existing = districtAgg.get(f.district) ?? { farmCount: 0, totalAnimals: 0 };
-    districtAgg.set(f.district, {
-      farmCount: existing.farmCount + 1,
-      totalAnimals: existing.totalAnimals + (liveCountByFarm.get(f.farmId) ?? 0),
-    });
+  // 시군구별 farmId 그룹 (district는 regionId 무효 시 '미분류'로 통일)
+  const districtFarmIds = new Map<string, string[]>();
+  for (const f of provinceFarms) {
+    const arr = districtFarmIds.get(f.district) ?? [];
+    arr.push(f.farmId);
+    districtFarmIds.set(f.district, arr);
   }
 
-  const farmRows = Array.from(districtAgg, ([district, agg]) => ({
-    district,
-    farmCount: agg.farmCount,
-    totalAnimals: agg.totalAnimals,
-  }));
-
-  // regionId 없는 농장 중 해당 시도에 속하는 것
-  const noRegionFarms = await db
-    .select({
-      farmId: farms.farmId,
-      lat: farms.lat,
-      lng: farms.lng,
-    })
-    .from(farms)
-    .where(
-      and(
-        eq(farms.status, 'active'),
-        isNull(farms.regionId),
-      ),
-    );
-
-  const coordFarmsInProvince = noRegionFarms.filter(
-    (f) => latLngToProvince(f.lat, f.lng) === province,
-  );
-
-  // 미분류 시군구로 합산 — 라이브 카운트 사용 (D7)
-  const unclassifiedCount = coordFarmsInProvince.length;
-  const unclassifiedAnimals = coordFarmsInProvince.reduce(
-    (s, f) => s + (liveCountByFarm.get(f.farmId) ?? 0),
-    0,
-  );
-
-  // 발열 집계 (regionId 있는 것)
+  // 발열 집계 — 시도 농장 전체 farmId 기준 (regionId 유무 무관)
+  const farmIds = provinceFarms.map((f) => f.farmId);
   const feverRows = await db
     .select({
-      district: regions.district,
+      farmId: smaxtecEvents.farmId,
       feverCount: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
     })
     .from(smaxtecEvents)
-    .innerJoin(farms, eq(smaxtecEvents.farmId, farms.farmId))
-    .innerJoin(regions, eq(farms.regionId, regions.regionId))
     .where(
       and(
+        inArray(smaxtecEvents.farmId, farmIds),
         inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
         gte(smaxtecEvents.detectedAt, since24h),
-        eq(regions.province, province),
       ),
     )
-    .groupBy(regions.district);
+    .groupBy(smaxtecEvents.farmId);
+  const feverByFarm = new Map(feverRows.map((r) => [r.farmId, Number(r.feverCount)]));
 
-  const feverMap = new Map(feverRows.map((r) => [r.district, Number(r.feverCount)]));
-
-  // 미분류 농장 발열
-  const unclassifiedFarmIds = coordFarmsInProvince.map((f) => f.farmId);
-  let unclassifiedFever = 0;
-  if (unclassifiedFarmIds.length > 0) {
-    const ucFever = await db
-      .select({ cnt: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})` })
-      .from(smaxtecEvents)
-      .where(
-        and(
-          inArray(smaxtecEvents.farmId, unclassifiedFarmIds),
-          inArray(smaxtecEvents.eventType, [...FEVER_EVENT_TYPES]),
-          gte(smaxtecEvents.detectedAt, since24h),
-        ),
-      );
-    unclassifiedFever = Number(ucFever[0]?.cnt ?? 0);
-  }
-
-  const results: DistrictStats[] = farmRows.map((r) => {
-    const totalAnimals = Number(r.totalAnimals ?? 0);
-    const feverAnimals = feverMap.get(r.district) ?? 0;
+  const results: DistrictStats[] = [];
+  for (const [district, fIds] of districtFarmIds.entries()) {
+    const totalAnimals = fIds.reduce((s, id) => s + (liveCountByFarm.get(id) ?? 0), 0);
+    const feverAnimals = fIds.reduce((s, id) => s + (feverByFarm.get(id) ?? 0), 0);
     const feverRate = totalAnimals > 0 ? feverAnimals / totalAnimals : 0;
-    return {
-      district: r.district,
+    results.push({
+      district,
       province,
-      farmCount: Number(r.farmCount),
+      farmCount: fIds.length,
       totalAnimals,
       feverAnimals,
       feverRate,
       riskLevel: calcRiskLevel(feverRate, 0, 0),
-    };
-  });
-
-  // 미분류 시군구 추가
-  if (unclassifiedCount > 0) {
-    const feverRate = unclassifiedAnimals > 0 ? unclassifiedFever / unclassifiedAnimals : 0;
-    results.push({
-      district: '미분류 (좌표 기반)',
-      province,
-      farmCount: unclassifiedCount,
-      totalAnimals: unclassifiedAnimals,
-      feverAnimals: unclassifiedFever,
-      feverRate,
-      riskLevel: calcRiskLevel(feverRate, 0, 0),
     });
   }
 
+  // 농장 수 내림차순 정렬
+  results.sort((a, b) => b.farmCount - a.farmCount);
   return results;
 }
