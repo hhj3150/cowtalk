@@ -99,7 +99,15 @@ async function main(): Promise<void> {
     }
     if (pregRows.length > 0) await db.insert(schema.pregnancyChecks).values(pregRows);
 
-    console.info(`  - 분만 +${calvRows.length}건, 임신감정 +${pregRows.length}건`);
+    // 5. 등록두수(currentHeadCount) = 라이브 두수 정렬 — 로컬 리허설 화면 일관성
+    //    (운영은 smaXtec 동기화로 이미 실값. 로컬 시드 랜덤값이 드롭다운·마커 두수를 왜곡하던 것 제거)
+    await dbsql`
+      UPDATE farms f SET current_head_count = COALESCE(a.cnt, 0)
+      FROM (SELECT farm_id, count(*) cnt FROM animals WHERE status='active' AND deleted_at IS NULL GROUP BY farm_id) a
+      WHERE a.farm_id = f.farm_id AND f.status='active'
+    `;
+
+    console.info(`  - 분만 +${calvRows.length}건, 임신감정 +${pregRows.length}건, 등록두수=라이브 정렬`);
     console.info('리허설 시드 완료.');
   } catch (e) {
     console.error('리허설 시드 실패:', e); throw e;
