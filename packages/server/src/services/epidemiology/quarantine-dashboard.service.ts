@@ -4,7 +4,7 @@
 
 import { getDb } from '../../config/database.js';
 import { farms, animals, sensorMeasurements, alerts, smaxtecEvents, vaccineRecords } from '../../db/schema.js';
-import { eq, gte, and, desc, count, sql, inArray } from 'drizzle-orm';
+import { eq, gte, and, desc, count, sql, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { ALERT_THRESHOLDS, VACCINE_PROTOCOLS } from '@cowtalk/shared';
 
@@ -368,13 +368,14 @@ async function fetchSensorStats(): Promise<{ sensored: number; total: number; to
     .from(farms)
     .where(eq(farms.status, 'active'));
 
-  // 센서 있는 개체 카운트
+  // 센서 있는 개체 카운트 (D7: active + notDeleted)
   const sensoredRow = await db
     .select({ cnt: count(animals.animalId) })
     .from(animals)
     .where(
       and(
         eq(animals.status, 'active'),
+        isNull(animals.deletedAt),
         sql`${animals.currentDeviceId} is not null`,
       ),
     );
@@ -382,7 +383,7 @@ async function fetchSensorStats(): Promise<{ sensored: number; total: number; to
   const totalAnimalsRow = await db
     .select({ cnt: count(animals.animalId) })
     .from(animals)
-    .where(eq(animals.status, 'active'));
+    .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
   const total = Number(totalRow[0]?.cnt ?? 0);
   const totalAnimals = Number(totalAnimalsRow[0]?.cnt ?? 0);

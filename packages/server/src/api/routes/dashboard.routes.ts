@@ -10,7 +10,7 @@ import { getDb } from '../../config/database.js';
 import {
   farms, animals, smaxtecEvents, breedingEvents,
   prescriptions, prescriptionItems, drugDatabase,
-  vaccineSchedules, sensorDevices, regions,
+  vaccineSchedules, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, gt, and, desc, isNull, inArray } from 'drizzle-orm';
 import { getHerdTotal } from '../../services/metrics/herd-service.js';
@@ -225,8 +225,15 @@ async function buildFarmerDashboard(farmIds?: string[]): Promise<DashboardData> 
   // 두수 단일 소스 — D7/D9 라이브 (BUG-007). 배정 농장 합산.
   const herd = await getHerdTotal({ farmIds: farmSet });
 
-  const [sensorCount] = await db.select({ count: count() }).from(sensorDevices)
-    .where(and(eq(sensorDevices.status, 'active'), isNull(sensorDevices.removeDate)));
+  // 센서 두수 단일 소스 — animals.currentDeviceId (랜딩/농장요약/방역과 동일 기준, D7).
+  // sensorDevices 테이블은 미동기화 시 0을 반환해 화면 간 모순을 일으키므로 사용하지 않는다.
+  const [sensorCount] = await db.select({ count: count() }).from(animals)
+    .where(and(
+      inArray(animals.farmId, farmSet),
+      eq(animals.status, 'active'),
+      isNull(animals.deletedAt),
+      sql`${animals.currentDeviceId} IS NOT NULL`,
+    ));
 
   const [todayEventCount] = await db.select({ count: count() }).from(smaxtecEvents)
     .where(and(eventScope, gt(smaxtecEvents.detectedAt, oneDayAgo)));
