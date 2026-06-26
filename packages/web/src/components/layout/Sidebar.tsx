@@ -7,12 +7,10 @@
 //   legacy 오염으로 user.role 이 mutate된 경우는 auth-migration.ts 가 마운트 전 복구.
 // - lucide-react 미설치 → 기존 인라인 SVG 아이콘 컴포넌트로 매핑.
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
-import { fetchNews } from '@web/api/news.api';
-import type { NewsItem, NewsCategory } from '@web/api/news.api';
 import { getMenuForRole, type MenuRole } from '@web/config/sidebar-menu';
 
 function IconDashboard(): React.JSX.Element {
@@ -158,43 +156,6 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Brain:           <IconAi />,
 };
 
-// ── 축산 소식 (API/RSS 연동, 장애 시 정적 폴백) ──
-
-const CATEGORY_LABELS: Record<NewsCategory, { label: string; color: string }> = {
-  policy: { label: '정책', color: '#3b82f6' },
-  latest: { label: '최신', color: '#22c55e' },
-  global: { label: '해외', color: '#a855f7' },
-  disease: { label: '전염병', color: '#ef4444' },
-  notice: { label: '공지', color: '#f97316' },
-};
-
-const FALLBACK_NEWS: readonly NewsItem[] = [
-  { title: '럼피스킨병 백신 접종률 98% 달성', source: '농림축산식품부', date: '3.28', url: '#', category: 'disease', pubDate: '' },
-  { title: '2026년 축산 직불금 확대 시행', source: '농림축산식품부', date: '3.28', url: '#', category: 'policy', pubDate: '' },
-  { title: '올해 한우 송아지 가격 전년 대비 12% 상승', source: '축산신문', date: '3.27', url: '#', category: 'latest', pubDate: '' },
-  { title: 'EU, 항생제 사용 50% 감축 로드맵 발표', source: 'EMA', date: '3.27', url: '#', category: 'global', pubDate: '' },
-  { title: '젖소 유량 신기록 — 홀스타인 평균 35L 돌파', source: 'DCIC', date: '3.26', url: '#', category: 'latest', pubDate: '' },
-  { title: '호주 구제역 의심 사례 발생 — 한국 수입 검역 강화', source: 'OIE', date: '3.26', url: '#', category: 'disease', pubDate: '' },
-  { title: 'AI 센서 기반 질병 조기감지 시스템 확산', source: '농촌진흥청', date: '3.25', url: '#', category: 'latest', pubDate: '' },
-  { title: '구제역 청정국 지위 3년 연속 유지', source: 'OIE', date: '3.24', url: '#', category: 'global', pubDate: '' },
-  { title: '축산 환경규제 강화 — 2027년까지 적용', source: '환경부', date: '3.23', url: '#', category: 'policy', pubDate: '' },
-  { title: 'CowTalk v5.0 업데이트 — 번식 AI 루프 추가', source: 'D2O Corp', date: '3.23', url: '#', category: 'notice', pubDate: '' },
-];
-
-function useNewsItems(): readonly NewsItem[] {
-  const [items, setItems] = useState<readonly NewsItem[]>(FALLBACK_NEWS);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchNews()
-      .then((data) => { if (!cancelled && data.length > 0) setItems(data); })
-      .catch(() => { /* 폴백 유지 */ });
-    return () => { cancelled = true; };
-  }, []);
-
-  return items;
-}
-
 /**
  * master 본질 + 시뮬레이션 역할 → 메뉴 산출용 MenuRole 결정 (FLOW-02 Step2.6).
  * - master 본질 + 시뮬레이션 안 함(null) → 'master' (전체 15 메뉴)
@@ -225,7 +186,6 @@ export function Sidebar(): React.JSX.Element {
   const isMasterEssence = userRole === 'government_admin'
     && (userName?.includes('Master Admin') ?? false);
   const menuRole = resolveMenuRole(isMasterEssence, simulatedRole, userRole);
-  const newsItems = useNewsItems();
 
   // 단일 소스(config/sidebar-menu.ts)에서 메뉴 산출.
   let items = getMenuForRole(menuRole);
@@ -294,43 +254,8 @@ export function Sidebar(): React.JSX.Element {
         })}
       </div>
 
-      {/* 뉴스/소식 피드 */}
-      <div className="flex-1 mt-3 px-2 overflow-y-auto" style={{ minHeight: 0 }}>
-        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ct-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, padding: '4px 6px', marginBottom: 4 }}>
-          축산 소식
-        </div>
-        {newsItems.slice(0, 5).map((news, i) => {
-          const cat = CATEGORY_LABELS[news.category];
-          return (
-            <a
-              key={i}
-              href={news.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block rounded-lg px-2 py-1.5 transition-colors"
-              style={{ fontSize: 11, lineHeight: 1.4, color: 'var(--ct-text-secondary)', textDecoration: 'none', marginBottom: 1 }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: `${cat.color}20`, color: cat.color, flexShrink: 0 }}>
-                  {cat.label}
-                </span>
-                <span style={{ fontSize: 9, color: 'var(--ct-text-muted)' }}>{news.date}</span>
-              </div>
-              <div style={{ fontWeight: 600, color: 'var(--ct-text)', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                {news.title}
-              </div>
-              <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', marginTop: 1 }}>{news.source}</div>
-            </a>
-          );
-        })}
-        <div style={{ borderTop: '1px solid var(--ct-border)', marginTop: 6, paddingTop: 6 }}>
-          <div style={{ fontSize: 9, color: 'var(--ct-text-muted)', textAlign: 'center', marginBottom: 6 }}>
-            광고 문의: ad@d2o.kr
-          </div>
-        </div>
-      </div>
+      {/* 여백 — 바로가기/데모를 하단에 고정 */}
+      <div className="flex-1" style={{ minHeight: 0 }} />
 
       {/* 바로가기 */}
       <div className="px-2 pb-1" style={{ flexShrink: 0 }}>
