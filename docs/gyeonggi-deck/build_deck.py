@@ -120,12 +120,15 @@ def header(s, kicker, title, phase=None, title_sz=23):
          [{"ls":1.04,"runs":[R(title, title_sz, INK, True)]}])
     hline(s, ML, 1.86, 0.62, color=TEAL, weight=2.6)
 
-def footer(s, n):
+TOTAL = 14
+_page = [1]   # 표지=01(footer 없음). footer() 호출마다 자동 증가.
+def footer(s):
+    _page[0] += 1; n = _page[0]
     hline(s, ML, 7.04, CW, color=LINE, weight=0.75)
     text(s, ML, 7.10, 8.0, 0.3,
          [{"runs":[R("CowTalk", 9, TEAL, True), R("  ×  경기도 · 축산 디지털 행정 대전환", 9, MUTE)]}])
     text(s, EW-MR-2.0, 7.10, 2.0, 0.3,
-         [{"align":PP_ALIGN.RIGHT,"runs":[R(f"{n:02d} / 13", 9, MUTE, True)]}])
+         [{"align":PP_ALIGN.RIGHT,"runs":[R(f"{n:02d} / {TOTAL}", 9, MUTE, True)]}])
 
 # ══════════════════════════════════════════════════════════════════
 # 1. 표지
@@ -181,7 +184,40 @@ text(s, ML+0.45, by, 8.1, 0.92,
 box(s, ML+8.8, by+0.2, 0.02, 0.52, fill=RGBColor(0x2A,0x47,0x60), line=None)
 text(s, ML+9.05, by, CW-9.05-0.3, 0.92,
      [{"align":PP_ALIGN.RIGHT,"runs":[R("경기가 첫 표준을 선점", 14, MINT, True)]}], anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 2)
+footer(s)
+
+# ══════════════════════════════════════════════════════════════════
+# 2-B. 경기도 축산 현황 — 왜 경기인가 (낙농 중심)
+# ══════════════════════════════════════════════════════════════════
+s = slide()
+header(s, "현황  ·  왜 경기인가", "대한민국 낙농의 중심은 경기도 — 축우에서 시작해 전 축종으로 확장합니다.", phase="현황")
+gcards=[("41%","경기 젖소 사육 점유","전국 최대 낙농 거점",TEAL),
+        ("50%+","수도권 인구 집중","최대 소비지 = 경기",INK2),
+        ("낙농 1번지","생산 × 소비 동시 중심","유일한 수도권 광역",TEALD)]
+cardw=(CW-2*0.4)/3; cy=2.12; ch=1.9
+for i,(big,tt,sub,col) in enumerate(gcards):
+    cx=ML+i*(cardw+0.4)
+    box(s, cx,cy,cardw,ch, fill=WHITE, line=LINE, lw=1.0)
+    box(s, cx,cy,cardw,0.08, fill=col, line=None)
+    text(s, cx+0.28, cy+0.34, cardw-0.5, 0.8, [{"runs":[R(big, (40 if i<2 else 25), col, True)]}])
+    text(s, cx+0.28, cy+1.2, cardw-0.5, 0.35, [{"runs":[R(tt, 14, INK, True)]}])
+    text(s, cx+0.28, cy+1.54, cardw-0.5, 0.3, [{"runs":[R(sub, 11, MUTE)]}])
+# 전략 흐름: 축우 시작 → 타 축종 확산
+text(s, ML, 4.2, CW, 0.3, [{"runs":[R("디지털 대전환 전개 — ", 13, GRAY), R("축우 중심으로 시작 → 전 축종 확산", 13, INK, True)]}])
+fy=4.58; fh=0.95
+box(s, ML, fy, 4.7, fh, fill=TEAL, line=None)
+text(s, ML, fy, 4.7, fh, [{"align":PP_ALIGN.CENTER,"ls":1.1,"runs":[R("축우 — 젖소 · 한우\n축산 디지털 대전환 시작", 14, WHITE, True)]}], anchor=MSO_ANCHOR.MIDDLE)
+text(s, ML+4.7, fy, 0.9, fh, [{"align":PP_ALIGN.CENTER,"runs":[R("확산 ›", 16, AMBER, True)]}], anchor=MSO_ANCHOR.MIDDLE)
+exp=["양돈","가금","기타 축종"]
+ex0=ML+5.7; exw=(EW-MR-ex0-2*0.22)/3
+for i,t in enumerate(exp):
+    cx=ex0+i*(exw+0.22)
+    box(s, cx, fy, exw, fh, fill=PANEL, line=LINE, lw=0.75)
+    text(s, cx, fy, exw, fh, [{"align":PP_ALIGN.CENTER,"runs":[R(t, 14, GRAY, True)]}], anchor=MSO_ANCHOR.MIDDLE)
+# takeaway
+box(s, ML, 5.78, CW, 0.78, fill=INK, line=None)
+text(s, ML, 5.78, CW, 0.78, [{"align":PP_ALIGN.CENTER,"runs":[R("사육도 소비도 경기 — 경기가 낙농을 디지털로 표준화하면, 그것이 곧 대한민국 표준이 됩니다.", 14, WHITE, True)]}], anchor=MSO_ANCHOR.MIDDLE)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 3. 현황 (Situation)
@@ -205,7 +241,7 @@ box(s, ML, 5.3, CW, 0.8, fill=PANEL2, line=None)
 text(s, ML+0.35, 5.3, CW-0.7, 0.8,
      [{"runs":[R("→  데이터는 쌓이는데, ", 15, INK), R("판단과 행동으로 이어지지 않는다.", 15, TEALD, True)]}],
      anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 3)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 4. 문제 (Complication)
@@ -231,7 +267,7 @@ for i,b in enumerate(facts):
     text(s, cx+0.22, cy, cardw-0.4, ch, [{"ls":1.18,"runs":[R(b, 12.5, GRAY)]}], anchor=MSO_ANCHOR.MIDDLE)
 box(s, ML, 5.85, CW, 0.7, fill=TEAL, line=None)
 text(s, ML, 5.85, CW, 0.7, [{"align":PP_ALIGN.CENTER,"runs":[R("CowTalk은 바로 이 간극 — 알람과 행동 사이 — 를 메웁니다.", 15, WHITE, True)]}], anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 4)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 5. 해법 (무엇을) — 4층 구조
@@ -254,7 +290,7 @@ for i,(tag,tt,desc,col) in enumerate(layers):
     text(s, ML+4.5, yy, CW-4.7, lh, [{"ls":1.05,"runs":[R(desc, 12.5, RGBColor(0xDD,0xE7,0xEA))]}], anchor=MSO_ANCHOR.MIDDLE)
 text(s, ML, 6.18, CW, 0.5,
      [{"runs":[R("smaXtec을 복제하지 않습니다 — ", 14, GRAY), R("그 위에 3개 레이어(공공데이터·AI·다중역할)를 더합니다.", 14, INK, True)]}])
-footer(s, 5)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 6. 현황 데이터 (무엇을 — 실운영 증거)
@@ -286,7 +322,7 @@ for i,(nm,val,col,lab) in enumerate(bars):
     text(s, name_x, yy, 0.72, bh, [{"runs":[R(nm, 12, INK, True)]}], anchor=MSO_ANCHOR.MIDDLE)
     box(s, bar_x, yy, bw_max*val/77.0, bh, fill=col, line=None)
     text(s, bar_x+bw_max*val/77.0+0.1, yy, 2.4, bh, [{"runs":[R(lab, 11, (TEALD if col==TEAL else MUTE), col==TEAL)]}], anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 6)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 7. 어떻게 — 알람→행동 완결
@@ -312,7 +348,7 @@ text(s, ML+0.4, 5.18, CW-0.8, 0.8,
      [{"ls":1.25,"runs":[R("“경기도 발열 현황 보여줘”  →  ", 14, WHITE),
        R("3초", 16, MINT, True),
        R("에 경기 농장 발열 현황이 한 화면에.  엑셀·전화가 대화 한 줄로.", 14, WHITE)]}])
-footer(s, 7)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 8. 그래서 결과 ① 방역
@@ -337,7 +373,7 @@ text(s, ML+0.45, 4.85, 5.9, 1.25,
        R("\n보상·살처분 비용 회피", 13, RGBColor(0xC7,0xD6,0xDE))]}], anchor=MSO_ANCHOR.MIDDLE)
 text(s, EW-MR-4.6, 4.85, 4.2, 1.25,
      [{"align":PP_ALIGN.RIGHT,"ls":1.15,"runs":[R("“한 번만 막아도\n시스템값을 회수한다.”", 15, WHITE, True, it=True)]}], anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 8)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 9. 그래서 결과 ② 농가 경제
@@ -360,7 +396,7 @@ text(s, ML+0.45, 4.4, 8.5, 1.6,
       {"sb":6,"runs":[R("농가 직접 편익  ", 14, GRAY), R("240억 / 년", 30, TEALD, True)]}], anchor=MSO_ANCHOR.MIDDLE)
 text(s, EW-MR-3.6, 4.4, 3.2, 1.6,
      [{"align":PP_ALIGN.RIGHT,"ls":1.2,"runs":[R("알람이 행동으로\n완결될 때\n생기는 돈", 13, GRAY)]}], anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 9)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 10. 그래서 결과 ③ 사회·환경
@@ -385,7 +421,7 @@ for i,(tt,big,sub,note,col) in enumerate(cards):
     text(s, cx+0.28, cy+1.64, cw-0.5, 0.3, [{"runs":[R(note, 11, MUTE)]}])
 box(s, ML, 5.5, CW, 0.62, fill=AMBER, line=None)
 text(s, ML, 5.5, CW, 0.62, [{"align":PP_ALIGN.CENTER,"runs":[R("사회·환경 편익 소계  ≈  626억 / 년", 16, WHITE, True)]}], anchor=MSO_ANCHOR.MIDDLE)
-footer(s, 10)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 11. 예산·ROI
@@ -429,7 +465,7 @@ for i,(t,v) in enumerate(badges):
     text(s, cx, chy+1.95, bw, 0.5, [{"align":PP_ALIGN.CENTER,"runs":[R(v, 20, MINT, True)]}])
     text(s, cx, chy+2.5, bw, 0.3, [{"align":PP_ALIGN.CENTER,"runs":[R(t, 10.5, RGBColor(0xC7,0xD6,0xDE))]}])
 text(s, ML, 6.15, CW, 0.5, [{"runs":[R("“농가 생산성으로 3년 안에 회수, 사료·분뇨·탄소 동시 절감, 전염병 한 번만 막으면 그 자체로 끝.”", 13, INK, it=True)]}])
-footer(s, 11)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 12. 실행 로드맵
@@ -461,7 +497,7 @@ for i,(t,d) in enumerate(asks):
     box(s, cx,ay,aw,ah, fill=WHITE, line=TEAL, lw=1.0)
     text(s, cx+0.25, ay+0.18, aw-0.5, 0.35, [{"runs":[R(f"{i+1}. {t}", 13.5, TEALD, True)]}])
     text(s, cx+0.25, ay+0.56, aw-0.5, 0.4, [{"ls":1.1,"runs":[R(d, 11.5, GRAY)]}])
-footer(s, 12)
+footer(s)
 
 # ══════════════════════════════════════════════════════════════════
 # 13. 제언 closing
@@ -488,6 +524,7 @@ text(s, 1.0, 6.9, 11.4, 0.3, [{"runs":[R("CowTalk v5.0  ·  D2O Corp  ·  함께
 NOTES = [
  "[0:30] 인사. ‘오늘 15분 안에 — 무엇을 만들었고, 어떻게 작동하며, 그래서 경기도에 어떤 결과가 오는지 — 숫자로 말씀드리겠습니다.’",
  "[1:30] 답부터. ‘결론은 하나입니다 — 경기도가 선도해야 합니다.’ 방역·농가·사회환경 3축. 연 180억 투자 → 편익 896억(BCR≈5.0). 이 한 장이 전체 요약입니다.",
+ "[1:00] 왜 경기인가. 대한민국 낙농의 중심은 경기다 — 젖소 사육 전국 약 41%, 수도권 인구 50%+ 로 최대 소비지도 경기. 생산·소비를 동시에 가진 유일 광역. 그래서 축우(젖소·한우)부터 디지털 대전환을 시작해 양돈·가금 등 타 축종으로 확산. 경기가 표준화하면 그것이 곧 대한민국 표준.",
  "[1:00] 현황. 세계는 축산을 데이터로 운영하는데 우리 방역·행정은 아직 전화와 엑셀. 데이터는 쌓이는데 판단·행동으로 안 이어진다.",
  "[1:00] 핵심 공백. smaXtec 센서·알람은 세계 최고지만 ‘알람→행동’의 다리가 없다. 농가·방역관이 ‘그래서 뭘?’을 혼자 판단. CowTalk이 이 간극을 메운다.",
  "[1:30] 무엇을. CowTalk=축산 운영체제. smaXtec 복제가 아니라 그 위에 공공데이터·AI·역할별 행동 3개 층을 얹는다. 4층 구조를 짧게 짚기.",
