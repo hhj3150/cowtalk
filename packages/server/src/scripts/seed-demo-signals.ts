@@ -9,6 +9,7 @@
 
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { count } from 'drizzle-orm';
 import { getDatabaseUrl } from '../config/index';
 import * as schema from '../db/schema';
 
@@ -33,6 +34,35 @@ async function main(): Promise<void> {
   try {
     const animals = await db.select({ animalId: schema.animals.animalId, farmId: schema.animals.farmId }).from(schema.animals);
     if (animals.length === 0) { console.error('개체가 없습니다 — 먼저 npm run seed'); return; }
+
+    // ── (멱등) 방역 대시보드 공백 보강: 센서 장착 + 법정 백신 접종기록 ──
+    // 센서율 KPI는 animals.current_device_id 기준 → 약 85% 개체에 데모 볼루스 시리얼 부여
+    await sql`
+      UPDATE animals SET current_device_id = 'DEMO-' || substr(replace(animal_id::text,'-',''),1,10)
+      WHERE current_device_id IS NULL AND status='active' AND (abs(hashtext(animal_id::text)) % 100) < 85
+    `;
+    // 접종현황은 vaccine_records.vaccine_name(= 프로토콜 name) 기준 집계
+    const [vacc] = await db.select({ c: count() }).from(schema.vaccineRecords);
+    if (Number(vacc?.c ?? 0) === 0) {
+      const VACCINES = [
+        { name: '구제역', cov: 0.95 }, { name: '럼피스킨', cov: 0.92 }, { name: '소유행열', cov: 0.85 },
+        { name: '탄저', cov: 0.80 }, { name: '브루셀라 (초회)', cov: 0.70 },
+        { name: '결핵 검사', cov: 0.75 }, { name: '브루셀라 검사', cov: 0.75 },
+      ];
+      const yearStart = new Date(new Date().getFullYear(), 0, 1).getTime();
+      const span = Date.now() - yearStart;
+      const vrows: Array<typeof schema.vaccineRecords.$inferInsert> = [];
+      for (const a of animals) {
+        for (const v of VACCINES) {
+          if (Math.random() < v.cov) {
+            vrows.push({ animalId: a.animalId, farmId: a.farmId, vaccineName: v.name,
+              administeredAt: new Date(yearStart + Math.random() * span), batchNumber: `LOT-${Math.floor(rand(1000, 9999))}` });
+          }
+        }
+      }
+      if (vrows.length > 0) await db.insert(schema.vaccineRecords).values(vrows);
+      console.info(`  - 센서 장착 보강 + 백신 접종기록 ${vrows.length}건`);
+    }
 
     // 멱등: 이미 데모 알림이 있으면 스킵
     const existing = await db.select({ c: schema.alerts.alertId }).from(schema.alerts).limit(1);
