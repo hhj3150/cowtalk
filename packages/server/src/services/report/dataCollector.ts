@@ -69,8 +69,9 @@ async function collectFarmDaily({ farmId, date }: ReportParams): Promise<ReportD
 
     db.select({
       total: count(),
-      milking: sql<number>`count(*) filter (where ${animals.lactationStatus} = 'milking')`,
-      dry: sql<number>`count(*) filter (where ${animals.lactationStatus} = 'dry')`,
+      // 우군 분류 단일 기준 — enum 변형(milking/lactating) 흡수 + 누락 시 parity·DIM 추론
+      milking: sql<number>`count(*) filter (where lower(coalesce(${animals.lactationStatus},'')) in ('milking','lactating','lactating_cow') or (lower(coalesce(${animals.lactationStatus},'')) not in ('dry','dry_off','dry_cow','heifer','young_cow') and coalesce(${animals.parity},0) >= 1 and coalesce(${animals.daysInMilk},0) <= 250))`,
+      dry: sql<number>`count(*) filter (where lower(coalesce(${animals.lactationStatus},'')) in ('dry','dry_off','dry_cow') or (lower(coalesce(${animals.lactationStatus},'')) not in ('milking','lactating','lactating_cow','heifer','young_cow') and coalesce(${animals.parity},0) >= 1 and coalesce(${animals.daysInMilk},0) > 250))`,
       active: sql<number>`count(*) filter (where ${animals.status} = 'active')`,
     }).from(animals).where(
       and(eq(animals.farmId, farmId!), isNull(animals.deletedAt)),
