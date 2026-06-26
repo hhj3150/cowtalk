@@ -608,6 +608,22 @@ function matchRegionCommand(
   return null;
 }
 
+/** "행복목장 보여줘" 같은 개별 농장 보기 명령이면 해석한다. 아니면 null. */
+function matchFarmCommand(
+  text: string,
+  farms: readonly { farmId: string; name: string }[],
+): { farmId: string; name: string } | null {
+  if (!/(보여|보기|필터|전환|봐|로 이동|로 가)/.test(text)) return null;
+  const t = text.replace(/\s/g, '');
+  // 긴 이름 우선 — 부분 일치 충돌 방지
+  const sorted = [...farms].sort((a, b) => b.name.length - a.name.length);
+  for (const f of sorted) {
+    const nm = f.name.replace(/\s/g, '');
+    if (nm.length >= 2 && t.includes(nm)) return { farmId: f.farmId, name: f.name };
+  }
+  return null;
+}
+
 export function TinkerbellAssistant({
   dashboardContext,
   openTrigger,
@@ -663,6 +679,7 @@ export function TinkerbellAssistant({
   const { data: farmsForRegion } = useDashboardFarms();
   const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
   const clearFarmSelection = useFarmStore((s) => s.clearSelection);
+  const selectFarm = useFarmStore((s) => s.selectFarm);
 
   // OpenAI Nova 음성 출력 (브라우저 TTS 대체) — 기본 ON, 토글 가능
   const voiceOutput = useVoiceOutput({
@@ -730,6 +747,36 @@ export function TinkerbellAssistant({
   // inputMode: 사용자가 어떻게 물었는지 — 음성으로 물으면 음성으로 답함 (현장 핵심 UX).
   // 'voice' = 마이크/wake word, 'text' = 입력창/suggestion 클릭
   const askTinkerbell = useCallback(async (question: string, inputMode: 'voice' | 'text' = 'text') => {
+    // ── 로컬 명령 가로채기(음성·텍스트·제안 공통): 지역/농장 보기 → AI 왕복 없이 즉시 스코핑 ──
+    if (pendingImages.length === 0 && pendingDocuments.length === 0) {
+      const farmsList = farmsForRegion?.farms ?? [];
+      const region = matchRegionCommand(question, farmsList);
+      const farm = region ? null : matchFarmCommand(question, farmsList);
+      if (region || farm) {
+        const now = new Date();
+        let reply = '';
+        if (region?.type === 'all') {
+          clearFarmSelection();
+          reply = '전체 농장으로 전환했습니다. 대시보드가 전국 기준으로 재집계됩니다.';
+        } else if (region?.type === 'region_empty') {
+          reply = `${region.label}에 등록된 농장이 없습니다. (현재 네트워크 기준)`;
+        } else if (region?.type === 'region') {
+          selectFarmGroup(region.farmIds);
+          reply = `${region.label} ${region.farmIds.length}개 농장으로 필터링했습니다. 대시보드 KPI·차트·지도가 ${region.label} 기준으로 재집계됩니다.`;
+        } else if (farm) {
+          selectFarm(farm.farmId);
+          reply = `${farm.name}으로 전환했습니다. 대시보드가 ${farm.name} 기준으로 표시됩니다.`;
+        }
+        if (region?.type !== 'region_empty') navigate('/dashboard');
+        setMessages((prev) => [
+          ...prev,
+          { role: 'user', content: question, timestamp: now },
+          { role: 'assistant', content: reply, timestamp: now },
+        ]);
+        return;
+      }
+    }
+
     // Vision + Files: 전송 시점의 첨부 스냅샷을 메시지에 함께 보관 (UI 표시)
     const attachedImagesSnapshot = pendingImages;
     const attachedDocumentsSnapshot = pendingDocuments;
@@ -968,7 +1015,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, effectiveRole, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments]);
+  }, [messages, effectiveRole, selectedFarmId, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -1352,39 +1399,12 @@ export function TinkerbellAssistant({
     const hasImages = pendingImages.length > 0;
     const hasDocs = pendingDocuments.length > 0;
     if (!text && !hasImages && !hasDocs) return;
-
-    // ── 지역(시도) 명령 가로채기: "경기도 목장 보여줘" → 대시보드를 그 지역으로 스코핑 ──
-    // AI 왕복 없이 즉시 필터링(결정적·빠름). 비매칭이면 평소대로 AI로 전달.
-    if (text && !hasImages && !hasDocs) {
-      const cmd = matchRegionCommand(text, farmsForRegion?.farms ?? []);
-      if (cmd) {
-        setInputText('');
-        const now = new Date();
-        let reply: string;
-        if (cmd.type === 'all') {
-          clearFarmSelection();
-          reply = '전체 농장으로 전환했습니다. 대시보드가 전국 기준으로 재집계됩니다.';
-        } else if (cmd.type === 'region_empty') {
-          reply = `${cmd.label}에 등록된 농장이 없습니다. (현재 네트워크 기준)`;
-        } else {
-          selectFarmGroup(cmd.farmIds);
-          reply = `${cmd.label} ${cmd.farmIds.length}개 농장으로 필터링했습니다. 대시보드 KPI·차트·지도가 ${cmd.label} 기준으로 재집계됩니다.`;
-        }
-        if (cmd.type !== 'region_empty') navigate('/dashboard');
-        setMessages((prev) => [
-          ...prev,
-          { role: 'user', content: text, timestamp: now },
-          { role: 'assistant', content: reply, timestamp: now },
-        ]);
-        return;
-      }
-    }
-
     setInputText('');
     unlockTts();
     const defaultQ = hasDocs ? '이 문서 분석해 주세요' : '이 사진 분석해 주세요';
-    askTinkerbell(text || defaultQ, 'text'); // 타이핑 입력 — 텍스트 응답 기본
-  }, [inputText, askTinkerbell, pendingImages.length, pendingDocuments.length, farmsForRegion, selectFarmGroup, clearFarmSelection, navigate]);
+    // 지역/농장 보기 명령은 askTinkerbell 진입부에서 가로챔(음성·텍스트 공통)
+    askTinkerbell(text || defaultQ, 'text');
+  }, [inputText, askTinkerbell, pendingImages.length, pendingDocuments.length]);
 
   // ── Wake Word "팅커벨" — Siri/Alexa 스타일 상시 청취 ──
   // alwaysOpen 모드 + 사용자가 wake 활성화 시: 마이크가 항상 듣고 있다가
