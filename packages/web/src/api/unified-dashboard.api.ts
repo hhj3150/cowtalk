@@ -32,6 +32,7 @@ export interface DashboardFarm {
   readonly farmId: string;
   readonly name: string;
   readonly currentHeadCount: number;
+  readonly province?: string;
 }
 
 // farmId/farmIds → 쿼리 문자열 빌더

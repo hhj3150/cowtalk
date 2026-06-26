@@ -285,6 +285,8 @@ export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, 
       {CARDS.map((card, idx) => {
         const value = data[card.key];
         const isClickable = Boolean(onCardClick);
+        // 위험 카드(알림·건강)는 값>0일 때 색으로 신호 — 0이면 평상 테두리
+        const isAlerting = (card.category === 'alerts' || card.category === 'health') && value > 0;
 
         return (
           <button
@@ -298,7 +300,8 @@ export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, 
               '--kpi-accent-rgb': card.accentRgb,
               background: `linear-gradient(145deg, var(--ct-card) 0%, rgba(${card.accentRgb},0.08) 100%)`,
               borderRadius: 16,
-              border: '1px solid var(--ct-border)',
+              border: isAlerting ? `1px solid rgba(${card.accentRgb},0.55)` : '1px solid var(--ct-border)',
+              boxShadow: isAlerting ? `0 0 0 1px rgba(${card.accentRgb},0.22), 0 6px 20px rgba(${card.accentRgb},0.16)` : 'none',
               cursor: isClickable ? 'pointer' : 'default',
               transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease',
               position: 'relative',

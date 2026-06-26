@@ -6,6 +6,8 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useFarmStore } from '@web/stores/farm.store';
+import { useNavigate } from 'react-router-dom';
+import { useDashboardFarms } from '@web/hooks/useUnifiedDashboard';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
@@ -566,6 +568,46 @@ interface TinkerbellAssistantProps {
   readonly alwaysOpen?: boolean;
 }
 
+// ── 지역(시도) 명령 파서 — "경기도 목장 보여줘" 같은 자연어로 대시보드를 지역 스코핑 ──
+const REGION_DEFS: readonly { keys: readonly string[]; core: string; label: string }[] = [
+  { keys: ['경기'], core: '경기', label: '경기도' },
+  { keys: ['강원'], core: '강원', label: '강원도' },
+  { keys: ['충북', '충청북'], core: '충청북', label: '충청북도' },
+  { keys: ['충남', '충청남'], core: '충청남', label: '충청남도' },
+  { keys: ['전북', '전라북'], core: '전라북', label: '전라북도' },
+  { keys: ['전남', '전라남'], core: '전라남', label: '전라남도' },
+  { keys: ['경북', '경상북'], core: '경상북', label: '경상북도' },
+  { keys: ['경남', '경상남'], core: '경상남', label: '경상남도' },
+  { keys: ['제주'], core: '제주', label: '제주도' },
+];
+
+type RegionCommand =
+  | { type: 'all' }
+  | { type: 'region'; label: string; farmIds: readonly string[] }
+  | { type: 'region_empty'; label: string };
+
+/** 텍스트가 지역 보기 명령이면 해석한다. 아니면 null(→ AI로 전달). */
+function matchRegionCommand(
+  text: string,
+  farms: readonly { farmId: string; province?: string }[],
+): RegionCommand | null {
+  const hasFarmWord = /(목장|농장|대시보드)/.test(text);
+  const hasShow = /(보여|보기|필터|전환|봐|만\s|현황)/.test(text);
+  if (!hasFarmWord || !hasShow) return null;
+
+  if (/전체|전국|모든/.test(text)) return { type: 'all' };
+
+  for (const r of REGION_DEFS) {
+    if (r.keys.some((k) => text.includes(k))) {
+      const ids = farms.filter((f) => (f.province ?? '').includes(r.core)).map((f) => f.farmId);
+      return ids.length > 0
+        ? { type: 'region', label: r.label, farmIds: ids }
+        : { type: 'region_empty', label: r.label };
+    }
+  }
+  return null;
+}
+
 export function TinkerbellAssistant({
   dashboardContext,
   openTrigger,
@@ -616,6 +658,11 @@ export function TinkerbellAssistant({
   // FLOW-02 Step2.5: 채팅 컨텍스트·제안은 유효 역할(시뮬레이션 반영)을 따른다.
   const effectiveRole = useEffectiveRole();
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  // 지역(시도) 명령용 — 농장 목록(시도 포함) + 선택 액션 + 네비게이션
+  const navigate = useNavigate();
+  const { data: farmsForRegion } = useDashboardFarms();
+  const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
+  const clearFarmSelection = useFarmStore((s) => s.clearSelection);
 
   // OpenAI Nova 음성 출력 (브라우저 TTS 대체) — 기본 ON, 토글 가능
   const voiceOutput = useVoiceOutput({
@@ -1305,11 +1352,39 @@ export function TinkerbellAssistant({
     const hasImages = pendingImages.length > 0;
     const hasDocs = pendingDocuments.length > 0;
     if (!text && !hasImages && !hasDocs) return;
+
+    // ── 지역(시도) 명령 가로채기: "경기도 목장 보여줘" → 대시보드를 그 지역으로 스코핑 ──
+    // AI 왕복 없이 즉시 필터링(결정적·빠름). 비매칭이면 평소대로 AI로 전달.
+    if (text && !hasImages && !hasDocs) {
+      const cmd = matchRegionCommand(text, farmsForRegion?.farms ?? []);
+      if (cmd) {
+        setInputText('');
+        const now = new Date();
+        let reply: string;
+        if (cmd.type === 'all') {
+          clearFarmSelection();
+          reply = '전체 농장으로 전환했습니다. 대시보드가 전국 기준으로 재집계됩니다.';
+        } else if (cmd.type === 'region_empty') {
+          reply = `${cmd.label}에 등록된 농장이 없습니다. (현재 네트워크 기준)`;
+        } else {
+          selectFarmGroup(cmd.farmIds);
+          reply = `${cmd.label} ${cmd.farmIds.length}개 농장으로 필터링했습니다. 대시보드 KPI·차트·지도가 ${cmd.label} 기준으로 재집계됩니다.`;
+        }
+        if (cmd.type !== 'region_empty') navigate('/dashboard');
+        setMessages((prev) => [
+          ...prev,
+          { role: 'user', content: text, timestamp: now },
+          { role: 'assistant', content: reply, timestamp: now },
+        ]);
+        return;
+      }
+    }
+
     setInputText('');
     unlockTts();
     const defaultQ = hasDocs ? '이 문서 분석해 주세요' : '이 사진 분석해 주세요';
     askTinkerbell(text || defaultQ, 'text'); // 타이핑 입력 — 텍스트 응답 기본
-  }, [inputText, askTinkerbell, pendingImages.length, pendingDocuments.length]);
+  }, [inputText, askTinkerbell, pendingImages.length, pendingDocuments.length, farmsForRegion, selectFarmGroup, clearFarmSelection, navigate]);
 
   // ── Wake Word "팅커벨" — Siri/Alexa 스타일 상시 청취 ──
   // alwaysOpen 모드 + 사용자가 wake 활성화 시: 마이크가 항상 듣고 있다가

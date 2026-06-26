@@ -54,29 +54,22 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'ai_briefing',
   ],
 
-  // 행정: 지도 + 전체 (모든 위젯)
+  // 행정: 농장·시도·행정 관점 중심 (개체 단위 운영 위젯 제외 — 행정관은 집계/지역 관점)
+  // 제외: breeding_pipeline·vital_monitor·temperature_scatter·event_timeline·live_alarm_feed·todo_list·inline_ai_chat·vet_route (개체/현장 운영용)
   government_admin: [
     'epidemic_alert_banner',
-    'farm_map',
-    'herd_overview',
-    'breeding_pipeline',
-    'epidemic_command_center',
-    'farm_health_score',
-    'farm_profit',
-    'herd_composition_chart',
-    'alert_trend_chart',
-    'farm_comparison_radar',
-    'vital_monitor_chart',
-    'temperature_scatter',
-    'event_timeline_chart',
-    'live_alarm_feed',
-    'todo_list',
-    'fever_ranking',
-    'farm_ranking',
-    'epidemic_map',
-    'inline_ai_chat',
-    'vet_route',
-    'sovereign_ai',
+    'herd_overview',          // 집계 KPI
+    'farm_map',               // 전국/시도 현황
+    'farm_ranking',           // 농장 순위
+    'farm_health_score',      // 농장 건강 긴급도
+    'epidemic_command_center',// 역학
+    'epidemic_map',           // 방역 지도
+    'fever_ranking',          // 발열 순위(농장)
+    'farm_comparison_radar',  // 농장 비교
+    'herd_composition_chart', // 축군 구성(집계)
+    'alert_trend_chart',      // 전국 발생 추이
+    'farm_profit',            // 수급/경제
+    'sovereign_ai',           // AI 지식 루프
     'ai_briefing',
   ],
 

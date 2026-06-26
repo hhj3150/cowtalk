@@ -13,9 +13,10 @@ import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js
 import {
   farms, animals, smaxtecEvents, breedingEvents,
   sensorDailyAgg, sensorMeasurements, eventLabels,
-  pregnancyChecks, calvingEvents,
+  pregnancyChecks, calvingEvents, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
+import { latLngToProvince } from '../../services/epidemiology/province-mapper.js';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
 import { clampPct, clampPct1, ratioPct } from '../../lib/metrics-clamp.js';
@@ -1003,16 +1004,28 @@ unifiedDashboardRouter.get('/farms', async (req: Request, res: Response, next: N
     const db = getDb();
     // 데이터 격리: 셀렉터·드롭다운에 배정된 농장만 노출 (미배정/마스터는 전체)
     const scoped = scopedFarmIds(req);
-    const farmList = await db.select({
+    const farmRows = await db.select({
       farmId: farms.farmId,
       name: farms.name,
       currentHeadCount: farms.currentHeadCount,
+      province: regions.province,
+      lat: farms.lat,
+      lng: farms.lng,
     })
       .from(farms)
+      .leftJoin(regions, eq(farms.regionId, regions.regionId))
       .where(scoped
         ? and(eq(farms.status, 'active'), inArray(farms.farmId, [...scoped]))
         : eq(farms.status, 'active'))
       .orderBy(farms.name);
+
+    // 시도(province) 부여 — regionId 없으면 좌표로 판별
+    const farmList = farmRows.map((f) => ({
+      farmId: f.farmId,
+      name: f.name,
+      currentHeadCount: f.currentHeadCount,
+      province: f.province ?? latLngToProvince(f.lat, f.lng),
+    }));
 
     res.json({ success: true, data: { farms: farmList, total: farmList.length } });
   } catch (error) {
