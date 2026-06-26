@@ -299,7 +299,7 @@ export function Sidebar(): React.JSX.Element {
         <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ct-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, padding: '4px 6px', marginBottom: 4 }}>
           축산 소식
         </div>
-        {newsItems.map((news, i) => {
+        {newsItems.slice(0, 5).map((news, i) => {
           const cat = CATEGORY_LABELS[news.category];
           return (
             <a
