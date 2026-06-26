@@ -112,7 +112,7 @@ export async function executeTool(
         result = await handleScheduleSyncProtocol(input);
         break;
       case 'query_sync_today':
-        result = await handleQuerySyncToday(input);
+        result = await handleQuerySyncToday(input, context);
         break;
       case 'record_treatment':
         result = await handleRecordTreatment(input);
@@ -1337,12 +1337,13 @@ async function handleScheduleSyncProtocol(input: Record<string, unknown>): Promi
   }
 }
 
-async function handleQuerySyncToday(input: Record<string, unknown>): Promise<unknown> {
+async function handleQuerySyncToday(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const { getTodaySyncTasks } = await import('../../services/breeding/sync-protocol.service.js');
   const farmId = input.farmId as string | undefined;
+  const scopeFarmIds = context?.farmIds && context.farmIds.length > 0 ? context.farmIds : undefined;
 
   try {
-    const tasks = await getTodaySyncTasks(farmId);
+    const tasks = await getTodaySyncTasks(farmId, scopeFarmIds);
     if (tasks.length === 0) {
       return { tasks: [], message: '오늘 예정된 발정동기화 처치가 없습니다.' };
     }

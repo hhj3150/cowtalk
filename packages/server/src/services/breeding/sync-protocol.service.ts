@@ -217,11 +217,14 @@ export interface TodaySyncTask {
 /**
  * 오늘 예정된 발정동기화 처치 목록 조회
  */
-export async function getTodaySyncTasks(farmId?: string): Promise<readonly TodaySyncTask[]> {
+export async function getTodaySyncTasks(farmId?: string, farmIds?: readonly string[]): Promise<readonly TodaySyncTask[]> {
   const db = getDb();
   const today = new Date().toISOString().slice(0, 10);
 
-  const farmFilter = farmId ? sql`AND be.farm_id = ${farmId}` : sql``;
+  // 데이터 레벨 스코프: farmIds(다중) 우선 → farmId(단일) → 전체
+  const farmFilter = (farmIds && farmIds.length > 0)
+    ? sql`AND be.farm_id IN (${sql.join(farmIds.map((id) => sql`${id}`), sql`, `)})`
+    : farmId ? sql`AND be.farm_id = ${farmId}` : sql``;
 
   const rows = await db.execute(sql`
     SELECT
