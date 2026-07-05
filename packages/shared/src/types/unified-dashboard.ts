@@ -149,6 +149,8 @@ export interface AiBriefingRoleKpi {
 export interface AiBriefing {
   readonly generatedAt: string
   readonly summary: string
+  /** 요약 출처 — 'ai'(Claude 생성) | 'template'(규칙 기반 fallback) */
+  readonly summarySource?: 'ai' | 'template'
   readonly farmCount: number
   readonly animalCount: number
   readonly alertStats: AiBriefingAlertStats

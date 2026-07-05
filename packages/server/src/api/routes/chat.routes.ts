@@ -9,6 +9,9 @@ import type { Role } from '@cowtalk/shared';
 import { handleChatMessage, handleChatStream, buildStreamFallback } from '../../chat/chat-service.js';
 import { isClaudeAvailable } from '../../ai-brain/claude-client.js';
 import { resolveContext } from '../../chat/context-builder.js';
+import { getDb } from '../../config/database.js';
+import { chatConversations } from '../../db/schema.js';
+import { and, eq, desc } from 'drizzle-orm';
 
 export const chatRouter = Router();
 
@@ -177,9 +180,40 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   }
 });
 
-// 대화 이력 (클라이언트-사이드 관리, 서버는 빈 배열 반환)
-chatRouter.get('/history', (_req, res) => {
-  res.json({ success: true, data: [] });
+// 대화 이력 — chat_conversations 기반 (기기·세션을 넘는 장기 기억)
+// ?limit=50&farmId=...&animalId=... 필터 지원. 본인 대화만 조회 가능.
+chatRouter.get('/history', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const farmId = typeof req.query.farmId === 'string' && req.query.farmId ? req.query.farmId : null;
+    const animalId = typeof req.query.animalId === 'string' && req.query.animalId ? req.query.animalId : null;
+
+    const db = getDb();
+    const conditions = [eq(chatConversations.userId, userId)];
+    if (farmId) conditions.push(eq(chatConversations.farmId, farmId));
+    if (animalId) conditions.push(eq(chatConversations.animalId, animalId));
+
+    const rows = await db
+      .select({
+        id: chatConversations.id,
+        question: chatConversations.question,
+        answer: chatConversations.answer,
+        contextType: chatConversations.contextType,
+        animalId: chatConversations.animalId,
+        farmId: chatConversations.farmId,
+        createdAt: chatConversations.createdAt,
+      })
+      .from(chatConversations)
+      .where(and(...conditions))
+      .orderBy(desc(chatConversations.createdAt))
+      .limit(limit);
+
+    // 시간 오름차순(대화 흐름 순서)으로 반환
+    res.json({ success: true, data: rows.reverse() });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // 역할별 추천 질문

@@ -721,6 +721,8 @@ export function TinkerbellAssistant({
     initialVoiceMode: true,
     storageKey: 'cowtalk:tinkerbell:voice-mode',
   });
+  // askTinkerbell 의존성용 — 훅이 반환하는 안정 참조만 분리 (voiceMode 토글이 stale 되지 않도록)
+  const { voiceMode: ttsVoiceMode, speakText: ttsSpeakText } = voiceOutput;
 
   const t = useT();
   const { lang: uiLang } = useLang();
@@ -1039,9 +1041,9 @@ export function TinkerbellAssistant({
       // 음성 출력 결정 — 현장 사용자 핵심 UX:
       // (1) 음성으로 물었으면 → 항상 음성으로 답한다 (voiceMode 토글과 무관, 손이 바쁜 상황)
       // (2) 텍스트로 물었으면 → voiceMode 토글이 ON일 때만 음성, 기본은 무음
-      const shouldSpeak = inputMode === 'voice' || voiceOutput.voiceMode;
+      const shouldSpeak = inputMode === 'voice' || ttsVoiceMode;
       if (shouldSpeak) {
-        voiceOutput.speakText(answer)
+        ttsSpeakText(answer)
           .then(() => setState('idle'))
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1075,7 +1077,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate]);
+  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate, ttsVoiceMode, ttsSpeakText]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {

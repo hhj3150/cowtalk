@@ -124,11 +124,16 @@ describe('getUrgencyHours', () => {
 });
 
 describe('getChannelsForSeverity', () => {
-  it('critical → 3채널', () => {
+  it('critical → in_app + push (실발송 채널)', () => {
     const channels = getChannelsForSeverity('critical');
     expect(channels).toContain('in_app');
-    expect(channels).toContain('email');
-    expect(channels).toContain('sms');
+    expect(channels).toContain('push');
+  });
+
+  it('high → in_app + push', () => {
+    const channels = getChannelsForSeverity('high');
+    expect(channels).toContain('in_app');
+    expect(channels).toContain('push');
   });
 
   it('medium → in_app만', () => {
