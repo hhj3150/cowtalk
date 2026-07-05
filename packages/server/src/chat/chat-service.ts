@@ -16,6 +16,7 @@ import { and, inArray, gte, sql, eq, isNull } from 'drizzle-orm';
 import { countHerdGroups } from '../services/metrics/herd-group.js';
 import { getRoleTone } from './role-tone.js';
 import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
+import { getDataFreshness, formatFreshnessLine } from '../services/metrics/data-freshness.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
@@ -402,6 +403,14 @@ export async function handleChatStream(
   const scopedOverview = overviewPromise ? await overviewPromise : null;
   const farmPulse = farmPulsePromise ? await farmPulsePromise : null;
 
+  // 데이터 신선도 — AI가 "몇 분 전 기준 데이터"인지 정직하게 말하도록 주입 (60초 캐시, 실패 무시)
+  let freshnessLine: string | null = null;
+  try {
+    freshnessLine = formatFreshnessLine(await getDataFreshness());
+  } catch {
+    // 비치명적
+  }
+
   // 응답 후 학습 루프 — 직전 답변을 정정·반박하면 즉시 보정해 다시 답하도록 지시.
   const hasPriorAnswer = conversationHistory.some((m) => m.role === 'assistant');
   const isCorrection = hasPriorAnswer
@@ -412,7 +421,7 @@ export async function handleChatStream(
 
   const prompt = buildConversationPrompt(
     question, role, context, conversationHistory, { streaming: true, labelContext, farmBreedingSettings },
-  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '') + (farmPulse ? `\n\n${farmPulse}` : '') + correctionDirective;
+  ) + textDocumentsBlock + (scopedOverview ? `\n\n${scopedOverview}` : '') + (farmPulse ? `\n\n${farmPulse}` : '') + (freshnessLine ? `\n\n[${freshnessLine}]` : '') + correctionDirective;
 
   const roleTone = getRoleTone(role);
   // 스트리밍: JSON 강제 제거, 자연어 텍스트 응답

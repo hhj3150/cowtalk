@@ -23,10 +23,11 @@ const ORG_ID = process.env.SMAXTEC_ORG_ID ?? '58ae7d8098873db8993c5853';
 function getClient(): SmaxtecApiClient {
   const email = config.SMAXTEC_EMAIL ?? process.env.SMAXTEC_EMAIL;
   const password = config.SMAXTEC_PASSWORD ?? process.env.SMAXTEC_PASSWORD;
-  if (!email || !password) {
-    throw new Error('SMAXTEC_EMAIL / SMAXTEC_PASSWORD 환경변수 미설정');
+  const apiKey = config.SMAXTEC_API_KEY ?? process.env.SMAXTEC_API_KEY;
+  if (!apiKey && (!email || !password)) {
+    throw new Error('SMAXTEC_API_KEY 또는 SMAXTEC_EMAIL/PASSWORD 환경변수 미설정');
   }
-  return new SmaxtecApiClient(email, password);
+  return new SmaxtecApiClient(email ?? '', password ?? '', apiKey);
 }
 
 // ===========================
