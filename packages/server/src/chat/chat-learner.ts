@@ -3,7 +3,7 @@
 // 원칙: 대화가 곧 기록. 사용자는 자연스럽게 말하면 됨.
 
 import { getDb } from '../config/database.js';
-import { chatConversations, animalEvents, clinicalObservations } from '../db/schema.js';
+import { chatConversations, animalEvents, clinicalObservations, eventLabels, labelFollowUps } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { eq, and, gte, desc } from 'drizzle-orm';
 
@@ -407,11 +407,62 @@ async function processLearningSignals(
           break;
         }
 
-        // outcome은 기존 event_labels/label_follow_ups에 연결이 필요하므로 일단 로깅만
+        // outcome — 최근 21일 내 이 개체의 레이블에 예후를 연결해 종단 학습 루프를 닫는다.
+        // "나았어요"/"악화됐어요" 한 마디가 label_follow_ups 예후 기록 + event_labels.outcome 갱신이 된다.
         case 'outcome': {
+          const since = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
+          const [label] = await db
+            .select({
+              labelId: eventLabels.labelId,
+              eventId: eventLabels.eventId,
+              labeledAt: eventLabels.labeledAt,
+            })
+            .from(eventLabels)
+            .where(and(eq(eventLabels.animalId, animalId), gte(eventLabels.labeledAt, since)))
+            .orderBy(desc(eventLabels.labeledAt))
+            .limit(1);
+
+          if (!label) {
+            logger.info(
+              { outcome: signal.value, animalId },
+              '[ChatLearner] Outcome 신호 감지 — 최근 21일 내 레이블 없음, 연결 생략',
+            );
+            break;
+          }
+
+          const daysSinceLabel = Math.max(
+            0,
+            Math.floor((Date.now() - label.labeledAt.getTime()) / (24 * 60 * 60 * 1000)),
+          );
+          await db.insert(labelFollowUps).values({
+            labelId: label.labelId,
+            eventId: label.eventId,
+            animalId,
+            daysSinceLabel,
+            followUpDate: new Date(),
+            status: signal.value, // recovered | improving | unchanged | worsened | dead | culled
+            conversationSummary: '[팅커벨 자동기록] 대화에서 추출된 예후',
+            recordedBy: userId,
+          });
+
+          // 레이블 자체의 최종 결과도 갱신 (도태는 예후 추적만 — 질병 결과가 아님)
+          const OUTCOME_TO_LABEL: Readonly<Record<string, string>> = {
+            recovered: 'resolved',
+            improving: 'ongoing',
+            unchanged: 'ongoing',
+            worsened: 'worsened',
+            dead: 'worsened',
+          };
+          const labelOutcome = OUTCOME_TO_LABEL[signal.value];
+          if (labelOutcome) {
+            await db.update(eventLabels)
+              .set({ outcome: labelOutcome })
+              .where(eq(eventLabels.labelId, label.labelId));
+          }
+
           logger.info(
-            { outcome: signal.value, animalId },
-            '[ChatLearner] Outcome signal detected — will link to existing labels in future',
+            { outcome: signal.value, animalId, labelId: label.labelId, daysSinceLabel },
+            '[ChatLearner] Outcome 예후 기록 완료 — 학습 루프 연결',
           );
           break;
         }

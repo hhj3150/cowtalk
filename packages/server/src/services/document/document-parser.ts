@@ -66,7 +66,7 @@ async function parseXlsx(buffer: Buffer, filename: string): Promise<string> {
 
 function parseCsv(buffer: Buffer, filename: string): string {
   // 간단한 CSV 파서 — 큰따옴표·쉼표 escape 처리. 90% 케이스는 처리됨.
-  const text = buffer.toString('utf8').replace(/^﻿/, ''); // BOM 제거
+  const text = buffer.toString('utf8').replace(/^\uFEFF/, ''); // BOM 제거
   const rows: string[][] = [];
   let cur: string[] = [];
   let cell = '';

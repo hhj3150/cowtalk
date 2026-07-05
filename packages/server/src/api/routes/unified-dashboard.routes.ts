@@ -24,6 +24,7 @@ import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/
 import { computeHerd, getHerdTotal, getLiveCountByFarm } from '../../services/metrics/herd-service.js';
 import { computeAccuracy } from '../../services/metrics/ai-performance-service.js';
 import { getAlertCountForWidget } from '../../services/alerts/alert-aggregator.js';
+import { generateBriefingNarrative } from '../../serving/briefing-ai.service.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -716,15 +717,36 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
     direction,
   };
 
-  // 역할별 한국어 요약 생성
-  const summary = buildBriefingSummary(
+  // 역할별 한국어 요약 생성 (템플릿 — Claude 불가 시 최종 fallback)
+  const templateSummary = buildBriefingSummary(
     totalFarms, total24h, changePercent, direction, topAlertFarms, eventTypeDistribution, role,
   );
 
   // 역할별 한국어 권장사항 생성
-  const recommendations = buildRecommendations(
+  const templateRecommendations = buildRecommendations(
     alertStats, topAlertFarms, eventTypeDistribution, recentCritical, role,
   );
+
+  // Claude 생성 브리핑 (자비스 스타일) — 실패·타임아웃 시 템플릿 유지 (규칙 7)
+  const generative = await generateBriefingNarrative({
+    role,
+    farmId,
+    farmCount: totalFarms,
+    animalCount: totalAnimals,
+    total24h,
+    changePercent,
+    direction,
+    topFarms: topAlertFarms.map((f) => ({
+      farmName: f.farmName, alertCount: f.alertCount, topEventType: f.topEventType ?? null,
+    })),
+    eventDistribution: eventTypeDistribution.map((e) => ({ eventType: e.eventType, count: e.count })),
+    criticalCount: alertStats.critical,
+  });
+
+  const summary = generative?.summary ?? templateSummary;
+  const recommendations = generative && generative.recommendations.length > 0
+    ? generative.recommendations
+    : templateRecommendations;
 
   // 역할별 KPI 4개 생성
   const roleKpis = buildRoleKpis(role, alertStats, eventTypeDistribution, topAlertFarms, trendComparison);
@@ -732,6 +754,7 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
   return {
     generatedAt: new Date().toISOString(),
     summary,
+    summarySource: generative ? 'ai' : 'template',
     farmCount: totalFarms,
     animalCount: totalAnimals,
     alertStats,

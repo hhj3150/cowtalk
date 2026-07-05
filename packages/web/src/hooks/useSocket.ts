@@ -129,7 +129,17 @@ export function useSocketAlarmSync(): void {
       );
     };
 
+    // AI 선제 알림(alerts 테이블 기반) — 알림 서랍·벨 카운트 즉시 갱신
+    const alertHandler = () => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications-recent'] });
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    };
+
     socket.on('alarm:new', handler);
-    return () => { socket.off('alarm:new', handler); };
+    socket.on('alert:new', alertHandler);
+    return () => {
+      socket.off('alarm:new', handler);
+      socket.off('alert:new', alertHandler);
+    };
   }, [socket, queryClient]);
 }

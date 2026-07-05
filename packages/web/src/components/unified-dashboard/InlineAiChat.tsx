@@ -145,8 +145,10 @@ export function InlineAiChat(): React.JSX.Element {
     storageKey: 'cowtalk:inline-chat:voice-mode',
   });
 
+  // handleSend는 렌더마다 새로 선언되므로(최신 토큰·농장 상태 캡처) ref로 항상 최신 버전을 호출한다.
+  const handleSendRef = useRef<(question: string) => Promise<void>>(async () => {});
   const handleVoiceResult = useCallback((text: string) => {
-    handleSend(text);
+    void handleSendRef.current(text);
   }, []);
   const voice = useVoiceInput(handleVoiceResult);
 
@@ -156,6 +158,8 @@ export function InlineAiChat(): React.JSX.Element {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, streamingText]);
+
+  handleSendRef.current = handleSend;
 
   async function handleSend(question: string): Promise<void> {
     const trimmed = question.trim();

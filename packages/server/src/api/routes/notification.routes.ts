@@ -4,14 +4,70 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
-import { notificationPreferences, userFarmAccess } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { notificationPreferences, userFarmAccess, alerts } from '../../db/schema.js';
+import { eq, inArray, desc } from 'drizzle-orm';
 import { addSubscription, removeSubscription, sendPushToFarm, getSubscriptionCount } from '../../realtime/push-service.js';
 import { config } from '../../config/index.js';
 
 export const notificationRouter = Router();
 
 notificationRouter.use(authenticate);
+
+// GET /notifications/recent — 최근 알림 (NotificationDrawer가 사용)
+// 농장 권한이 있으면 그 농장들로 한정, 광역 역할(방역관·행정관)은 전체.
+notificationRouter.get('/recent', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const userId = req.user!.userId;
+    const role = req.user!.role;
+    const limit = Math.min(Number(req.query.limit) || 30, 100);
+
+    const farmRows = await db
+      .select({ farmId: userFarmAccess.farmId })
+      .from(userFarmAccess)
+      .where(eq(userFarmAccess.userId, userId));
+    const farmIds = farmRows.map((r) => r.farmId);
+
+    const isWideRole = role === 'quarantine_officer' || role === 'government_admin';
+    if (!isWideRole && farmIds.length === 0) {
+      res.json({ success: true, data: [] });
+      return;
+    }
+    const rows = await db
+      .select({
+        id: alerts.alertId,
+        type: alerts.alertType,
+        title: alerts.title,
+        message: alerts.explanation,
+        severity: alerts.priority,
+        status: alerts.status,
+        createdAt: alerts.createdAt,
+        animalId: alerts.animalId,
+        farmId: alerts.farmId,
+      })
+      .from(alerts)
+      .where(isWideRole ? undefined : inArray(alerts.farmId, farmIds))
+      .orderBy(desc(alerts.createdAt))
+      .limit(limit);
+
+    res.json({
+      success: true,
+      data: rows.map((r) => ({
+        id: r.id,
+        type: r.type,
+        title: r.title,
+        message: r.message,
+        severity: r.severity,
+        createdAt: r.createdAt,
+        read: r.status !== 'new',
+        animalId: r.animalId ?? undefined,
+        farmId: r.farmId,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // GET /notifications/preferences — 알림 설정 조회
 notificationRouter.get('/preferences', async (req: Request, res: Response, next: NextFunction) => {
