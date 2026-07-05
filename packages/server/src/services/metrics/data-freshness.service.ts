@@ -37,8 +37,9 @@ const THRESHOLDS: ReadonlyArray<{
   {
     source: 'smaxtec_sensors',
     label: 'smaXtec 센서 수치 (체온·활동량)',
-    // metric_type='temp'로 한정 — (metric_type, timestamp DESC) 인덱스로 즉시 조회 (전체 MAX는 풀스캔)
-    query: "SELECT MAX(timestamp) AS ts FROM sensor_measurements WHERE metric_type = 'temp'",
+    // metric_type='temperature'로 한정 — (metric_type, timestamp DESC) 인덱스로 즉시 조회 (전체 MAX는 풀스캔)
+    // 주의: DB 저장값은 smaXtec 원어 'temp'가 아니라 파이프라인이 매핑한 'temperature' (orchestrator METRIC_NAME_MAP)
+    query: "SELECT MAX(timestamp) AS ts FROM sensor_measurements WHERE metric_type = 'temperature'",
     liveMin: 60,
     delayedMin: 6 * 60,
   },

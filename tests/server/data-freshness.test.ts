@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { getDataFreshness, formatFreshnessLine, clearFreshnessCache } from '@server/services/metrics/data-freshness.service.js';
 import { getDb, closeDb } from '@server/config/database.js';
-import { regions, farms, animals, smaxtecEvents } from '@server/db/schema.js';
+import { regions, farms, animals, smaxtecEvents, sensorMeasurements } from '@server/db/schema.js';
 import { eq } from 'drizzle-orm';
 
 let regionId: string;
@@ -30,11 +30,16 @@ beforeAll(async () => {
     animalId, farmId, eventType: 'estrus', detectedAt: new Date(),
   }).returning();
   eventId = event!.eventId;
+  // 파이프라인이 저장하는 실제 metric_type은 'temperature' (smaXtec 원어 'temp' 아님)
+  await db.insert(sensorMeasurements).values({
+    animalId, timestamp: new Date(), metricType: 'temperature', value: 38.6,
+  });
   clearFreshnessCache();
 });
 
 afterAll(async () => {
   const db = getDb();
+  await db.delete(sensorMeasurements).where(eq(sensorMeasurements.animalId, animalId));
   await db.delete(smaxtecEvents).where(eq(smaxtecEvents.eventId, eventId));
   await db.delete(animals).where(eq(animals.animalId, animalId));
   await db.delete(farms).where(eq(farms.farmId, farmId));
@@ -53,6 +58,10 @@ describe('getDataFreshness', () => {
     const events = report.sources.find((s) => s.source === 'smaxtec_events');
     expect(events?.status).toBe('live');
     expect(events?.ageMinutes).toBeLessThanOrEqual(5);
+
+    // 센서는 'temperature' 타입으로 저장된 방금 데이터가 잡혀야 함 ('temp'로 조회하면 none이 되는 회귀 방지)
+    const sensors = report.sources.find((s) => s.source === 'smaxtec_sensors');
+    expect(sensors?.status).toBe('live');
   });
 
   it('60초 캐시 — 같은 리포트 재사용', async () => {
