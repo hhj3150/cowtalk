@@ -13,6 +13,12 @@ import { config } from './config/index.js';
 export function createApp(): express.Express {
   const app = express();
 
+  // --- 리버스 프록시 (Railway/Netlify) ---
+  // 미설정 시 req.ip가 프록시 IP로 고정되어 rate limit이 전체 사용자에 합산되고,
+  // express-rate-limit이 ERR_ERL_UNEXPECTED_X_FORWARDED_FOR 경고를 반복 출력한다.
+  // 1 = 첫 번째 프록시 홉(Railway 엣지)만 신뢰 — X-Forwarded-For 위조 방지.
+  app.set('trust proxy', 1);
+
   // --- 보안 헤더 ---
   app.use(helmet());
 
