@@ -37,6 +37,8 @@ const envSchema = z.object({
   // smaXtec API
   SMAXTEC_EMAIL: z.string().optional(),
   SMAXTEC_PASSWORD: z.string().optional(),
+  // smaXtec API 키 (sx-...) — 설정 시 세션 토큰 인증 대신 사용 (이메일/비밀번호 불필요)
+  SMAXTEC_API_KEY: z.string().optional(),
 
   // 공공데이터 API
   PUBLIC_DATA_API_KEY: z.string().optional(),

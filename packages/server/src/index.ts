@@ -41,14 +41,14 @@ const server = httpServer.listen(config.PORT, () => {
       logger.error({ err }, '[SemenSeed] 카탈로그/인벤토리 시딩 실패');
     });
 
-  // 파이프라인 자동 시작 (smaXtec 크레덴셜이 있을 때만)
-  if (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD) {
+  // 파이프라인 자동 시작 (smaXtec 크레덴셜이 있을 때만 — API 키 또는 이메일/비밀번호)
+  if (config.SMAXTEC_API_KEY || (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD)) {
     const pipeline = getPipelineOrchestrator();
     pipeline.start().catch((err) => {
       logger.error({ err }, '[Pipeline] Failed to start on server boot');
     });
   } else {
-    logger.warn('[Pipeline] smaXtec credentials not configured — pipeline disabled');
+    logger.warn('[Pipeline] smaXtec credentials not configured — pipeline disabled (SMAXTEC_API_KEY 또는 SMAXTEC_EMAIL/PASSWORD 설정 필요)');
   }
 });
 

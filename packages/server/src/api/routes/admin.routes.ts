@@ -11,6 +11,17 @@ export const adminRouter = Router();
 
 adminRouter.use(authenticate);
 
+// GET /admin/data-freshness — 소스별 데이터 신선도 (실시간 반영 여부)
+adminRouter.get('/data-freshness', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { getDataFreshness } = await import('../../services/metrics/data-freshness.service.js');
+    const report = await getDataFreshness();
+    res.json({ success: true, data: report });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /admin/system — 시스템 상태 조회
 adminRouter.get('/system', async (_req: Request, res: Response, next: NextFunction) => {
   try {

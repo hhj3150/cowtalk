@@ -103,9 +103,16 @@ export class SmaxtecApiClient {
   constructor(
     private readonly email: string,
     private readonly password: string,
+    /** smaXtec API 키 (sx-...) — 설정 시 세션 토큰 발급 없이 Bearer로 직접 사용 */
+    private readonly apiKey?: string,
   ) {}
 
   async authenticate(): Promise<string> {
+    // API 키 모드 — 키 자체가 장기 토큰이므로 세션 발급 불필요
+    if (this.apiKey) {
+      return this.apiKey;
+    }
+
     if (this.token && this.tokenExpiry && Date.now() < this.tokenExpiry) {
       return this.token;
     }
@@ -145,6 +152,12 @@ export class SmaxtecApiClient {
 
       // 토큰 만료 → 재인증 후 재시도 (1회)
       if (res.status === 401 && !retried) {
+        if (this.apiKey) {
+          // API 키는 재발급 개념이 없음 — 키 자체가 무효
+          throw new Error(
+            'smaXtec API 키 인증 실패 (401) — SMAXTEC_API_KEY가 유효한지, 해당 키에 조회 권한이 있는지 확인하세요.',
+          );
+        }
         this.token = null;
         this.tokenExpiry = null;
         return this.request<T>(base, path, true);
@@ -293,14 +306,15 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
   async connect(): Promise<void> {
     const email = config.SMAXTEC_EMAIL ?? process.env.SMAXTEC_EMAIL;
     const password = config.SMAXTEC_PASSWORD ?? process.env.SMAXTEC_PASSWORD;
+    const apiKey = config.SMAXTEC_API_KEY ?? process.env.SMAXTEC_API_KEY;
 
-    if (!email || !password) {
-      logger.warn('[smaXtec] No credentials configured — connector disabled');
+    if (!apiKey && (!email || !password)) {
+      logger.warn('[smaXtec] No credentials configured — connector disabled (SMAXTEC_API_KEY 또는 SMAXTEC_EMAIL/PASSWORD 필요)');
       this.status = 'disconnected';
       return;
     }
 
-    this.client = new SmaxtecApiClient(email, password);
+    this.client = new SmaxtecApiClient(email ?? '', password ?? '', apiKey);
 
     try {
       await this.client.authenticate();
