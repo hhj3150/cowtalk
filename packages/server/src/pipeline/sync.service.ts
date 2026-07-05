@@ -10,6 +10,7 @@ import { logger } from '../lib/logger.js';
 import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './connectors/smaxtec.connector.js';
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
 import { normalizeSmaxtecEvent } from './normalization.js';
+import { emitNewAlarm } from '../realtime/alarm-emitter.js';
 
 // ===========================
 // 동기화 결과
@@ -297,7 +298,11 @@ async function syncEvents(
   const BATCH_SIZE = 200;
   for (let i = 0; i < newEvents.length; i += BATCH_SIZE) {
     const batch = newEvents.slice(i, i + BATCH_SIZE);
-    const values = [];
+    type EventInsertRow = Pick<
+      ReturnType<typeof normalizeSmaxtecEvent>,
+      'externalEventId' | 'eventType' | 'confidence' | 'severity' | 'stage' | 'detectedAt' | 'details' | 'rawData'
+    > & { animalId: string; farmId: string };
+    const values: EventInsertRow[] = [];
 
     for (const raw of batch) {
       const animalId = animalMap.get(raw.animal_id);
@@ -331,6 +336,41 @@ async function syncEvents(
 
         stored += rows.length;
 
+        // 실시간 push — 방금 저장된 알람을 farm room + 전체 room에 즉시 전파.
+        // (이 배선이 없으면 화면은 60초 폴링까지 대기 — 조기경보의 마지막 구간 지연 제거)
+        try {
+          const animalIdSet = [...new Set(values.map((v) => v.animalId))];
+          const farmIdSet = [...new Set(values.map((v) => v.farmId))];
+          const [animalRows, farmRows] = await Promise.all([
+            db.select({ animalId: animals.animalId, earTag: animals.earTag })
+              .from(animals).where(inArray(animals.animalId, animalIdSet)),
+            db.select({ farmId: farms.farmId, name: farms.name })
+              .from(farms).where(inArray(farms.farmId, farmIdSet)),
+          ]);
+          const earTagMap = new Map(animalRows.map((r) => [r.animalId, r.earTag]));
+          const farmNameMap = new Map(farmRows.map((r) => [r.farmId, r.name]));
+
+          rows.forEach((row, i) => {
+            const v = values[i];
+            if (!v) return;
+            emitNewAlarm({
+              eventId: row.eventId,
+              eventType: v.eventType,
+              farmId: v.farmId,
+              farmName: farmNameMap.get(v.farmId) ?? '',
+              animalId: v.animalId,
+              earTag: earTagMap.get(v.animalId),
+              severity: v.severity,
+              confidence: v.confidence,
+              detectedAt: (v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt)).toISOString(),
+              details: v.details,
+              acknowledged: false,
+            });
+          });
+        } catch (err) {
+          logger.warn({ err }, '[Sync] 실시간 알람 push 실패 (비치명적 — 60초 폴링이 대체)');
+        }
+
         // 알람 패턴 스냅샷 캡처 — 이벤트 전 48h 센서 데이터 저장
         for (const v of values) {
           captureBeforeSnapshot(
@@ -338,7 +378,7 @@ async function syncEvents(
             v.farmId,
             v.eventType,
             v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt),
-            v.externalEventId,
+            v.externalEventId ?? undefined,
           ).catch(err => logger.debug({ err, eventType: v.eventType }, '[Snapshot] capture skipped'));
         }
       } catch (error) {

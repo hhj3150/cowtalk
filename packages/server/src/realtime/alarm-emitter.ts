@@ -15,6 +15,7 @@ export interface AlarmPayload {
   readonly confidence: number;
   readonly detectedAt: string;
   readonly details?: unknown;
+  readonly acknowledged?: boolean;
 }
 
 export interface WeatherAlertPayload {

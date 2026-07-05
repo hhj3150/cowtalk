@@ -60,7 +60,7 @@ export class PipelineOrchestrator {
   private readonly weather = new WeatherConnector();
 
   // 타이머 핸들
-  private realtimeTimer: ReturnType<typeof setInterval> | null = null;
+  private realtimeTimer: ReturnType<typeof setTimeout> | null = null;
   private batchTimer: ReturnType<typeof setInterval> | null = null;
   private intelligenceTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -103,11 +103,11 @@ export class PipelineOrchestrator {
       }
     });
 
-    // 실시간 주기 설정 (smaXtec: 5분)
-    this.realtimeTimer = setInterval(
-      () => { void this.runRealtimeCycle(); },
-      this.smaxtec.config.syncIntervalMs,
-    );
+    // 실시간 주기 설정 (smaXtec: 5분) — 자기-스케줄 루프 (즉시 첫 실행 포함).
+    // setInterval은 사이클 소요가 주기를 넘으면(190개 조직 기준 실측 ~345초) 다음 틱이
+    // isCycleRunning 가드에 걸려 통째로 스킵되어 실효 주기가 10분으로 벌어진다.
+    // 완료 후 남은 시간만 대기(최소 30초)하면 조기경보 지연이 "주기+소요"로 유지된다.
+    this.scheduleNextRealtimeCycle(0);
 
     // 배치 주기 설정 (공공데이터: 1일 1회)
     this.batchTimer = setInterval(
@@ -121,9 +121,6 @@ export class PipelineOrchestrator {
       24 * 60 * 60 * 1000, // 24시간
     );
 
-    // 즉시 첫 실행
-    void this.runRealtimeCycle();
-
     // 센서 집계도 즉시 실행 (서버 재시작 시 갭 방지)
     void this.runSensorAggregation().catch((err) => {
       logger.error({ err }, '[Pipeline] Initial sensor aggregation failed');
@@ -136,7 +133,7 @@ export class PipelineOrchestrator {
     logger.info('[Pipeline] Stopping...');
 
     if (this.realtimeTimer) {
-      clearInterval(this.realtimeTimer);
+      clearTimeout(this.realtimeTimer);
       this.realtimeTimer = null;
     }
     if (this.batchTimer) {
@@ -165,6 +162,28 @@ export class PipelineOrchestrator {
   // ===========================
   // 실시간 경로 (smaXtec)
   // ===========================
+
+  /**
+   * 다음 실시간 사이클 예약 — 완료 기준 자기-스케줄.
+   * 사이클 소요가 주기(5분)를 넘어도 스킵 없이 "완료 후 최소 30초 뒤" 즉시 이어진다.
+   * (조기경보 지연 상한: 주기 + 사이클 소요. setInterval 방식은 최악 2×주기였음)
+   */
+  private scheduleNextRealtimeCycle(delayMs: number): void {
+    if (!this.state.isRunning) return;
+    this.realtimeTimer = setTimeout(() => {
+      void (async () => {
+        const started = Date.now();
+        try {
+          await this.runRealtimeCycle();
+        } catch (err) {
+          logger.error({ err }, '[Pipeline] Realtime cycle crashed — 다음 주기에 재시도');
+        }
+        const elapsed = Date.now() - started;
+        const nextDelay = Math.max(30_000, this.smaxtec.config.syncIntervalMs - elapsed);
+        this.scheduleNextRealtimeCycle(nextDelay);
+      })();
+    }, delayMs);
+  }
 
   async runRealtimeCycle(): Promise<void> {
     // 중복 실행 방지
