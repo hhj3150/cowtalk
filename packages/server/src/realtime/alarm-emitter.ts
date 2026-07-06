@@ -41,7 +41,8 @@ export function emitNewAlarm(alarm: AlarmPayload): void {
     // 관리자 전체 room
     io.to('alarms:all').emit('alarm:new', alarm);
 
-    logger.debug(
+    // info 레벨 — 조기경보 push는 프로덕션(LOG_LEVEL=info)에서 관측 가능해야 함
+    logger.info(
       { eventId: alarm.eventId, farmId: alarm.farmId, eventType: alarm.eventType },
       '[Emitter] Alarm pushed',
     );
