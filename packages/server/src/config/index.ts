@@ -43,6 +43,9 @@ const envSchema = z.object({
   // 공공데이터 API
   PUBLIC_DATA_API_KEY: z.string().optional(),
 
+  // Kakao Local REST API (주소→좌표 지오코딩, developers.kakao.com REST API 키)
+  KAKAO_REST_API_KEY: z.string().optional(),
+
   // 젖소 정액추천 외부 데이터 연동 플래그 (데이터 거버넌스 확정 시 true로 전환 — 코드 변경 불필요)
   // 켜지면 dairy-sire-provider의 해당 공급원이 live가 되어 추천 신뢰도가 자동 상승한다.
   DAIRY_DHI_ENABLED: z.coerce.boolean().default(false),        // 젖소 검정데이터(DHI) 연동

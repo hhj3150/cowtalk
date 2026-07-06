@@ -86,3 +86,19 @@ export function createFarm(data: FarmFormData): Promise<FarmRecord> {
 export function updateFarm(farmId: string, data: Partial<FarmFormData>): Promise<FarmRecord> {
   return apiPatch<FarmRecord>(`/farms/${farmId}`, data);
 }
+
+// === 지오코딩 (주소 → 좌표) ===
+
+export interface GeocodeCandidate {
+  readonly label: string;
+  readonly lat: number;
+  readonly lng: number;
+  readonly provider: 'kakao' | 'nominatim';
+}
+
+export async function geocodeAddress(query: string): Promise<readonly GeocodeCandidate[]> {
+  const data = await apiGet<{ query: string; results: readonly GeocodeCandidate[] }>(
+    '/geo/geocode', { query },
+  );
+  return data.results;
+}
