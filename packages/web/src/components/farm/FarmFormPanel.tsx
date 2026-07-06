@@ -244,6 +244,9 @@ export function FarmFormPanel({ editFarm, onClose, onSaved }: Props): React.JSX.
             onChange={(lat, lng) => {
               setForm((prev) => ({ ...prev, lat, lng }));
             }}
+            onAddressSuggest={(addr) => {
+              setForm((prev) => ({ ...prev, address: addr }));
+            }}
           />
         </div>
 

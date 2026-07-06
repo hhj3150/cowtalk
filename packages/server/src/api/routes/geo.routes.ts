@@ -61,6 +61,58 @@ async function geocodeNominatim(query: string): Promise<GeocodeResult[]> {
   }));
 }
 
+async function reverseKakao(lat: number, lng: number): Promise<string | null> {
+  const key = config.KAKAO_REST_API_KEY;
+  if (!key) return null;
+  const url = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${String(lng)}&y=${String(lat)}`;
+  const data = (await fetchJson(url, { Authorization: `KakaoAK ${key}` })) as {
+    documents?: ReadonlyArray<{
+      address?: { address_name?: string };
+      road_address?: { address_name?: string } | null;
+    }>;
+  };
+  const doc = data.documents?.[0];
+  return doc?.road_address?.address_name ?? doc?.address?.address_name ?? null;
+}
+
+async function reverseNominatim(lat: number, lng: number): Promise<string | null> {
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${String(lat)}&lon=${String(lng)}&format=json&accept-language=ko&zoom=18`;
+  const data = (await fetchJson(url, {
+    'User-Agent': 'CowTalk/5.0 (livestock platform; reverse geocoding for farm registry)',
+  })) as { display_name?: string };
+  return data.display_name ?? null;
+}
+
+// GET /geo/reverse?lat=36.96&lng=127.24 — 좌표 → 주소 (현재 위치(GPS) 등록 시 주소 자동 채움)
+geoRouter.get('/reverse', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      res.status(400).json({ success: false, error: { code: 'INVALID_COORDS', message: '유효한 lat/lng가 필요합니다' } });
+      return;
+    }
+
+    let address: string | null = null;
+    try {
+      address = await reverseKakao(lat, lng);
+    } catch (err) {
+      logger.warn({ err }, '[Geo] Kakao 역지오코딩 실패 — Nominatim으로 폴백');
+    }
+    if (!address) {
+      try {
+        address = await reverseNominatim(lat, lng);
+      } catch (err) {
+        logger.warn({ err }, '[Geo] Nominatim 역지오코딩 실패');
+      }
+    }
+
+    res.json({ success: true, data: { lat, lng, address } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /geo/geocode?query=경기도 안성시 미양면 갈전리 286-8
 geoRouter.get('/geocode', async (req: Request, res: Response, next: NextFunction) => {
   try {
