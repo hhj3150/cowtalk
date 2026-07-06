@@ -9,6 +9,7 @@ import {
   type FarmRecord,
   type FarmFormData,
 } from '@web/api/farm-management.api';
+import { FarmLocationPicker } from './FarmLocationPicker';
 
 interface Props {
   readonly editFarm: FarmRecord | null; // null = 생성 모드
@@ -229,6 +230,21 @@ export function FarmFormPanel({ editFarm, onClose, onSaved }: Props): React.JSX.
               </option>
             ))}
           </select>
+        </div>
+
+        {/* 위치 (주소 지오코딩 + 지도 클릭 미세조정) — 좌표가 있어야 전국 지도에 정확히 표시됨 */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--ct-text-secondary)' }}>
+            지도 위치
+          </label>
+          <FarmLocationPicker
+            address={form.address}
+            lat={form.lat}
+            lng={form.lng}
+            onChange={(lat, lng) => {
+              setForm((prev) => ({ ...prev, lat, lng }));
+            }}
+          />
         </div>
 
         {/* 상태 */}

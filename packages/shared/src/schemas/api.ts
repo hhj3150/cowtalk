@@ -54,8 +54,9 @@ export const farmQuerySchema = paginationSchema.extend({
 export const farmCreateSchema = z.object({
   name: z.string().min(2, '목장명 2자 이상').max(100),
   address: z.string().min(1, '주소 필수'),
-  lat: z.coerce.number().min(33).max(39).optional(),
-  lng: z.coerce.number().min(124).max(132).optional(),
+  // 전 세계 범위 — 해외 목장(예: 필리핀 물소센터 15.7N 120.9E) 지원 (수출 대비 원칙)
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
   capacity: z.coerce.number().int().min(1, '수용 두수 1 이상'),
   ownerName: z.string().max(50).optional(),
   phone: z.string().max(20).optional(),
