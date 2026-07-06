@@ -102,3 +102,11 @@ export async function geocodeAddress(query: string): Promise<readonly GeocodeCan
   );
   return data.results;
 }
+
+/** 좌표 → 주소 (GPS 현재 위치 등록 시 주소 자동 채움) */
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  const data = await apiGet<{ lat: number; lng: number; address: string | null }>(
+    '/geo/reverse', { lat, lng },
+  );
+  return data.address;
+}

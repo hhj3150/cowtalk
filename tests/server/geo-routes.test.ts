@@ -50,3 +50,28 @@ describe('GET /geo/geocode', () => {
     expect(res.body.data.results).toEqual([]);
   });
 });
+
+describe('GET /geo/reverse', () => {
+  it('잘못된 좌표 — 400', async () => {
+    const res = await request(app).get('/geo/reverse?lat=999&lng=127');
+    expect(res.status).toBe(400);
+  });
+
+  it('좌표 → 주소 (Nominatim 폴백)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ display_name: '갈전리, 미양면, 안성시, 경기도, 대한민국' }),
+    } as unknown as Response);
+
+    const res = await request(app).get('/geo/reverse?lat=36.9689&lng=127.2439');
+    expect(res.status).toBe(200);
+    expect(res.body.data.address).toContain('갈전리');
+  });
+
+  it('역지오코더 실패 — 200 + address null (좌표 등록은 유지)', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    const res = await request(app).get('/geo/reverse?lat=36.9689&lng=127.2439');
+    expect(res.status).toBe(200);
+    expect(res.body.data.address).toBeNull();
+  });
+});
