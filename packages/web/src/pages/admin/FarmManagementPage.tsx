@@ -1,7 +1,7 @@
 // 목장현황 관리 대시보드 — /farm-management
 // smaXtec 스타일: KPI 5카드 + 상세 테이블 + 센서 클릭 → 소 목록
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { DataTable, type Column } from '@web/components/data/DataTable';
@@ -122,6 +122,15 @@ export default function FarmManagementPage(): React.JSX.Element {
     setEditFarm(farm);
     setShowForm(true);
   }, []);
+
+  // 폼은 페이지 상단(KPI 아래)에 열리므로, 테이블까지 스크롤 내린 상태에서
+  // "수정"을 누르면 화면 밖에서 열려 무반응처럼 보인다 → 열릴 때 폼으로 자동 스크롤.
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (showForm) {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showForm, editFarm]);
 
   const handleSensorClick = useCallback((farm: FarmRecord) => {
     setDrawerFarm({ farmId: farm.farmId, farmName: farm.name });
@@ -294,11 +303,13 @@ export default function FarmManagementPage(): React.JSX.Element {
 
       {/* 폼 패널 */}
       {showForm && (
-        <FarmFormPanel
-          editFarm={editFarm}
-          onClose={() => { setShowForm(false); setEditFarm(null); }}
-          onSaved={() => { setShowForm(false); setEditFarm(null); }}
-        />
+        <div ref={formRef} style={{ scrollMarginTop: 80 }}>
+          <FarmFormPanel
+            editFarm={editFarm}
+            onClose={() => { setShowForm(false); setEditFarm(null); }}
+            onSaved={() => { setShowForm(false); setEditFarm(null); }}
+          />
+        </div>
       )}
 
       {/* 필터 바 */}
