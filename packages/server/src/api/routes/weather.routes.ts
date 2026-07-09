@@ -1,5 +1,6 @@
-// 기상 데이터 라우트 — OpenWeatherMap API 연동
+// 기상 데이터 라우트 — OpenWeatherMap 우선, 실패 시 기상청 초단기실황 폴백
 // 농장 좌표(lat/lng) 기반 현재 날씨 + THI(열스트레스) 계산
+// 정직성: 이 라우트는 실측(OWM 또는 KMA)만 서빙한다 — 커넥터의 계절 추정치는 제외.
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
@@ -8,7 +9,7 @@ import { getDb } from '../../config/database.js';
 import { farms } from '../../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
 import { config } from '../../config/index.js';
-import { calculateTHI } from '../../pipeline/connectors/public-data/weather.connector.js';
+import { calculateTHI, WeatherConnector } from '../../pipeline/connectors/public-data/weather.connector.js';
 import { logger } from '../../lib/logger.js';
 
 export const weatherRouter = Router();
@@ -117,6 +118,61 @@ async function fetchWeatherFromAPI(
   };
 }
 
+// ── 기상청 초단기실황 폴백 ──
+
+let kmaConnector: WeatherConnector | null = null;
+
+function getKmaConnector(): WeatherConnector {
+  if (!kmaConnector) {
+    kmaConnector = new WeatherConnector();
+  }
+  return kmaConnector;
+}
+
+async function fetchWeatherFromKma(
+  lat: number,
+  lng: number,
+  farmId: string,
+  farmName: string,
+): Promise<WeatherData | null> {
+  const record = await getKmaConnector().fetchCurrentWeather(lat, lng);
+  // 추정치(source=estimate)는 이 라우트에서 서빙하지 않는다 — 실측만
+  if (!record || record.source !== 'kma') return null;
+  return {
+    farmId,
+    farmName,
+    temperature: Math.round(record.temperature * 10) / 10,
+    humidity: record.humidity,
+    thi: record.thi,
+    windSpeed: record.windSpeed ?? 0,
+    precipitation: record.precipitation ?? 0,
+    description: '기상청 초단기실황',
+    icon: '01d',
+    heatStressLevel: getHeatStressLevel(record.thi),
+    coldStressLevel: getColdStressLevel(record.temperature),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+/** OWM 우선 → 실패/키없음 시 KMA 실황. 둘 다 불가면 WEATHER_UNAVAILABLE */
+async function fetchWeather(
+  lat: number,
+  lng: number,
+  farmId: string,
+  farmName: string,
+): Promise<WeatherData> {
+  if (config.OPENWEATHER_API_KEY) {
+    try {
+      return await fetchWeatherFromAPI(lat, lng, farmId, farmName);
+    } catch (err) {
+      logger.warn({ farmId, err: err instanceof Error ? err.message : String(err) }, '[Weather] OWM 실패 — KMA 폴백');
+    }
+  }
+  const kma = await fetchWeatherFromKma(lat, lng, farmId, farmName);
+  if (kma) return kma;
+  throw new Error('WEATHER_UNAVAILABLE');
+}
+
 // GET /api/weather/farm/:farmId — 단일 농장 기상
 
 weatherRouter.get('/farm/:farmId', async (req: Request, res: Response, next: NextFunction) => {
@@ -141,13 +197,13 @@ weatherRouter.get('/farm/:farmId', async (req: Request, res: Response, next: Nex
       return;
     }
 
-    const data = await fetchWeatherFromAPI(farm.lat, farm.lng, farm.farmId, farm.name);
+    const data = await fetchWeather(farm.lat, farm.lng, farm.farmId, farm.name);
     setCache(farmId, data);
 
     res.json({ success: true, data, cached: false });
   } catch (error) {
-    if ((error as Error).message?.includes('OPENWEATHER_API_KEY')) {
-      res.status(503).json({ success: false, error: '기상 API 키가 설정되지 않았습니다' });
+    if ((error as Error).message === 'WEATHER_UNAVAILABLE') {
+      res.status(503).json({ success: false, error: '기상 데이터를 조회할 수 없습니다 (OpenWeatherMap·기상청 모두 불가)' });
       return;
     }
     logger.error({ error }, 'Weather API failed');
@@ -191,7 +247,7 @@ weatherRouter.get('/farms', async (req: Request, res: Response, next: NextFuncti
       // 순차 호출 (rate limit 존재)
       for (const farm of farmList) {
         try {
-          const data = await fetchWeatherFromAPI(farm.lat, farm.lng, farm.farmId, farm.name);
+          const data = await fetchWeather(farm.lat, farm.lng, farm.farmId, farm.name);
           setCache(farm.farmId, data);
           results.push(data);
         } catch (err) {

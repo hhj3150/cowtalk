@@ -833,6 +833,7 @@ async function handleQueryWeather(input: Record<string, unknown>): Promise<unkno
           thiLevel: thiInfo.level,
           thiLabel: thiInfo.label,
           observationTime: weather.observationTime,
+          dataSource: weather.source === 'kma' ? '기상청 초단기실황(실측)' : '계절 평균 추정치(실측 아님)',
         },
         recommendation: getThiRecommendation(thiInfo.level),
       };
@@ -853,6 +854,7 @@ async function handleQueryWeather(input: Record<string, unknown>): Promise<unkno
         thiLevel: thiInfo.level,
         thiLabel: thiInfo.label,
         observationTime: weather.observationTime,
+        dataSource: weather.source === 'kma' ? '기상청 초단기실황(실측)' : '계절 평균 추정치(실측 아님)',
       },
       recommendation: getThiRecommendation(thiInfo.level),
     };

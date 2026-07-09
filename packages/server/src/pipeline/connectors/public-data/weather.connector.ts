@@ -1,4 +1,9 @@
 // 기상청 기상데이터 커넥터 — 기온, 습도, THI
+//
+// 실연동: 기상청 단기예보 조회서비스의 초단기실황(getUltraSrtNcst, data.go.kr 15084084).
+// PUBLIC_DATA_API_KEY(data.go.kr 공통키) 사용, 좌표→기상청 격자(nx/ny) 변환 후 조회.
+// 정직성: 실황 조회 실패 시 계절 추정치로 폴백하되 source='estimate'로 반드시 구분한다.
+// 소비자(팅커벨 query_weather, weather 라우트)는 source를 보고 실측/추정을 표시한다.
 
 import { AbstractConnector } from '../base.connector.js';
 import type { ConnectorConfig, FetchResult } from '../base.connector.js';
@@ -14,12 +19,101 @@ export interface WeatherRecord {
   readonly thi: number;              // Temperature-Humidity Index
   readonly windSpeed: number | null;
   readonly precipitation: number | null;
+  /** kma = 기상청 실황 실측, estimate = 계절·시간 기반 추정 (실측 아님) */
+  readonly source: 'kma' | 'estimate';
 }
 
 /** THI (온습도지수) 계산 — 축산 열스트레스 지표 */
 export function calculateTHI(tempC: number, humidityPct: number): number {
   // NRC 1971 공식
   return (1.8 * tempC + 32) - (0.55 - 0.0055 * humidityPct) * (1.8 * tempC - 26);
+}
+
+// ── 기상청 격자 변환 (LCC — 기상청 공식 dfs_xy_conv) ──────────────
+
+const RE = 6371.00877;   // 지구 반경 (km)
+const GRID = 5.0;        // 격자 간격 (km)
+const SLAT1 = 30.0;      // 표준 위도 1
+const SLAT2 = 60.0;      // 표준 위도 2
+const OLON = 126.0;      // 기준점 경도
+const OLAT = 38.0;       // 기준점 위도
+const XO = 43;           // 기준점 X (격자)
+const YO = 136;          // 기준점 Y (격자)
+
+/** 위경도 → 기상청 격자 좌표 (초단기실황 nx/ny) — 순수 함수 */
+export function latLngToKmaGrid(lat: number, lng: number): { nx: number; ny: number } {
+  const DEGRAD = Math.PI / 180.0;
+  const re = RE / GRID;
+  const slat1 = SLAT1 * DEGRAD;
+  const slat2 = SLAT2 * DEGRAD;
+  const olon = OLON * DEGRAD;
+  const olat = OLAT * DEGRAD;
+
+  let sn = Math.tan(Math.PI * 0.25 + slat2 * 0.5) / Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+  sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
+  let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+  sf = (Math.pow(sf, sn) * Math.cos(slat1)) / sn;
+  let ro = Math.tan(Math.PI * 0.25 + olat * 0.5);
+  ro = (re * sf) / Math.pow(ro, sn);
+
+  let ra = Math.tan(Math.PI * 0.25 + lat * DEGRAD * 0.5);
+  ra = (re * sf) / Math.pow(ra, sn);
+  let theta = lng * DEGRAD - olon;
+  if (theta > Math.PI) theta -= 2.0 * Math.PI;
+  if (theta < -Math.PI) theta += 2.0 * Math.PI;
+  theta *= sn;
+
+  return {
+    nx: Math.floor(ra * Math.sin(theta) + XO + 0.5),
+    ny: Math.floor(ro - ra * Math.cos(theta) + YO + 0.5),
+  };
+}
+
+/**
+ * 초단기실황 base_date/base_time 계산 — 순수 함수
+ * 실황은 매시 정각 관측분이 약 40분 후 공개되므로 KST 45분 전에는 직전 시각을 쓴다.
+ */
+export function kmaBaseDateTime(now: Date): { baseDate: string; baseTime: string } {
+  const KST_OFFSET_MS = 9 * 3_600_000;
+  const kst = new Date(now.getTime() + KST_OFFSET_MS);
+  if (kst.getUTCMinutes() < 45) {
+    kst.setUTCHours(kst.getUTCHours() - 1);
+  }
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(kst.getUTCDate()).padStart(2, '0');
+  const h = String(kst.getUTCHours()).padStart(2, '0');
+  return { baseDate: `${y}${m}${d}`, baseTime: `${h}00` };
+}
+
+export interface KmaObservationItem {
+  readonly category: string;
+  readonly obsrValue: string;
+}
+
+export interface KmaObservation {
+  readonly temperature: number;
+  readonly humidity: number;
+  readonly windSpeed: number | null;
+  readonly precipitation: number | null;
+}
+
+/** 초단기실황 응답 항목 → 관측값. 필수 지표(기온·습도) 누락 시 null — 순수 함수 */
+export function parseKmaObservation(items: readonly KmaObservationItem[]): KmaObservation | null {
+  const byCategory = new Map(items.map((it) => [it.category, Number(it.obsrValue)]));
+  const temperature = byCategory.get('T1H');
+  const humidity = byCategory.get('REH');
+  if (temperature == null || humidity == null || !Number.isFinite(temperature) || !Number.isFinite(humidity)) {
+    return null;
+  }
+  const windSpeed = byCategory.get('WSD');
+  const precipitation = byCategory.get('RN1');
+  return {
+    temperature,
+    humidity,
+    windSpeed: windSpeed != null && Number.isFinite(windSpeed) ? windSpeed : null,
+    precipitation: precipitation != null && Number.isFinite(precipitation) ? precipitation : null,
+  };
 }
 
 export const WEATHER_CONFIG: ConnectorConfig = {
@@ -31,7 +125,22 @@ export const WEATHER_CONFIG: ConnectorConfig = {
   retryDelayMs: 3000,
 };
 
+const KMA_ENDPOINT = 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst';
+const KMA_TIMEOUT_MS = 5_000;
+const CACHE_TTL_MS = 10 * 60 * 1000;      // 격자별 실황 캐시
+const FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 실패 후 재시도 유예 (추정 폴백 유지)
+
+interface KmaResponseBody {
+  response?: {
+    header?: { resultCode?: string; resultMsg?: string };
+    body?: { items?: { item?: KmaObservationItem[] } };
+  };
+}
+
 export class WeatherConnector extends AbstractConnector<WeatherRecord> {
+  private readonly cache = new Map<string, { record: WeatherRecord; expiry: number }>();
+  private readonly failedUntil = new Map<string, number>();
+
   constructor(connectorConfig: ConnectorConfig = WEATHER_CONFIG) {
     super(connectorConfig);
   }
@@ -44,15 +153,91 @@ export class WeatherConnector extends AbstractConnector<WeatherRecord> {
       return;
     }
     this.status = 'connected';
-    logger.info('[Weather] Ready');
+    logger.info('[Weather] Ready (KMA 초단기실황)');
   }
 
-  /** 현재 기상 데이터 조회 (목장 좌표 기반) */
+  /** 현재 기상 데이터 조회 (목장 좌표 기반) — KMA 실황 우선, 실패 시 추정 폴백(source 구분) */
   async fetchCurrentWeather(lat: number, lng: number): Promise<WeatherRecord | null> {
     if (!config.PUBLIC_DATA_API_KEY) return null;
 
-    // TODO: 실 기상청 API 연동 (data.kma.go.kr)
-    // 현재는 계절·시간 기반 추정값 제공 (구조는 실 API 교체 가능)
+    const { nx, ny } = latLngToKmaGrid(lat, lng);
+    const gridKey = `${nx},${ny}`;
+
+    const cached = this.cache.get(gridKey);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.record;
+    }
+
+    const cooldown = this.failedUntil.get(gridKey);
+    if (!cooldown || cooldown <= Date.now()) {
+      const real = await this.fetchFromKma(nx, ny);
+      if (real) {
+        this.cache.set(gridKey, { record: real, expiry: Date.now() + CACHE_TTL_MS });
+        this.failedUntil.delete(gridKey);
+        return real;
+      }
+      this.failedUntil.set(gridKey, Date.now() + FAILURE_COOLDOWN_MS);
+    }
+
+    return this.estimateWeather(lat, lng);
+  }
+
+  private async fetchFromKma(nx: number, ny: number): Promise<WeatherRecord | null> {
+    const apiKey = config.PUBLIC_DATA_API_KEY;
+    if (!apiKey) return null;
+
+    const { baseDate, baseTime } = kmaBaseDateTime(new Date());
+    const params = new URLSearchParams({
+      serviceKey: apiKey,
+      pageNo: '1',
+      numOfRows: '10',
+      dataType: 'JSON',
+      base_date: baseDate,
+      base_time: baseTime,
+      nx: String(nx),
+      ny: String(ny),
+    });
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, KMA_TIMEOUT_MS);
+      const response = await fetch(`${KMA_ENDPOINT}?${params.toString()}`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) {
+        logger.warn({ status: response.status, nx, ny }, '[Weather] KMA HTTP 오류');
+        return null;
+      }
+      const json = await response.json() as KmaResponseBody;
+      const resultCode = json.response?.header?.resultCode;
+      if (resultCode !== '00') {
+        logger.warn({ resultCode, resultMsg: json.response?.header?.resultMsg, nx, ny }, '[Weather] KMA 응답 오류');
+        return null;
+      }
+      const obs = parseKmaObservation(json.response?.body?.items?.item ?? []);
+      if (!obs) {
+        logger.warn({ nx, ny }, '[Weather] KMA 필수 지표(T1H/REH) 누락');
+        return null;
+      }
+      const thi = calculateTHI(obs.temperature, obs.humidity);
+      return {
+        observationTime: new Date().toISOString(),
+        stationId: `kma-${nx}-${ny}`,
+        stationName: `기상청 격자(${nx},${ny})`,
+        temperature: obs.temperature,
+        humidity: obs.humidity,
+        thi: Math.round(thi * 10) / 10,
+        windSpeed: obs.windSpeed,
+        precipitation: obs.precipitation,
+        source: 'kma',
+      };
+    } catch (error) {
+      logger.warn({ error: error instanceof Error ? error.message : String(error), nx, ny }, '[Weather] KMA 조회 실패 — 추정 폴백');
+      return null;
+    }
+  }
+
+  /** 계절·시간 기반 추정 — 실측 아님. source='estimate'로 반드시 구분 표기 */
+  private estimateWeather(lat: number, lng: number): WeatherRecord {
     const now = new Date();
     const month = now.getMonth() + 1;
     const hour = now.getHours();
@@ -83,6 +268,7 @@ export class WeatherConnector extends AbstractConnector<WeatherRecord> {
       thi: Math.round(thi * 10) / 10,
       windSpeed: null,
       precipitation: null,
+      source: 'estimate',
     };
   }
 
