@@ -67,6 +67,9 @@ export async function executeTool(
       case 'query_animal_events':
         result = await queryAnimalEvents(input);
         break;
+      case 'query_animal_graph':
+        result = await queryAnimalGraph(input);
+        break;
       case 'query_farm_summary':
         result = await queryFarmSummary(input);
         break;
@@ -222,6 +225,30 @@ async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
 // ===========================
 // 2. 개체 이벤트 이력
 // ===========================
+
+// 온톨로지 그래프 조회 — 개체/농장의 전체 맥락(관계)을 한 번에
+async function queryAnimalGraph(input: Record<string, unknown>): Promise<unknown> {
+  const anchorId = String(input.anchorId ?? '');
+  const anchorType = input.anchorType === 'farm' ? 'farm' : 'animal';
+  const windowDays = typeof input.windowDays === 'number' ? input.windowDays : 90;
+  if (!anchorId) return { error: 'anchorId가 필요합니다' };
+
+  const { resolveAnimalGraph, resolveFarmGraph } = await import('../../services/ontology/graph-resolver.service.js');
+  const graph = anchorType === 'farm'
+    ? await resolveFarmGraph(anchorId, { windowDays })
+    : await resolveAnimalGraph(anchorId, { windowDays });
+  if (!graph) return { error: '대상을 찾을 수 없습니다', anchorId, anchorType };
+
+  // LLM 소비용 압축: 노드 요약 + 관계 목록 (props는 핵심만 유지됨)
+  return {
+    anchor: graph.anchor,
+    windowDays: graph.windowDays,
+    nodeCount: graph.nodes.length,
+    edgeCount: graph.edges.length,
+    nodes: graph.nodes.map((n) => ({ id: n.id, type: n.type, label: n.label, at: n.occurredAt, ...n.props })),
+    relations: graph.edges.map((e) => `${e.from} -[${e.relation}]-> ${e.to}`),
+  };
+}
 
 async function queryAnimalEvents(input: Record<string, unknown>): Promise<unknown> {
   const db = getDb();

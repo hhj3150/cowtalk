@@ -354,12 +354,13 @@ DB 영속화:
 
 ## MCP 도구 체계 (2026-04-03 Phase 4 완료)
 
-팅커벨 AI가 사용하는 도구 23개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
+팅커벨 AI가 사용하는 도구 24개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
 
 | 도메인 | 도구명 | 유형 | 설명 |
 |--------|--------|------|------|
 | sensor | query_animal | 조회 | 개체 프로필 (earTag/traceId/animalId 검색) |
 | sensor | query_animal_events | 조회 | 개체 이벤트 이력 (발정/수정/임신/건강) |
+| sensor | query_animal_graph | 조회 | 개체/농장 온톨로지 그래프 (관계 전체 맥락: 이벤트·진단→처치·번식·AI판단·레이블·이동) |
 | sensor | query_sensor_data | 조회 | 체온/활동량 일별 집계 |
 | sensor | query_weather | 조회 | 기상/THI 조회 + 열스트레스 권고 |
 | farm | query_farm_summary | 조회 | 농장 요약 (두수/알림/KPI) |

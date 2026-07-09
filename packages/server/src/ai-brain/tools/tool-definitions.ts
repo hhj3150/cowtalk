@@ -34,6 +34,19 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     },
   },
   {
+    name: 'query_animal_graph',
+    description: '개체 온톨로지 그래프 조회. 개체를 중심으로 소속 농장, smaXtec 이벤트, 진단→처치 체인, 번식(수정→임신감정→분만) 이력, AI 판단(소버린), 전문가 레이블, 이동 이력(접촉 농장)을 노드+엣지 그래프로 반환한다. 개체의 전체 맥락을 한 번에 파악할 때 사용 — 개별 조회 도구를 여러 번 부르는 것보다 효율적이다. anchorType=farm이면 농장 중심(이상 개체 + 이동 연결 농장) 그래프.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        anchorId: { type: 'string', description: '개체 ID 또는 농장 ID (필수)' },
+        anchorType: { type: 'string', enum: ['animal', 'farm'], description: '앵커 유형 (기본 animal)' },
+        windowDays: { type: 'number', description: '조회 창 (일, 기본 90, 최대 365)' },
+      },
+      required: ['anchorId'],
+    },
+  },
+  {
     name: 'query_farm_summary',
     description: '농장 요약 정보 조회. 농장명, 두수, 활성 알림 수, 번식 KPI(수태율, 발정탐지율)를 반환한다. 농장명은 한글/영문 모두 지원 — 서버가 자동 로마자 변환("술탄"↔"sultan") 후 OR 검색한다. 첫 시도가 실패하면 반대 언어 표기 또는 핵심 음절(예: "술탄")만으로 재시도하라.',
     input_schema: {
