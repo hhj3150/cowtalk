@@ -3,12 +3,14 @@
 // 각 축 클릭 없이도 근거(reasons)가 바로 보인다 — "오늘 이 점수인 이유".
 
 import React from 'react';
-import type { FarmIntelligenceIndex, FarmIndexAxis } from '@cowtalk/shared';
+import type { FarmIntelligenceIndex, FarmIndexAxis, FarmIndexTrendPoint } from '@cowtalk/shared';
 import { TitleAccentBar } from './WidgetTitle';
 
 interface Props {
   readonly data: FarmIntelligenceIndex | undefined;
   readonly isLoading: boolean;
+  /** 일별 스냅샷 추이 (실측만 — 배치 축적 전에는 비어 있음) */
+  readonly trend?: readonly FarmIndexTrendPoint[];
 }
 
 const GRADE_COLORS: Record<string, string> = {
@@ -17,6 +19,47 @@ const GRADE_COLORS: Record<string, string> = {
   C: '#f59e0b',
   D: '#ef4444',
 };
+
+function TrendLine({ points }: { readonly points: readonly FarmIndexTrendPoint[] }): React.JSX.Element | null {
+  const valid = points.filter((p): p is FarmIndexTrendPoint & { overall: number } => p.overall != null);
+  if (valid.length < 2) return null; // 실측 2점 미만이면 추이 자체를 그리지 않음 (합성·보간 금지)
+  const w = 220;
+  const h = 36;
+  const min = Math.min(...valid.map((p) => p.overall));
+  const max = Math.max(...valid.map((p) => p.overall));
+  const range = Math.max(1, max - min);
+  const pts = valid
+    .map((p, i) => {
+      const x = (i / (valid.length - 1)) * w;
+      const y = h - ((p.overall - min) / range) * (h - 6) - 3;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  const last = valid[valid.length - 1]!;
+  const first = valid[0]!;
+  const delta = last.overall - first.overall;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--ct-border)' }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden style={{ flexShrink: 0 }}>
+        <polyline
+          points={pts}
+          fill="none"
+          stroke="var(--ct-primary)"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.9}
+        />
+      </svg>
+      <span style={{ fontSize: 10, color: 'var(--ct-text-muted)', lineHeight: 1.5 }}>
+        최근 {valid.length}일 실측 추이
+        <span style={{ color: delta >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700, marginLeft: 6 }}>
+          {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}점
+        </span>
+      </span>
+    </div>
+  );
+}
 
 function ScoreRing({ score, grade }: { readonly score: number | null; readonly grade: string | null }): React.JSX.Element {
   const color = grade ? (GRADE_COLORS[grade] ?? 'var(--ct-primary)') : 'var(--ct-text-muted)';
@@ -85,7 +128,7 @@ function AxisRow({ axis }: { readonly axis: FarmIndexAxis }): React.JSX.Element 
   );
 }
 
-export function FarmIndexWidget({ data, isLoading }: Props): React.JSX.Element {
+export function FarmIndexWidget({ data, isLoading, trend }: Props): React.JSX.Element {
   return (
     <div className="ct-card ct-fade-up" style={{ borderRadius: 14, padding: '16px 16px 14px' }} role="region" aria-label="오늘의 목장 점수">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -103,12 +146,15 @@ export function FarmIndexWidget({ data, isLoading }: Props): React.JSX.Element {
       {isLoading && <div className="ct-shimmer" style={{ height: 120, borderRadius: 12 }} />}
 
       {!isLoading && data && (
-        <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-          <ScoreRing score={data.overall} grade={data.grade} />
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {data.axes.map((axis) => <AxisRow key={axis.key} axis={axis} />)}
+        <>
+          <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+            <ScoreRing score={data.overall} grade={data.grade} />
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {data.axes.map((axis) => <AxisRow key={axis.key} axis={axis} />)}
+            </div>
           </div>
-        </div>
+          {trend && <TrendLine points={trend} />}
+        </>
       )}
 
       {!isLoading && data && data.overall == null && (

@@ -30,3 +30,10 @@ export interface FarmIntelligenceIndex {
   readonly axes: readonly FarmIndexAxis[];
   readonly generatedAt: string;
 }
+
+/** 지수 추이 1점 — 일별 스냅샷 실측 (보간·합성 없음) */
+export interface FarmIndexTrendPoint {
+  readonly date: string;
+  readonly overall: number | null;
+  readonly coverageAvailable: number;
+}

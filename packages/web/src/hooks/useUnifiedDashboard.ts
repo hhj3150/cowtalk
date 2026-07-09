@@ -97,6 +97,16 @@ export function useFarmIndex() {
   });
 }
 
+export function useFarmIndexTrend() {
+  const { farmId } = useEffectiveFarmId();
+  return useQuery({
+    queryKey: ['farm-index-trend', farmId],
+    queryFn: () => api.fetchFarmIndexTrend(farmId!, 30),
+    enabled: Boolean(farmId),
+    staleTime: STALE_TIME,
+  });
+}
+
 export function useHealthAlertsSummary(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
