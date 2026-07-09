@@ -1,6 +1,7 @@
 // 통합 대시보드 — 농장 긴급도 순위 위젯
 
 import React from 'react';
+import { TitleAccentBar } from './WidgetTitle';
 
 // ── 타입 ──
 
@@ -139,10 +140,11 @@ export function FarmRankingWidget({ rankings, onFarmClick }: Props): React.JSX.E
   return (
     <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
       <h3
-        className="mb-3 font-semibold"
-        style={{ fontSize: '13px', color: 'var(--ct-text)' }}
+        className="mb-3 font-semibold flex items-center gap-2"
+        style={{ fontSize: '13px', color: 'var(--ct-text)', letterSpacing: '-0.2px' }}
       >
-        {'\uD83D\uDCCA'} 농장 건강 긴급도 순위 (7일)
+        <TitleAccentBar color="var(--ct-info)" />
+        농장 건강 긴급도 순위 (7일)
       </h3>
 
       {rankings.length === 0 ? (

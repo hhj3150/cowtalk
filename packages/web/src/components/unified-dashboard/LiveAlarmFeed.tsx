@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EventLabelModal } from './EventLabelModal';
 import { useDxCompletion } from '../../hooks/useDxCompletion';
+import { TitleAccentBar } from './WidgetTitle';
 
 // ── 타입 ──
 
@@ -303,10 +304,11 @@ export function LiveAlarmFeed({ alarms, onFarmClick, onAnimalClick }: Props): Re
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <h3
-              className="font-semibold"
-              style={{ fontSize: '13px', color: 'var(--ct-text)' }}
+              className="font-semibold flex items-center gap-2"
+              style={{ fontSize: '13px', color: 'var(--ct-text)', letterSpacing: '-0.2px' }}
             >
-              {'\uD83D\uDEA8'} 실시간 알람 피드
+              <TitleAccentBar color="var(--ct-danger)" />
+              실시간 알람 피드
             </h3>
             {alarms.length > 0 && (
               <span

@@ -50,6 +50,7 @@ import {
   AssistantAlertPanel,
   SovereignAlarmFeed,
   BreedingPipelineWidget,
+  TitleAccentBar,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -956,8 +957,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
               padding: '14px 16px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 16 }}>🧚</span>
-                <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ct-text)' }}>소버린 AI 알람</span>
+                <TitleAccentBar />
+                <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ct-text)', letterSpacing: '-0.2px' }}>소버린 AI 알람</span>
                 <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>CowTalk 독자 수의학 분석</span>
                 {sovereignAlarmData?.alarms.length ? (
                   <span style={{ marginLeft: 'auto', fontSize: 10, color: '#f97316', fontWeight: 700 }}>

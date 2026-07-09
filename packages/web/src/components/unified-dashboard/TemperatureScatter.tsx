@@ -3,6 +3,7 @@
 // 체온상승/하강 알람 시점을 붉은/파란 마커로 강조
 
 import React from 'react';
+import { CHART_COLORS } from '@web/constants/chart-colors';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ReferenceArea,
@@ -68,10 +69,10 @@ function TimelineTooltip({
   if (!pt) return null;
 
   const tempColor = pt.temp >= pt.upperThreshold
-    ? '#ef4444'
+    ? CHART_COLORS.danger
     : pt.temp <= pt.lowerThreshold
-      ? '#3b82f6'
-      : '#22c55e';
+      ? CHART_COLORS.info
+      : CHART_COLORS.ok;
 
   return (
     <div style={{
@@ -82,7 +83,7 @@ function TimelineTooltip({
       boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
       maxWidth: 240,
     }}>
-      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+      <div style={{ fontSize: 11, color: CHART_COLORS.axis, marginBottom: 4 }}>
         {formatHour(pt.time)}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -96,7 +97,7 @@ function TimelineTooltip({
           marginTop: 4,
           fontSize: 11,
           fontWeight: 700,
-          color: pt.event === '체온상승' ? '#ef4444' : '#3b82f6',
+          color: pt.event === '체온상승' ? CHART_COLORS.danger : CHART_COLORS.info,
           padding: '2px 6px',
           borderRadius: 4,
           background: pt.event === '체온상승' ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
@@ -106,12 +107,12 @@ function TimelineTooltip({
         </div>
       )}
       {pt.eventDetail && (
-        <div style={{ marginTop: 2, fontSize: 10, color: '#94a3b8' }}>
+        <div style={{ marginTop: 2, fontSize: 10, color: CHART_COLORS.axis }}>
           {pt.eventDetail}
         </div>
       )}
       {!pt.event && pt.temp < pt.avg - 0.5 && (
-        <div style={{ marginTop: 4, fontSize: 10, color: '#60a5fa' }}>
+        <div style={{ marginTop: 4, fontSize: 10, color: CHART_COLORS.infoLight }}>
           💧 음수로 인한 체온 하강
         </div>
       )}
@@ -130,7 +131,7 @@ function AlarmDot(props: {
   if (cx === undefined || cy === undefined || !payload || !payload.event) return null;
 
   const isHigh = payload.event === '체온상승';
-  const color = isHigh ? '#ef4444' : '#3b82f6';
+  const color = isHigh ? CHART_COLORS.danger : CHART_COLORS.info;
 
   return (
     <g>
@@ -176,22 +177,22 @@ export function TemperatureScatter({ data, height = 280 }: Props): React.JSX.Ele
         <SummaryBadge
           label="평균 위내온도"
           value={`${summary.meanTemp.toFixed(1)}°C`}
-          color="#22c55e"
+          color={CHART_COLORS.ok}
         />
         <SummaryBadge
           label="체온상승"
           value={`${summary.highAlarms}건`}
-          color="#ef4444"
+          color={CHART_COLORS.danger}
         />
         <SummaryBadge
           label="체온하강"
           value={`${summary.lowAlarms}건`}
-          color="#3b82f6"
+          color={CHART_COLORS.info}
         />
         <SummaryBadge
           label="음수 감지"
           value={`${summary.drinkingEvents}회`}
-          color="#8b5cf6"
+          color={CHART_COLORS.purple}
         />
       </div>
 
@@ -222,7 +223,7 @@ export function TemperatureScatter({ data, height = 280 }: Props): React.JSX.Ele
           <ReferenceArea
             y1={37.5}
             y2={39.0}
-            fill="#22c55e"
+            fill={CHART_COLORS.ok}
             fillOpacity={0.05}
             strokeOpacity={0}
           />
@@ -230,34 +231,34 @@ export function TemperatureScatter({ data, height = 280 }: Props): React.JSX.Ele
           {/* 기준선 */}
           <ReferenceLine
             y={summary.meanTemp}
-            stroke="#22c55e"
+            stroke={CHART_COLORS.ok}
             strokeDasharray="8 4"
             strokeWidth={1}
-            label={{ value: `평균 ${summary.meanTemp}°C`, position: 'right', fontSize: 9, fill: '#22c55e' }}
+            label={{ value: `평균 ${summary.meanTemp}°C`, position: 'right', fontSize: 9, fill: CHART_COLORS.ok }}
           />
           <ReferenceLine
             y={39.0}
-            stroke="#ef4444"
+            stroke={CHART_COLORS.danger}
             strokeDasharray="4 3"
             strokeWidth={1}
-            label={{ value: '상승 알람', position: 'right', fontSize: 9, fill: '#ef4444' }}
+            label={{ value: '상승 알람', position: 'right', fontSize: 9, fill: CHART_COLORS.danger }}
           />
           <ReferenceLine
             y={37.0}
-            stroke="#3b82f6"
+            stroke={CHART_COLORS.info}
             strokeDasharray="4 3"
             strokeWidth={1}
-            label={{ value: '하강 알람', position: 'right', fontSize: 9, fill: '#3b82f6' }}
+            label={{ value: '하강 알람', position: 'right', fontSize: 9, fill: CHART_COLORS.info }}
           />
 
           {/* 체온 곡선 */}
           <Line
             type="monotone"
             dataKey="temp"
-            stroke="#10b981"
+            stroke={CHART_COLORS.teal}
             strokeWidth={1.5}
             dot={<AlarmDot />}
-            activeDot={{ r: 4, fill: '#10b981', stroke: '#fff', strokeWidth: 1 }}
+            activeDot={{ r: 4, fill: CHART_COLORS.teal, stroke: '#fff', strokeWidth: 1 }}
             animationDuration={2000}
           />
         </LineChart>
@@ -265,11 +266,11 @@ export function TemperatureScatter({ data, height = 280 }: Props): React.JSX.Ele
 
       {/* 범례 */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
-        <LegendItem color="#10b981" label="위내 체온" />
-        <LegendItem color="#22c55e" dashed label="평균 38.3°C" />
-        <LegendItem color="#ef4444" icon="●" label="체온상승 알람" />
-        <LegendItem color="#3b82f6" icon="●" label="체온하강 알람" />
-        <LegendItem color="#8b5cf6" icon="▽" label="음수 하강" />
+        <LegendItem color={CHART_COLORS.teal} label="위내 체온" />
+        <LegendItem color={CHART_COLORS.ok} dashed label="평균 38.3°C" />
+        <LegendItem color={CHART_COLORS.danger} icon="●" label="체온상승 알람" />
+        <LegendItem color={CHART_COLORS.info} icon="●" label="체온하강 알람" />
+        <LegendItem color={CHART_COLORS.purple} icon="▽" label="음수 하강" />
       </div>
     </div>
   );

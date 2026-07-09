@@ -1,6 +1,7 @@
 // 통합 대시보드 — 24시간 이벤트 타임라인 차트
 
 import React from 'react';
+import { CHART_COLORS } from '@web/constants/chart-colors';
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ZAxis,
@@ -45,11 +46,11 @@ const CATEGORY_LABELS: Record<number, string> = {
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: '#dc2626',
-  high: '#f97316',
-  medium: '#f59e0b',
-  low: '#3b82f6',
-  info: '#64748b',
+  critical: CHART_COLORS.critical,
+  high: CHART_COLORS.high,
+  medium: CHART_COLORS.warning,
+  low: CHART_COLORS.info,
+  info: CHART_COLORS.muted,
 };
 
 const SEVERITY_SIZES: Record<string, number> = {
@@ -75,7 +76,7 @@ function buildChartData(events: readonly TimelineEvent[]): ChartPoint[] {
     const d = new Date(evt.time);
     const hour = d.getHours() + d.getMinutes() / 60;
     const categoryIdx = CATEGORY_INDEX[evt.category] ?? 3;
-    const color = SEVERITY_COLORS[evt.severity] ?? '#64748b';
+    const color = SEVERITY_COLORS[evt.severity] ?? CHART_COLORS.muted;
     const size = SEVERITY_SIZES[evt.severity] ?? 40;
 
     return { hour, categoryIdx, color, size, event: evt };
@@ -112,7 +113,7 @@ function CustomTooltip({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>{timeStr}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: CHART_COLORS.tooltipText }}>{timeStr}</span>
         <span
           style={{
             fontSize: 10,
@@ -126,7 +127,7 @@ function CustomTooltip({
           {evt.severity}
         </span>
       </div>
-      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
+      <div style={{ fontSize: 11, color: CHART_COLORS.axis, marginBottom: 2 }}>
         {evt.farmName} · {CATEGORY_LABELS[point.categoryIdx] ?? evt.category}
       </div>
       <div style={{ fontSize: 11, color: 'var(--ct-text)', lineHeight: 1.4 }}>
@@ -214,7 +215,7 @@ export function EventTimelineChart({ events, height = 260 }: Props): React.JSX.E
       {/* 심각도 범례 */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 4 }}>
         {(['critical', 'high', 'medium', 'low'] as const).map((sev) => {
-          const color = SEVERITY_COLORS[sev] ?? '#64748b';
+          const color = SEVERITY_COLORS[sev] ?? CHART_COLORS.muted;
           const labels: Record<string, string> = { critical: '심각', high: '높음', medium: '보통', low: '낮음' };
           const count = events.filter((e) => e.severity === sev).length;
           return (

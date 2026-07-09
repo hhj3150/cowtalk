@@ -1,6 +1,7 @@
 // 통합 대시보드 — 알림 트렌드 차트 (14일 스택 바 + 이동평균 라인)
 
 import React from 'react';
+import { CHART_COLORS } from '@web/constants/chart-colors';
 import {
   ComposedChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, Brush,
@@ -26,10 +27,10 @@ interface Props {
 // ── 상수 ──
 
 const SEVERITY_CONFIG = [
-  { dataKey: 'critical', label: '심각', color: '#dc2626' },
-  { dataKey: 'high', label: '높음', color: '#f97316' },
-  { dataKey: 'medium', label: '보통', color: '#f59e0b' },
-  { dataKey: 'low', label: '낮음', color: '#3b82f6' },
+  { dataKey: 'critical', label: '심각', color: CHART_COLORS.critical },
+  { dataKey: 'high', label: '높음', color: CHART_COLORS.high },
+  { dataKey: 'medium', label: '보통', color: CHART_COLORS.warning },
+  { dataKey: 'low', label: '낮음', color: CHART_COLORS.info },
 ] as const;
 
 const GRADIENT_ID = 'alert-trend-avg-gradient';
@@ -64,25 +65,25 @@ function CustomTooltip({
         minWidth: 140,
       }}
     >
-      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 11, color: CHART_COLORS.axis, marginBottom: 6 }}>{label}</div>
       {barEntries.map((entry) => {
         const cfg = SEVERITY_CONFIG.find((c) => c.dataKey === entry.dataKey);
         return (
           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: cfg?.color ?? entry.color }} />
-            <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 28 }}>{cfg?.label ?? entry.dataKey}</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>{entry.value}건</span>
+            <span style={{ fontSize: 11, color: CHART_COLORS.axis, minWidth: 28 }}>{cfg?.label ?? entry.dataKey}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: CHART_COLORS.tooltipText }}>{entry.value}건</span>
           </div>
         );
       })}
-      <div style={{ borderTop: '1px solid #334155', marginTop: 4, paddingTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>합계</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>{totalAlerts}건</span>
+      <div style={{ borderTop: `1px solid ${CHART_COLORS.grid}`, marginTop: 4, paddingTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 11, color: CHART_COLORS.axis }}>합계</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: CHART_COLORS.tooltipText }}>{totalAlerts}건</span>
       </div>
       {avgEntry && (
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>7일 평균</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e' }}>{avgEntry.value.toFixed(1)}</span>
+          <span style={{ fontSize: 11, color: CHART_COLORS.axis }}>7일 평균</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: CHART_COLORS.ok }}>{avgEntry.value.toFixed(1)}</span>
         </div>
       )}
     </div>
@@ -113,8 +114,8 @@ export function AlertTrendChart({ data, height = 280, onBarClick }: Props): Reac
         <ComposedChart data={data as unknown as Record<string, unknown>[]}>
           <defs>
             <linearGradient id={GRADIENT_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22c55e" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+              <stop offset="0%" stopColor={CHART_COLORS.ok} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={CHART_COLORS.ok} stopOpacity={0.02} />
             </linearGradient>
           </defs>
 
@@ -169,10 +170,10 @@ export function AlertTrendChart({ data, height = 280, onBarClick }: Props): Reac
           <Line
             type="monotone"
             dataKey="movingAvg"
-            stroke="#22c55e"
+            stroke={CHART_COLORS.ok}
             strokeWidth={2.5}
             dot={false}
-            activeDot={{ r: 4, stroke: '#22c55e', strokeWidth: 2, fill: '#0f172a' }}
+            activeDot={{ r: 4, stroke: CHART_COLORS.ok, strokeWidth: 2, fill: CHART_COLORS.tooltipBg }}
             animationDuration={1500}
             animationEasing="ease-in-out"
           />
@@ -181,7 +182,7 @@ export function AlertTrendChart({ data, height = 280, onBarClick }: Props): Reac
             <Brush
               dataKey="date"
               height={20}
-              stroke="#64748b"
+              stroke={CHART_COLORS.muted}
               fill="var(--ct-bg)"
               tickFormatter={formatDate}
             />

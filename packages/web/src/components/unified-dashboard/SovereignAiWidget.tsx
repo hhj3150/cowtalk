@@ -2,6 +2,7 @@
 // BUG-008: AI 정확도는 표본 부족 시 "—" (data_insufficient) 표시.
 
 import React, { useMemo } from 'react';
+import { TitleAccentBar } from './WidgetTitle';
 import type { SovereignAiStats, AccuracyMetricResult, AccuracyChangeResult } from '@cowtalk/shared';
 
 // ── 상수 ──
@@ -275,7 +276,7 @@ export function SovereignAiWidget({ stats, onOpenLabelChat }: Props): React.JSX.
         borderBottom: '1px solid var(--ct-border)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>🌏</span>
+          <TitleAccentBar />
           <div>
             <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--ct-text)' }}>
               Sovereign AI Knowledge Loop
