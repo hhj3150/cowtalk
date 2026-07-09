@@ -11,6 +11,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="CowTalk" />
     <!-- 카카오맵 SDK 제거 — Leaflet으로 전환 완료. 카카오 503 장애 시 페이지 로드 지연 방지 -->
+    <!-- Pretendard: 한국어 UI 가독성 — CDN 실패 시 system-ui 폴백으로 무해 -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    />
   </head>
   <body>
     <div id="root"></div>

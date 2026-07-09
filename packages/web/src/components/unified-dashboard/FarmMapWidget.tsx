@@ -106,6 +106,10 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 5
         borderRadius: 14,
         border: '1px solid var(--ct-border)',
         overflow: 'hidden',
+        // 관제 존 그리드에서 옆 카드와 높이 정렬 — 지도가 남는 공간을 채움
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* 헤더 */}
@@ -117,21 +121,17 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 5
         borderBottom: '1px solid var(--ct-border)',
         flexWrap: 'wrap',
         gap: 8,
+        flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            width: 26,
-            height: 26,
-            borderRadius: 7,
-            background: 'rgba(255,255,255,0.04)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 14,
-          }}>
-            🗺️
-          </span>
-          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ct-text)' }}>
+          <span aria-hidden style={{
+            width: 3,
+            height: 14,
+            borderRadius: 2,
+            background: 'var(--ct-primary)',
+            flexShrink: 0,
+          }} />
+          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ct-text)', letterSpacing: '-0.2px' }}>
             농장 분포 지도
           </span>
           <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
@@ -148,8 +148,8 @@ export function FarmMapWidget({ markers, selectedFarmId, onFarmClick, height = 5
         </div>
       </div>
 
-      {/* Leaflet 지도 */}
-      <div style={{ height, width: '100%', background: '#0f172a' }}>
+      {/* Leaflet 지도 — flex 로 카드 잔여 높이를 모두 사용 (최소 height 보장) */}
+      <div style={{ minHeight: height, flex: '1 1 auto', width: '100%', background: '#0f172a' }}>
         <MapContainer
           center={KOREA_CENTER}
           zoom={DEFAULT_ZOOM}

@@ -519,19 +519,15 @@ function ChartCard({ title, icon, children, minHeight = 320, delay = 0 }: {
         paddingBottom: 10,
         borderBottom: '1px solid var(--ct-border)',
       }}>
-        <span style={{
-          width: 26,
-          height: 26,
-          borderRadius: 7,
-          background: 'rgba(255,255,255,0.04)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 14,
-        }}>
-          {icon}
-        </span>
-        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ct-text)' }}>{title}</span>
+        <span aria-hidden style={{
+          width: 3,
+          height: 14,
+          borderRadius: 2,
+          background: 'var(--ct-primary)',
+          flexShrink: 0,
+        }} />
+        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ct-text)', letterSpacing: '-0.2px' }}>{title}</span>
+        <span aria-hidden style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55, lineHeight: 1 }}>{icon}</span>
       </div>
       {children}
     </div>
@@ -554,6 +550,9 @@ const briefingCardBase: React.CSSProperties = {
   borderRight: '1px solid var(--ct-border)',
   borderBottom: '1px solid var(--ct-border)',
   borderLeft: '1px solid var(--ct-border)',
+  // 관제 존 그리드에서 지도 카드와 높이 정렬
+  height: '100%',
+  boxSizing: 'border-box',
 };
 
 // ── Mapping constants ──
@@ -798,7 +797,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
       color: 'var(--ct-text)',
       minHeight: '100vh',
       padding: isMobile ? '12px 10px 80px' : '16px 20px 32px',
-      maxWidth: isMobile ? '100vw' : 1280,
+      maxWidth: isMobile ? '100vw' : 1400,
       margin: '0 auto',
       overflowX: 'hidden',
       boxSizing: 'border-box',
@@ -889,28 +888,33 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
           </SectionErrorBoundary>
 
-          {/* ── AI 브리핑 ── */}
-          <SectionErrorBoundary label="AI 일일 브리핑">
-            <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
-          </SectionErrorBoundary>
-
           {/* ── KPI 카드 ── */}
           <SectionErrorBoundary label="KPI 카드">
             <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} role={user?.role} />
           </SectionErrorBoundary>
 
-          {/* ── 농장 지도 (최상단 — 전국 현황 한눈에) ── */}
-          {isVisible('farm_map') && (
-          <SectionErrorBoundary label="농장 분포 지도">
-            <FarmMapWidget
-              markers={farmMapMarkers}
-              selectedFarmId={selectedFarmId}
-              onFarmClick={(fid) => selectFarm(fid)}
-              totalHeadOverride={data?.herdOverview?.totalAnimals}
-              height={isMobile ? 240 : 340}
-            />
-          </SectionErrorBoundary>
-          )}
+          {/* ── 관제 존: 농장 지도 + AI 브리핑 (데스크톱 2단 배치) ── */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile || !isVisible('farm_map') ? '1fr' : 'minmax(0, 7fr) minmax(0, 5fr)',
+            gap: isMobile ? 10 : 12,
+            alignItems: 'stretch',
+          }}>
+            {isVisible('farm_map') && (
+            <SectionErrorBoundary label="농장 분포 지도">
+              <FarmMapWidget
+                markers={farmMapMarkers}
+                selectedFarmId={selectedFarmId}
+                onFarmClick={(fid) => selectFarm(fid)}
+                totalHeadOverride={data?.herdOverview?.totalAnimals}
+                height={isMobile ? 240 : 400}
+              />
+            </SectionErrorBoundary>
+            )}
+            <SectionErrorBoundary label="AI 일일 브리핑">
+              <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
+            </SectionErrorBoundary>
+          </div>
 
           {/* ── 선택 농장 개체 목록 (인라인) ── */}
           {selectedFarmId && (() => {
