@@ -1,6 +1,7 @@
 // 통합 대시보드 — 축군 구성 도넛 차트
 
 import React, { useCallback } from 'react';
+import { CHART_COLORS } from '@web/constants/chart-colors';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from 'recharts';
@@ -20,14 +21,14 @@ interface Props {
 // ── 상수 ──
 
 const CATEGORY_COLORS: Record<string, string> = {
-  착유: '#16a34a',
-  건유: '#3b82f6',
-  육성: '#f59e0b',
-  질병: '#dc2626',
-  번식: '#ec4899',
+  착유: CHART_COLORS.okDeep,
+  건유: CHART_COLORS.info,
+  육성: CHART_COLORS.warning,
+  질병: CHART_COLORS.critical,
+  번식: CHART_COLORS.pink,
 };
 
-const FALLBACK_COLORS = ['#16a34a', '#3b82f6', '#f59e0b', '#dc2626', '#ec4899'] as const;
+const FALLBACK_COLORS = [CHART_COLORS.okDeep, CHART_COLORS.info, CHART_COLORS.warning, CHART_COLORS.critical, CHART_COLORS.pink] as const;
 
 const TOOLTIP_STYLE = {
   background: 'rgba(15, 23, 42, 0.95)',
@@ -59,9 +60,9 @@ function CustomTooltip({
     <div style={TOOLTIP_STYLE}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: entry.payload.fill }} />
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>{entry.name}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: CHART_COLORS.tooltipText }}>{entry.name}</span>
       </div>
-      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: CHART_COLORS.axis, marginTop: 4 }}>
         {entry.value}두 ({pct}%)
       </div>
     </div>
@@ -89,7 +90,7 @@ export function HerdCompositionChart({ data, height = 260 }: Props): React.JSX.E
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
   const getColor = useCallback((index: number, name: string): string => {
-    return CATEGORY_COLORS[name] ?? FALLBACK_COLORS[index % FALLBACK_COLORS.length] ?? '#16a34a';
+    return CATEGORY_COLORS[name] ?? FALLBACK_COLORS[index % FALLBACK_COLORS.length] ?? CHART_COLORS.okDeep;
   }, []);
 
   return (

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '@web/api/client';
+import { TitleAccentBar } from './WidgetTitle';
 
 // ── 타입 ──
 
@@ -81,8 +82,9 @@ export function RiskTop10Widget({ farmId, onAnimalClick }: Props): React.JSX.Ele
       padding: '16px 18px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--ct-text)', margin: 0 }}>
-          🚨 AI 예측 위험 TOP 10 (72시간)
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800, color: 'var(--ct-text)', margin: 0, letterSpacing: '-0.2px' }}>
+          <TitleAccentBar color="#f97316" />
+          AI 예측 위험 TOP 10 (72시간)
         </h3>
         <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>
           건강 이벤트 기반

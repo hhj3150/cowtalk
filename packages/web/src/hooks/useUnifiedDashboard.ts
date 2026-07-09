@@ -75,6 +75,28 @@ export function useFarmRanking(opt?: DeferOpt) {
   });
 }
 
+// 오늘의 결정 큐 — 대시보드 최상단 (크리티컬 경로, 60s 갱신)
+export function useDecisionQueue() {
+  const { farmId, queryKey } = useEffectiveFarmId();
+  return useQuery({
+    queryKey: ['decision-queue', ...queryKey],
+    queryFn: () => api.fetchDecisionQueue(farmId),
+    staleTime: ALARM_STALE_TIME,
+    refetchInterval: ALARM_STALE_TIME * 2,
+  });
+}
+
+// 오늘의 목장 점수 — 농장 선택 시에만 조회
+export function useFarmIndex() {
+  const { farmId } = useEffectiveFarmId();
+  return useQuery({
+    queryKey: ['farm-index', farmId],
+    queryFn: () => api.fetchFarmIndex(farmId!),
+    enabled: Boolean(farmId),
+    staleTime: STALE_TIME,
+  });
+}
+
 export function useHealthAlertsSummary(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({

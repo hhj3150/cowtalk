@@ -3,6 +3,7 @@
 import React from 'react';
 import type { TodoItem } from '@cowtalk/shared';
 import { useDxCompletion } from '../../hooks/useDxCompletion';
+import { TitleAccentBar } from './WidgetTitle';
 
 interface Props {
   readonly items: readonly TodoItem[];
@@ -81,8 +82,9 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
         boxSizing: 'border-box',
       }}
     >
-      <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ct-text)', margin: '0 0 10px 2px' }}>
-        오늘 할 일
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: 'var(--ct-text)', margin: '0 0 10px 2px', letterSpacing: '-0.2px' }}>
+        <TitleAccentBar />
+        카테고리별 할 일 요약
       </h3>
 
       {items.length > 0 && (

@@ -1,5 +1,6 @@
 // 번식 관리 현황 — smaXtec Fertility Management 기본 위젯
 import React from 'react';
+import { TitleAccentBar } from './WidgetTitle';
 
 interface HerdStatusItem {
   readonly status: string;
@@ -64,8 +65,9 @@ export function FertilityManagementWidget({ data, onAlertClick }: Props): React.
       padding: '16px 18px',
     }}>
       {/* 헤더 */}
-      <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 14px' }}>
-        🐄 번식 관리
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: '0 0 14px', letterSpacing: '-0.2px' }}>
+        <TitleAccentBar color="#ec4899" />
+        번식 관리
       </h3>
 
       {/* 우군 구성 */}

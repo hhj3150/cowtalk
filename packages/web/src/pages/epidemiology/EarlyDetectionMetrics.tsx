@@ -19,8 +19,8 @@ interface MonthlyStats {
   avgLeadTimeHours: number;
   preventedAnimals: number;
   economicSavingsKrw: number;
-  falsePositiveRate: number;
-  truePositiveRate: number;
+  falsePositiveRate: number | null;
+  truePositiveRate: number | null;
 }
 
 interface YearlyStats {
@@ -350,17 +350,24 @@ export default function EarlyDetectionMetrics(): React.JSX.Element {
         {/* 정확도 요약 */}
         {stats && (
           <div className="mt-4 flex gap-4 pt-4" style={{ borderTop: '1px solid var(--ct-border)' }}>
+            {/* 레이블 표본 부족(null) 시 '—' — 합성 수치 표시 금지 */}
             <div className="text-center flex-1">
-              <p className="text-lg font-bold text-emerald-600">{(stats.truePositiveRate * 100).toFixed(0)}%</p>
+              <p className="text-lg font-bold text-emerald-600">
+                {stats.truePositiveRate != null ? `${(stats.truePositiveRate * 100).toFixed(0)}%` : '—'}
+              </p>
               <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>정탐률(정밀도)</p>
             </div>
             <div className="text-center flex-1">
-              <p className="text-lg font-bold text-red-500">{(stats.falsePositiveRate * 100).toFixed(0)}%</p>
+              <p className="text-lg font-bold text-red-500">
+                {stats.falsePositiveRate != null ? `${(stats.falsePositiveRate * 100).toFixed(0)}%` : '—'}
+              </p>
               <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>오탐률</p>
             </div>
             <div className="text-center flex-1">
               <p className="text-lg font-bold" style={{ color: 'var(--ct-primary)' }}>
-                {(2 * stats.truePositiveRate * (1 - stats.falsePositiveRate) / (stats.truePositiveRate + (1 - stats.falsePositiveRate)) * 100).toFixed(0)}%
+                {stats.truePositiveRate != null && stats.falsePositiveRate != null
+                  ? `${(2 * stats.truePositiveRate * (1 - stats.falsePositiveRate) / (stats.truePositiveRate + (1 - stats.falsePositiveRate)) * 100).toFixed(0)}%`
+                  : '—'}
               </p>
               <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>F1 점수</p>
             </div>

@@ -7,6 +7,10 @@
 
 import { emitNewAlarm } from '../../realtime/alarm-emitter.js';
 import { sendPushToFarm } from '../../realtime/push-service.js';
+import { notifyDiseaseSuspected } from '../../lib/kakao-alimtalk.js';
+import { getDb } from '../../config/database.js';
+import { farms } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import type { TempAlertLevel } from './temperature-profile.service.js';
 import type { ClusterSeverity } from './farm-cluster.service.js';
@@ -63,6 +67,25 @@ const LEVEL_CONFIG: Record<1 | 2 | 3, { recipients: readonly string[]; channels:
 } as const;
 
 // ===========================
+// 알림톡 수신자 조회 — 농장 등록 전화번호 (farms.phone, 농장주)
+// ===========================
+
+async function getFarmRecipientPhones(farmId: string): Promise<readonly string[]> {
+  try {
+    const db = getDb();
+    const [farm] = await db
+      .select({ phone: farms.phone })
+      .from(farms)
+      .where(eq(farms.farmId, farmId))
+      .limit(1);
+    return farm?.phone ? [farm.phone] : [];
+  } catch (err) {
+    logger.error({ err, farmId }, '[Cascade] 수신자 전화번호 조회 실패');
+    return [];
+  }
+}
+
+// ===========================
 // 실제 메시지 전송
 // ===========================
 
@@ -101,16 +124,26 @@ async function sendChannels(
           url: `/early-detection`,
         });
       } else if (channel === 'kakao') {
-        // 카카오 알림톡 — 실제 환경에서 카카오 비즈메시지 API 연동
-        logger.info(
-          { alertId: alert.alertId, farmId: alert.farmId },
-          '[Cascade] KakaoTalk alert queued (stub)',
-        );
+        // 카카오 알림톡 — 농장 등록 전화번호(농장주)로 발송
+        // 키 미설정/테스트모드는 kakao-alimtalk 내부에서 자동 시뮬레이션 처리
+        const phones = await getFarmRecipientPhones(alert.farmId);
+        if (phones.length === 0) {
+          logger.info({ alertId: alert.alertId, farmId: alert.farmId }, '[Cascade] 알림톡 수신자(전화번호) 없음 — 건너뜀');
+        }
+        for (const phone of phones) {
+          await notifyDiseaseSuspected({
+            phone,
+            farmName: alert.farmName,
+            earTag: alert.earTag ?? '집단',
+            symptom: alert.message,
+            confidence: Math.round(alert.diseaseSimilarity ?? 85),
+          });
+        }
       } else if (channel === 'sms') {
-        // SMS — 실제 환경에서 NCP SMS API 연동
+        // SMS 단독 발송은 미구현 — 알림톡(Solapi) 실패 시 SMS 자동 대체(disableSms:false)로 커버됨
         logger.info(
           { alertId: alert.alertId, farmId: alert.farmId },
-          '[Cascade] SMS alert queued (stub)',
+          '[Cascade] SMS는 알림톡 failover로 처리 (단독 채널 미구현)',
         );
       }
     } catch (err) {

@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { devOnly } from '../middleware/dev-only.js';
 import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
 import { sql, count, desc, gte, eq, and } from 'drizzle-orm';
@@ -193,7 +194,8 @@ adminRouter.post('/run-intelligence', async (_req: Request, res: Response, next:
 });
 
 // POST /admin/seed-feedback — AI 피드백 seed 데이터 생성 (시연용)
-adminRouter.post('/seed-feedback', async (_req: Request, res: Response, next: NextFunction) => {
+// devOnly: 합성 outcome_evaluations가 프로덕션 AI 성능 지표(ground truth)를 오염시키지 않도록 개발 환경 전용
+adminRouter.post('/seed-feedback', devOnly, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { predictions, feedback, outcomeEvaluations, farms, animals, users } = await import('../../db/schema.js');

@@ -1,6 +1,7 @@
 // 통합 대시보드 — AI 어시스턴트 알림 패널
 
 import React from 'react';
+import { TitleAccentBar } from './WidgetTitle';
 import type { AssistantAlert } from '@cowtalk/shared';
 
 interface Props {
@@ -20,9 +21,10 @@ export function AssistantAlertPanel({ alerts, onAlertClick }: Props): React.JSX.
     <div className="ct-card p-4" style={{ borderRadius: '12px' }}>
       <div className="mb-3 flex items-center gap-2">
         <h3
-          className="font-semibold"
-          style={{ fontSize: '13px', color: 'var(--ct-text)' }}
+          className="font-semibold flex items-center gap-2"
+          style={{ fontSize: '13px', color: 'var(--ct-text)', letterSpacing: '-0.2px' }}
         >
+          <TitleAccentBar />
           AI 어시스턴트
         </h3>
         <span

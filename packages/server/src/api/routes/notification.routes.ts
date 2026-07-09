@@ -4,7 +4,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
-import { notificationPreferences, userFarmAccess, alerts } from '../../db/schema.js';
+import { notificationPreferences, userFarmAccess, alerts, farms } from '../../db/schema.js';
 import { eq, inArray, desc } from 'drizzle-orm';
 import { addSubscription, removeSubscription, sendPushToFarm, getSubscriptionCount } from '../../realtime/push-service.js';
 import { config } from '../../config/index.js';
@@ -156,23 +156,55 @@ notificationRouter.get('/templates', async (_req: Request, res: Response, next: 
   }
 });
 
-// POST /notifications/test — 테스트 알림 발송
+// POST /notifications/test — 테스트 알림 발송 (실 채널 연동)
 notificationRouter.post('/test', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
-    const { channel, templateId } = req.body;
+    const { channel, templateId } = req.body as { channel: string; templateId?: string };
+    const sentAt = new Date().toISOString();
 
-    // TODO: 실제 알림 발송 연동 (Kakao, FCM, Email)
-    const result = {
-      userId,
-      channel,
-      templateId,
-      sentAt: new Date().toISOString(),
-      success: true,
-      message: `테스트 알림이 ${String(channel)} 채널로 발송되었습니다.`,
-    };
+    if (channel === 'push') {
+      // 사용자 소속 첫 농장 룸으로 웹푸시 발송
+      const firstFarmId = req.user!.farmIds?.[0];
+      if (!firstFarmId) {
+        res.json({ success: false, data: { userId, channel, sentAt, success: false, message: '푸시 테스트 대상 농장이 없습니다 (farmIds 비어 있음).' } });
+        return;
+      }
+      const sent = await sendPushToFarm(firstFarmId, {
+        title: '🔔 CowTalk 테스트 알림',
+        body: `템플릿 ${templateId ?? 'default'} 푸시 테스트입니다.`,
+        severity: 'low',
+        farmId: firstFarmId,
+        url: '/notifications',
+      });
+      res.json({ success: true, data: { userId, channel, templateId, sentAt, success: sent > 0, message: sent > 0 ? `푸시 ${String(sent)}건 발송` : '활성 푸시 구독이 없습니다.' } });
+      return;
+    }
 
-    res.json({ success: true, data: result });
+    if (channel === 'kakao') {
+      // 사용자 첫 농장의 등록 전화(farms.phone)로 알림톡 발송 (키 미설정 시 lib 내부 테스트모드 자동 전환)
+      const kakaoFarmId = req.user!.farmIds?.[0];
+      if (!kakaoFarmId) {
+        res.json({ success: false, data: { userId, channel, sentAt, success: false, message: '알림톡 테스트 대상 농장이 없습니다 (farmIds 비어 있음).' } });
+        return;
+      }
+      const db = getDb();
+      const [farm] = await db.select({ phone: farms.phone }).from(farms).where(eq(farms.farmId, kakaoFarmId)).limit(1);
+      if (!farm?.phone) {
+        res.json({ success: false, data: { userId, channel, sentAt, success: false, message: '농장에 전화번호가 등록되어 있지 않습니다.' } });
+        return;
+      }
+      const result = await sendAlimtalk({
+        to: farm.phone,
+        templateId: (templateId as AlimtalkTemplateId | undefined) ?? 'DISEASE_SUSPECTED',
+        variables: { farmName: 'CowTalk', earTag: 'TEST', symptom: '테스트 발송', confidence: '0' },
+      });
+      res.json({ success: true, data: { userId, channel, templateId, sentAt, success: result.success, message: result.testMode ? '알림톡 테스트모드 발송 (실발송 아님)' : `알림톡 발송 완료 (${result.messageId ?? ''})` } });
+      return;
+    }
+
+    // email 등 미지원 채널 — 가짜 성공 응답 금지
+    res.json({ success: false, data: { userId, channel, sentAt, success: false, message: `${String(channel)} 채널은 아직 연동되지 않았습니다.` } });
   } catch (error) {
     next(error);
   }

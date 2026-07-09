@@ -5,7 +5,6 @@ export { TodoListPanel } from './TodoListPanel';
 export { FarmFilterDropdown } from './FarmFilterDropdown';
 export { LiveAlarmFeed } from './LiveAlarmFeed';
 export { FarmRankingWidget } from './FarmRankingWidget';
-export { InlineAiChat } from './InlineAiChat';
 
 // Phase 2 — 강화 차트
 export { HerdCompositionChart } from './HerdCompositionChart';
@@ -34,3 +33,6 @@ export { RiskTop10Widget } from './RiskTop10Widget';
 
 // 소버린 AI 알람 피드
 export { SovereignAlarmFeed } from './SovereignAlarmFeed';
+export { TitleAccentBar } from './WidgetTitle';
+export { DecisionQueuePanel } from './DecisionQueuePanel';
+export { FarmIndexWidget } from './FarmIndexWidget';

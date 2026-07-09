@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiPost } from '@web/api/client';
-import { countPending, flushQueue } from '@web/lib/offline-queue';
+import { countPending, flushQueue, splitQueuedPayload } from '@web/lib/offline-queue';
 
 const HEALTH_URL = `${import.meta.env.VITE_API_BASE_URL ?? ''}/api/health`;
 const PING_INTERVAL_MS = 30_000; // 30초마다 재확인
@@ -55,7 +55,8 @@ export function OfflineBanner(): React.JSX.Element | null {
         setSyncing(true);
         try {
           const flushed = await flushQueue(async (payload) => {
-            await apiPost('/events', payload);
+            const { endpoint, body } = splitQueuedPayload(payload);
+            await apiPost(endpoint, body);
           });
           if (flushed > 0) {
             setLastSync(new Date());

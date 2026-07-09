@@ -79,17 +79,17 @@ lactationRouter.get('/:animalId', async (req: Request, res: Response, next: Next
   }
 });
 
-function generateLactationCurveData(currentDim: number) {
+function generateLactationCurveData(_currentDim: number) {
   const points: Array<{ dim: number; actualYield: number | null; predictedYield: number }> = [];
 
   for (let dim = 1; dim <= 365; dim += 5) {
     // Wood 모델: y = a * dim^b * e^(-c * dim)
     const predicted = 25 * Math.pow(dim, 0.15) * Math.exp(-0.003 * dim);
-    const actual = dim <= currentDim ? predicted * (0.9 + Math.random() * 0.2) : null;
 
     points.push({
       dim,
-      actualYield: actual !== null ? Math.round(actual * 10) / 10 : null,
+      // 실측 유량은 착유 기록(DHI/milk_records) 연동 전까지 null — 합성값 표시 금지 원칙
+      actualYield: null,
       predictedYield: Math.round(predicted * 10) / 10,
     });
   }

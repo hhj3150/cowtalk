@@ -2,6 +2,7 @@
 // Dual-axis 동적 차트: 체온(좌) + 반추(우) + 이상치 + 이벤트 마커
 
 import React, { useState, useMemo } from 'react';
+import { CHART_COLORS } from '@web/constants/chart-colors';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -38,10 +39,10 @@ const PERIOD_OPTIONS: readonly { readonly value: number; readonly label: string 
 ];
 
 const RISK_CONFIG: Readonly<Record<string, { readonly color: string; readonly label: string; readonly icon: string }>> = {
-  normal: { color: '#22c55e', label: '정상', icon: '\u2705' },
+  normal: { color: CHART_COLORS.ok, label: '정상', icon: '\u2705' },
   caution: { color: '#eab308', label: '주의', icon: '\u26A0\uFE0F' },
-  warning: { color: '#f97316', label: '경고', icon: '\uD83D\uDFE0' },
-  critical: { color: '#ef4444', label: '위험', icon: '\uD83D\uDD34' },
+  warning: { color: CHART_COLORS.high, label: '경고', icon: '\uD83D\uDFE0' },
+  critical: { color: CHART_COLORS.danger, label: '위험', icon: '\uD83D\uDD34' },
 };
 
 const TREND_ICONS: Readonly<Record<string, string>> = {
@@ -51,8 +52,8 @@ const TREND_ICONS: Readonly<Record<string, string>> = {
 };
 
 const TOOLTIP_STYLE = {
-  backgroundColor: '#111920',
-  border: '1px solid #1e2a38',
+  backgroundColor: 'var(--ct-card)',
+  border: '1px solid var(--ct-border)',
   borderRadius: '12px',
   padding: '12px 16px',
   boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
@@ -86,7 +87,7 @@ function VitalTooltip({ active, payload, label }: {
 
   return (
     <div style={TOOLTIP_STYLE}>
-      <div style={{ color: '#94a3b8', marginBottom: 8, fontWeight: 600 }}>{formatDateFull(label)}</div>
+      <div style={{ color: CHART_COLORS.axis, marginBottom: 8, fontWeight: 600 }}>{formatDateFull(label)}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {tempAvg && tempAvg.value > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -107,7 +108,7 @@ function VitalTooltip({ active, payload, label }: {
         {eventCount && eventCount.value > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#a78bfa40', flexShrink: 0 }} />
-            <span style={{ color: '#94a3b8' }}>
+            <span style={{ color: CHART_COLORS.axis }}>
               이벤트: <b>{eventCount.value}건</b>
             </span>
           </div>
@@ -120,7 +121,7 @@ function VitalTooltip({ active, payload, label }: {
 // ── 서머리 카드 ──
 
 function SummaryCards({ summary }: { readonly summary: VitalSummary }): React.JSX.Element {
-  const risk = RISK_CONFIG[summary.riskLevel] ?? { color: '#22c55e', label: '정상', icon: '\u2705' };
+  const risk = RISK_CONFIG[summary.riskLevel] ?? { color: CHART_COLORS.ok, label: '정상', icon: '\u2705' };
   const isMobile = useIsMobile();
 
   return (
@@ -148,7 +149,7 @@ function SummaryCards({ summary }: { readonly summary: VitalSummary }): React.JS
         label="이상 개체"
         value={String(summary.totalAnomalies)}
         sub={`${summary.criticalAnomalies}건 긴급`}
-        accentColor="#f59e0b"
+        accentColor={CHART_COLORS.warning}
       />
       <StatCard
         label="AI 정확도"
@@ -171,8 +172,8 @@ function StatCard({ label, value, sub, icon, accentColor, glow }: {
   return (
     <div
       style={{
-        backgroundColor: '#111920',
-        border: '1px solid #1e2a38',
+        backgroundColor: 'var(--ct-card)',
+        border: '1px solid var(--ct-border)',
         borderRadius: 12,
         padding: '12px 14px',
         position: 'relative',
@@ -184,7 +185,7 @@ function StatCard({ label, value, sub, icon, accentColor, glow }: {
         position: 'absolute', top: 0, left: 0, right: 0, height: 2,
         background: `linear-gradient(90deg, ${accentColor}, transparent)`,
       }} />
-      <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <div style={{ fontSize: 10, color: CHART_COLORS.muted, marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         {label}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -192,7 +193,7 @@ function StatCard({ label, value, sub, icon, accentColor, glow }: {
         <span style={{ fontSize: 22, fontWeight: 700, color: accentColor, lineHeight: 1 }}>{value}</span>
       </div>
       {sub && (
-        <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>{sub}</div>
+        <div style={{ fontSize: 10, color: CHART_COLORS.muted, marginTop: 4 }}>{sub}</div>
       )}
     </div>
   );
@@ -206,7 +207,7 @@ function AnomalyTable({ anomalies, onAnimalClick }: {
 }): React.JSX.Element {
   if (anomalies.length === 0) {
     return (
-      <div style={{ color: '#64748b', fontSize: 12, padding: '16px 0', textAlign: 'center' }}>
+      <div style={{ color: CHART_COLORS.muted, fontSize: 12, padding: '16px 0', textAlign: 'center' }}>
         이상 개체가 감지되지 않았습니다
       </div>
     );
@@ -216,7 +217,7 @@ function AnomalyTable({ anomalies, onAnimalClick }: {
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: CHART_COLORS.axis, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         {'\uD83D\uDD25'} 이상 개체 Top {top10.length}
       </div>
       <div style={{
@@ -244,17 +245,17 @@ function AnomalyTable({ anomalies, onAnimalClick }: {
           >
             <span style={{
               width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-              backgroundColor: a.severity === 'critical' ? '#ef4444' : '#eab308',
+              backgroundColor: a.severity === 'critical' ? CHART_COLORS.danger : '#eab308',
             }} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#e2e8f0' }}>
                 {a.earTag}
               </div>
-              <div style={{ fontSize: 10, color: '#64748b' }}>
+              <div style={{ fontSize: 10, color: CHART_COLORS.muted }}>
                 {a.metric === 'temp' ? '체온' : '반추'} {a.value.toFixed(1)} (z={a.deviation.toFixed(1)})
               </div>
             </div>
-            <span style={{ fontSize: 10, color: '#64748b' }}>{a.date.slice(5)}</span>
+            <span style={{ fontSize: 10, color: CHART_COLORS.muted }}>{a.date.slice(5)}</span>
           </button>
         ))}
       </div>
@@ -283,7 +284,7 @@ function ChartLegend(): React.JSX.Element {
           ) : (
             <div style={{ width: 8, height: 10, backgroundColor: item.color, borderRadius: 1 }} />
           )}
-          <span style={{ fontSize: 10, color: '#64748b' }}>{item.label}</span>
+          <span style={{ fontSize: 10, color: CHART_COLORS.muted }}>{item.label}</span>
         </div>
       ))}
     </div>
@@ -318,8 +319,8 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
   return (
     <div
       style={{
-        backgroundColor: '#0d1117',
-        border: '1px solid #1e2a38',
+        backgroundColor: 'var(--ct-surface-2, #101a2e)',
+        border: '1px solid var(--ct-border)',
         borderRadius: 16,
         padding: 20,
         position: 'relative',
@@ -349,7 +350,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>
               체온 · 반추 정밀 모니터링
             </h3>
-            <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize: 11, color: CHART_COLORS.muted, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {data.farmName ?? '전체 농장'} — 전염성 질병 조기경보 핵심 지표
             </p>
           </div>
@@ -365,9 +366,9 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
               style={{
                 padding: '4px 12px',
                 borderRadius: 8,
-                border: `1px solid ${selectedPeriod === opt.value ? '#38bdf840' : '#1e2a38'}`,
+                border: `1px solid ${selectedPeriod === opt.value ? '#38bdf840' : 'var(--ct-border)'}`,
                 backgroundColor: selectedPeriod === opt.value ? '#38bdf815' : 'transparent',
-                color: selectedPeriod === opt.value ? '#38bdf8' : '#64748b',
+                color: selectedPeriod === opt.value ? '#38bdf8' : CHART_COLORS.muted,
                 fontSize: 11,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -404,14 +405,14 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                 </linearGradient>
               </defs>
 
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e2a3860" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={`${CHART_COLORS.panelBorder}60`} vertical={false} />
 
               <XAxis
                 dataKey="date"
                 tickFormatter={formatDate}
                 tick={{ fontSize: 10, fill: '#475569' }}
-                stroke="#1e2a38"
-                axisLine={{ stroke: '#1e2a38' }}
+                stroke={CHART_COLORS.panelBorder}
+                axisLine={{ stroke: CHART_COLORS.panelBorder }}
                 tickLine={false}
               />
 
@@ -421,7 +422,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                 orientation="left"
                 width={45}
                 tick={{ fontSize: 10, fill: '#f8717190' }}
-                stroke="#1e2a38"
+                stroke={CHART_COLORS.panelBorder}
                 axisLine={false}
                 tickLine={false}
                 label={{
@@ -439,7 +440,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                 orientation="right"
                 width={60}
                 tick={{ fontSize: 10, fill: '#38bdf890' }}
-                stroke="#1e2a38"
+                stroke={CHART_COLORS.panelBorder}
                 axisLine={false}
                 tickLine={false}
                 label={{
@@ -485,7 +486,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                   r: 5,
                   stroke: '#f87171',
                   strokeWidth: 2,
-                  fill: '#0d1117',
+                  fill: CHART_COLORS.surface,
                 }}
                 connectNulls
               />
@@ -512,7 +513,7 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                   r: 5,
                   stroke: '#38bdf8',
                   strokeWidth: 2,
-                  fill: '#0d1117',
+                  fill: CHART_COLORS.surface,
                 }}
                 strokeDasharray="6 3"
                 connectNulls
@@ -550,8 +551,8 @@ export function VitalMonitorChart({ data, onAnimalClick }: Props): React.JSX.Ele
                 <Brush
                   dataKey="date"
                   height={24}
-                  stroke="#1e2a38"
-                  fill="#0d1117"
+                  stroke={CHART_COLORS.panelBorder}
+                  fill={CHART_COLORS.surface}
                   tickFormatter={formatDate}
                   travellerWidth={8}
                 >

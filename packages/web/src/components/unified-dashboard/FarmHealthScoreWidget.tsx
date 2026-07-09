@@ -1,6 +1,7 @@
 // 농장 건강 스코어 위젯 — Top-10 worst health farms with breakdown
 
 import React, { useState, useMemo } from 'react';
+import { TitleAccentBar } from './WidgetTitle';
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell,
 } from 'recharts';
@@ -362,7 +363,7 @@ export function FarmHealthScoreWidget({ scores, onFarmClick }: Props): React.JSX
         borderBottom: '1px solid var(--ct-border)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>🏥</span>
+          <TitleAccentBar color="var(--ct-info)" />
           <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ct-text)' }}>농장 건강 스코어</span>
         </div>
         <span style={{

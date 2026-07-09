@@ -1,5 +1,6 @@
 // 건강 알림 현황 — smaXtec Health Alerts 기본 위젯
 import React from 'react';
+import { TitleAccentBar } from './WidgetTitle';
 
 interface HealthAlertItem {
   readonly category: string;
@@ -34,8 +35,9 @@ export function HealthAlertsWidget({ items, onCategoryClick }: Props): React.JSX
       padding: '16px 18px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: 0 }}>
-          🩺 건강 알림 현황
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 800, color: 'var(--ct-text)', margin: 0, letterSpacing: '-0.2px' }}>
+          <TitleAccentBar color="var(--ct-danger)" />
+          건강 알림 현황
         </h3>
         <span style={{
           fontSize: 11,

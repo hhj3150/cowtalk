@@ -11,6 +11,7 @@ import {
   Tooltip, ResponsiveContainer, ComposedChart, Line,
 } from 'recharts';
 import { fetchEpidemicDrilldown } from '@web/api/unified-dashboard.api';
+import { TitleAccentBar } from './WidgetTitle';
 import type { EpidemicDrilldownData, EpidemicDrilldownAnimal } from '@web/api/unified-dashboard.api';
 
 // ── 타입 ──
@@ -755,7 +756,7 @@ export function EpidemicCommandCenter({ data, height = 220, onAnimalClick }: Pro
       {/* ── 헤더 ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 18 }}>🛡️</span>
+          <TitleAccentBar color="#f97316" style={{ height: 16 }} />
           <div>
             <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--ct-text)', letterSpacing: '-0.3px' }}>
               역학 감시 커맨드센터

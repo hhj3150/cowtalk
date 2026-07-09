@@ -21,6 +21,8 @@ import {
   useSovereignAiStats,
   useSovereignAlarms,
   useBreedingPipeline,
+  useDecisionQueue,
+  useFarmIndex,
 } from '@web/hooks/useUnifiedDashboard';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -50,6 +52,9 @@ import {
   AssistantAlertPanel,
   SovereignAlarmFeed,
   BreedingPipelineWidget,
+  TitleAccentBar,
+  DecisionQueuePanel,
+  FarmIndexWidget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -519,19 +524,15 @@ function ChartCard({ title, icon, children, minHeight = 320, delay = 0 }: {
         paddingBottom: 10,
         borderBottom: '1px solid var(--ct-border)',
       }}>
-        <span style={{
-          width: 26,
-          height: 26,
-          borderRadius: 7,
-          background: 'rgba(255,255,255,0.04)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 14,
-        }}>
-          {icon}
-        </span>
-        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ct-text)' }}>{title}</span>
+        <span aria-hidden style={{
+          width: 3,
+          height: 14,
+          borderRadius: 2,
+          background: 'var(--ct-primary)',
+          flexShrink: 0,
+        }} />
+        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ct-text)', letterSpacing: '-0.2px' }}>{title}</span>
+        <span aria-hidden style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55, lineHeight: 1 }}>{icon}</span>
       </div>
       {children}
     </div>
@@ -554,6 +555,9 @@ const briefingCardBase: React.CSSProperties = {
   borderRight: '1px solid var(--ct-border)',
   borderBottom: '1px solid var(--ct-border)',
   borderLeft: '1px solid var(--ct-border)',
+  // 관제 존 그리드에서 지도 카드와 높이 정렬
+  height: '100%',
+  boxSizing: 'border-box',
 };
 
 // ── Mapping constants ──
@@ -659,6 +663,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
   const { data, isLoading, error, refetch } = useUnifiedDashboard();
   const { data: alarmsData } = useLiveAlarms();
+  const { data: decisionData, isLoading: decisionLoading } = useDecisionQueue();
+  const { data: farmIndexData, isLoading: farmIndexLoading } = useFarmIndex();
   const { data: farmsData } = useDashboardFarms();
   const { data: rankingData } = useFarmRanking(deferOpt);
   const { data: alertTrendData } = useAlertTrend(14, deferOpt);
@@ -750,8 +756,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
         totalAlarms: alarms.length,
         criticalCount: alarms.filter((a) => a.severity === 'critical').length,
         healthIssues: data.herdOverview?.healthIssues ?? 0,
-        farmCount: data.totalFarms ?? 146,
-        animalCount: data.herdOverview?.totalAnimals ?? 7143,
+        // 데모 상수 폴백 금지 — API 미제공 시 0 (미상)
+        farmCount: data.totalFarms ?? 0,
+        animalCount: data.herdOverview?.totalAnimals ?? 0,
       });
     }
     return () => setTinkerbellDashboardContext(undefined);
@@ -798,7 +805,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
       color: 'var(--ct-text)',
       minHeight: '100vh',
       padding: isMobile ? '12px 10px 80px' : '16px 20px 32px',
-      maxWidth: isMobile ? '100vw' : 1280,
+      maxWidth: isMobile ? '100vw' : 1400,
       margin: '0 auto',
       overflowX: 'hidden',
       boxSizing: 'border-box',
@@ -884,14 +891,22 @@ export default function UnifiedDashboard(): React.JSX.Element {
             />
           </SectionErrorBoundary>
 
+          {/* ── 오늘의 결정 큐 — "오늘 무엇을 해야 하는가" (최상단) ── */}
+          <SectionErrorBoundary label="오늘의 결정 큐">
+            <DecisionQueuePanel
+              data={decisionData}
+              isLoading={decisionLoading}
+              onAnimalClick={(aid) => navigate(`/animals/${aid}`)}
+              onFarmClick={(fid) => selectFarm(fid)}
+              onAiAnalysis={(card) => {
+                setTinkerbellTrigger(`[팅커벨 AI — 결정 카드 정밀 분석]\n[조치] ${card.title}\n[대상] ${card.subject.earTag ?? ''} (${card.subject.farmName ?? ''})\n[근거] ${card.why.join(' / ')}\n이 개체의 센서 데이터·최근 알람·이력을 조회해 이 조치가 타당한지 검증하고, 지금 해야 할 행동을 단계별로 알려주세요. (${Date.now()})`);
+              }}
+            />
+          </SectionErrorBoundary>
+
           {/* ── 전염병 배너 ── */}
           <SectionErrorBoundary label="전염병 배너">
             <EpidemicAlertBanner onDetailClick={() => setEpidemicClusterId('__dashboard__')} />
-          </SectionErrorBoundary>
-
-          {/* ── AI 브리핑 ── */}
-          <SectionErrorBoundary label="AI 일일 브리핑">
-            <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
           </SectionErrorBoundary>
 
           {/* ── KPI 카드 ── */}
@@ -899,17 +914,34 @@ export default function UnifiedDashboard(): React.JSX.Element {
             <HerdOverviewCards data={data?.herdOverview ?? EMPTY_HERD} onCardClick={handleKpiClick} dxCompletion={dxCompletion} role={user?.role} />
           </SectionErrorBoundary>
 
-          {/* ── 농장 지도 (최상단 — 전국 현황 한눈에) ── */}
-          {isVisible('farm_map') && (
-          <SectionErrorBoundary label="농장 분포 지도">
-            <FarmMapWidget
-              markers={farmMapMarkers}
-              selectedFarmId={selectedFarmId}
-              onFarmClick={(fid) => selectFarm(fid)}
-              totalHeadOverride={data?.herdOverview?.totalAnimals}
-              height={isMobile ? 240 : 340}
-            />
-          </SectionErrorBoundary>
+          {/* ── 관제 존: 농장 지도 + AI 브리핑 (데스크톱 2단 배치) ── */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile || !isVisible('farm_map') ? '1fr' : 'minmax(0, 7fr) minmax(0, 5fr)',
+            gap: isMobile ? 10 : 12,
+            alignItems: 'stretch',
+          }}>
+            {isVisible('farm_map') && (
+            <SectionErrorBoundary label="농장 분포 지도">
+              <FarmMapWidget
+                markers={farmMapMarkers}
+                selectedFarmId={selectedFarmId}
+                onFarmClick={(fid) => selectFarm(fid)}
+                totalHeadOverride={data?.herdOverview?.totalAnimals}
+                height={isMobile ? 240 : 400}
+              />
+            </SectionErrorBoundary>
+            )}
+            <SectionErrorBoundary label="AI 일일 브리핑">
+              <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
+            </SectionErrorBoundary>
+          </div>
+
+          {/* ── 오늘의 목장 점수 (농장 선택 시) ── */}
+          {selectedFarmId && (
+            <SectionErrorBoundary label="오늘의 목장 점수">
+              <FarmIndexWidget data={farmIndexData} isLoading={farmIndexLoading} />
+            </SectionErrorBoundary>
           )}
 
           {/* ── 선택 농장 개체 목록 (인라인) ── */}
@@ -952,8 +984,8 @@ export default function UnifiedDashboard(): React.JSX.Element {
               padding: '14px 16px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 16 }}>🧚</span>
-                <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ct-text)' }}>소버린 AI 알람</span>
+                <TitleAccentBar />
+                <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ct-text)', letterSpacing: '-0.2px' }}>소버린 AI 알람</span>
                 <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>CowTalk 독자 수의학 분석</span>
                 {sovereignAlarmData?.alarms.length ? (
                   <span style={{ marginLeft: 'auto', fontSize: 10, color: '#f97316', fontWeight: 700 }}>
