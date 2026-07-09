@@ -49,8 +49,8 @@ interface EarlyDetectionMetrics {
     readonly avgLeadTimeHours: number;
     readonly preventedAnimals: number;
     readonly economicSavingsKrw: number;
-    readonly falsePositiveRate: number;
-    readonly truePositiveRate: number;
+    readonly falsePositiveRate: number | null;
+    readonly truePositiveRate: number | null;
   };
   readonly yearlyStats: {
     readonly year: number;

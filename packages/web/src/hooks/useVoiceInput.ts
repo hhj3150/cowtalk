@@ -1,5 +1,5 @@
 // 음성 입력 훅 — Web Speech API 한국어 음성 인식
-// 사용처: InlineAiChat, AlarmLabelChatModal, TinkerbellAssistant, VoiceInput
+// 사용처: AlarmLabelChatModal, TinkerbellAssistant, VoiceInput
 //
 // 설계 원칙:
 // 1) 실패 시 사용자에게 이유를 알려준다 (현장에서 "왜 안 되지?" 가 가장 큰 좌절)

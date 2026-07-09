@@ -24,28 +24,27 @@ interface CardConfig {
   readonly category: string;
   readonly accent: string;
   readonly accentRgb: string;
-  readonly sparkColor: string;
 }
 
 const DEFAULT_CARDS: readonly CardConfig[] = [
-  { key: 'totalAnimals', label: '총 두수', icon: 'herd', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
-  { key: 'sensorAttached', label: '센서 장착', icon: 'sensor', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
-  { key: 'activeAlerts', label: '24h 알림', icon: 'bell', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
-  { key: 'healthIssues', label: '건강 이상', icon: 'heart', category: 'health', accent: '#ef4444', accentRgb: '239,68,68', sparkColor: '#ef4444' },
+  { key: 'totalAnimals', label: '총 두수', icon: 'herd', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246' },
+  { key: 'sensorAttached', label: '센서 장착', icon: 'sensor', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212' },
+  { key: 'activeAlerts', label: '24h 알림', icon: 'bell', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11' },
+  { key: 'healthIssues', label: '건강 이상', icon: 'heart', category: 'health', accent: '#ef4444', accentRgb: '239,68,68' },
 ];
 
 const ROLE_CARDS: Readonly<Record<string, readonly CardConfig[]>> = {
   veterinarian: [
-    { key: 'totalAnimals', label: '관리 두수', icon: 'stethoscope', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
-    { key: 'healthIssues', label: '진료 대상', icon: 'heart', category: 'health', accent: '#ef4444', accentRgb: '239,68,68', sparkColor: '#ef4444' },
-    { key: 'activeAlerts', label: '발열·질병', icon: 'thermometer', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
-    { key: 'sensorAttached', label: '센서 장착', icon: 'sensor', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+    { key: 'totalAnimals', label: '관리 두수', icon: 'stethoscope', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246' },
+    { key: 'healthIssues', label: '진료 대상', icon: 'heart', category: 'health', accent: '#ef4444', accentRgb: '239,68,68' },
+    { key: 'activeAlerts', label: '발열·질병', icon: 'thermometer', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11' },
+    { key: 'sensorAttached', label: '센서 장착', icon: 'sensor', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212' },
   ],
   quarantine_officer: [
-    { key: 'totalAnimals', label: '감시 두수', icon: 'shield', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246', sparkColor: '#3b82f6' },
-    { key: 'healthIssues', label: '발열 두수', icon: 'thermometer', category: 'health', accent: '#ef4444', accentRgb: '239,68,68', sparkColor: '#ef4444' },
-    { key: 'activeAlerts', label: '역학 경보', icon: 'siren', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11', sparkColor: '#f59e0b' },
-    { key: 'sensorAttached', label: '감시 농장', icon: 'clipboard', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212', sparkColor: '#06b6d4' },
+    { key: 'totalAnimals', label: '감시 두수', icon: 'shield', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246' },
+    { key: 'healthIssues', label: '발열 두수', icon: 'thermometer', category: 'health', accent: '#ef4444', accentRgb: '239,68,68' },
+    { key: 'activeAlerts', label: '역학 경보', icon: 'siren', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11' },
+    { key: 'sensorAttached', label: '감시 농장', icon: 'clipboard', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212' },
   ],
 };
 
@@ -159,54 +158,7 @@ function AnimatedCounter({ target }: { readonly target: number }): React.JSX.Ele
   return <>{current.toLocaleString('ko-KR')}</>;
 }
 
-// ── 미니 스파크라인 SVG ──
-function Sparkline({ color, seed }: { readonly color: string; readonly seed: number }): React.JSX.Element {
-  // 최근 7일 트렌드를 시뮬레이션 (실 데이터 연동 시 교체)
-  const points = React.useMemo(() => {
-    const base = seed;
-    const variance = base * 0.15;
-    return Array.from({ length: 7 }, (_, i) => {
-      const noise = Math.sin(seed * 0.1 + i * 1.5) * variance;
-      return base + noise + (i * variance * 0.1);
-    });
-  }, [seed]);
-
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const h = 24;
-  const w = 60;
-
-  const pathData = points
-    .map((v, i) => {
-      const x = (i / (points.length - 1)) * w;
-      const y = h - ((v - min) / range) * h;
-      return `${i === 0 ? 'M' : 'L'}${x},${y}`;
-    })
-    .join(' ');
-
-  const areaPath = `${pathData} L${w},${h} L0,${h} Z`;
-
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ opacity: 0.7 }}>
-      <defs>
-        <linearGradient id={`spark-${seed}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={0.4} />
-          <stop offset="100%" stopColor={color} stopOpacity={0.05} />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#spark-${seed})`} />
-      <path d={pathData} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      {/* 마지막 점 강조 */}
-      <circle
-        cx={w}
-        cy={h - (((points[points.length - 1] ?? 0) - min) / range) * h}
-        r={2.5}
-        fill={color}
-      />
-    </svg>
-  );
-}
+// 스파크라인 제거 — 합성(sin) 추이 표시 금지. 실 7일 집계 API 연동 시 재도입.
 
 // ── 스켈레톤 카드 ──
 function SkeletonCard({ accentRgb }: { readonly accentRgb: string }): React.JSX.Element {
@@ -429,7 +381,7 @@ export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, 
               </span>
             </div>
 
-            {/* 숫자 + 스파크라인 */}
+            {/* 숫자 */}
             <div className="flex items-end justify-between relative z-10">
               <span
                 className="font-bold tabular-nums ct-kpi-value"
@@ -442,7 +394,6 @@ export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, 
               >
                 <AnimatedCounter target={value} />
               </span>
-              <Sparkline color={card.sparkColor} seed={value} />
             </div>
 
             {/* 트렌드 뱃지 + 상세보기 */}
@@ -450,7 +401,7 @@ export function HerdOverviewCards({ data, isLoading, onCardClick, dxCompletion, 
               {(card.category === 'alerts' || card.category === 'health') ? (
                 <TrendBadge value={value} accent={card.accentRgb} />
               ) : (
-                <span style={{ fontSize: '10px', color: 'var(--ct-text-muted)' }}>7일 추이</span>
+                <span aria-hidden />
               )}
               {isClickable && (
                 <span

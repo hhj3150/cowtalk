@@ -5,7 +5,6 @@ export { TodoListPanel } from './TodoListPanel';
 export { FarmFilterDropdown } from './FarmFilterDropdown';
 export { LiveAlarmFeed } from './LiveAlarmFeed';
 export { FarmRankingWidget } from './FarmRankingWidget';
-export { InlineAiChat } from './InlineAiChat';
 
 // Phase 2 — 강화 차트
 export { HerdCompositionChart } from './HerdCompositionChart';

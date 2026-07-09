@@ -3,7 +3,7 @@
 // 데모: 실제 경보 이력 기반 집계 + 현실적 추정값
 
 import { getDb } from '../../config/database.js';
-import { alerts, farms } from '../../db/schema.js';
+import { alerts, farms, sovereignAlarmLabels } from '../../db/schema.js';
 import { gte, eq, sql, count } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 
@@ -25,8 +25,8 @@ export interface MonthlyStats {
   readonly avgLeadTimeHours: number;              // 평균 조기감지 시간(시간)
   readonly preventedAnimals: number;              // 예방 살처분 두수
   readonly economicSavingsKrw: number;            // 절감 경제효과 (원)
-  readonly falsePositiveRate: number;             // 오탐률 0-1
-  readonly truePositiveRate: number;              // 정탐률 0-1
+  readonly falsePositiveRate: number | null;      // 오탐률 0-1 (레이블 표본 부족 시 null)
+  readonly truePositiveRate: number | null;       // 정탐률 0-1 (레이블 표본 부족 시 null)
 }
 
 export interface YearlyStats {
@@ -135,14 +135,10 @@ async function fetchRecentCases(): Promise<readonly DetectionCase[]> {
     .orderBy(sql`${alerts.createdAt} desc`)
     .limit(30);
 
-  return rows.map((r, i) => {
-    // 데모: 리드타임 추정 (1~48시간 분포)
-    const leadTimeHours = 4 + (i % 7) * 3;
-    const preventedAnimals = Math.round(leadTimeHours * SPREAD_PER_HOUR);
+  return rows.map((r) => {
+    // 리드타임은 농장주 신고 시각(reportedAt) 실데이터 확보 전까지 null — 합성 분포 표시 금지
     const outcome: DetectionCase['outcome'] =
-      r.priority === 'critical' ? 'true_positive' :
-      r.status === 'acknowledged' ? 'true_positive' :
-      'pending';
+      r.status === 'acknowledged' ? 'true_positive' : 'pending';
 
     return {
       alertId: r.alertId,
@@ -150,10 +146,10 @@ async function fetchRecentCases(): Promise<readonly DetectionCase[]> {
       farmName: r.farmName,
       detectedAt: r.createdAt.toISOString(),
       reportedAt: null,
-      leadTimeHours,
+      leadTimeHours: null,
       outcome,
-      diseaseName: r.priority === 'critical' ? '구제역 의심' : null,
-      preventedAnimals,
+      diseaseName: null,
+      preventedAnimals: 0,
     };
   });
 }
@@ -174,6 +170,25 @@ export async function getEarlyDetectionMetrics(): Promise<EarlyDetectionMetrics>
       fetchRecentCases(),
     ]);
 
+    // 오탐/정탐률 — sovereign_alarm_labels 실측 (표본 10 미만이면 null = '—')
+    const MIN_LABEL_SAMPLES = 10;
+    const labelDb = getDb();
+    const [labelCounts] = await labelDb
+      .select({
+        confirmed: sql<number>`count(*) filter (where ${sovereignAlarmLabels.verdict} in ('confirmed', 'modified'))`,
+        falsePositive: sql<number>`count(*) filter (where ${sovereignAlarmLabels.verdict} = 'false_positive')`,
+      })
+      .from(sovereignAlarmLabels);
+    const confirmedN = Number(labelCounts?.confirmed ?? 0);
+    const falsePositiveN = Number(labelCounts?.falsePositive ?? 0);
+    const labeledTotal = confirmedN + falsePositiveN;
+    const labelRates = labeledTotal >= MIN_LABEL_SAMPLES
+      ? {
+          truePositiveRate: confirmedN / labeledTotal,
+          falsePositiveRate: falsePositiveN / labeledTotal,
+        }
+      : { truePositiveRate: null, falsePositiveRate: null };
+
     // 월간 통계
     const monthlyDetections = monthlyAlerts.total;
     const avgLeadTimeHours = BASELINE_REPORT_HOURS - COWTALK_DETECT_HOURS;  // ~34시간 절약
@@ -184,17 +199,28 @@ export async function getEarlyDetectionMetrics(): Promise<EarlyDetectionMetrics>
       avgLeadTimeHours,
       preventedAnimals: preventedMonthly,
       economicSavingsKrw: preventedMonthly * AVG_ANIMAL_VALUE_KRW,
-      falsePositiveRate: 0.08,
-      truePositiveRate: 0.92,
+      falsePositiveRate: labelRates.falsePositiveRate,
+      truePositiveRate: labelRates.truePositiveRate,
     };
 
-    // 연간 통계 — 월별 추이 생성
+    // 연간 통계 — 월별 추이 (alerts 실측 월별 집계, 난수 분배 금지)
     const yearlyDetections = yearlyAlerts.total;
     const totalPreventedYearly = Math.round(yearlyDetections * avgLeadTimeHours * SPREAD_PER_HOUR * 0.3);
 
+    const db = getDb();
+    const monthlyRows = await db
+      .select({
+        month: sql<string>`to_char(${alerts.createdAt}, 'YYYY-MM')`,
+        detections: count(alerts.alertId),
+      })
+      .from(alerts)
+      .where(gte(alerts.createdAt, startOfYear))
+      .groupBy(sql`to_char(${alerts.createdAt}, 'YYYY-MM')`)
+      .orderBy(sql`to_char(${alerts.createdAt}, 'YYYY-MM')`);
+    const detectionsByMonth = new Map(monthlyRows.map((r) => [r.month, Number(r.detections)]));
     const monthlyTrend = Array.from({ length: now.getMonth() + 1 }, (_, i) => {
       const m = `${now.getFullYear()}-${String(i + 1).padStart(2, '0')}`;
-      const detections = Math.round(yearlyDetections / (now.getMonth() + 1) * (0.7 + Math.random() * 0.6));
+      const detections = detectionsByMonth.get(m) ?? 0;
       const prevented = Math.round(detections * avgLeadTimeHours * SPREAD_PER_HOUR * 0.3);
       return { month: m, detections, savingsKrw: prevented * AVG_ANIMAL_VALUE_KRW };
     });

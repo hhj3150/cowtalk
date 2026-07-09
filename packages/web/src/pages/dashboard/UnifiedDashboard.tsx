@@ -750,8 +750,9 @@ export default function UnifiedDashboard(): React.JSX.Element {
         totalAlarms: alarms.length,
         criticalCount: alarms.filter((a) => a.severity === 'critical').length,
         healthIssues: data.herdOverview?.healthIssues ?? 0,
-        farmCount: data.totalFarms ?? 146,
-        animalCount: data.herdOverview?.totalAnimals ?? 7143,
+        // 데모 상수 폴백 금지 — API 미제공 시 0 (미상)
+        farmCount: data.totalFarms ?? 0,
+        animalCount: data.herdOverview?.totalAnimals ?? 0,
       });
     }
     return () => setTinkerbellDashboardContext(undefined);

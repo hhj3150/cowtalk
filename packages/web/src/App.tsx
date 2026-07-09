@@ -118,13 +118,13 @@ export function App(): React.JSX.Element {
               <Route path="/epidemiology/simulation" element={<SpreadSimulationPage />} />
               <Route path="/epidemiology/contact-network" element={<ContactNetworkPage />} />
 
-              {/* 방역관 전용 */}
-              <Route path="/epidemiology/dashboard" element={<EpidemiologyDashboard />} />
-              <Route path="/epidemiology/investigation/:id" element={<InvestigationWorkflow />} />
-              <Route path="/epidemiology/investigation/new" element={<InvestigationWorkflow />} />
-              <Route path="/epidemiology/metrics" element={<EarlyDetectionMetrics />} />
-              <Route path="/epidemiology/national" element={<NationalSituation />} />
-              <Route path="/epidemiology/cases" element={<CaseDatabase />} />
+              {/* 방역관 전용 — RequireRole 실가드 (government_admin = master 접근 허용) */}
+              <Route path="/epidemiology/dashboard" element={<RequireRole roles={['quarantine_officer', 'government_admin']}><EpidemiologyDashboard /></RequireRole>} />
+              <Route path="/epidemiology/investigation/:id" element={<RequireRole roles={['quarantine_officer', 'government_admin']}><InvestigationWorkflow /></RequireRole>} />
+              <Route path="/epidemiology/investigation/new" element={<RequireRole roles={['quarantine_officer', 'government_admin']}><InvestigationWorkflow /></RequireRole>} />
+              <Route path="/epidemiology/metrics" element={<RequireRole roles={['quarantine_officer', 'government_admin']}><EarlyDetectionMetrics /></RequireRole>} />
+              <Route path="/epidemiology/national" element={<RequireRole roles={['quarantine_officer', 'government_admin']}><NationalSituation /></RequireRole>} />
+              <Route path="/epidemiology/cases" element={<RequireRole roles={['quarantine_officer', 'government_admin']}><CaseDatabase /></RequireRole>} />
 
               {/* 관리자 전용 */}
               <Route
@@ -151,11 +151,11 @@ export function App(): React.JSX.Element {
               <Route path="/breeding" element={<BreedingCommandPage />} />
               <Route path="/breeding/calendar" element={<BreedingCalendarPage />} />
               <Route path="/breeding/performance" element={<BreedingKpiPage />} />
-              {/* FLOW-02 Step3: 사이드바 등록 라우트 (권한 가드 미적용 — 별도 FLOW 처리) */}
-              <Route path="/vet/cases" element={<CaseQueuePage />} />
-              <Route path="/vet/schedule" element={<VisitSchedulePage />} />
-              {/* /admin/farms → 기존 실제 FarmManagementPage 로 라우팅 (placeholder 아님) */}
-              <Route path="/admin/farms" element={<FarmManagementPage />} />
+              {/* 수의사 전용 (사이드바 노출 역할과 일치) */}
+              <Route path="/vet/cases" element={<RequireRole roles={['veterinarian', 'government_admin']}><CaseQueuePage /></RequireRole>} />
+              <Route path="/vet/schedule" element={<RequireRole roles={['veterinarian', 'government_admin']}><VisitSchedulePage /></RequireRole>} />
+              {/* /admin/farms → 기존 실제 FarmManagementPage 로 라우팅 (placeholder 아님) — /farm-management 가드와 동일 */}
+              <Route path="/admin/farms" element={<RequireRole roles={['government_admin', 'quarantine_officer']}><FarmManagementPage /></RequireRole>} />
             </Route>
 
             {/* 404 → 홈으로 */}

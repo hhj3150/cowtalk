@@ -247,14 +247,34 @@ export async function getNationalSituation(
       ? `${highRiskProvinces}개 시도 동시 위험 — 광역 방역 대응 필요`
       : null;
 
-    // 8. 주간 발열률 추이 (최근 8주 — 실측 데이터 기반)
+    // 8. 주간 발열률 추이 (최근 8주 — smaxtec_events 실측 집계, 합성값 금지)
+    const eightWeeksAgo = new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000);
+    const weeklyFeverRows = await db
+      .select({
+        weekStart: sql<string>`date_trunc('week', ${smaxtecEvents.detectedAt})::date::text`,
+        feverAnimals: sql<number>`count(distinct ${smaxtecEvents.animalId})`,
+      })
+      .from(smaxtecEvents)
+      .where(and(
+        inArray(smaxtecEvents.eventType, ['temperature_high', 'temperature_warning']),
+        gte(smaxtecEvents.detectedAt, eightWeeksAgo),
+      ))
+      .groupBy(sql`date_trunc('week', ${smaxtecEvents.detectedAt})`)
+      .orderBy(sql`date_trunc('week', ${smaxtecEvents.detectedAt})`);
+    const feverByWeek = new Map(weeklyFeverRows.map((r) => [r.weekStart, Number(r.feverAnimals)]));
     const weeklyFeverTrend = Array.from({ length: 8 }, (_, i) => {
       const weekOffset = 7 - i;
       const d = new Date(Date.now() - weekOffset * 7 * 24 * 60 * 60 * 1000);
-      const weekStr = `${d.getFullYear()}-W${String(Math.ceil(d.getDate() / 7)).padStart(2, '0')}`;
-      // 현재 주는 실제 값, 과거는 추정
-      const rate = weekOffset === 0 ? nationalFeverRate : 0.005 + Math.random() * 0.015;
-      return { week: weekStr, feverRate: rate };
+      // date_trunc('week')와 동일한 ISO 월요일 기준 주 시작일
+      const day = d.getDay();
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((day + 6) % 7));
+      const weekKey = monday.toISOString().slice(0, 10);
+      const fever = feverByWeek.get(weekKey) ?? 0;
+      return {
+        week: weekKey,
+        feverRate: totalAnimals > 0 ? fever / totalAnimals : 0,
+      };
     });
 
     logger.info(

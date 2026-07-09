@@ -372,15 +372,7 @@ export default function LoginPage(): React.JSX.Element {
     axios.get<{ success: boolean; data: PublicStats }>('/api/public/stats')
       .then((res) => { setStats(res.data.data); })
       .catch(() => {
-        setStats({
-          totalFarms: 146,
-          totalCattle: 7124,
-          totalSensors: 6800,
-          totalEvents: 0,
-          aiEngines: 6,
-          monitoring: '24/7',
-          todayAlerts: 0,
-        });
+        // 통계 조회 실패 시 하드코딩 수치 표시 금지 — null 유지 ('...' 표시)
       });
   }, []);
 
