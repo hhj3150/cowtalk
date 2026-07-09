@@ -9,6 +9,8 @@ import { getDb } from '../../config/database.js';
 import { predictions, smaxtecEvents, animals, farms } from '../../db/schema.js';
 import { and, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { getBreedingPipeline } from '../breeding/breeding-pipeline.service.js';
+import { estimateDailyLoss, LOSS_FRACTION_BY_EVENT } from './economic-impact.service.js';
+import { getAvgDailyYield } from '../milk/milk-record.service.js';
 import { logger } from '../../lib/logger.js';
 import type {
   DecisionCard,
@@ -36,6 +38,8 @@ export interface DecisionCandidate {
   readonly farmName?: string;
   readonly detectedAt: string;
   readonly dueInHours?: number;
+  /** 유량 손실률 (경제 환산용) — smaXtec 건강 이벤트 유형 기반 */
+  readonly lossFraction?: number;
 }
 
 const SEVERITY_WEIGHT: Record<DecisionSeverity, number> = {
@@ -68,7 +72,7 @@ export function scoreCandidate(c: DecisionCandidate, now: number): number {
 export function buildDecisionCards(
   candidates: readonly DecisionCandidate[],
   opts: { readonly limit?: number; readonly now?: number } = {},
-): { cards: DecisionCard[]; totalCandidates: number } {
+): { cards: DecisionCard[]; totalCandidates: number; winners: DecisionCandidate[] } {
   const limit = opts.limit ?? 5;
   const now = opts.now ?? Date.now();
 
@@ -116,7 +120,9 @@ export function buildDecisionCards(
 
   merged.sort((a, b) => b.finalScore - a.finalScore);
 
-  const cards: DecisionCard[] = merged.slice(0, limit).map((s, i) => {
+  const top = merged.slice(0, limit);
+  const winners: DecisionCandidate[] = top.map((s) => s.candidate);
+  const cards: DecisionCard[] = top.map((s, i) => {
     const c = s.candidate;
     return {
       id: `${c.source}:${c.animalId ?? c.farmId ?? 'g'}:${c.detectedAt}`,
@@ -139,7 +145,7 @@ export function buildDecisionCards(
     };
   });
 
-  return { cards, totalCandidates: merged.length };
+  return { cards, totalCandidates: merged.length, winners };
 }
 
 // ===========================
@@ -265,6 +271,7 @@ export async function getDecisionQueue(params: {
       if (!meta) continue;
       const tag = r.earTag ?? '무이표';
       candidates.push({
+        lossFraction: LOSS_FRACTION_BY_EVENT[r.eventType],
         source: 'smaxtec',
         severity: (SEVERITY_ORDER as readonly string[]).includes(r.severity ?? '')
           ? (r.severity as DecisionSeverity)
@@ -308,12 +315,33 @@ export async function getDecisionQueue(params: {
     }
   }
 
-  const { cards, totalCandidates } = buildDecisionCards(candidates, {
+  const { cards, totalCandidates, winners } = buildDecisionCards(candidates, {
     limit: Math.min(params.limit ?? 5, 10),
   });
 
+  // 경제 환산 — 실측 유량(최근 7일) 보유 개체만. 추정 유량으로는 계산하지 않는다.
+  let enriched = cards;
+  try {
+    const econTargets = winners
+      .map((w, i) => ({ w, i }))
+      .filter(({ w }) => w.lossFraction != null && w.animalId);
+    if (econTargets.length > 0) {
+      const yields = await getAvgDailyYield(econTargets.map(({ w }) => w.animalId!), 7);
+      enriched = cards.map((card, i) => {
+        const winner = winners[i];
+        if (!winner?.lossFraction || !winner.animalId) return card;
+        const avgYield = yields.get(winner.animalId);
+        if (avgYield == null) return card;
+        const impact = estimateDailyLoss(avgYield, winner.lossFraction);
+        return impact ? { ...card, economicImpact: impact } : card;
+      });
+    }
+  } catch (err) {
+    logger.error({ err }, '[DecisionQueue] 경제 환산 실패 — 카드만 반환');
+  }
+
   return {
-    cards,
+    cards: enriched,
     totalCandidates,
     generatedAt: new Date().toISOString(),
   };

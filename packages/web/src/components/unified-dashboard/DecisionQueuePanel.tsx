@@ -114,6 +114,27 @@ function DecisionCardRow({ card, done, onToggleDone, onAnimalClick, onFarmClick,
           </span>
         </div>
 
+        {/* 경제 환산 — 실측 유량 보유 개체만, 항상 '추정' 표기 */}
+        {card.economicImpact && !done && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginTop: 6,
+            fontSize: 11,
+            color: '#fbbf24',
+            fontWeight: 600,
+          }}>
+            <span aria-hidden>₩</span>
+            <span>
+              미조치 시 일 손실 약 {card.economicImpact.dailyLossKrw.toLocaleString('ko-KR')}원
+            </span>
+            <span style={{ color: 'var(--ct-text-muted)', fontWeight: 400 }}>
+              — 실측 유량 {card.economicImpact.basisYieldL}L/일 × 손실률 {card.economicImpact.lossFractionPct}% (추정)
+            </span>
+          </div>
+        )}
+
         {/* 원인 체인 */}
         {card.why.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>

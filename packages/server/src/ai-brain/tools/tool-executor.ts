@@ -70,6 +70,9 @@ export async function executeTool(
       case 'query_animal_graph':
         result = await queryAnimalGraph(input);
         break;
+      case 'record_milk_yield':
+        result = await handleRecordMilkYield(input);
+        break;
       case 'query_farm_summary':
         result = await queryFarmSummary(input);
         break;
@@ -225,6 +228,12 @@ async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
 // ===========================
 // 2. 개체 이벤트 이력
 // ===========================
+
+// 유량 기록 (서비스 위임) — 경제 레이어 원료
+async function handleRecordMilkYield(input: Record<string, unknown>): Promise<unknown> {
+  const { recordMilkYield } = await import('../../services/milk/milk-record.service.js');
+  return recordMilkYield(input as unknown as Parameters<typeof recordMilkYield>[0]);
+}
 
 // 온톨로지 그래프 조회 — 개체/농장의 전체 맥락(관계)을 한 번에
 async function queryAnimalGraph(input: Record<string, unknown>): Promise<unknown> {

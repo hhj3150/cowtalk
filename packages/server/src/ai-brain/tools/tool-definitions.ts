@@ -47,6 +47,24 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     },
   },
   {
+    name: 'record_milk_yield',
+    description: '개체 일 유량(착유량) 기록. 귀번호 또는 animalId로 개체를 지정하고 리터 단위 유량을 기록한다. 같은 날짜에 이미 기록이 있으면 갱신한다. 유지방/유단백/체세포수(SCC)는 선택. 이 실측 데이터가 결정 카드의 경제 손실 환산과 비유곡선 실측선의 근거가 된다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        animalId: { type: 'string', description: '동물 ID (earTag와 둘 중 하나 필수)' },
+        earTag: { type: 'string', description: '귀번호 (animalId와 둘 중 하나 필수)' },
+        farmId: { type: 'string', description: '귀번호 검색 범위 농장 ID (선택 — 동일 귀번호 충돌 방지)' },
+        yieldL: { type: 'number', description: '일 유량 (리터, 0~100)' },
+        date: { type: 'string', description: 'YYYY-MM-DD (생략 시 오늘)' },
+        fat: { type: 'number', description: '유지방 % (선택)' },
+        protein: { type: 'number', description: '유단백 % (선택)' },
+        scc: { type: 'number', description: '체세포수 (천/mL, 선택)' },
+      },
+      required: ['yieldL'],
+    },
+  },
+  {
     name: 'query_farm_summary',
     description: '농장 요약 정보 조회. 농장명, 두수, 활성 알림 수, 번식 KPI(수태율, 발정탐지율)를 반환한다. 농장명은 한글/영문 모두 지원 — 서버가 자동 로마자 변환("술탄"↔"sultan") 후 OR 검색한다. 첫 시도가 실패하면 반대 언어 표기 또는 핵심 음절(예: "술탄")만으로 재시도하라.',
     input_schema: {

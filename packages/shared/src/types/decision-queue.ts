@@ -16,6 +16,19 @@ export interface DecisionCardSubject {
   readonly farmName?: string;
 }
 
+export interface DecisionEconomicImpact {
+  /** 미조치 시 일 손실 추정 (원) */
+  readonly dailyLossKrw: number;
+  /** 적용 손실률 (%) */
+  readonly lossFractionPct: number;
+  /** 근거: 최근 7일 '실측' 평균 일 유량 (L) — 추정 유량으로는 계산하지 않음 */
+  readonly basisYieldL: number;
+  /** 적용 단가 (원/L) */
+  readonly priceKrwPerL: number;
+  /** 항상 true — 모델 기반 추정임을 UI에 명시 */
+  readonly estimated: true;
+}
+
 export interface DecisionCard {
   readonly id: string;
   readonly rank: number;
@@ -32,6 +45,8 @@ export interface DecisionCard {
   readonly detectedAt: string;
   /** 조치 골든타임 (시간). 없으면 시간 제약 없는 조치 */
   readonly dueInHours?: number;
+  /** 경제 환산 — 실측 유량 보유 개체만, 항상 '추정' 표기 */
+  readonly economicImpact?: DecisionEconomicImpact;
 }
 
 export interface DecisionQueueData {
