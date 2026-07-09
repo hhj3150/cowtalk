@@ -17,6 +17,7 @@ export * from './epidemic.js';
 export * from './event-label.js';
 export * from './vital-monitor.js';
 export * from './breeding-pipeline.js';
+export * from './decision-queue.js';
 export * from './farm-profit.js';
 export * from './vet-route.js';
 export * from './insemination-route.js';

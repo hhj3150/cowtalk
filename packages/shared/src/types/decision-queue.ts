@@ -1,0 +1,42 @@
+// Daily Decision Queue — "오늘 무엇을 해야 하는가" 결정 카드
+// 소버린 알람(predictions) + smaXtec 이벤트 + 번식 긴급조치를 하나의 우선순위 큐로 합성.
+// 원칙: 새 판단 엔진이 아니라 기존 판단들의 '합성 계층'. 각 카드는 원인 체인(why)과
+// 즉시 실행 가능한 행동(actionKind)을 반드시 포함한다 (알람→행동 완결).
+
+export type DecisionSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export type DecisionSource = 'sovereign' | 'smaxtec' | 'breeding';
+
+export type DecisionActionKind = 'animal' | 'farm' | 'ai_analysis';
+
+export interface DecisionCardSubject {
+  readonly animalId?: string;
+  readonly earTag?: string;
+  readonly farmId?: string;
+  readonly farmName?: string;
+}
+
+export interface DecisionCard {
+  readonly id: string;
+  readonly rank: number;
+  readonly severity: DecisionSeverity;
+  readonly score: number;
+  /** 행동 명령형 제목 — "무엇을 해야 하는가" */
+  readonly title: string;
+  readonly subject: DecisionCardSubject;
+  /** 원인 체인 — 왜 이 조치가 필요한가 (근거 최대 4개) */
+  readonly why: readonly string[];
+  readonly actionLabel: string;
+  readonly actionKind: DecisionActionKind;
+  readonly source: DecisionSource;
+  readonly detectedAt: string;
+  /** 조치 골든타임 (시간). 없으면 시간 제약 없는 조치 */
+  readonly dueInHours?: number;
+}
+
+export interface DecisionQueueData {
+  readonly cards: readonly DecisionCard[];
+  /** 합성 전 후보 총수 — "5건 외 N건 더" 표시용 */
+  readonly totalCandidates: number;
+  readonly generatedAt: string;
+}

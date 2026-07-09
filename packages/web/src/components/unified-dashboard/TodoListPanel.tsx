@@ -84,7 +84,7 @@ export function TodoListPanel({ items, onItemClick }: Props): React.JSX.Element 
     >
       <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: 'var(--ct-text)', margin: '0 0 10px 2px', letterSpacing: '-0.2px' }}>
         <TitleAccentBar />
-        오늘 할 일
+        카테고리별 할 일 요약
       </h3>
 
       {items.length > 0 && (

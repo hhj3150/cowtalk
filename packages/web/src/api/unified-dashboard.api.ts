@@ -20,6 +20,7 @@ import type {
   FarmProfitEntry,
   BreedingPipelineData,
   InseminationRoutePlan,
+  DecisionQueueData,
 } from '@cowtalk/shared';
 
 export interface UnifiedDashboardParams {
@@ -225,6 +226,12 @@ export interface HealthAlertItem {
 
 export function fetchHealthAlertsSummary(farmId?: string, farmIds?: string): Promise<readonly HealthAlertItem[]> {
   return apiGet<readonly HealthAlertItem[]>(`/unified-dashboard/health-alerts-summary${farmQuery(farmId, farmIds)}`);
+}
+
+// ── 오늘의 결정 큐 (Daily Decision Queue) ──
+
+export function fetchDecisionQueue(farmId?: string): Promise<DecisionQueueData> {
+  return apiGet<DecisionQueueData>('/decision/queue', farmId ? { farmId } : undefined);
 }
 
 // ── 번식 관리 현황 ──

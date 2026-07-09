@@ -21,6 +21,7 @@ import {
   useSovereignAiStats,
   useSovereignAlarms,
   useBreedingPipeline,
+  useDecisionQueue,
 } from '@web/hooks/useUnifiedDashboard';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -51,6 +52,7 @@ import {
   SovereignAlarmFeed,
   BreedingPipelineWidget,
   TitleAccentBar,
+  DecisionQueuePanel,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -659,6 +661,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
 
   const { data, isLoading, error, refetch } = useUnifiedDashboard();
   const { data: alarmsData } = useLiveAlarms();
+  const { data: decisionData, isLoading: decisionLoading } = useDecisionQueue();
   const { data: farmsData } = useDashboardFarms();
   const { data: rankingData } = useFarmRanking(deferOpt);
   const { data: alertTrendData } = useAlertTrend(14, deferOpt);
@@ -882,6 +885,19 @@ export default function UnifiedDashboard(): React.JSX.Element {
               onChipClick={(kind) => setDrilldown(kind === 'health'
                 ? { eventType: 'health_warning', label: '건강 이상' }
                 : { eventType: 'ALL', label: '활성 알림' })}
+            />
+          </SectionErrorBoundary>
+
+          {/* ── 오늘의 결정 큐 — "오늘 무엇을 해야 하는가" (최상단) ── */}
+          <SectionErrorBoundary label="오늘의 결정 큐">
+            <DecisionQueuePanel
+              data={decisionData}
+              isLoading={decisionLoading}
+              onAnimalClick={(aid) => navigate(`/animals/${aid}`)}
+              onFarmClick={(fid) => selectFarm(fid)}
+              onAiAnalysis={(card) => {
+                setTinkerbellTrigger(`[팅커벨 AI — 결정 카드 정밀 분석]\n[조치] ${card.title}\n[대상] ${card.subject.earTag ?? ''} (${card.subject.farmName ?? ''})\n[근거] ${card.why.join(' / ')}\n이 개체의 센서 데이터·최근 알람·이력을 조회해 이 조치가 타당한지 검증하고, 지금 해야 할 행동을 단계별로 알려주세요. (${Date.now()})`);
+              }}
             />
           </SectionErrorBoundary>
 

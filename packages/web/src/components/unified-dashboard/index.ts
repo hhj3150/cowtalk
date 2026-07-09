@@ -34,3 +34,4 @@ export { RiskTop10Widget } from './RiskTop10Widget';
 // 소버린 AI 알람 피드
 export { SovereignAlarmFeed } from './SovereignAlarmFeed';
 export { TitleAccentBar } from './WidgetTitle';
+export { DecisionQueuePanel } from './DecisionQueuePanel';
