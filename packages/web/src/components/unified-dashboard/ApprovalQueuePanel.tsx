@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { fetchApprovals, approveRequest, rejectRequest, type ApprovalRequestView } from '@web/api/approval.api';
 import { TitleAccentBar } from './WidgetTitle';
 
@@ -120,6 +121,12 @@ export function ApprovalQueuePanel(): React.JSX.Element | null {
         <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
           승인 시 즉시 실행 · 전 과정 감사 기록
         </span>
+        <Link
+          to="/approvals"
+          style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--ct-primary)', textDecoration: 'none' }}
+        >
+          전체 이력 →
+        </Link>
       </div>
 
       {isLoading && <div className="ct-shimmer" style={{ height: 52, borderRadius: 12 }} />}

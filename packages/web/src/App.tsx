@@ -48,6 +48,7 @@ const BreedingCalendarPage = lazy(() => import('@web/pages/breeding/BreedingCale
 const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage'));
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
 const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
+const ApprovalHistoryPage = lazy(() => import('@web/pages/vet/ApprovalHistoryPage'));
 // FLOW-02 Step3: 사이드바 등록 라우트 placeholder (404 해소)
 const CaseQueuePage = lazy(() => import('@web/pages/vet/CaseQueuePage'));
 const VisitSchedulePage = lazy(() => import('@web/pages/vet/VisitSchedulePage'));
@@ -156,6 +157,7 @@ export function App(): React.JSX.Element {
               {/* 수의사 전용 (사이드바 노출 역할과 일치) */}
               <Route path="/vet/cases" element={<RequireRole roles={['veterinarian', 'government_admin']}><CaseQueuePage /></RequireRole>} />
               <Route path="/vet/schedule" element={<RequireRole roles={['veterinarian', 'government_admin']}><VisitSchedulePage /></RequireRole>} />
+              <Route path="/approvals" element={<RequireRole roles={['veterinarian', 'government_admin']}><ApprovalHistoryPage /></RequireRole>} />
               {/* /admin/farms → 기존 실제 FarmManagementPage 로 라우팅 (placeholder 아님) — /farm-management 가드와 동일 */}
               <Route path="/admin/farms" element={<RequireRole roles={['government_admin', 'quarantine_officer']}><FarmManagementPage /></RequireRole>} />
             </Route>

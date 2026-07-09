@@ -21,6 +21,7 @@ userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res
       .select({
         userId: users.userId,
         name: users.name,
+        phone: users.phone,
         email: users.email,
         role: users.role,
         status: users.status,
@@ -47,6 +48,7 @@ userRouter.get('/:userId', requirePermission('user', 'read'), async (req: Reques
       .select({
         userId: users.userId,
         name: users.name,
+        phone: users.phone,
         email: users.email,
         role: users.role,
         status: users.status,
@@ -84,12 +86,21 @@ userRouter.patch('/:userId', requirePermission('user', 'update'), async (req: Re
   try {
     const db = getDb();
     const userId = req.params.userId as string;
-    const { name, role, status } = req.body;
+    const { name, role, status, phone } = req.body;
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (name) updateData.name = name;
     if (role) updateData.role = role;
     if (status) updateData.status = status;
+    if (phone !== undefined) {
+      // 승인 알림톡 수신처 — 숫자·하이픈만, 20자 이내 (빈 문자열 = 삭제)
+      const cleaned = String(phone).trim();
+      if (cleaned !== '' && !/^[0-9-]{9,20}$/.test(cleaned)) {
+        res.status(400).json({ success: false, error: '전화번호 형식이 올바르지 않습니다 (예: 010-1234-5678)' });
+        return;
+      }
+      updateData.phone = cleaned === '' ? null : cleaned;
+    }
 
     const [updated] = await db
       .update(users)
@@ -98,6 +109,7 @@ userRouter.patch('/:userId', requirePermission('user', 'update'), async (req: Re
       .returning({
         userId: users.userId,
         name: users.name,
+        phone: users.phone,
         email: users.email,
         role: users.role,
         status: users.status,

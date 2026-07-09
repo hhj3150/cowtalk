@@ -19,7 +19,8 @@ export type AlimtalkTemplateId =
   | 'PREGNANCY_CHECK_DUE'  // 임신감정 예정 알림
   | 'CALVING_IMMINENT'     // 분만 임박 알림
   | 'DISEASE_SUSPECTED'    // 질병 의심 알림
-  | 'QUARANTINE_ALERT';    // 방역 경보
+  | 'QUARANTINE_ALERT'     // 방역 경보
+  | 'APPROVAL_REQUESTED';  // 도구 실행 승인 요청 (수의사·행정관)
 
 export interface AlimtalkVariable {
   readonly [key: string]: string;
@@ -76,6 +77,11 @@ const TEMPLATES: Readonly<Record<AlimtalkTemplateId, TemplateConfig>> = {
     templateCode: 'CT_DISEASE_V1',
     content: '[CowTalk] 질병 의심 알림\n\n목장: #{farmName}\n개체: #{earTag}번\n의심 증상: #{symptom}\nAI 신뢰도: #{confidence}%\n\n즉시 수의사에게 상담하고\nCowTalk에서 세부 내용을 확인하세요.',
     smsFailover: '[CowTalk] #{farmName} #{earTag}번 #{symptom} 의심. CowTalk 확인 바람.',
+  },
+  APPROVAL_REQUESTED: {
+    templateCode: 'CT_APPROVAL_V1',
+    content: '[CowTalk] 승인 요청\n\n목장: #{farmName}\n요청 조치: #{toolLabel}\n요청자: #{requesterRole}\n\nCowTalk 대시보드에서 검토 후 승인/거절해주세요.',
+    smsFailover: '[CowTalk] #{farmName} #{toolLabel} 승인 요청. 대시보드 확인 바람.',
   },
   QUARANTINE_ALERT: {
     templateCode: 'CT_QUARANTINE_V1',
@@ -340,6 +346,24 @@ export async function notifyDiseaseSuspected(params: {
     },
     farmName: params.farmName,
     animalTag: params.earTag,
+  });
+}
+
+export async function notifyApprovalRequested(params: {
+  phone: string;
+  farmName: string;
+  toolLabel: string;
+  requesterRole: string;
+}): Promise<AlimtalkResult> {
+  return sendAlimtalk({
+    to: params.phone,
+    templateId: 'APPROVAL_REQUESTED',
+    variables: {
+      farmName: params.farmName,
+      toolLabel: params.toolLabel,
+      requesterRole: params.requesterRole,
+    },
+    farmName: params.farmName,
   });
 }
 
