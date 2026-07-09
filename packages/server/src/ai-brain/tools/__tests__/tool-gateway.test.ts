@@ -99,3 +99,27 @@ describe('Tool Gateway — 권한 매트릭스 일관성', () => {
     });
   });
 });
+
+// ── 승인 매트릭스 (역할 의존) ──
+import { needsApproval, APPROVAL_REQUIRED_BY_ROLE } from '../tool-gateway.js';
+
+describe('needsApproval — 역할 의존 승인 게이트', () => {
+  it('farmer의 schedule_sync_protocol은 승인 필요', () => {
+    expect(needsApproval('schedule_sync_protocol', 'farmer')).toBe(true);
+  });
+  it('veterinarian의 schedule_sync_protocol은 즉시 실행', () => {
+    expect(needsApproval('schedule_sync_protocol', 'veterinarian')).toBe(false);
+  });
+  it('승인 매트릭스의 모든 도구는 정의된 도구여야 한다', () => {
+    const defined = new Set(TINKERBELL_TOOLS.map((t) => t.name));
+    for (const tool of Object.keys(APPROVAL_REQUIRED_BY_ROLE)) {
+      expect(defined.has(tool)).toBe(true);
+    }
+  });
+  it('조회(query_*) 도구는 승인을 요구하지 않는다', () => {
+    for (const tool of Object.keys(APPROVAL_REQUIRED_BY_ROLE)) {
+      expect(tool.startsWith('query_')).toBe(false);
+    }
+  });
+});
+

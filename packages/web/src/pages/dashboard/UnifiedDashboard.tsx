@@ -56,6 +56,7 @@ import {
   TitleAccentBar,
   DecisionQueuePanel,
   FarmIndexWidget,
+  ApprovalQueuePanel,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -1004,6 +1005,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 />
               </SectionErrorBoundary>
             </div>
+          )}
+
+          {/* ── 승인 대기 큐 (수의사·행정관 — AIP 거버넌스) ── */}
+          {(user?.role === 'veterinarian' || user?.role === 'government_admin') && (
+            <SectionErrorBoundary label="승인 대기 요청">
+              <ApprovalQueuePanel />
+            </SectionErrorBoundary>
           )}
 
           {/* ── 수의사 전용 대시보드 ── */}

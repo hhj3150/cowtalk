@@ -36,3 +36,4 @@ export { SovereignAlarmFeed } from './SovereignAlarmFeed';
 export { TitleAccentBar } from './WidgetTitle';
 export { DecisionQueuePanel } from './DecisionQueuePanel';
 export { FarmIndexWidget } from './FarmIndexWidget';
+export { ApprovalQueuePanel } from './ApprovalQueuePanel';
