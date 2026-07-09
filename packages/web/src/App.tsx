@@ -47,6 +47,7 @@ const BreedingKpiPage = lazy(() => import('@web/pages/intelligence/BreedingKpiPa
 const BreedingCalendarPage = lazy(() => import('@web/pages/breeding/BreedingCalendarPage'));
 const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage'));
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
+const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
 // FLOW-02 Step3: 사이드바 등록 라우트 placeholder (404 해소)
 const CaseQueuePage = lazy(() => import('@web/pages/vet/CaseQueuePage'));
 const VisitSchedulePage = lazy(() => import('@web/pages/vet/VisitSchedulePage'));
@@ -114,6 +115,7 @@ export function App(): React.JSX.Element {
               <Route path="/scan" element={<EarTagScanPage />} />
               <Route path="/notifications" element={<NotificationSettingsPage />} />
               <Route path="/subscription" element={<SubscriptionPage />} />
+              <Route path="/automation" element={<AutomationRulesPage />} />
               <Route path="/epidemiology/radius" element={<RadiusAnalysisPage />} />
               <Route path="/epidemiology/simulation" element={<SpreadSimulationPage />} />
               <Route path="/epidemiology/contact-network" element={<ContactNetworkPage />} />

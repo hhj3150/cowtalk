@@ -136,6 +136,14 @@ function IconCard(): React.JSX.Element {
   );
 }
 
+function IconBolt(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  );
+}
+
 // MenuItem.icon 문자열 → 인라인 SVG 아이콘 매핑.
 // (lucide-react 미설치 → 프로젝트 컨벤션인 인라인 SVG 컴포넌트 재사용)
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -154,6 +162,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Users:           <IconUsers />,
   Server:          <IconServer />,
   Brain:           <IconAi />,
+  Zap:             <IconBolt />,
 };
 
 /**

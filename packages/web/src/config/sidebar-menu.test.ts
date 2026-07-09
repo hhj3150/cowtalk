@@ -6,32 +6,32 @@ import type { Role } from '@cowtalk/shared';
 import { getMenuForRole, type MenuRole } from './sidebar-menu';
 
 describe('getMenuForRole — 역할별 메뉴 개수', () => {
-  it('master → 15개 메뉴 반환', () => {
-    expect(getMenuForRole('master')).toHaveLength(15);
+  it('master → 16개 메뉴 반환', () => {
+    expect(getMenuForRole('master')).toHaveLength(16);
   });
 
-  it('farmer → 6개 (dashboard, my-cows, breeding, breeding-cal, alerts, subscription)', () => {
+  it('farmer → 7개 (dashboard, my-cows, breeding, breeding-cal, automation, alerts, subscription)', () => {
     const role: Role = 'farmer';
     const ids = getMenuForRole(role).map((item) => item.id);
-    expect(ids).toEqual(['dashboard', 'my-cows', 'breeding', 'breeding-cal', 'alerts', 'subscription']);
+    expect(ids).toEqual(['dashboard', 'my-cows', 'breeding', 'breeding-cal', 'automation', 'alerts', 'subscription']);
   });
 
-  it('veterinarian → 7개 (dashboard, breeding, breeding-cal, vet-cases, vet-schedule, sensor-cmp, alerts)', () => {
+  it('veterinarian → 8개 (dashboard, breeding, breeding-cal, vet-cases, vet-schedule, sensor-cmp, automation, alerts)', () => {
     const role: Role = 'veterinarian';
     const ids = getMenuForRole(role).map((item) => item.id);
-    expect(ids).toEqual(['dashboard', 'breeding', 'breeding-cal', 'vet-cases', 'vet-schedule', 'sensor-cmp', 'alerts']);
+    expect(ids).toEqual(['dashboard', 'breeding', 'breeding-cal', 'vet-cases', 'vet-schedule', 'sensor-cmp', 'automation', 'alerts']);
   });
 
-  it('government_admin → 6개 (dashboard, sensor-cmp, region-map, epi-dash, alerts, admin-ai)', () => {
+  it('government_admin → 7개 (dashboard, sensor-cmp, region-map, epi-dash, automation, alerts, admin-ai)', () => {
     const role: Role = 'government_admin';
     const ids = getMenuForRole(role).map((item) => item.id);
-    expect(ids).toEqual(['dashboard', 'sensor-cmp', 'region-map', 'epi-dash', 'alerts', 'admin-ai']);
+    expect(ids).toEqual(['dashboard', 'sensor-cmp', 'region-map', 'epi-dash', 'automation', 'alerts', 'admin-ai']);
   });
 
-  it('quarantine_officer → 4개 (dashboard, region-map, epi-dash, alerts)', () => {
+  it('quarantine_officer → 5개 (dashboard, region-map, epi-dash, automation, alerts)', () => {
     const role: Role = 'quarantine_officer';
     const ids = getMenuForRole(role).map((item) => item.id);
-    expect(ids).toEqual(['dashboard', 'region-map', 'epi-dash', 'alerts']);
+    expect(ids).toEqual(['dashboard', 'region-map', 'epi-dash', 'automation', 'alerts']);
   });
 });
 

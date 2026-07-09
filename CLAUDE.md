@@ -399,6 +399,17 @@ DB 영속화:
 치료 결과 추적 배치 (24h batch, runTreatmentOutcomeCheck):
 - 최근 7일 치료 건 센서 비교 → recovered/worsened/monitoring 자동 판정
 
+## 자동화 룰 엔진 (2026-07-09, P3 AIP Automate)
+
+"알람 → 행동" 자동 연결. automation_rules(트리거+액션 템플릿) / automation_rule_runs(실행 기록) 테이블.
+- 스윕 방식: 10분 주기 잡(automation-rules)이 최근 알림/smaXtec 이벤트를 활성 룰과 매칭
+- 멱등: rule+source 유니크 인덱스, 쿨다운: 같은 룰+개체 cooldownHours 내 재실행 금지
+- 승인 게이트 준수: 도구 실행은 executeToolWithGateway 경유 — 자동화가 승인 체계를 우회하는 경로 없음
+  (예: 농장주 룰의 schedule_sync_protocol은 자동으로 승인 대기 → 수의사·행정관 승인 시 실행)
+- 허용 도구(AUTOMATABLE_TOOLS): recommend_insemination_window, query_differential_diagnosis, query_weather, schedule_sync_protocol
+- 파라미터 템플릿: {{animalId}} {{farmId}} {{earTag}} {{eventType}} {{today}} 치환
+- API: /automation/rules CRUD + /automation/runs, UI: /automation (프리셋 3종 + 토글 + 실행 이력)
+
 ## 보고 형식 (매 작업 후)
 
 1. 분석한 것

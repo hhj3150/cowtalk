@@ -49,27 +49,27 @@ describe('Sidebar 메뉴 개수 — 6개 시뮬레이션 시나리오 (STEP 1.C)
     return getMenuForRole(resolveMenuRole(isMasterEssence, sim, userRole)).length;
   }
 
-  it('isMasterEssence=true, sim=null → 15개', () => {
-    expect(menuCount(true, null, 'government_admin')).toBe(15);
+  it('isMasterEssence=true, sim=null → 16개', () => {
+    expect(menuCount(true, null, 'government_admin')).toBe(16);
   });
 
-  it('isMasterEssence=true, sim=farmer → 6개', () => {
-    expect(menuCount(true, 'farmer', 'government_admin')).toBe(6);
+  it('isMasterEssence=true, sim=farmer → 7개', () => {
+    expect(menuCount(true, 'farmer', 'government_admin')).toBe(7);
   });
 
-  it('isMasterEssence=true, sim=veterinarian → 7개', () => {
-    expect(menuCount(true, 'veterinarian', 'government_admin')).toBe(7);
+  it('isMasterEssence=true, sim=veterinarian → 8개', () => {
+    expect(menuCount(true, 'veterinarian', 'government_admin')).toBe(8);
   });
 
-  it('isMasterEssence=true, sim=government_admin → 6개', () => {
-    expect(menuCount(true, 'government_admin', 'government_admin')).toBe(6);
+  it('isMasterEssence=true, sim=government_admin → 7개', () => {
+    expect(menuCount(true, 'government_admin', 'government_admin')).toBe(7);
   });
 
-  it('isMasterEssence=true, sim=quarantine_officer → 4개', () => {
-    expect(menuCount(true, 'quarantine_officer', 'government_admin')).toBe(4);
+  it('isMasterEssence=true, sim=quarantine_officer → 5개', () => {
+    expect(menuCount(true, 'quarantine_officer', 'government_admin')).toBe(5);
   });
 
-  it('isMasterEssence=false, user.role=farmer → 6개', () => {
-    expect(menuCount(false, null, 'farmer')).toBe(6);
+  it('isMasterEssence=false, user.role=farmer → 7개', () => {
+    expect(menuCount(false, null, 'farmer')).toBe(7);
   });
 });

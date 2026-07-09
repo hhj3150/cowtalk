@@ -16,6 +16,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import type { AutomationTrigger, AutomationAction } from '@cowtalk/shared';
 
 // ======================================================================
 // A-0. 멀티테넌트
@@ -421,6 +422,43 @@ export const farmIndexSnapshots = pgTable('farm_index_snapshots', {
 }, (table) => [
   uniqueIndex('farm_index_snapshots_farm_date_idx').on(table.farmId, table.date),
   index('farm_index_snapshots_farm_id_idx').on(table.farmId),
+]);
+
+// 자동화 룰 — 알람→조치 자동 연결 (P3 AIP Automate). 고위험 도구는 승인 게이트 경유.
+export const automationRules = pgTable('automation_rules', {
+  ruleId: uuid('rule_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').references(() => farms.farmId), // null = 생성자 스코프 전체
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  enabled: boolean('enabled').notNull().default(true),
+  trigger: jsonb('trigger').notNull().$type<AutomationTrigger>(),
+  action: jsonb('action').notNull().$type<AutomationAction>(),
+  cooldownHours: integer('cooldown_hours').notNull().default(24),
+  createdBy: uuid('created_by').references(() => users.userId),
+  actorRole: varchar('actor_role', { length: 30 }).notNull(), // 도구 실행 컨텍스트 역할 스냅샷
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('automation_rules_farm_id_idx').on(table.farmId),
+  index('automation_rules_enabled_idx').on(table.enabled),
+]);
+
+export const automationRuleRuns = pgTable('automation_rule_runs', {
+  runId: uuid('run_id').primaryKey().defaultRandom(),
+  ruleId: uuid('rule_id').notNull().references(() => automationRules.ruleId, { onDelete: 'cascade' }),
+  sourceType: varchar('source_type', { length: 20 }).notNull(), // alert | smaxtec_event
+  sourceId: uuid('source_id').notNull(),
+  animalId: uuid('animal_id').references(() => animals.animalId),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  status: varchar('status', { length: 20 }).notNull(), // executed | pending_approval | denied | failed
+  resultSummary: text('result_summary'),
+  executedAt: timestamp('executed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // 멱등 스윕: 같은 룰이 같은 소스 이벤트를 두 번 처리하지 않음
+  uniqueIndex('automation_rule_runs_unique_idx').on(table.ruleId, table.sourceType, table.sourceId),
+  index('automation_rule_runs_rule_id_idx').on(table.ruleId),
+  index('automation_rule_runs_animal_id_idx').on(table.animalId),
+  index('automation_rule_runs_executed_at_idx').on(table.executedAt),
 ]);
 
 export const milkRecords = pgTable('milk_records', {
