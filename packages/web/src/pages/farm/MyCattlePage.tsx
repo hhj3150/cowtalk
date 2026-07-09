@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@web/api/client';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useFarmStore } from '@web/stores/farm.store';
+import { ExportButton } from '@web/components/data/ExportButton';
 
 interface AnimalRecord {
   readonly animalId: string;
@@ -133,11 +134,12 @@ interface AnimalListViewProps {
   readonly totalCount: number;
   readonly sensorCount: number;
   readonly onAnimalClick: (animalId: string) => void;
+  readonly farmId: string | null;
 }
 
 function AnimalListView({
   animals, isLoading, filterTab, onFilterChange,
-  search, onSearchChange, totalCount, sensorCount, onAnimalClick,
+  search, onSearchChange, totalCount, sensorCount, onAnimalClick, farmId,
 }: AnimalListViewProps): React.JSX.Element {
   return (
     <>
@@ -170,6 +172,7 @@ function AnimalListView({
             fontSize: 12, outline: 'none',
           }}
         />
+        {farmId && <ExportButton target="animals" params={{ farmId }} />}
       </div>
 
       {/* 목록 */}
@@ -414,6 +417,7 @@ function MyCattlePage(): React.JSX.Element {
           totalCount={allAnimals.length}
           sensorCount={sensorCount}
           onAnimalClick={(id) => navigate(`/cow/${id}`)}
+          farmId={activeFarmId}
         />
       )}
     </div>
