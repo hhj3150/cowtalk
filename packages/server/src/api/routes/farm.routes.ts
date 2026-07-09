@@ -466,6 +466,19 @@ farmRouter.get('/:farmId/intelligence-index', requirePermission('farm', 'read'),
   }
 });
 
+// GET /farms/:farmId/intelligence-index/trend?days=30 — 목장 점수 추이 (실측 스냅샷만)
+farmRouter.get('/:farmId/intelligence-index/trend', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { getFarmIndexTrend } = await import('../../services/metrics/farm-index.service.js');
+    const daysRaw = Number(req.query.days);
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : 30;
+    const trend = await getFarmIndexTrend(req.params.farmId as string, days);
+    res.json({ success: true, data: { farmId: req.params.farmId, days, points: trend } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /farms/:farmId/report-card — 분기 리포트카드
 farmRouter.get('/:farmId/report-card', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {

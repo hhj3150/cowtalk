@@ -23,6 +23,7 @@ import {
   useBreedingPipeline,
   useDecisionQueue,
   useFarmIndex,
+  useFarmIndexTrend,
 } from '@web/hooks/useUnifiedDashboard';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -55,6 +56,7 @@ import {
   TitleAccentBar,
   DecisionQueuePanel,
   FarmIndexWidget,
+  ApprovalQueuePanel,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -665,6 +667,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data: alarmsData } = useLiveAlarms();
   const { data: decisionData, isLoading: decisionLoading } = useDecisionQueue();
   const { data: farmIndexData, isLoading: farmIndexLoading } = useFarmIndex();
+  const { data: farmIndexTrendData } = useFarmIndexTrend();
   const { data: farmsData } = useDashboardFarms();
   const { data: rankingData } = useFarmRanking(deferOpt);
   const { data: alertTrendData } = useAlertTrend(14, deferOpt);
@@ -940,7 +943,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {/* ── 오늘의 목장 점수 (농장 선택 시) ── */}
           {selectedFarmId && (
             <SectionErrorBoundary label="오늘의 목장 점수">
-              <FarmIndexWidget data={farmIndexData} isLoading={farmIndexLoading} />
+              <FarmIndexWidget data={farmIndexData} isLoading={farmIndexLoading} trend={farmIndexTrendData?.points} />
             </SectionErrorBoundary>
           )}
 
@@ -1002,6 +1005,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 />
               </SectionErrorBoundary>
             </div>
+          )}
+
+          {/* ── 승인 대기 큐 (수의사·행정관 — AIP 거버넌스) ── */}
+          {(user?.role === 'veterinarian' || user?.role === 'government_admin') && (
+            <SectionErrorBoundary label="승인 대기 요청">
+              <ApprovalQueuePanel />
+            </SectionErrorBoundary>
           )}
 
           {/* ── 수의사 전용 대시보드 ── */}

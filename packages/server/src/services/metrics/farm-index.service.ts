@@ -5,11 +5,11 @@
 // 점수화 함수는 순수 — 단위 테스트 대상.
 
 import { getDb } from '../../config/database.js';
-import { farms, animals, smaxtecEvents, milkRecords, farmProfitEntries } from '../../db/schema.js';
+import { farms, animals, smaxtecEvents, milkRecords, farmProfitEntries, farmIndexSnapshots } from '../../db/schema.js';
 import { and, eq, gte, inArray, isNotNull, isNull, sql, count, desc } from 'drizzle-orm';
 import { getBreedingPipeline } from '../breeding/breeding-pipeline.service.js';
 import { logger } from '../../lib/logger.js';
-import type { FarmIntelligenceIndex, FarmIndexAxis, FarmIndexGrade } from '@cowtalk/shared';
+import type { FarmIntelligenceIndex, FarmIndexAxis, FarmIndexGrade, FarmIndexTrendPoint } from '@cowtalk/shared';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -209,4 +209,70 @@ export async function getFarmIntelligenceIndex(farmId: string): Promise<FarmInte
     axes,
     generatedAt: new Date().toISOString(),
   };
+}
+
+// ===========================
+// 일별 스냅샷 (24h 배치) + 추이 조회
+// ===========================
+
+/** 전 활성 농장의 오늘자 지수를 스냅샷 (같은 날짜는 갱신 — 하루 1행) */
+export async function snapshotFarmIndexes(): Promise<{ snapped: number; failed: number }> {
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  const activeFarms = await db
+    .select({ farmId: farms.farmId })
+    .from(farms)
+    .where(and(eq(farms.status, 'active'), isNull(farms.deletedAt)));
+
+  let snapped = 0;
+  let failed = 0;
+  for (const f of activeFarms) {
+    try {
+      const index = await getFarmIntelligenceIndex(f.farmId);
+      if (!index) continue;
+      await db
+        .insert(farmIndexSnapshots)
+        .values({
+          farmId: f.farmId,
+          date: today,
+          overall: index.overall,
+          grade: index.grade,
+          coverageAvailable: index.coverage.available,
+          coverageTotal: index.coverage.total,
+          axes: index.axes,
+        })
+        .onConflictDoUpdate({
+          target: [farmIndexSnapshots.farmId, farmIndexSnapshots.date],
+          set: {
+            overall: index.overall,
+            grade: index.grade,
+            coverageAvailable: index.coverage.available,
+            coverageTotal: index.coverage.total,
+            axes: index.axes,
+          },
+        });
+      snapped++;
+    } catch (err) {
+      failed++;
+      logger.warn({ err, farmId: f.farmId }, '[FarmIndex] 스냅샷 실패 — 다음 농장 계속');
+    }
+  }
+  logger.info({ snapped, failed, date: today }, '[FarmIndex] 일별 스냅샷 완료');
+  return { snapped, failed };
+}
+
+/** 최근 N일 지수 추이 (실측 스냅샷만 — 보간·합성 없음) */
+export async function getFarmIndexTrend(farmId: string, days = 30): Promise<readonly FarmIndexTrendPoint[]> {
+  const db = getDb();
+  const sinceStr = new Date(Date.now() - Math.min(days, 180) * MS_PER_DAY).toISOString().slice(0, 10);
+  const rows = await db
+    .select({
+      date: farmIndexSnapshots.date,
+      overall: farmIndexSnapshots.overall,
+      coverageAvailable: farmIndexSnapshots.coverageAvailable,
+    })
+    .from(farmIndexSnapshots)
+    .where(and(eq(farmIndexSnapshots.farmId, farmId), gte(farmIndexSnapshots.date, sinceStr)))
+    .orderBy(farmIndexSnapshots.date);
+  return rows.map((r) => ({ date: r.date, overall: r.overall, coverageAvailable: r.coverageAvailable }));
 }

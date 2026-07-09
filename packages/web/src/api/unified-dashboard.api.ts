@@ -22,6 +22,7 @@ import type {
   InseminationRoutePlan,
   DecisionQueueData,
   FarmIntelligenceIndex,
+  FarmIndexTrendPoint,
 } from '@cowtalk/shared';
 
 export interface UnifiedDashboardParams {
@@ -239,6 +240,10 @@ export function fetchDecisionQueue(farmId?: string): Promise<DecisionQueueData> 
 
 export function fetchFarmIndex(farmId: string): Promise<FarmIntelligenceIndex> {
   return apiGet<FarmIntelligenceIndex>(`/farms/${farmId}/intelligence-index`);
+}
+
+export function fetchFarmIndexTrend(farmId: string, days = 30): Promise<{ points: readonly FarmIndexTrendPoint[] }> {
+  return apiGet<{ points: readonly FarmIndexTrendPoint[] }>(`/farms/${farmId}/intelligence-index/trend`, { days });
 }
 
 // ── 번식 관리 현황 ──

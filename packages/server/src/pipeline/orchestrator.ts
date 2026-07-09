@@ -400,6 +400,13 @@ export class PipelineOrchestrator {
       logger.error({ err }, '[Pipeline] 스냅샷 후처리 배치 실패');
     });
 
+    // Farm Intelligence Index 일별 스냅샷 (점수 추이 원료)
+    import('../services/metrics/farm-index.service.js')
+      .then((m) => m.snapshotFarmIndexes())
+      .catch((err) => {
+        logger.error({ err }, '[Pipeline] 목장 지수 스냅샷 실패');
+      });
+
     this.state = { ...this.state, lastBatchRun: new Date() };
   }
 

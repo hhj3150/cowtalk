@@ -387,6 +387,42 @@ export const vetVisits = pgTable('vet_visits', {
 // F. 생산
 // ======================================================================
 
+// 도구 승인 요청 — AIP 거버넌스 (고위험 도구의 승인 게이트, 0026)
+export const toolApprovalRequests = pgTable('tool_approval_requests', {
+  approvalId: uuid('approval_id').primaryKey().defaultRandom(),
+  toolName: varchar('tool_name', { length: 60 }).notNull(),
+  toolInput: jsonb('tool_input').notNull().default('{}'),
+  requestedBy: uuid('requested_by').references(() => users.userId),
+  requestedRole: varchar('requested_role', { length: 30 }).notNull(),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  requestNote: text('request_note'),
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending | approved | rejected
+  approverId: uuid('approver_id').references(() => users.userId),
+  decisionNote: text('decision_note'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  executionResult: jsonb('execution_result'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('tool_approval_requests_status_idx').on(table.status),
+  index('tool_approval_requests_farm_id_idx').on(table.farmId),
+]);
+
+// Farm Intelligence Index 일별 스냅샷 — "오늘의 목장 점수" 추이 원료 (24h 배치)
+export const farmIndexSnapshots = pgTable('farm_index_snapshots', {
+  snapshotId: uuid('snapshot_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  date: date('date').notNull(),
+  overall: integer('overall'),                 // 가용 축 없으면 null (정직성)
+  grade: varchar('grade', { length: 2 }),
+  coverageAvailable: integer('coverage_available').notNull().default(0),
+  coverageTotal: integer('coverage_total').notNull().default(5),
+  axes: jsonb('axes').notNull().default('[]'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('farm_index_snapshots_farm_date_idx').on(table.farmId, table.date),
+  index('farm_index_snapshots_farm_id_idx').on(table.farmId),
+]);
+
 export const milkRecords = pgTable('milk_records', {
   recordId: uuid('record_id').primaryKey().defaultRandom(),
   animalId: uuid('animal_id').notNull().references(() => animals.animalId),

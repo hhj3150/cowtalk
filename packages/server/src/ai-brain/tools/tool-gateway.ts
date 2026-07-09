@@ -83,11 +83,21 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
 };
 
 // ===========================
-// 승인 필요 액션 목록
+// 승인 필요 액션 목록 — 역할 의존
 // ===========================
 
-// 향후 승인 필요 도구가 추가되면 여기 등록 (현재는 모든 등록 도구가 즉시 실행 가능).
-const APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set<string>([]);
+// 도구 → '승인이 필요한 요청자 역할' 집합.
+// 예: 호르몬 동기화 처방(schedule_sync_protocol)은 수의학적 판단이므로
+//     farmer가 요청하면 수의사 승인 후 실행, 수의사 본인은 즉시 실행.
+export const APPROVAL_REQUIRED_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
+  schedule_sync_protocol: ['farmer'],
+};
+
+/** 이 도구 호출이 해당 역할에서 승인을 요구하는가 (순수 — 테스트 대상) */
+export function needsApproval(toolName: string, role: string): boolean {
+  const roles = APPROVAL_REQUIRED_BY_ROLE[toolName];
+  return Boolean(roles && roles.includes(role));
+}
 
 // ===========================
 // Gateway 호출 컨텍스트
@@ -146,12 +156,26 @@ export async function executeToolWithGateway(
     return { success: false, result, toolName, domain, executionMs: 0, denied: true, approvalRequired: false };
   }
 
-  // 2. 승인 필요 확인
-  const approvalRequired = APPROVAL_REQUIRED_TOOLS.has(toolName);
+  // 2. 승인 필요 확인 (역할 의존) — 요청을 영속화하고 실행은 승인 시점으로 미룬다
+  const approvalRequired = needsApproval(toolName, String(context.role));
   if (approvalRequired) {
+    let approvalId: string | null = null;
+    try {
+      const { createApprovalRequest } = await import('../../services/approval/tool-approval.service.js');
+      approvalId = await createApprovalRequest({
+        toolName,
+        toolInput: input,
+        requestedBy: context.userId,
+        requestedRole: String(context.role),
+        farmId: context.farmId,
+      });
+    } catch (err) {
+      logger.error({ err, toolName }, '[ToolGateway] 승인 요청 영속화 실패');
+    }
     const result = JSON.stringify({
       approvalRequired: true,
-      message: `'${toolName}' 실행에는 사용자 승인이 필요합니다.`,
+      approvalId,
+      message: `'${toolName}'은(는) 수의사 승인 후 실행됩니다. 승인 요청이 접수되었습니다${approvalId ? ` (요청 ID: ${approvalId.slice(0, 8)})` : ''}. 담당 수의사가 대시보드에서 검토합니다.`,
       proposedAction: { toolName, input },
     });
 
