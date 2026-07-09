@@ -13,11 +13,12 @@ interface Props {
   readonly onQueued: () => void;  // 오프라인 저장 시 부모에 알림
 }
 
-type RecordType = '발정확인' | '수정기록' | '진료메모' | '분만기록' | '폐사기록';
+type RecordType = '발정확인' | '수정기록' | '유량기록' | '진료메모' | '분만기록' | '폐사기록';
 
 const RECORD_TYPES: { type: RecordType; icon: string; desc: string }[] = [
   { type: '발정확인', icon: '🌡️', desc: '발정 징후 확인' },
   { type: '수정기록', icon: '💉', desc: '인공수정 실시' },
+  { type: '유량기록', icon: '🥛', desc: '오늘 착유량(L)' },
   { type: '진료메모', icon: '🩺', desc: '증상 및 처치' },
   { type: '분만기록', icon: '🐄', desc: '분만 확인' },
   { type: '폐사기록', icon: '⚠️', desc: '폐사 기록' },
@@ -32,13 +33,14 @@ export function QuickRecordSheet({ isOpen, onClose, onQueued }: Props): React.JS
   const [earTag, setEarTag] = useState('');
   const [notes, setNotes] = useState('');
   const [subType, setSubType] = useState('');
+  const [yieldL, setYieldL] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function handleClose() {
     setStep(1); setRecordType(null); setEarTag('');
-    setNotes(''); setSubType(''); setPhotoUrl(null);
+    setNotes(''); setSubType(''); setPhotoUrl(null); setYieldL('');
     onClose();
   }
 
@@ -57,6 +59,31 @@ export function QuickRecordSheet({ isOpen, onClose, onQueued }: Props): React.JS
 
   async function handleSubmit() {
     if (!recordType || !earTag.trim()) return;
+
+    // 유량기록: 전용 엔드포인트 (경제 환산·비유곡선 실측의 원료)
+    if (recordType === '유량기록') {
+      const y = Number(yieldL);
+      if (!Number.isFinite(y) || y <= 0) return;
+      setSaving(true);
+      const milkBody = {
+        earTag: earTag.trim(),
+        farmId: farmId || undefined,
+        yieldL: y,
+        date: new Date().toISOString().slice(0, 10),
+      };
+      try {
+        if (!navigator.onLine) throw new Error('offline');
+        await apiPost('/milk/records', milkBody);
+      } catch {
+        await enqueueRecord({ ...milkBody, __endpoint: '/milk/records' });
+        onQueued();
+      } finally {
+        setSaving(false);
+      }
+      handleClose();
+      return;
+    }
+
     setSaving(true);
 
     const payload = {
@@ -190,6 +217,29 @@ export function QuickRecordSheet({ isOpen, onClose, onQueued }: Props): React.JS
           {step === 3 && (
             <div className="space-y-4 pt-2">
               {/* 기록 유형별 세부 필드 */}
+              {recordType === '유량기록' && (
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--ct-text-secondary)' }}>
+                    오늘 착유량 (리터) *
+                  </label>
+                  <input
+                    autoFocus
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    placeholder="예: 31.5"
+                    value={yieldL}
+                    onChange={(e) => setYieldL(e.target.value)}
+                    className="w-full rounded-xl border px-4 py-3 text-2xl font-bold text-center tabular-nums"
+                    style={{ background: 'var(--ct-bg)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                  />
+                  <p className="mt-1 text-[10px]" style={{ color: 'var(--ct-text-muted)' }}>
+                    같은 날짜에 다시 기록하면 갱신됩니다 · 이 실측값이 경제 손실 환산의 근거가 됩니다
+                  </p>
+                </div>
+              )}
               {recordType === '발정확인' && (
                 <SubTypeSelect
                   label="발정 징후"
@@ -285,7 +335,7 @@ export function QuickRecordSheet({ isOpen, onClose, onQueued }: Props): React.JS
               {/* 저장 버튼 */}
               <button
                 type="button"
-                disabled={saving}
+                disabled={saving || (recordType === '유량기록' && !(Number(yieldL) > 0))}
                 onClick={handleSubmit}
                 className="w-full rounded-xl py-3.5 font-semibold text-white"
                 style={{ background: saving ? '#6b7280' : '#10b981' }}
@@ -345,6 +395,7 @@ function SubTypeSelect({
 function typeToEventType(type: RecordType): string {
   const map: Record<RecordType, string> = {
     '발정확인': 'estrus',
+    '유량기록': 'milk_yield', // handleSubmit에서 /milk/records로 분기 — /events 매핑은 미사용
     '수정기록': 'insemination',
     '진료메모': 'health_treatment',
     '분만기록': 'calving',

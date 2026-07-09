@@ -7,9 +7,18 @@ const DB_VERSION = 1;
 
 export interface PendingRecord {
   readonly id?: number;        // IndexedDB 자동 증가
-  readonly payload: unknown;   // POST /api/events 페이로드
+  readonly payload: unknown;   // 재전송 페이로드. `__endpoint` 키가 있으면 해당 경로로, 없으면 /events (하위 호환)
   readonly createdAt: number;  // Date.now()
   readonly retries: number;
+}
+
+/** 큐 페이로드에서 재전송 대상 엔드포인트와 본문을 분리 (하위 호환: 기본 /events) */
+export function splitQueuedPayload(payload: unknown): { endpoint: string; body: unknown } {
+  if (payload && typeof payload === 'object' && '__endpoint' in payload) {
+    const { __endpoint, ...body } = payload as Record<string, unknown>;
+    return { endpoint: typeof __endpoint === 'string' ? __endpoint : '/events', body };
+  }
+  return { endpoint: '/events', body: payload };
 }
 
 // ===========================
