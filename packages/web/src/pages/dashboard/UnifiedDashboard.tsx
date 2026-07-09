@@ -22,6 +22,7 @@ import {
   useSovereignAlarms,
   useBreedingPipeline,
   useDecisionQueue,
+  useFarmIndex,
 } from '@web/hooks/useUnifiedDashboard';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFarmStore } from '@web/stores/farm.store';
@@ -53,6 +54,7 @@ import {
   BreedingPipelineWidget,
   TitleAccentBar,
   DecisionQueuePanel,
+  FarmIndexWidget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -662,6 +664,7 @@ export default function UnifiedDashboard(): React.JSX.Element {
   const { data, isLoading, error, refetch } = useUnifiedDashboard();
   const { data: alarmsData } = useLiveAlarms();
   const { data: decisionData, isLoading: decisionLoading } = useDecisionQueue();
+  const { data: farmIndexData, isLoading: farmIndexLoading } = useFarmIndex();
   const { data: farmsData } = useDashboardFarms();
   const { data: rankingData } = useFarmRanking(deferOpt);
   const { data: alertTrendData } = useAlertTrend(14, deferOpt);
@@ -933,6 +936,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
               <AiBriefingCard onKpiClick={(filter) => setDrilldown(filter)} />
             </SectionErrorBoundary>
           </div>
+
+          {/* ── 오늘의 목장 점수 (농장 선택 시) ── */}
+          {selectedFarmId && (
+            <SectionErrorBoundary label="오늘의 목장 점수">
+              <FarmIndexWidget data={farmIndexData} isLoading={farmIndexLoading} />
+            </SectionErrorBoundary>
+          )}
 
           {/* ── 선택 농장 개체 목록 (인라인) ── */}
           {selectedFarmId && (() => {

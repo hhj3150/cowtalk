@@ -35,3 +35,4 @@ export { RiskTop10Widget } from './RiskTop10Widget';
 export { SovereignAlarmFeed } from './SovereignAlarmFeed';
 export { TitleAccentBar } from './WidgetTitle';
 export { DecisionQueuePanel } from './DecisionQueuePanel';
+export { FarmIndexWidget } from './FarmIndexWidget';

@@ -451,6 +451,21 @@ farmRouter.get('/:farmId/similar', requirePermission('farm', 'read'), async (req
   }
 });
 
+// GET /farms/:farmId/intelligence-index — 오늘의 목장 점수 (Farm Intelligence Index)
+farmRouter.get('/:farmId/intelligence-index', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { getFarmIntelligenceIndex } = await import('../../services/metrics/farm-index.service.js');
+    const index = await getFarmIntelligenceIndex(req.params.farmId as string);
+    if (!index) {
+      res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      return;
+    }
+    res.json({ success: true, data: index });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /farms/:farmId/report-card — 분기 리포트카드
 farmRouter.get('/:farmId/report-card', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -21,6 +21,7 @@ import type {
   BreedingPipelineData,
   InseminationRoutePlan,
   DecisionQueueData,
+  FarmIntelligenceIndex,
 } from '@cowtalk/shared';
 
 export interface UnifiedDashboardParams {
@@ -232,6 +233,12 @@ export function fetchHealthAlertsSummary(farmId?: string, farmIds?: string): Pro
 
 export function fetchDecisionQueue(farmId?: string): Promise<DecisionQueueData> {
   return apiGet<DecisionQueueData>('/decision/queue', farmId ? { farmId } : undefined);
+}
+
+// ── 오늘의 목장 점수 (Farm Intelligence Index) ──
+
+export function fetchFarmIndex(farmId: string): Promise<FarmIntelligenceIndex> {
+  return apiGet<FarmIntelligenceIndex>(`/farms/${farmId}/intelligence-index`);
 }
 
 // ── 번식 관리 현황 ──

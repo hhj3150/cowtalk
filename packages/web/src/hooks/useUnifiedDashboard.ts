@@ -86,6 +86,17 @@ export function useDecisionQueue() {
   });
 }
 
+// 오늘의 목장 점수 — 농장 선택 시에만 조회
+export function useFarmIndex() {
+  const { farmId } = useEffectiveFarmId();
+  return useQuery({
+    queryKey: ['farm-index', farmId],
+    queryFn: () => api.fetchFarmIndex(farmId!),
+    enabled: Boolean(farmId),
+    staleTime: STALE_TIME,
+  });
+}
+
 export function useHealthAlertsSummary(opt?: DeferOpt) {
   const { farmId, farmIds, queryKey } = useEffectiveFarmId();
   return useQuery({
