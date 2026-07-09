@@ -7,8 +7,10 @@
 
 import { getDb } from '../../config/database.js';
 import { toolApprovalRequests, farms, users } from '../../db/schema.js';
-import { and, eq, inArray, desc, sql } from 'drizzle-orm';
+import { and, eq, inArray, desc, sql, aliasedTable } from 'drizzle-orm';
 import { sendPushToFarm } from '../../realtime/push-service.js';
+import { notifyApprovalRequested } from '../../lib/kakao-alimtalk.js';
+import { userFarmAccess } from '../../db/schema.js';
 import { logger } from '../../lib/logger.js';
 
 const TOOL_LABELS: Readonly<Record<string, string>> = {
@@ -52,10 +54,57 @@ export async function createApprovalRequest(params: {
       farmId: params.farmId,
       url: '/dashboard',
     }).catch((err) => logger.warn({ err, approvalId }, '[Approval] 알림 푸시 실패'));
+
+    // 담당 수의사 알림톡 — 승인자가 앱을 안 보고 있어도 도달 (실패 비치명)
+    notifyAssignedApprovers(params.farmId, params.toolName, params.requestedRole)
+      .catch((err) => logger.warn({ err, approvalId }, '[Approval] 승인자 알림톡 실패'));
   }
 
   logger.info({ approvalId, toolName: params.toolName, role: params.requestedRole }, '[Approval] 승인 요청 생성');
   return approvalId;
+}
+
+/** 해당 농장 담당 수의사(연락처 보유)에게 승인 요청 알림톡 발송 — 최대 3명 */
+async function notifyAssignedApprovers(
+  farmId: string,
+  toolName: string,
+  requestedRole: string,
+): Promise<void> {
+  const db = getDb();
+  const [farm] = await db
+    .select({ name: farms.name })
+    .from(farms)
+    .where(eq(farms.farmId, farmId))
+    .limit(1);
+
+  const approvers = await db
+    .select({ phone: users.phone, name: users.name })
+    .from(userFarmAccess)
+    .innerJoin(users, eq(userFarmAccess.userId, users.userId))
+    .where(and(
+      eq(userFarmAccess.farmId, farmId),
+      eq(users.role, 'veterinarian'),
+      eq(users.status, 'active'),
+    ))
+    .limit(3);
+
+  const withPhone = approvers.filter((a): a is { phone: string; name: string } => Boolean(a.phone));
+  if (withPhone.length === 0) {
+    logger.info({ farmId }, '[Approval] 알림톡 수신 가능한 담당 수의사 없음 (users.phone 미설정) — 푸시만 발송');
+    return;
+  }
+
+  const ROLE_LABELS: Readonly<Record<string, string>> = {
+    farmer: '농장주', veterinarian: '수의사', quarantine_officer: '방역관', government_admin: '행정관',
+  };
+  for (const approver of withPhone) {
+    await notifyApprovalRequested({
+      phone: approver.phone,
+      farmName: farm?.name ?? '알 수 없는 농장',
+      toolLabel: toolLabel(toolName),
+      requesterRole: ROLE_LABELS[requestedRole] ?? requestedRole,
+    });
+  }
 }
 
 // ===========================
@@ -73,6 +122,11 @@ export interface ApprovalRequestView {
   readonly farmName: string | null;
   readonly status: string;
   readonly createdAt: string;
+  // 이력 뷰 — 결정 정보 (pending이면 전부 null)
+  readonly approverName: string | null;
+  readonly decisionNote: string | null;
+  readonly decidedAt: string | null;
+  readonly executionResult: unknown;
 }
 
 export async function listApprovalRequests(params: {
@@ -82,10 +136,11 @@ export async function listApprovalRequests(params: {
 }): Promise<readonly ApprovalRequestView[]> {
   const db = getDb();
   const conds = [];
-  if (params.status) conds.push(eq(toolApprovalRequests.status, params.status));
+  if (params.status && params.status !== 'all') conds.push(eq(toolApprovalRequests.status, params.status));
   if (params.farmIdsScope && params.farmIdsScope.length > 0) {
     conds.push(inArray(toolApprovalRequests.farmId, [...params.farmIdsScope]));
   }
+  const approvers = aliasedTable(users, 'approvers');
   const rows = await db
     .select({
       approvalId: toolApprovalRequests.approvalId,
@@ -97,9 +152,14 @@ export async function listApprovalRequests(params: {
       farmName: farms.name,
       status: toolApprovalRequests.status,
       createdAt: toolApprovalRequests.createdAt,
+      approverName: approvers.name,
+      decisionNote: toolApprovalRequests.decisionNote,
+      decidedAt: toolApprovalRequests.decidedAt,
+      executionResult: toolApprovalRequests.executionResult,
     })
     .from(toolApprovalRequests)
     .leftJoin(users, eq(toolApprovalRequests.requestedBy, users.userId))
+    .leftJoin(approvers, eq(toolApprovalRequests.approverId, approvers.userId))
     .leftJoin(farms, eq(toolApprovalRequests.farmId, farms.farmId))
     .where(conds.length > 0 ? and(...conds) : undefined)
     .orderBy(desc(toolApprovalRequests.createdAt))
@@ -116,6 +176,10 @@ export async function listApprovalRequests(params: {
     farmName: r.farmName,
     status: r.status,
     createdAt: r.createdAt.toISOString(),
+    approverName: r.approverName,
+    decisionNote: r.decisionNote,
+    decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
+    executionResult: r.executionResult,
   }));
 }
 

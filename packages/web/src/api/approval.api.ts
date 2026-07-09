@@ -13,6 +13,11 @@ export interface ApprovalRequestView {
   readonly farmName: string | null;
   readonly status: string;
   readonly createdAt: string;
+  // 이력 뷰 — 결정 정보 (pending이면 null)
+  readonly approverName: string | null;
+  readonly decisionNote: string | null;
+  readonly decidedAt: string | null;
+  readonly executionResult: unknown;
 }
 
 export function fetchApprovals(status = 'pending'): Promise<{ requests: readonly ApprovalRequestView[] }> {
