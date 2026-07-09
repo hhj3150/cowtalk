@@ -112,7 +112,37 @@ aiPerformanceRouter.post('/thresholds/approve', requireRole('government_admin'),
       return;
     }
 
-    // 임계값 승인 기록 — modelRegistry에 새 버전으로 기록
+    // 임계값 승인 영속화 — model_registry에 새 버전 승격 (이전 활성 버전은 비활성화)
+    const { getDb } = await import('../../config/database.js');
+    const { modelRegistry } = await import('../../db/schema.js');
+    const { eq, and } = await import('drizzle-orm');
+    const db = getDb();
+    const approvedAt = new Date();
+    const version = `threshold-${approvedAt.toISOString().replace(/[-:T]/g, '').slice(0, 12)}`;
+
+    const [promoted] = await db.transaction(async (tx) => {
+      await tx
+        .update(modelRegistry)
+        .set({ isActive: false })
+        .where(and(eq(modelRegistry.engineType, String(engineType)), eq(modelRegistry.isActive, true)));
+      return tx
+        .insert(modelRegistry)
+        .values({
+          engineType: String(engineType),
+          modelType: 'rule_based',
+          version,
+          isActive: true,
+          metrics: {
+            kind: 'threshold_approval',
+            newThreshold,
+            reason: reason ?? 'Admin approved',
+            approvedBy: req.user!.userId,
+            approvedAt: approvedAt.toISOString(),
+          },
+        })
+        .returning({ modelId: modelRegistry.modelId, version: modelRegistry.version });
+    });
+
     res.json({
       success: true,
       data: {
@@ -120,7 +150,9 @@ aiPerformanceRouter.post('/thresholds/approve', requireRole('government_admin'),
         newThreshold,
         reason: reason ?? 'Admin approved',
         approvedBy: req.user!.userId,
-        approvedAt: new Date().toISOString(),
+        approvedAt: approvedAt.toISOString(),
+        promotedVersion: promoted?.version ?? version,
+        modelId: promoted?.modelId,
       },
     });
   } catch (error) {

@@ -133,16 +133,19 @@ prescriptionRouter.get('/animal/:animalId', async (req: Request, res: Response, 
   }
 });
 
-// GET /prescriptions/:prescriptionId/pdf — 처방전 PDF
+// GET /prescriptions/:prescriptionId/pdf — 처방전 PDF (실생성·스트림)
 prescriptionRouter.get('/:prescriptionId/pdf', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prescriptionId = req.params.prescriptionId as string;
-
-    // TODO: PDF 생성 구현
-    res.json({
-      success: true,
-      data: { url: `/api/prescriptions/${prescriptionId}/pdf/download`, prescriptionId },
-    });
+    const { generatePrescriptionPdf } = await import('../../services/vet/prescription-pdf.service.js');
+    const pdf = await generatePrescriptionPdf(prescriptionId);
+    if (!pdf) {
+      res.status(404).json({ success: false, error: '처방전을 찾을 수 없습니다' });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="prescription-${prescriptionId.slice(0, 8)}.pdf"`);
+    res.send(pdf);
   } catch (error) {
     next(error);
   }

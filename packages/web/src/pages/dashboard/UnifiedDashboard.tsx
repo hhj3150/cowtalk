@@ -57,6 +57,7 @@ import {
   DecisionQueuePanel,
   FarmIndexWidget,
   ApprovalQueuePanel,
+  RegionalIndexWidget,
 } from '@web/components/unified-dashboard';
 import { TodoDrilldownModal } from '@web/components/unified-dashboard/TodoDrilldownModal';
 import { SensorChartModal } from '@web/components/unified-dashboard/SensorChartModal';
@@ -1018,6 +1019,13 @@ export default function UnifiedDashboard(): React.JSX.Element {
           {user?.role === 'veterinarian' && (
             <SectionErrorBoundary label="수의사 대시보드">
               <VetDashboard onFarmClick={(fid) => selectFarm(fid)} />
+            </SectionErrorBoundary>
+          )}
+
+          {/* ── 전국 목장 지수 롤업 (행정관·방역관) ── */}
+          {(user?.role === 'government_admin' || user?.role === 'quarantine_officer') && (
+            <SectionErrorBoundary label="전국 목장 지수">
+              <RegionalIndexWidget />
             </SectionErrorBoundary>
           )}
 
