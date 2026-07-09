@@ -36,6 +36,7 @@ import { decisionRouter } from './routes/decision.routes.js';
 import { ontologyRouter } from './routes/ontology.routes.js';
 import { milkRouter } from './routes/milk.routes.js';
 import { approvalRouter } from './routes/approval.routes.js';
+import { automationRouter } from './routes/automation.routes.js';
 import { labelChatRouter } from './routes/label-chat.routes.js';
 import { reportRouter } from './routes/report.routes.js';
 import { weatherRouter } from './routes/weather.routes.js';
@@ -103,6 +104,7 @@ export function createApiRouter(): Router {
   api.use('/ontology', ontologyRouter);
   api.use('/milk', milkRouter);
   api.use('/approvals', approvalRouter);
+  api.use('/automation', automationRouter);
   api.use('/label-chat', labelChatRouter);
   api.use('/reports', reportRouter);
   api.use('/weather', weatherRouter);

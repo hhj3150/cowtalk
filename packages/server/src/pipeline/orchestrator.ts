@@ -134,6 +134,18 @@ export class PipelineOrchestrator {
           await this.runIntelligenceLoopBatch();
         },
       },
+      {
+        // 자동화 룰 스윕 — 알람→조치 자동 연결. 멱등(rule+source 유니크)이라 겹쳐도 안전.
+        name: 'automation-rules',
+        everyMs: 10 * 60 * 1000,
+        completionBased: true,
+        minGapMs: 60_000,
+        handler: async () => {
+          if (!this.state.isRunning) return;
+          const { runAutomationRules } = await import('../services/automation/rule-engine.service.js');
+          await runAutomationRules();
+        },
+      },
     ]);
 
     // 센서 집계도 즉시 실행 (서버 재시작 시 갭 방지)
