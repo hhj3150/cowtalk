@@ -2,7 +2,7 @@
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { farmQuerySchema, farmCreateSchema, farmUpdateSchema } from '@cowtalk/shared';
@@ -75,6 +75,18 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
       data: farmList,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /farms/index-rollup — 시도/전국 목장 지수 롤업 (행정관·방역관)
+// 주의: '/:farmId' 매칭보다 먼저 등록되어야 함
+farmRouter.get('/index-rollup', requireRole('government_admin', 'quarantine_officer'), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { getNationalIndexRollup } = await import('../../services/metrics/farm-index-rollup.service.js');
+    const rollup = await getNationalIndexRollup();
+    res.json({ success: true, data: rollup });
   } catch (error) {
     next(error);
   }

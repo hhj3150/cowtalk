@@ -37,3 +37,4 @@ export { TitleAccentBar } from './WidgetTitle';
 export { DecisionQueuePanel } from './DecisionQueuePanel';
 export { FarmIndexWidget } from './FarmIndexWidget';
 export { ApprovalQueuePanel } from './ApprovalQueuePanel';
+export { RegionalIndexWidget } from './RegionalIndexWidget';
