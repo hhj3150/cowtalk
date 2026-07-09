@@ -13,6 +13,8 @@ export async function downloadExport(
   const response = await apiClient.get(`/export/${target}`, {
     params: { format, ...params },
     responseType: 'blob',
+    // 수만 행 XLSX 생성은 기본 15s를 넘길 수 있음
+    timeout: 60_000,
   });
 
   const extension = format === 'csv' ? 'csv' : 'xlsx';

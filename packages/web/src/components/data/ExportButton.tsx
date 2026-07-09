@@ -12,14 +12,16 @@ interface Props {
 export function ExportButton({ target, params, label = '내보내기' }: Props): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleExport(format: ExportFormat): Promise<void> {
     setIsExporting(true);
     setIsOpen(false);
+    setError(null);
     try {
       await downloadExport(target, format, params);
     } catch {
-      // 에러 시 사용자에게 알림
+      setError('내보내기에 실패했습니다. 잠시 후 다시 시도해 주세요.');
     } finally {
       setIsExporting(false);
     }
@@ -63,6 +65,19 @@ export function ExportButton({ target, params, label = '내보내기' }: Props):
           >
             Excel 다운로드
           </button>
+        </div>
+      )}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 10,
+            padding: '6px 10px', borderRadius: 8, fontSize: 12, whiteSpace: 'nowrap',
+            background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+            border: '1px solid rgba(239,68,68,0.35)',
+          }}
+        >
+          {error}
         </div>
       )}
     </div>
