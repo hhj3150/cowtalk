@@ -1697,6 +1697,21 @@ export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   index('sovereign_alarm_labels_labeled_at_idx').on(table.labeledAt),
 ]);
 
+// 프롬프트 개선 루프 — 실측 라벨 집계 → 규칙 기반 가이던스 (감사 가능, LLM 자기재작성 아님)
+export const promptGuidances = pgTable('prompt_guidances', {
+  guidanceId: uuid('guidance_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').references(() => farms.farmId), // null = 글로벌
+  alarmType: varchar('alarm_type', { length: 50 }).notNull(),
+  guidanceText: text('guidance_text').notNull(),
+  sourceStats: jsonb('source_stats').notNull().default('{}'),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('prompt_guidances_farm_id_idx').on(table.farmId),
+  index('prompt_guidances_active_2_idx').on(table.active),
+]);
+
 // ======================================================================
 // L. 알람 패턴 스냅샷 — smaXtec 이벤트 전후 48h 센서 데이터 캡처
 // ======================================================================

@@ -23,6 +23,7 @@ import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelCo
 import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
 import { detectSkill } from '../services/skills/skills-registry.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
+import { getActivePromptGuidances, formatPromptGuidances, type PromptGuidanceRow } from '../intelligence-loop/prompt-improver.service.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
 import { generateReportContent } from '../services/report/aiContentGenerator.js';
@@ -323,8 +324,11 @@ export async function handleChatStream(
   // (resolveContext는 DB N건 + 농장 스냅샷도 chat_conversations 500건이라 순차면 합산 지연)
   let context: Awaited<ReturnType<typeof resolveContext>>['context'];
   let snapshotPromise: Promise<Awaited<ReturnType<typeof getFarmLearningSnapshot>>> | null = null;
+  let guidancePromise: Promise<readonly PromptGuidanceRow[]> | null = null;
   if (farmId) {
     snapshotPromise = getFarmLearningSnapshot(farmId, 30).catch(() => null);
+    // 프롬프트 개선 루프가 만든 자기보정 가이던스 — 병렬 선로드 (실패 비치명)
+    guidancePromise = getActivePromptGuidances(farmId).catch(() => []);
   }
   // 지역 스코프가 켜져 있으면 그 범위 요약을, 단일 농장이면 농장 펄스를 병렬로 미리 준비 (선제적 종합)
   const overviewPromise = request.farmIds && request.farmIds.length > 0
@@ -380,6 +384,15 @@ export async function handleChatStream(
       if (snapshot && snapshot.totalConversations >= 3) {
         const farmLearning = formatFarmLearningContext(snapshot);
         labelContext = labelContext ? `${labelContext}\n\n${farmLearning}` : farmLearning;
+      }
+    }
+
+    // AI 자기보정 가이던스 — Intelligence Loop이 실측 라벨로 생성한 프롬프트 개선 텍스트
+    if (guidancePromise) {
+      const guidances = await guidancePromise;
+      const guidanceBlock = formatPromptGuidances(guidances);
+      if (guidanceBlock) {
+        labelContext = labelContext ? `${labelContext}\n\n${guidanceBlock}` : guidanceBlock;
       }
     }
   } catch {

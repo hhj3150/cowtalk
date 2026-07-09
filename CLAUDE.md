@@ -410,6 +410,18 @@ DB 영속화:
 - 파라미터 템플릿: {{animalId}} {{farmId}} {{earTag}} {{eventType}} {{today}} 치환
 - API: /automation/rules CRUD + /automation/runs, UI: /automation (프리셋 3종 + 토글 + 실행 이력)
 
+## 프롬프트 개선 루프 (2026-07-09, P4 — 4층 Intelligence Loop 완결)
+
+피드백 → 정확도 추적 → 프롬프트 개선이 실제로 닫혔다.
+- prompt_guidances 테이블 (마이그레이션 0028): 농장별/글로벌 × 알람유형별 자기보정 가이던스
+- prompt-improver.service: sovereign_alarm_labels 90일 집계 → 규칙 기반 가이던스 생성 (24h 배치)
+  - 규칙: 오탐 40%↑ → 신중 권고 / 판정수정 30%↑ → 감별 후보 제시 / 확진 85%↑ → 고신뢰 권고
+  - 정직성: 라벨 10건 미만 통계로는 가이던스 생성 금지, 텍스트에 모수·수치 항상 명시
+  - LLM이 자기 프롬프트를 재작성하지 않음 — 결정적(rule-based)·감사 가능 텍스트만
+- 주입: chat-service가 labelContext에 "AI 자기보정 가이드" 블록 병렬 로드 (농장 특화 우선, 최대 6개)
+- 가시성: GET /ai/prompt-guidances (전체 목록 + source_stats)
+- 기존 threshold-learner(confidence multiplier 자동 보정)와 상호보완: 수치 보정 + 언어 보정
+
 ## 보고 형식 (매 작업 후)
 
 1. 분석한 것

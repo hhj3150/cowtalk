@@ -7,6 +7,9 @@ import { requireRole } from '../middleware/rbac.js';
 import { evaluateEngine, compareEngines, getAccuracyTrend, evaluateByRole, getPerformanceOverview } from '../../intelligence-loop/model-evaluator.js';
 import { analyzeThresholds } from '../../intelligence-loop/threshold-learner.js';
 import { getRecommendationAccuracy } from '../../services/breeding/recommendation-tracking.service.js';
+import { getDb } from '../../config/database.js';
+import { farms, promptGuidances } from '../../db/schema.js';
+import { desc, eq } from 'drizzle-orm';
 
 export const aiPerformanceRouter = Router();
 
@@ -38,6 +41,33 @@ aiPerformanceRouter.get('/performance/recommendation-accuracy', async (req: Requ
     const farmId = req.query.farmId as string | undefined;
     const data = await getRecommendationAccuracy(farmId);
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /ai/prompt-guidances — 프롬프트 개선 루프가 생성한 자기보정 가이던스 목록
+aiPerformanceRouter.get('/prompt-guidances', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const activeOnly = req.query.all !== 'true';
+    const rows = await db
+      .select({
+        guidanceId: promptGuidances.guidanceId,
+        farmId: promptGuidances.farmId,
+        farmName: farms.name,
+        alarmType: promptGuidances.alarmType,
+        guidanceText: promptGuidances.guidanceText,
+        sourceStats: promptGuidances.sourceStats,
+        active: promptGuidances.active,
+        updatedAt: promptGuidances.updatedAt,
+      })
+      .from(promptGuidances)
+      .leftJoin(farms, eq(promptGuidances.farmId, farms.farmId))
+      .where(activeOnly ? eq(promptGuidances.active, true) : undefined)
+      .orderBy(desc(promptGuidances.updatedAt))
+      .limit(200);
+    res.json({ success: true, data: rows });
   } catch (error) {
     next(error);
   }

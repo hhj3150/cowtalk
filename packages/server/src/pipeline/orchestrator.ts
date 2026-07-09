@@ -551,6 +551,15 @@ export class PipelineOrchestrator {
         suggestions: learnResult.suggestionsCreated,
       }, '[Pipeline] Threshold learning completed');
 
+      // 3b) 프롬프트 개선 — 라벨 집계 → 규칙 기반 가이던스 upsert (팅커벨 프롬프트 주입 원료)
+      const { runPromptImprovement } = await import('../intelligence-loop/prompt-improver.service.js');
+      const promptResult = await runPromptImprovement(90);
+      logger.info({
+        aggregates: promptResult.aggregates,
+        upserted: promptResult.upserted,
+        deactivated: promptResult.deactivated,
+      }, '[Pipeline] Prompt improvement completed');
+
       // 4) 패턴 마이닝 — alarm_pattern_snapshots → 특성 벡터 추출 + 요약
       const { runPatternMining } = await import('../services/sovereign-alarm/pattern-mining.service.js');
       const miningResult = await runPatternMining();
