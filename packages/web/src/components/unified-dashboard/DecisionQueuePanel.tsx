@@ -3,9 +3,10 @@
 // 카드 = 행동 명령형 제목 + 원인 체인(why) + 즉시 실행 버튼 (알람→행동 완결).
 
 import React from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { DecisionCard, DecisionQueueData } from '@cowtalk/shared';
 import { TitleAccentBar } from './WidgetTitle';
-import { useDxCompletion } from '../../hooks/useDxCompletion';
+import { completeDecision, undoDecision } from '../../api/unified-dashboard.api';
 
 interface Props {
   readonly data: DecisionQueueData | undefined;
@@ -249,7 +250,29 @@ function DecisionCardRow({ card, done, onToggleDone, onAnimalClick, onFarmClick,
 }
 
 export function DecisionQueuePanel({ data, isLoading, onAnimalClick, onFarmClick, onAiAnalysis }: Props): React.JSX.Element {
-  const { completedTodos, toggleTodo } = useDxCompletion();
+  // 완료 상태는 DB(decision_actions) 기준 — 기기·사용자 간 공유. 낙관적 갱신 후 큐 재조회.
+  const queryClient = useQueryClient();
+  const invalidateQueue = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['decision-queue'] });
+  };
+  const complete = useMutation({
+    mutationFn: (card: DecisionCard) => completeDecision({
+      cardId: card.id,
+      farmId: card.subject.farmId,
+      animalId: card.subject.animalId,
+      source: card.source,
+      severity: card.severity,
+      title: card.title,
+    }),
+    onSettled: invalidateQueue,
+  });
+  const undo = useMutation({
+    mutationFn: (cardId: string) => undoDecision(cardId),
+    onSettled: invalidateQueue,
+  });
+  // 낙관적 표시: 뮤테이션 진행 중인 카드는 서버 응답 전에도 토글된 상태로 그린다
+  const pendingDoneId = complete.isPending ? complete.variables?.id : undefined;
+  const pendingUndoId = undo.isPending ? undo.variables : undefined;
 
   return (
     <div
@@ -266,11 +289,18 @@ export function DecisionQueuePanel({ data, isLoading, onAnimalClick, onFarmClick
         <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
           AI 우선순위 결정 큐
         </span>
-        {data && data.totalCandidates > data.cards.length && (
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ct-text-muted)' }}>
-            외 {data.totalCandidates - data.cards.length}건
-          </span>
-        )}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
+          {data && (data.completedLast7d ?? 0) > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ct-primary)' }}>
+              최근 7일 조치 완료 {data.completedLast7d}건
+            </span>
+          )}
+          {data && data.totalCandidates > data.cards.length && (
+            <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
+              외 {data.totalCandidates - data.cards.length}건
+            </span>
+          )}
+        </span>
       </div>
 
       {isLoading && (
@@ -298,13 +328,18 @@ export function DecisionQueuePanel({ data, isLoading, onAnimalClick, onFarmClick
       {!isLoading && data && data.cards.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {data.cards.map((card) => {
-            const doneKey = `decision-${card.id}`;
+            const done = card.id === pendingDoneId ? true
+              : card.id === pendingUndoId ? false
+              : Boolean(card.done);
             return (
               <DecisionCardRow
                 key={card.id}
                 card={card}
-                done={completedTodos.has(doneKey)}
-                onToggleDone={() => toggleTodo(doneKey)}
+                done={done}
+                onToggleDone={() => {
+                  if (done) undo.mutate(card.id);
+                  else complete.mutate(card);
+                }}
                 onAnimalClick={onAnimalClick}
                 onFarmClick={onFarmClick}
                 onAiAnalysis={onAiAnalysis}
