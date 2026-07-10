@@ -1,10 +1,11 @@
-// 전염병 스캔 스케줄러
-// 30분 주기로 클러스터 감지 → AI 해석 → 에스컬레이션
+// 전염병 스캔 — 클러스터 감지 → AI 해석 → 에스컬레이션
+// 스케줄링은 pipeline JobScheduler의 'epidemic-scan' 잡(30분 주기)이 담당한다.
+// (기존 자체 setInterval start/stop은 어디서도 호출되지 않던 데드 코드라 제거)
 
 import { and, gte, desc } from 'drizzle-orm';
 import { getDb } from '../config/database.js';
 import { smaxtecEvents, farms } from '../db/schema.js';
-import { CLUSTER_DETECTION, EPIDEMIC_SCAN_INTERVAL_MS } from '@cowtalk/shared/constants';
+import { CLUSTER_DETECTION } from '@cowtalk/shared/constants';
 import {
   aggregateEventsByFarm,
   detectClusters,
@@ -23,45 +24,6 @@ import { buildEscalationPlan, shouldEscalate } from '../ai-brain/alert/epidemic-
 import type { FarmWithCoordinates } from './geo-utils.js';
 import type { EpidemicAlertLevel } from '@cowtalk/shared';
 import { logger } from '../lib/logger.js';
-
-let scanTimer: ReturnType<typeof setInterval> | null = null;
-
-// ======================================================================
-// 스케줄러 시작/중지
-// ======================================================================
-
-export function startEpidemicScheduler(): void {
-  if (scanTimer) {
-    logger.warn('Epidemic scheduler already running');
-    return;
-  }
-
-  logger.info(
-    { intervalMs: EPIDEMIC_SCAN_INTERVAL_MS },
-    'Starting epidemic scheduler',
-  );
-
-  // 초기 스캔 (5초 후)
-  setTimeout(() => {
-    runEpidemicScan().catch((err) =>
-      logger.error({ err }, 'Initial epidemic scan failed'),
-    );
-  }, 5000);
-
-  scanTimer = setInterval(() => {
-    runEpidemicScan().catch((err) =>
-      logger.error({ err }, 'Scheduled epidemic scan failed'),
-    );
-  }, EPIDEMIC_SCAN_INTERVAL_MS);
-}
-
-export function stopEpidemicScheduler(): void {
-  if (scanTimer) {
-    clearInterval(scanTimer);
-    scanTimer = null;
-    logger.info('Epidemic scheduler stopped');
-  }
-}
 
 // ======================================================================
 // 핵심: 전염병 스캔

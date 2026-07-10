@@ -15,6 +15,15 @@ export function usePerformanceOverview(params?: {
   });
 }
 
+export function useThresholds(engineType: string) {
+  return useQuery({
+    queryKey: ['ai', 'thresholds', engineType],
+    queryFn: () => aiApi.getThresholds(engineType),
+    staleTime: 5 * 60 * 1000,
+    enabled: Boolean(engineType),
+  });
+}
+
 export function useAccuracyTrend(engineType: string, months?: number) {
   return useQuery({
     queryKey: ['ai', 'trend', engineType, months],
