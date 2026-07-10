@@ -164,12 +164,71 @@ const SMAXTEC_ACTIONABLE: Record<string, { title: (tag: string) => string; why: 
   calving_detection: { title: (t) => `${t} 분만 임박 — 분만실 준비`, why: '분만 징후 감지 (smaXtec)' },
 };
 
+/** 열스트레스 카드 대상 농장 수 상한 — 전국 뷰(방역 대시보드 영역)에서는 만들지 않음 */
+const WEATHER_MAX_FARMS = 20;
+/** THI 위험(danger) 임계 — weather.connector thiLevel과 동일 기준 */
+const THI_DANGER = 78;
+const THI_EMERGENCY = 84;
+
+/**
+ * 기상청 실측 THI → 폭염 대응 후보 (순수 함수 — 테스트 대상).
+ * 정직성: 실측(source='kma')만 카드화 — 계절 추정치로 조치를 지시하지 않는다.
+ * detectedAt은 시간 단위로 절단 — 카드 ID가 시간 내 안정 (완료 처리 유지), 매시 재평가.
+ */
+export function thiCandidate(input: {
+  readonly source: 'kma' | 'estimate';
+  readonly thi: number;
+  readonly temperature: number;
+  readonly humidity: number;
+  readonly farmId: string;
+  readonly farmName?: string;
+  readonly now?: number;
+}): DecisionCandidate | null {
+  if (input.source !== 'kma') return null;
+  if (input.thi < THI_DANGER) return null;
+  const emergency = input.thi >= THI_EMERGENCY;
+  const hourTruncated = new Date(Math.floor((input.now ?? Date.now()) / MS_PER_HOUR) * MS_PER_HOUR);
+  return {
+    source: 'weather',
+    severity: emergency ? 'critical' : 'high',
+    confidence: 0.9,
+    title: emergency
+      ? '폭염 긴급 — 즉시 환기·차광·급수 확보'
+      : '폭염 대응 — 환기·차광·급수 점검',
+    why: [
+      `THI ${input.thi} (기상청 실측) — 열스트레스 ${emergency ? '긴급' : '위험'} 단계`,
+      `기온 ${input.temperature}°C · 습도 ${Math.round(input.humidity)}%${emergency ? ' — 유량 15%↓·폐사 위험' : ' — 유량 5~15%↓ 위험'}`,
+    ],
+    farmId: input.farmId,
+    farmName: input.farmName,
+    detectedAt: hourTruncated.toISOString(),
+    dueInHours: 3,
+  };
+}
+
 const BREEDING_ACTION_META: Record<string, { severity: DecisionSeverity; why: string }> = {
   calving_imminent: { severity: 'critical', why: '분만 예정 임박 (번식 파이프라인)' },
   inseminate_now: { severity: 'high', why: '수정 적기 진입 (발정 감지 기준)' },
   pregnancy_check_due: { severity: 'medium', why: '수정 후 임신감정 시기 도래' },
   repeat_breeder: { severity: 'medium', why: '반복 수정 실패 — 번식장애 점검 필요' },
 };
+
+// 기상 커넥터 싱글턴 — 격자 캐시(10분)를 요청 간 공유
+type WeatherConnectorLike = {
+  fetchCurrentWeather(lat: number, lng: number): Promise<{
+    readonly source: 'kma' | 'estimate';
+    readonly thi: number;
+    readonly temperature: number;
+    readonly humidity: number;
+  } | null>;
+};
+let weatherConnectorSingleton: WeatherConnectorLike | null = null;
+function getWeatherConnector(ctor: new () => WeatherConnectorLike): WeatherConnectorLike {
+  if (!weatherConnectorSingleton) {
+    weatherConnectorSingleton = new ctor();
+  }
+  return weatherConnectorSingleton;
+}
 
 export async function getDecisionQueue(params: {
   readonly farmId?: string;
@@ -312,6 +371,34 @@ export async function getDecisionQueue(params: {
       }
     } catch (err) {
       logger.error({ err }, '[DecisionQueue] 번식 후보 로딩 실패');
+    }
+  }
+
+  // 4) 열스트레스 (기상청 실측 THI) — 스코프가 명확한 소수 농장만 (전국 뷰 제외)
+  if (farmScope && farmScope.length > 0 && farmScope.length <= WEATHER_MAX_FARMS) {
+    try {
+      const farmRows = await db
+        .select({ farmId: farms.farmId, name: farms.name, lat: farms.lat, lng: farms.lng })
+        .from(farms)
+        .where(inArray(farms.farmId, farmScope));
+      const { WeatherConnector } = await import('../../pipeline/connectors/public-data/weather.connector.js');
+      const connector = getWeatherConnector(WeatherConnector);
+      for (const farm of farmRows) {
+        const record = await connector.fetchCurrentWeather(farm.lat, farm.lng);
+        if (!record) continue; // API 키 없음 — 카드 생성 안 함
+        const candidate = thiCandidate({
+          source: record.source,
+          thi: record.thi,
+          temperature: record.temperature,
+          humidity: record.humidity,
+          farmId: farm.farmId,
+          farmName: farm.name,
+          now,
+        });
+        if (candidate) candidates.push(candidate);
+      }
+    } catch (err) {
+      logger.error({ err }, '[DecisionQueue] 열스트레스 후보 로딩 실패');
     }
   }
 
