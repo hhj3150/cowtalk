@@ -241,10 +241,10 @@ export default function AiPerformancePage(): React.JSX.Element {
               className="rounded-lg border px-3 py-2 text-xs"
               style={{ borderColor: 'var(--ct-warning-border, #f59e0b)', background: 'var(--ct-warning-bg, #fffbeb)', color: 'var(--ct-warning-text, #92400e)' }}
             >
-              ⚠️ 표본 편향 알림 — 현재 sovereign 엔진의 라벨 표본은 confirmed 100%로 편향되어
-              있습니다. 표시되는 Precision/Recall/F1은 confirmed-only 표본에서 산출된 값이며
-              실제 모델 성능을 과대평가할 수 있습니다. (DATA-05 후속 패치에서 false_positive
-              라벨링 경로 신설 예정)
+              ⚠️ 표본 편향 알림 — sovereign 엔진의 라벨은 과거 confirmed 편향이 있었습니다.
+              오탐 자동 라벨링(알람 후 14일 무이벤트 → false_positive, DATA-05-B)이 24h 배치로
+              가동 중이며 표본이 누적될수록 편향이 해소됩니다. 그 전까지의
+              Precision/Recall/F1은 과대평가일 수 있습니다.
             </div>
           )}
 
