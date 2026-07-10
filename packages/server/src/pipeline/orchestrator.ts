@@ -523,7 +523,7 @@ export class PipelineOrchestrator {
       await this.runSovereignAlarmSweep();
 
       // 1) 자동 레이블링 — 146개 농장의 smaXtec 이벤트 → 소버린 알람 레이블 자동 생성
-      const { runAutoLabeling, countFalsePositiveCandidates } = await import('../intelligence-loop/auto-labeler.service.js');
+      const { runAutoLabeling, runFalsePositiveLabeling } = await import('../intelligence-loop/auto-labeler.service.js');
       const labelResult = await runAutoLabeling(3);
       logger.info({
         events: labelResult.totalEvents,
@@ -531,20 +531,21 @@ export class PipelineOrchestrator {
         matched: labelResult.predictionsMatched,
       }, '[Pipeline] Auto-labeling completed');
 
-      // DATA-05 드라이런 — false_positive 후보 규모만 측정 (DB 쓰기 0, fire-and-forget).
+      // DATA-05-B — 오탐 자동 라벨링 (드라이런 승격). 14일 무이벤트 알람 → false_positive.
+      // 라벨 표본의 confirmed 편향을 해소해 threshold-learner·prompt-improver가 실오탐률로 동작.
       try {
-        const fpCount = await countFalsePositiveCandidates({ windowDays: 14, sampleLimit: 5 });
+        const fpResult = await runFalsePositiveLabeling({ windowDays: 14, batchLimit: 500 });
         logger.info({
-          windowDays: fpCount.windowDays,
-          oldAlarmsTotal: fpCount.oldAlarmsTotal,
-          oldAlarmsMatched: fpCount.oldAlarmsMatched,
-          fpCandidates: fpCount.fpCandidates,
-          fpCandidatePct: fpCount.fpCandidatePct,
-          sampleSignatures: fpCount.sampleSignatures,
-          durationMs: fpCount.durationMs,
-        }, '[auto-labeler] FP candidate dry-run');
+          windowDays: fpResult.windowDays,
+          candidates: fpResult.candidates,
+          labeled: fpResult.labeled,
+          skippedExisting: fpResult.skippedExisting,
+          outcomesRecorded: fpResult.outcomesRecorded,
+          unlabelableNullAnimal: fpResult.unlabelableNullAnimal,
+          durationMs: fpResult.durationMs,
+        }, '[auto-labeler] FP labeling (DATA-05-B)');
       } catch (err) {
-        logger.warn({ err: (err as Error).message }, '[auto-labeler] FP candidate dry-run failed');
+        logger.warn({ err: (err as Error).message }, '[auto-labeler] FP labeling failed');
       }
 
       // 2) 예측-결과 배치 매칭 — predictions ↔ smaXtec 이벤트/feedback

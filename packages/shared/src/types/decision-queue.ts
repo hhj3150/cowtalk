@@ -47,6 +47,8 @@ export interface DecisionCard {
   readonly dueInHours?: number;
   /** 경제 환산 — 실측 유량 보유 개체만, 항상 '추정' 표기 */
   readonly economicImpact?: DecisionEconomicImpact;
+  /** 완료 여부 — decision_actions DB 기록 (기기·사용자 간 공유) */
+  readonly done?: boolean;
 }
 
 export interface DecisionQueueData {
@@ -54,4 +56,16 @@ export interface DecisionQueueData {
   /** 합성 전 후보 총수 — "5건 외 N건 더" 표시용 */
   readonly totalCandidates: number;
   readonly generatedAt: string;
+  /** 최근 7일 완료 처리된 결정 수 (스코프 기준) — 조치 완결 지표 */
+  readonly completedLast7d?: number;
+}
+
+/** POST /decision/actions 요청 — 완료 처리할 카드의 스냅샷 */
+export interface CompleteDecisionInput {
+  readonly cardId: string;
+  readonly farmId?: string;
+  readonly animalId?: string;
+  readonly source: DecisionSource;
+  readonly severity: DecisionSeverity;
+  readonly title: string;
 }

@@ -1698,6 +1698,24 @@ export const sovereignAlarmLabels = pgTable('sovereign_alarm_labels', {
   index('sovereign_alarm_labels_labeled_at_idx').on(table.labeledAt),
 ]);
 
+// 결정 카드 조치 기록 — "알람 → 행동 완결". card_id는 결정 큐의 결정적 합성 ID.
+export const decisionActions = pgTable('decision_actions', {
+  actionId: uuid('action_id').primaryKey().defaultRandom(),
+  cardId: varchar('card_id', { length: 200 }).notNull(),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  animalId: uuid('animal_id').references(() => animals.animalId),
+  source: varchar('source', { length: 20 }).notNull(),
+  severity: varchar('severity', { length: 20 }).notNull(),
+  title: varchar('title', { length: 300 }).notNull(), // 카드 스냅샷 — 알람 만료 후에도 이력 보존
+  status: varchar('status', { length: 20 }).notNull().default('done'),
+  actedBy: uuid('acted_by').references(() => users.userId),
+  actedAt: timestamp('acted_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('decision_actions_card_idx').on(table.cardId), // 완료는 농장 단위 공유
+  index('decision_actions_farm_idx').on(table.farmId),
+  index('decision_actions_acted_at_idx').on(table.actedAt),
+]);
+
 // 프롬프트 개선 루프 — 실측 라벨 집계 → 규칙 기반 가이던스 (감사 가능, LLM 자기재작성 아님)
 export const promptGuidances = pgTable('prompt_guidances', {
   guidanceId: uuid('guidance_id').primaryKey().defaultRandom(),

@@ -21,6 +21,7 @@ import type {
   BreedingPipelineData,
   InseminationRoutePlan,
   DecisionQueueData,
+  CompleteDecisionInput,
   FarmIntelligenceIndex,
   FarmIndexTrendPoint,
 } from '@cowtalk/shared';
@@ -234,6 +235,14 @@ export function fetchHealthAlertsSummary(farmId?: string, farmIds?: string): Pro
 
 export function fetchDecisionQueue(farmId?: string): Promise<DecisionQueueData> {
   return apiGet<DecisionQueueData>('/decision/queue', farmId ? { farmId } : undefined);
+}
+
+export function completeDecision(input: CompleteDecisionInput): Promise<{ cardId: string; alreadyDone: boolean }> {
+  return apiPost<{ cardId: string; alreadyDone: boolean }>('/decision/actions', input);
+}
+
+export function undoDecision(cardId: string): Promise<{ cardId: string; removed: boolean }> {
+  return apiPost<{ cardId: string; removed: boolean }>('/decision/actions/undo', { cardId });
 }
 
 // ── 오늘의 목장 점수 (Farm Intelligence Index) ──

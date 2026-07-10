@@ -184,96 +184,147 @@ export async function runAutoLabeling(days: number = 3): Promise<AutoLabelResult
   }
 }
 
-interface FpCandidateDryRunResult {
+/** FP 라벨 시그니처 — 기존 confirmed 경로와 동일 패턴 (순수 함수 — 테스트 대상) */
+export function fpSignature(animalId: string, predictionLabel: string, createdAt: Date): string {
+  return `${animalId}:${predictionLabel}:${createdAt.toISOString().slice(0, 10)}`;
+}
+
+export interface FpLabelingResult {
   readonly windowDays: number;
-  readonly oldAlarmsTotal: number;
-  readonly oldAlarmsMatched: number;
-  readonly fpCandidates: number;
-  readonly fpCandidatePct: number;
-  readonly sampleSignatures: string[];
+  readonly candidates: number;
+  readonly labeled: number;
+  readonly skippedExisting: number;
+  readonly outcomesRecorded: number;
+  readonly unlabelableNullAnimal: number;
   readonly durationMs: number;
 }
 
 /**
- * DATA-05 드라이런 — false_positive 후보 규모만 카운트한다. DB 쓰기 없음.
+ * DATA-05-B — 오탐(false_positive) 자동 라벨링. 드라이런(DATA-05)의 승격판.
  *
- * windowDays(기본 14) 이전에 발사된 sovereign 알람 중, 같은 개체에서
- * windowDays 내 smaXtec 이벤트가 한 건도 매칭되지 않은 알람을 "잠재 false_positive"로
- * 집계만 한다. sovereign_alarm_labels / outcome_evaluations 등 어떤 테이블에도 INSERT 하지 않는다.
- * 실제 fp_candidate 라벨링은 후속 사이클(DATA-05-B)에서 진행한다.
+ * 규칙(보수적): 60일 전 ~ windowDays(기본 14)일 전 사이에 발사된 sovereign 알람 중,
+ * 같은 개체에서 windowDays 내 smaXtec 이벤트가 **한 건도 없으면** 오탐으로 라벨한다.
+ * (관련 유형만이 아니라 어떤 이벤트라도 있으면 스킵 — 오라벨 위험 최소화)
  *
- * animal_id IS NULL 인 predictions 행은 매칭이 불가능하므로 잠재 FP 에 계상한다(B3와 동일 시맨틱).
+ * 안전장치:
+ * - 이미 라벨된 시그니처는 onConflictDoNothing — 전문가/확진 라벨을 절대 덮지 않음
+ * - 이미 outcome_evaluations 매칭된 예측은 후보에서 제외
+ * - 배치 상한(batchLimit, 오래된 것부터) — 첫 실행 폭주 방지, 잔여는 다음 배치가 처리
+ * - animal_id 없는 예측은 라벨 불가 — 별도 카운트로 정직하게 보고
+ *
+ * 목적: 라벨 표본의 confirmed 100% 편향 해소 → threshold-learner·prompt-improver가
+ * 실제 오탐률 기반으로 동작하게 한다.
  */
-export async function countFalsePositiveCandidates(
-  options?: { windowDays?: number; sampleLimit?: number },
-): Promise<FpCandidateDryRunResult> {
+export async function runFalsePositiveLabeling(
+  options?: { windowDays?: number; batchLimit?: number },
+): Promise<FpLabelingResult> {
   const windowDays = options?.windowDays ?? 14;
-  const sampleLimit = options?.sampleLimit ?? 5;
+  const batchLimit = Math.min(options?.batchLimit ?? 500, 2000);
   const startedAt = Date.now();
   const db = getDb();
 
-  // 60일 전 ~ windowDays일 전 사이에 발사된 sovereign 알람을 대상으로 한다.
-  const totalsRows = await db.execute(sql`
-    WITH old_alarms AS (
-      SELECT p.prediction_id, p.animal_id, p.created_at
+  let labeled = 0;
+  let skippedExisting = 0;
+  let outcomesRecorded = 0;
+
+  try {
+    // 라벨 가능한 오탐 후보 (오래된 것부터 — 배치가 며칠에 걸쳐 따라잡는다)
+    const rows = await db.execute(sql`
+      SELECT p.prediction_id, p.animal_id, p.farm_id, p.prediction_label, p.severity, p.created_at
       FROM predictions p
       WHERE p.engine_type = 'sovereign_v1'
         AND p.created_at <  NOW() - make_interval(days => ${windowDays}::int)
         AND p.created_at >= NOW() - INTERVAL '60 days'
-    ),
-    matched AS (
-      SELECT DISTINCT oa.prediction_id
-      FROM old_alarms oa
-      JOIN smaxtec_events se
-        ON se.animal_id = oa.animal_id
-       AND se.detected_at BETWEEN oa.created_at
-                              AND oa.created_at + make_interval(days => ${windowDays}::int)
-    )
-    SELECT
-      (SELECT COUNT(*) FROM old_alarms) AS old_total,
-      (SELECT COUNT(*) FROM matched)    AS old_matched
-  `);
+        AND p.animal_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM smaxtec_events se
+          WHERE se.animal_id = p.animal_id
+            AND se.detected_at BETWEEN p.created_at
+                                   AND p.created_at + make_interval(days => ${windowDays}::int)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM outcome_evaluations oe
+          WHERE oe.prediction_id = p.prediction_id
+        )
+      ORDER BY p.created_at ASC
+      LIMIT ${batchLimit}
+    `);
+    const candidates = rows as unknown as Array<{
+      prediction_id: string;
+      animal_id: string;
+      farm_id: string;
+      prediction_label: string;
+      severity: string | null;
+      created_at: string | Date;
+    }>;
 
-  const totals = (totalsRows as unknown as Array<{ old_total: string | number; old_matched: string | number }>)[0];
-  const oldAlarmsTotal = Number(totals?.old_total ?? 0);
-  const oldAlarmsMatched = Number(totals?.old_matched ?? 0);
-  const fpCandidates = oldAlarmsTotal - oldAlarmsMatched;
-  const fpCandidatePct = Math.round((100 * fpCandidates / Math.max(oldAlarmsTotal, 1)) * 100) / 100;
+    for (const cand of candidates) {
+      const createdAt = new Date(cand.created_at);
+      const signature = fpSignature(cand.animal_id, cand.prediction_label, createdAt);
 
-  // 매칭 안 된(잠재 FP) 알람 중 최근 sampleLimit 개의 시그니처 표본.
-  // 시그니처 패턴은 기존 auto-labeler 와 동일: `${animalId}:${alarmType}:${YYYY-MM-DD}`
-  const sampleRows = await db.execute(sql`
-    SELECT p.animal_id, p.prediction_label, p.created_at
-    FROM predictions p
-    WHERE p.engine_type = 'sovereign_v1'
-      AND p.created_at <  NOW() - make_interval(days => ${windowDays}::int)
-      AND p.created_at >= NOW() - INTERVAL '60 days'
-      AND NOT EXISTS (
-        SELECT 1 FROM smaxtec_events se
-        WHERE se.animal_id = p.animal_id
-          AND se.detected_at BETWEEN p.created_at
-                                 AND p.created_at + make_interval(days => ${windowDays}::int)
-      )
-    ORDER BY p.created_at DESC
-    LIMIT ${sampleLimit}
-  `);
+      const inserted = await db
+        .insert(sovereignAlarmLabels)
+        .values({
+          alarmSignature: signature,
+          animalId: cand.animal_id,
+          farmId: cand.farm_id,
+          alarmType: cand.prediction_label,
+          predictedSeverity: cand.severity ?? 'warning',
+          verdict: 'false_positive',
+          notes: `자동 오탐 라벨: 알람 후 ${windowDays}일간 smaXtec 이벤트 없음 (DATA-05-B)`,
+        })
+        .onConflictDoNothing()
+        .returning({ labelId: sovereignAlarmLabels.labelId });
 
-  const sampleSignatures = (sampleRows as unknown as Array<{
-    animal_id: string | null;
-    prediction_label: string | null;
-    created_at: string | Date;
-  }>).map((r) => {
-    const dateStr = new Date(r.created_at).toISOString().slice(0, 10);
-    return `${r.animal_id ?? 'null'}:${r.prediction_label ?? 'unknown'}:${dateStr}`;
-  });
+      if (inserted.length === 0) {
+        // 이미 라벨 존재 (전문가/확진 라벨 보호) — outcome도 만들지 않음
+        skippedExisting++;
+        continue;
+      }
+      labeled++;
 
-  return {
-    windowDays,
-    oldAlarmsTotal,
-    oldAlarmsMatched,
-    fpCandidates,
-    fpCandidatePct,
-    sampleSignatures,
-    durationMs: Date.now() - startedAt,
-  };
+      try {
+        await recordOutcome({
+          predictionId: cand.prediction_id,
+          animalId: cand.animal_id,
+          actualOutcome: `no_smaxtec_event_within_${windowDays}d`,
+          isCorrect: false,
+          matchResult: 'false_positive',
+          notes: `자동 오탐 매칭 (DATA-05-B, ${createdAt.toISOString().slice(0, 10)} 알람)`,
+        });
+        outcomesRecorded++;
+      } catch {
+        // outcome 중복 등 — 라벨은 이미 생성됨, 비치명
+      }
+    }
+
+    // animal_id 없는 후보는 라벨 불가 — 규모만 정직하게 보고
+    const nullRows = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt
+      FROM predictions p
+      WHERE p.engine_type = 'sovereign_v1'
+        AND p.created_at <  NOW() - make_interval(days => ${windowDays}::int)
+        AND p.created_at >= NOW() - INTERVAL '60 days'
+        AND p.animal_id IS NULL
+    `);
+    const unlabelableNullAnimal = Number((nullRows as unknown as Array<{ cnt: number }>)[0]?.cnt ?? 0);
+
+    const result: FpLabelingResult = {
+      windowDays,
+      candidates: candidates.length,
+      labeled,
+      skippedExisting,
+      outcomesRecorded,
+      unlabelableNullAnimal,
+      durationMs: Date.now() - startedAt,
+    };
+    logger.info(result, '[AutoLabeler] FP 라벨링(DATA-05-B) 완료');
+    return result;
+  } catch (error) {
+    logger.error({ error }, '[AutoLabeler] FP 라벨링 실패');
+    return {
+      windowDays, candidates: 0, labeled, skippedExisting, outcomesRecorded,
+      unlabelableNullAnimal: 0, durationMs: Date.now() - startedAt,
+    };
+  }
 }
