@@ -93,6 +93,7 @@ export function getThresholds(engineType: string): Promise<ThresholdSuggestion> 
   return apiGet<ThresholdSuggestion>('/ai/thresholds', { engineType });
 }
 
-export function approveThreshold(engineType: string, newValue: number): Promise<void> {
-  return apiPost('/ai/thresholds/approve', { engineType, newValue });
+export function approveThreshold(engineType: string, newThreshold: number, reason?: string): Promise<void> {
+  // 서버 스펙: { engineType, newThreshold, reason? } — 기존 newValue 키는 400을 유발하던 버그
+  return apiPost('/ai/thresholds/approve', { engineType, newThreshold, ...(reason ? { reason } : {}) });
 }

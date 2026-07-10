@@ -135,6 +135,18 @@ export class PipelineOrchestrator {
         },
       },
       {
+        // 전염병 클러스터 스캔 — 30분 주기. 기존 데드 setInterval 대신 JobScheduler로 통합.
+        name: 'epidemic-scan',
+        everyMs: 30 * 60 * 1000, // EPIDEMIC_SCAN_INTERVAL_MS
+        completionBased: true,
+        minGapMs: 5 * 60 * 1000,
+        handler: async () => {
+          if (!this.state.isRunning) return;
+          const { runEpidemicScan } = await import('../epidemic/epidemic-scheduler.js');
+          await runEpidemicScan();
+        },
+      },
+      {
         // 자동화 룰 스윕 — 알람→조치 자동 연결. 멱등(rule+source 유니크)이라 겹쳐도 안전.
         name: 'automation-rules',
         everyMs: 10 * 60 * 1000,

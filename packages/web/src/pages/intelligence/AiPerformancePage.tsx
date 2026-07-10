@@ -3,7 +3,9 @@
 import React, { useState } from 'react';
 import { KpiCard } from '@web/components/data/KpiCard';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
-import { usePerformanceOverview, useAccuracyTrend, useRoleFeedbackStats, useRecommendationAccuracy } from '@web/hooks/useAiPerformance';
+import { usePerformanceOverview, useAccuracyTrend, useRoleFeedbackStats, useRecommendationAccuracy, useThresholds } from '@web/hooks/useAiPerformance';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { approveThreshold } from '@web/api/ai-performance.api';
 import { RecommendationAccuracyCard } from '@web/components/intelligence/RecommendationAccuracyCard';
 import { useAuthStore } from '@web/stores/auth.store';
 import type { EngineMetrics } from '@web/api/ai-performance.api';
@@ -121,6 +123,56 @@ function TrendTable({ engineType }: { readonly engineType: string }): React.JSX.
         ))}
       </tbody>
     </table>
+  );
+}
+
+function ThresholdPanel({ engineType, canApprove }: {
+  readonly engineType: string;
+  readonly canApprove: boolean;
+}): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useThresholds(engineType);
+  const approve = useMutation({
+    mutationFn: () => approveThreshold(engineType, data!.suggestedThreshold, data!.reason),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['ai', 'thresholds', engineType] }); },
+  });
+
+  if (isLoading) return <LoadingSkeleton lines={2} />;
+  if (!data) return <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>임계값 분석 데이터 없음</p>;
+
+  const hasSuggestion = data.suggestedThreshold !== data.currentThreshold;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--ct-text)' }}>
+        <span>현재 임계값 <b>{data.currentThreshold}</b></span>
+        <span>제안 <b style={{ color: hasSuggestion ? 'var(--ct-primary)' : 'var(--ct-text)' }}>{data.suggestedThreshold}</b></span>
+        <span style={{ color: 'var(--ct-text-secondary)' }}>
+          오탐 {data.evidence.falsePositives} · 미탐 {data.evidence.falseNegatives} · 경계 사례 {data.evidence.borderlineCases}
+        </span>
+      </div>
+      <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>{data.reason}</p>
+      {hasSuggestion && canApprove && (
+        <button
+          type="button"
+          disabled={approve.isPending}
+          onClick={() => approve.mutate()}
+          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+          style={{ background: 'var(--ct-primary)', border: 'none', cursor: 'pointer' }}
+        >
+          {approve.isPending ? '승인 중…' : `제안값 ${data.suggestedThreshold} 승인`}
+        </button>
+      )}
+      {approve.isSuccess && (
+        <p className="text-xs" style={{ color: 'var(--ct-primary)' }}>승인 완료 — model_registry에 새 버전이 승격되었습니다.</p>
+      )}
+      {approve.isError && (
+        <p className="text-xs" role="alert" style={{ color: '#ef4444' }}>승인에 실패했습니다. 잠시 후 다시 시도해 주세요.</p>
+      )}
+      {hasSuggestion && !canApprove && (
+        <p className="text-xs" style={{ color: 'var(--ct-text-secondary)' }}>임계값 승인은 행정관 권한입니다.</p>
+      )}
+    </div>
   );
 }
 
@@ -248,6 +300,12 @@ export default function AiPerformancePage(): React.JSX.Element {
               </select>
             </div>
             <TrendTable engineType={selectedEngine} />
+
+            {/* 임계값 분석·승인 — 같은 엔진 선택 공유. 승인 시 model_registry 새 버전 승격 */}
+            <div className="pt-3 space-y-2" style={{ borderTop: '1px solid var(--ct-border)' }}>
+              <h3 className="text-xs font-semibold" style={{ color: 'var(--ct-text)' }}>임계값 분석 (최근 90일)</h3>
+              <ThresholdPanel engineType={selectedEngine} canApprove={isMaster} />
+            </div>
           </div>
 
           {/* Role feedback distribution */}
