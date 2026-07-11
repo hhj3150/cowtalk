@@ -5,7 +5,7 @@
 
 export type DecisionSeverity = 'critical' | 'high' | 'medium' | 'low';
 
-export type DecisionSource = 'sovereign' | 'smaxtec' | 'breeding';
+export type DecisionSource = 'sovereign' | 'smaxtec' | 'breeding' | 'weather';
 
 export type DecisionActionKind = 'animal' | 'farm' | 'ai_analysis';
 

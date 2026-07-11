@@ -1,7 +1,7 @@
 // Decision Queue 합성 코어 단위 테스트 — 점수화·병합·정렬·상한
 
 import { describe, it, expect } from 'vitest';
-import { buildDecisionCards, scoreCandidate, type DecisionCandidate } from './decision-queue.service.js';
+import { buildDecisionCards, scoreCandidate, type DecisionCandidate, thiCandidate } from './decision-queue.service.js';
 
 const NOW = new Date('2026-07-09T09:00:00Z').getTime();
 
@@ -110,5 +110,43 @@ describe('buildDecisionCards', () => {
       { now: NOW },
     );
     expect(cards[0]!.why.length).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('thiCandidate — 열스트레스 결정 후보', () => {
+  const BASE = {
+    temperature: 32.5, humidity: 78, farmId: 'f1', farmName: '해돋이목장',
+    now: new Date('2026-07-10T05:30:00Z').getTime(),
+  };
+
+  it('추정치(source=estimate)로는 카드를 만들지 않는다 — 정직성', () => {
+    expect(thiCandidate({ ...BASE, source: 'estimate', thi: 90 })).toBeNull();
+  });
+
+  it('THI 78 미만은 null', () => {
+    expect(thiCandidate({ ...BASE, source: 'kma', thi: 77.9 })).toBeNull();
+  });
+
+  it('THI 78~83 → high 폭염 대응 카드', () => {
+    const c = thiCandidate({ ...BASE, source: 'kma', thi: 80 });
+    expect(c).not.toBeNull();
+    expect(c!.severity).toBe('high');
+    expect(c!.source).toBe('weather');
+    expect(c!.title).toContain('폭염 대응');
+    expect(c!.why[0]).toContain('THI 80');
+    expect(c!.why[0]).toContain('기상청 실측');
+  });
+
+  it('THI 84 이상 → critical 긴급 카드', () => {
+    const c = thiCandidate({ ...BASE, source: 'kma', thi: 85 });
+    expect(c!.severity).toBe('critical');
+    expect(c!.title).toContain('긴급');
+  });
+
+  it('detectedAt은 시간 단위 절단 — 같은 시간대 카드 ID 안정 (완료 유지)', () => {
+    const a = thiCandidate({ ...BASE, source: 'kma', thi: 80, now: new Date('2026-07-10T05:05:00Z').getTime() });
+    const b = thiCandidate({ ...BASE, source: 'kma', thi: 80, now: new Date('2026-07-10T05:55:00Z').getTime() });
+    expect(a!.detectedAt).toBe(b!.detectedAt);
+    expect(a!.detectedAt).toBe('2026-07-10T05:00:00.000Z');
   });
 });

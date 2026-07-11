@@ -27,6 +27,7 @@ const SOURCE_LABEL: Record<string, string> = {
   sovereign: 'CowTalk AI',
   smaxtec: 'smaXtec',
   breeding: '번식',
+  weather: '기상청',
 };
 
 function dueLabel(hours: number | undefined): string | null {
