@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { DecisionCard, DecisionQueueData } from '@cowtalk/shared';
 import { TitleAccentBar } from './WidgetTitle';
 import { completeDecision, undoDecision } from '../../api/unified-dashboard.api';
+import { useT } from '../../i18n';
 
 interface Props {
   readonly data: DecisionQueueData | undefined;
@@ -274,6 +275,7 @@ export function DecisionQueuePanel({ data, isLoading, onAnimalClick, onFarmClick
   // 낙관적 표시: 뮤테이션 진행 중인 카드는 서버 응답 전에도 토글된 상태로 그린다
   const pendingDoneId = complete.isPending ? complete.variables?.id : undefined;
   const pendingUndoId = undo.isPending ? undo.variables : undefined;
+  const t = useT();
 
   return (
     <div
@@ -285,20 +287,20 @@ export function DecisionQueuePanel({ data, isLoading, onAnimalClick, onFarmClick
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <TitleAccentBar />
         <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ct-text)', letterSpacing: '-0.2px' }}>
-          오늘 해야 할 일
+          {t('decision.title')}
         </span>
         <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
-          AI 우선순위 결정 큐
+          {t('decision.subtitle')}
         </span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
           {data && (data.completedLast7d ?? 0) > 0 && (
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ct-primary)' }}>
-              최근 7일 조치 완료 {data.completedLast7d}건
+              {t('decision.completedLast7d').replace('{n}', String(data.completedLast7d))}
             </span>
           )}
           {data && data.totalCandidates > data.cards.length && (
             <span style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
-              외 {data.totalCandidates - data.cards.length}건
+              {t('decision.more').replace('{n}', String(data.totalCandidates - data.cards.length))}
             </span>
           )}
         </span>
@@ -319,9 +321,9 @@ export function DecisionQueuePanel({ data, isLoading, onAnimalClick, onFarmClick
           color: 'var(--ct-text-secondary)',
           fontSize: 13,
         }}>
-          <span style={{ color: 'var(--ct-primary)', fontWeight: 700 }}>✓ 지금 필요한 조치가 없습니다</span>
+          <span style={{ color: 'var(--ct-primary)', fontWeight: 700 }}>{t('decision.empty')}</span>
           <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 4 }}>
-            최근 48시간 판단 기준 — 긴급 신호 없음
+            {t('decision.emptyDetail')}
           </div>
         </div>
       )}
