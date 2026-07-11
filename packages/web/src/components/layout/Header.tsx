@@ -7,18 +7,12 @@ import { useNotificationStore } from '@web/stores/notification.store';
 import { useAutoRefresh } from '@web/hooks/useAutoRefresh';
 import { useAuth } from '@web/hooks/useAuth';
 import { SearchBar } from '@web/components/search/SearchBar';
+import { useT, useLanguageStore, LANGUAGE_LABELS, type UiLanguage } from '@web/i18n';
 
 interface Props {
   readonly onMenuClick: () => void;
   readonly onChatClick: () => void;
 }
-
-const ROLE_LABELS: Record<string, string> = {
-  farmer: '농가주',
-  veterinarian: '수의사',
-  government_admin: 'MASTER',
-  quarantine_officer: '방역관',
-};
 
 function LiveClock(): React.JSX.Element {
   const [time, setTime] = useState(new Date());
@@ -53,7 +47,11 @@ export function Header({ onMenuClick, onChatClick }: Props): React.JSX.Element {
 
   // FLOW-02 Step2.5: 배지·라벨은 유효 역할(시뮬레이션 반영)을 따른다.
   const effectiveRole = useEffectiveRole();
-  const roleLabel = ROLE_LABELS[effectiveRole ?? 'farmer'] ?? '사용자';
+  const t = useT();
+  const language = useLanguageStore((st) => st.language);
+  const setLanguage = useLanguageStore((st) => st.setLanguage);
+  const roleKey = `role.${effectiveRole ?? 'farmer'}`;
+  const roleLabel = t(roleKey) === roleKey ? t('role.user') : t(roleKey);
   const isMaster = effectiveRole === 'government_admin';
   const initials = (user?.name ?? 'U').slice(0, 1).toUpperCase();
 
@@ -119,8 +117,20 @@ export function Header({ onMenuClick, onChatClick }: Props): React.JSX.Element {
         </div>
       </div>
 
-      {/* 우측: Live 시각 + 알림 + 채팅 + 로그아웃 */}
+      {/* 우측: 언어 + Live 시각 + 알림 + 채팅 + 로그아웃 */}
       <div className="flex items-center gap-2">
+        {/* 언어 전환 — i18n 골격 (수출 대비). 사전 미전환 화면은 한국어 유지 */}
+        <select
+          value={language}
+          onChange={(e) => { setLanguage(e.target.value as UiLanguage); }}
+          aria-label={t('common.language')}
+          className="hidden rounded-md border px-1.5 py-1 text-[11px] sm:block"
+          style={{ borderColor: 'var(--ct-border)', background: 'var(--ct-card)', color: 'var(--ct-text-secondary)' }}
+        >
+          {(Object.keys(LANGUAGE_LABELS) as UiLanguage[]).map((lang) => (
+            <option key={lang} value={lang}>{LANGUAGE_LABELS[lang]}</option>
+          ))}
+        </select>
         <LiveClock />
 
         {/* AI 채팅 */}

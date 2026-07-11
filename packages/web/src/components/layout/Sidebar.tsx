@@ -12,6 +12,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
 import { getMenuForRole, type MenuRole } from '@web/config/sidebar-menu';
+import { useT } from '@web/i18n';
 
 function IconDashboard(): React.JSX.Element {
   return (
@@ -186,6 +187,7 @@ export function resolveMenuRole(
 }
 
 export function Sidebar(): React.JSX.Element {
+  const t = useT();
   const userRole = useAuthStore((s) => s.user?.role);
   const userName = useAuthStore((s) => s.user?.name);
   const simulatedRole = useRoleSimulationStore((s) => s.simulatedRole);
@@ -256,7 +258,8 @@ export function Sidebar(): React.JSX.Element {
                 }
               >
                 {ICON_MAP[item.icon] ?? <IconDashboard />}
-                <span className="truncate">{item.label}</span>
+                {/* i18n: 사전 등록 메뉴는 번역, 미등록 id는 config 라벨 폴백 */}
+                <span className="truncate">{t(`nav.${item.id}`) === `nav.${item.id}` ? item.label : t(`nav.${item.id}`)}</span>
               </NavLink>
             </React.Fragment>
           );
