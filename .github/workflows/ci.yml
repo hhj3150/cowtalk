@@ -1,0 +1,47 @@
+# CowTalk CI — 타입체크 + 빌드 + 테스트
+# P0 신뢰 회복: 모든 PR/푸시가 최소한 컴파일·유닛테스트를 통과해야 한다.
+#
+# 범위:
+#  - build: shared → server → web 순서 빌드 (tsc 타입체크 포함)
+#  - unit tests: packages/*/src 유닛 테스트 (DB 불필요 — 421개)
+#  - web tests: @cowtalk/web vitest (jsdom — 146개)
+#
+# tests/server/ 통합 테스트(8파일)는 PostgreSQL+TimescaleDB가 필요하므로 제외.
+# → 후속: services 컨테이너(timescale/timescaledb) 추가 시 별도 job으로 활성화.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared
+        run: npm run build --workspace @cowtalk/shared
+
+      - name: Build server (tsc)
+        run: npm run build --workspace @cowtalk/server
+
+      - name: Build web (tsc + vite)
+        run: npm run build --workspace @cowtalk/web
+
+      - name: Unit tests (server + shared, DB 불필요)
+        run: npx vitest run packages/server/src packages/shared/src
+
+      - name: Web tests
+        run: npm run test --workspace @cowtalk/web
