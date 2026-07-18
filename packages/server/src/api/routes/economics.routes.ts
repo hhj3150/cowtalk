@@ -37,8 +37,9 @@ function assertParamWriteAccess(req: Request, farmId: string | undefined): void 
   if (user.role !== 'farmer' && user.role !== 'veterinarian') {
     throw new ForbiddenError('농장 경제 파라미터 수정 권한이 없습니다');
   }
+  // 배정된 농장만 수정 가능 — 미배정 사용자는 어떤 농장도 수정 불가
   const farmIds = user.farmIds ?? [];
-  if (farmIds.length > 0 && !farmIds.includes(farmId)) {
+  if (!farmIds.includes(farmId)) {
     throw new ForbiddenError('접근 권한이 없는 농장입니다');
   }
 }

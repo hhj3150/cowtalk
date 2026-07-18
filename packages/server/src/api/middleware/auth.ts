@@ -1,14 +1,15 @@
-// 인증 미들웨어 — JWT 검증 + req.user 주입
+// 인증 미들웨어 — JWT 검증 + req.user 주입 + 계정 승인 게이트
 
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../../lib/auth.js';
-import { UnauthorizedError } from '../../lib/errors.js';
+import { UnauthorizedError, ForbiddenError } from '../../lib/errors.js';
+import { isUserApproved } from '../../services/auth/approval.service.js';
 
-export function authenticate(
+export async function authenticate(
   req: Request,
   _res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     throw new UnauthorizedError('Missing or invalid authorization header');
@@ -17,10 +18,16 @@ export function authenticate(
   const token = header.slice(7);
   try {
     req.user = verifyAccessToken(token);
-    next();
   } catch {
     throw new UnauthorizedError('Invalid or expired access token');
   }
+
+  // 승인 게이트 — 소유자가 승인한 계정만 접근 (이미 발급된 토큰도 차단)
+  const approved = await isUserApproved(req.user.userId);
+  if (!approved) {
+    throw new ForbiddenError('계정 승인 대기 중입니다 — 관리자 승인 후 이용할 수 있습니다');
+  }
+  next();
 }
 
 /** 선택적 인증 — 토큰이 있으면 파싱, 없어도 통과 */

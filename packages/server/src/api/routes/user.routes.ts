@@ -7,6 +7,8 @@ import { requirePermission } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { users, userFarmAccess, farms } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { isOwnerUserId, setUserApproval } from '../../services/auth/approval.service.js';
+import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
 
 export const userRouter = Router();
 
@@ -25,6 +27,7 @@ userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res
         email: users.email,
         role: users.role,
         status: users.status,
+        approvalStatus: users.approvalStatus,
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
       })
@@ -33,6 +36,34 @@ userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res
       .orderBy(users.name);
 
     res.json({ success: true, data: userList });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /users/:userId/approval — 계정 승인/차단 (소유자 전용)
+// body: { status: 'approved' | 'pending' | 'revoked' }
+userRouter.patch('/:userId/approval', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // 소유자 본인만 승인 관리 가능 — JWT가 아니라 DB 실계정 기준으로 검사
+    const requesterIsOwner = await isOwnerUserId(req.user!.userId);
+    if (!requesterIsOwner) {
+      throw new ForbiddenError('계정 승인 관리는 소유자만 할 수 있습니다');
+    }
+
+    const targetUserId = req.params.userId as string;
+    const { status } = req.body as { status?: string };
+    if (status !== 'approved' && status !== 'pending' && status !== 'revoked') {
+      throw new BadRequestError('status는 approved/pending/revoked 중 하나여야 합니다');
+    }
+
+    // 소유자 자신의 승인은 해제할 수 없다 (잠금 사고 방지)
+    if (targetUserId === req.user!.userId && status !== 'approved') {
+      throw new BadRequestError('소유자 계정의 승인은 해제할 수 없습니다');
+    }
+
+    await setUserApproval(targetUserId, status, req.user!.userId);
+    res.json({ success: true, data: { userId: targetUserId, approvalStatus: status } });
   } catch (error) {
     next(error);
   }

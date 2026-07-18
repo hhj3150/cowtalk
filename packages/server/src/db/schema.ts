@@ -654,6 +654,8 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 200 }).notNull(),
   role: varchar('role', { length: 30 }).notNull(),
   status: varchar('status', { length: 20 }).notNull().default('active'),
+  // 소유자 승인 게이트 — approved만 접근 가능 (approved/pending/revoked)
+  approvalStatus: varchar('approval_status', { length: 20 }).notNull().default('pending'),
   phone: varchar('phone', { length: 20 }), // 승인 요청 등 역할 기반 알림톡 수신처
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

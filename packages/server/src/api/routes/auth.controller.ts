@@ -16,6 +16,7 @@ import {
   UnauthorizedError,
   ConflictError,
   NotFoundError,
+  ForbiddenError,
 } from '../../lib/errors.js';
 import {
   findUserByEmail,
@@ -49,6 +50,11 @@ export async function login(req: Request, res: Response): Promise<void> {
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) {
     throw new UnauthorizedError('Invalid email or password');
+  }
+
+  // 승인 게이트 — 소유자가 승인한 계정만 로그인 가능 (비밀번호 확인 후 검사)
+  if (user.approvalStatus !== 'approved') {
+    throw new ForbiddenError('계정 승인 대기 중입니다 — 관리자 승인 후 이용할 수 있습니다');
   }
 
   const farmIds = await getFarmIdsForUser(user.userId);
@@ -106,6 +112,10 @@ export async function refresh(req: Request, res: Response): Promise<void> {
   const user = await findUserById(payload.userId);
   if (!user || user.status !== 'active') {
     throw new UnauthorizedError('User not found or inactive');
+  }
+  if (user.approvalStatus !== 'approved') {
+    await revokeRefreshToken(tokenHash);
+    throw new ForbiddenError('계정 승인 대기 중입니다 — 관리자 승인 후 이용할 수 있습니다');
   }
 
   // 기존 토큰 폐기 (rotation)
@@ -185,6 +195,11 @@ export async function quickLogin(req: Request, res: Response): Promise<void> {
     throw new UnauthorizedError('Account is not active');
   }
 
+  // 퀵 로그인도 승인 게이트 적용 — 데모 계정도 소유자 승인 없이는 접근 불가
+  if (user.approvalStatus !== 'approved') {
+    throw new ForbiddenError('계정 승인 대기 중입니다 — 관리자 승인 후 이용할 수 있습니다');
+  }
+
   const farmIds = await getFarmIdsForUser(user.userId);
 
   const accessToken = signAccessToken({
@@ -238,6 +253,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     await addUserFarmAccess(user.userId, input.farmIds);
   }
 
+  // 신규 가입은 승인 대기(pending) 상태 — 소유자 승인 후 로그인 가능
   res.status(201).json({
     success: true,
     data: {
@@ -245,6 +261,8 @@ export async function register(req: Request, res: Response): Promise<void> {
       name: user.name,
       email: user.email,
       role: user.role,
+      approvalStatus: 'pending',
+      message: '가입이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.',
     },
   });
 }
@@ -275,11 +293,13 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // 새 역할로 JWT 재발급 (farmIds는 전환 시 전체 접근)
+  // 새 역할로 JWT 재발급 — isMaster 클레임으로 전체 농장 접근 유지
+  // (미배정 farm-scoped 역할은 이제 아무 목장도 못 보므로, 마스터 시뮬레이션은 클레임으로 예외)
   const accessToken = signAccessToken({
     userId: user.userId,
     role: newRole as Role,
-    farmIds: [], // 빈 배열 = 전체 농장 접근 (requireFarmAccess 규칙)
+    farmIds: [],
+    isMaster: true,
   });
 
   res.json({

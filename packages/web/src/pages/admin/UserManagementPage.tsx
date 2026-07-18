@@ -1,8 +1,9 @@
 // 사용자 관리 페이지 (admin)
+// 승인 게이트: 소유자가 승인한 계정만 플랫폼 접근 가능 — 승인/차단 버튼 제공
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '@web/api/client';
+import { apiGet, apiPost, apiPatch } from '@web/api/client';
 import { DataTable, type Column } from '@web/components/data/DataTable';
 import { Badge } from '@web/components/common/Badge';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
@@ -13,6 +14,7 @@ interface UserRecord {
   readonly email: string;
   readonly role: string;
   readonly status: string;
+  readonly approvalStatus?: string;
   readonly lastLoginAt: string | null;
 }
 
@@ -23,32 +25,61 @@ const ROLE_LABELS: Record<string, string> = {
   quarantine_officer: '방역관',
 };
 
-const userColumns: readonly Column<Record<string, unknown>>[] = [
-  { key: 'name', label: '이름', sortable: true },
-  { key: 'email', label: '이메일', sortable: true },
-  {
-    key: 'role',
-    label: '역할',
-    sortable: true,
-    render: (row) => (
-      <Badge label={ROLE_LABELS[String(row.role)] ?? String(row.role)} variant="info" />
-    ),
-  },
-  {
-    key: 'status',
-    label: '상태',
-    sortable: true,
-    render: (row) => (
-      <Badge
-        label={row.status === 'active' ? '활성' : '비활성'}
-        variant={row.status === 'active' ? 'success' : 'medium'}
-      />
-    ),
-  },
-  { key: 'lastLoginAt', label: '마지막 로그인', sortable: true },
-];
+const APPROVAL_LABELS: Record<string, { label: string; variant: 'success' | 'medium' | 'critical' }> = {
+  approved: { label: '승인됨', variant: 'success' },
+  pending: { label: '승인 대기', variant: 'medium' },
+  revoked: { label: '차단됨', variant: 'critical' },
+};
+
+function buildUserColumns(
+  onApprove: (userId: string) => void,
+  onRevoke: (userId: string) => void,
+  pendingId: string | null,
+): readonly Column<Record<string, unknown>>[] {
+  return [
+    { key: 'name', label: '이름', sortable: true },
+    { key: 'email', label: '이메일', sortable: true },
+    {
+      key: 'role',
+      label: '역할',
+      sortable: true,
+      render: (row) => (
+        <Badge label={ROLE_LABELS[String(row.role)] ?? String(row.role)} variant="info" />
+      ),
+    },
+    {
+      key: 'approvalStatus',
+      label: '접근 승인',
+      sortable: true,
+      render: (row) => {
+        const meta = APPROVAL_LABELS[String(row.approvalStatus)] ?? APPROVAL_LABELS.pending!;
+        const userId = String(row.userId);
+        const approved = row.approvalStatus === 'approved';
+        return (
+          <span className="flex items-center gap-2">
+            <Badge label={meta.label} variant={meta.variant} />
+            <button
+              type="button"
+              disabled={pendingId === userId}
+              onClick={() => (approved ? onRevoke(userId) : onApprove(userId))}
+              className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                approved
+                  ? 'border border-red-300 text-red-600 hover:bg-red-50'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              } disabled:opacity-50`}
+            >
+              {approved ? '차단' : '승인'}
+            </button>
+          </span>
+        );
+      },
+    },
+    { key: 'lastLoginAt', label: '마지막 로그인', sortable: true },
+  ];
+}
 
 export default function UserManagementPage(): React.JSX.Element {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
     queryFn: () => apiGet<readonly UserRecord[]>('/users'),
@@ -56,6 +87,31 @@ export default function UserManagementPage(): React.JSX.Element {
   });
 
   const [showForm, setShowForm] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+
+  const approvalMutation = useMutation({
+    mutationFn: ({ userId, status }: { userId: string; status: 'approved' | 'revoked' }) =>
+      apiPatch(`/users/${userId}/approval`, { status }),
+    onSuccess: () => {
+      setApprovalError(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+    onError: (e: unknown) => {
+      const msg =
+        (e as { response?: { data?: { error?: { message?: string } | string } } }).response?.data;
+      const text = typeof msg?.error === 'string' ? msg.error : msg?.error?.message;
+      setApprovalError(text ?? '승인 변경에 실패했습니다 (소유자만 가능합니다)');
+    },
+  });
+
+  const pendingId = approvalMutation.isPending
+    ? approvalMutation.variables?.userId ?? null
+    : null;
+  const columns = buildUserColumns(
+    (userId) => approvalMutation.mutate({ userId, status: 'approved' }),
+    (userId) => approvalMutation.mutate({ userId, status: 'revoked' }),
+    pendingId,
+  );
 
   if (isLoading) return <LoadingSkeleton lines={6} />;
 
@@ -72,10 +128,17 @@ export default function UserManagementPage(): React.JSX.Element {
         </button>
       </div>
 
+      <p className="text-sm text-gray-500">
+        승인된 계정만 플랫폼에 접근할 수 있습니다. 신규 가입·기존 계정은 승인 대기 상태로 시작합니다.
+      </p>
+      {approvalError && (
+        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600">{approvalError}</p>
+      )}
+
       {showForm && <UserForm onClose={() => setShowForm(false)} />}
 
       <DataTable
-        columns={userColumns}
+        columns={columns}
         data={(data ?? []) as unknown as readonly Record<string, unknown>[]}
         keyField="userId"
         searchField="name"
