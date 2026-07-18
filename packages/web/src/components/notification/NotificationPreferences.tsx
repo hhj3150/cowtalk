@@ -11,6 +11,7 @@ const CHANNEL_LABELS: Record<NotificationChannel, { name: string; description: s
   sms: { name: 'SMS', description: '긴급 알림만 (카카오 미사용 시)' },
   email: { name: '이메일', description: '일일 리포트 + 성적표' },
   inapp: { name: '인앱 알림', description: '실시간 알림' },
+  push: { name: '브라우저 푸시', description: '앱을 닫아도 도착 — 긴급만/무음시간 설정 적용' },
 };
 
 export function NotificationPreferences(): React.JSX.Element {
