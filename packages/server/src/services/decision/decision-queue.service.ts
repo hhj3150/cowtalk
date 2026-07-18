@@ -11,6 +11,7 @@ import { and, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { getBreedingPipeline } from '../breeding/breeding-pipeline.service.js';
 import { estimateDailyLoss, LOSS_FRACTION_BY_EVENT } from './economic-impact.service.js';
 import { getEconomicParamValuesByFarm } from '../economics/economic-params.service.js';
+import { classifyUrgency } from '@cowtalk/shared';
 import { getAvgDailyYield } from '../milk/milk-record.service.js';
 import { logger } from '../../lib/logger.js';
 import type {
@@ -143,6 +144,7 @@ export function buildDecisionCards(
       source: c.source,
       detectedAt: c.detectedAt,
       dueInHours: c.dueInHours,
+      urgency: classifyUrgency(s.severity, c.dueInHours),
     };
   });
 
