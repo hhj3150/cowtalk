@@ -13,7 +13,8 @@ export type EconomicParameterKey =
   | 'adult_death_loss_krw'
   | 'calf_value_krw'
   | 'treatment_cost_per_case_krw'
-  | 'labor_hour_cost_krw';
+  | 'labor_hour_cost_krw'
+  | 'sensor_cost_per_head_krw';
 
 /** 파라미터 값의 출처 — UI에서 어디서 온 값인지 항상 표시한다 */
 export type EconomicParameterSource = 'default' | 'global' | 'farm';
@@ -42,6 +43,32 @@ export interface EconomicParameterView {
   readonly source: EconomicParameterSource;
   readonly basis: string;
   readonly updatedAt: string | null;
+}
+
+/** GET /economics/roi-calculator 응답 — 파라미터 기반 실계산 결과 */
+export interface RoiEstimate {
+  readonly investmentType: string;
+  readonly headCount: number;
+  /** 초기 도입비 (센서 도입비 × 두수) */
+  readonly initialCostKrw: number;
+  /** 연간 편익 합계 */
+  readonly annualBenefitKrw: number;
+  /** 편익 내역 — 각 항목이 어떤 파라미터×가정으로 계산됐는지 */
+  readonly benefitBreakdown: readonly {
+    readonly label: string;
+    readonly annualKrw: number;
+    readonly formula: string;
+  }[];
+  /** 투자 회수기간 (개월) — 편익이 0이면 null */
+  readonly paybackMonths: number | null;
+  /** 5년 순편익 / 초기 투자 (%) — 초기 투자가 0이면 null */
+  readonly fiveYearRoiPct: number | null;
+  /** 계산에 실제 적용된 단가 (파라미터 유효값) */
+  readonly appliedParameters: Readonly<Partial<Record<EconomicParameterKey, number>>>;
+  /** 효과 계수 가정 — 실측이 아님을 명시 */
+  readonly assumptions: readonly string[];
+  /** 항상 true — 문헌 가정 기반 추정임을 UI에 명시 */
+  readonly estimated: true;
 }
 
 /** PUT /economics/parameters 요청 본문 */

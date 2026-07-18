@@ -68,13 +68,7 @@ export interface FarmBenchmark {
   readonly metrics: Record<string, { value: number; percentile: number }>;
 }
 
-export interface RoiResult {
-  readonly estrusDetectionImprovement: number;
-  readonly diseaseEarlyDetectionSavings: number;
-  readonly mortalityReduction: number;
-  readonly totalMonthlySavings: number;
-  readonly roiMultiple: number;
-}
+export type { RoiEstimate } from '@cowtalk/shared';
 
 export function getEconomics(farmId: string, year?: number): Promise<readonly EconomicEntry[]> {
   return apiGet<readonly EconomicEntry[]>(`/economics/${farmId}`, year ? { year } : undefined);
@@ -96,6 +90,9 @@ export function getEconomicAnalysis(farmId: string): Promise<{ summary: string; 
   return apiGet<{ summary: string; recommendations: readonly string[] }>(`/economics/${farmId}/analysis`);
 }
 
-export function calculateRoi(farmId: string): Promise<RoiResult> {
-  return apiGet<RoiResult>('/economics/roi-calculator', { farmId });
+export function calculateRoi(farmId: string, headCount?: number): Promise<import('@cowtalk/shared').RoiEstimate> {
+  return apiGet<import('@cowtalk/shared').RoiEstimate>(
+    '/economics/roi-calculator',
+    headCount ? { farmId, headCount } : { farmId },
+  );
 }

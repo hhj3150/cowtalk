@@ -82,6 +82,15 @@ export const ECONOMIC_PARAMETER_DEFS: readonly EconomicParameterDefinition[] = [
     basis: '왕진료 + 약품비 일반 범위의 보수값.',
   },
   {
+    key: 'sensor_cost_per_head_krw',
+    labelKo: '센서 도입비(두당)',
+    unit: '원/두',
+    defaultValue: 150000,
+    min: 0,
+    max: 10000000,
+    basis: '위내센서+통신장비 두당 도입비 근사값. 실제 계약 단가로 교체 권장.',
+  },
+  {
     key: 'labor_hour_cost_krw',
     labelKo: '노동 시간당 비용',
     unit: '원/시간',

@@ -252,6 +252,8 @@ export interface TempAlarmPoint {
 export interface TempTimelineData {
   readonly timeline: readonly TempTimelinePoint[]
   readonly alarms: readonly TempAlarmPoint[]
+  /** 최근 24시간 실측 커버리지가 부족해 곡선을 그리지 않음 (합성으로 메우지 않는다) */
+  readonly noData?: boolean
   readonly summary: {
     readonly meanTemp: number
     readonly highAlarms: number

@@ -12,7 +12,9 @@ import {
   upsertEconomicParam,
   deleteEconomicParamOverride,
   validateParameterValue,
+  getEconomicParamValues,
 } from '../../services/economics/economic-params.service.js';
+import { computeSensorRoi } from '../../services/economics/roi.service.js';
 import { isEconomicParameterKey } from '@cowtalk/shared';
 import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
 
@@ -133,25 +135,31 @@ economicsRouter.post('/', async (req: Request, res: Response, next: NextFunction
 
 // Static paths BEFORE parameterized /:farmId
 
-// GET /economics/roi-calculator — ROI 계산기
-economicsRouter.get('/roi-calculator', async (req: Request, res: Response, next: NextFunction) => {
+// GET /economics/roi-calculator — ROI 계산기 (경제 파라미터 기반 실계산)
+// headCount 미지정 + farmId 지정 시 농장 활성 두수 사용
+economicsRouter.get('/roi-calculator', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const headCount = Number(req.query.headCount) || 50;
+    const farmId = (req.query.farmId as string | undefined) || undefined;
     const investmentType = (req.query.investmentType as string) ?? 'sensor';
 
-    const roi = {
-      investmentType,
-      headCount,
-      initialCost: headCount * 150000,
-      annualBenefit: headCount * 280000,
-      paybackMonths: 7,
-      fiveYearRoi: 340,
-      assumptions: [
-        '발정탐지율 30% → 85% 개선',
-        '질병 조기발견으로 폐사율 2% 감소',
-        '수의사 방문 횟수 40% 감소',
-      ],
-    };
+    let headCount = Number(req.query.headCount);
+    if (!Number.isFinite(headCount) || headCount <= 0) {
+      if (farmId) {
+        const db = getDb();
+        const [headResult] = await db
+          .select({ count: count() })
+          .from(animals)
+          .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active')));
+        headCount = headResult?.count ?? 0;
+      }
+      if (!Number.isFinite(headCount) || headCount <= 0) headCount = 50;
+    }
+
+    const params = await getEconomicParamValues(farmId);
+    const roi = computeSensorRoi(headCount, params, investmentType);
+    if (!roi) {
+      throw new BadRequestError('headCount는 1~100,000 범위의 숫자여야 합니다');
+    }
 
     res.json({ success: true, data: roi });
   } catch (error) {
