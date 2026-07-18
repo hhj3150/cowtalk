@@ -28,4 +28,5 @@ export * from './label-chat.js';
 export * from './conversation-record.js';
 export * from './weight.js';
 export * from './quarantine.js';
+export * from './economics.js';
 export * from './diagnosis.js';

@@ -8,6 +8,7 @@ import {
   text,
   integer,
   real,
+  doublePrecision,
   boolean,
   timestamp,
   date,
@@ -1715,6 +1716,18 @@ export const decisionActions = pgTable('decision_actions', {
   index('decision_actions_farm_idx').on(table.farmId),
   index('decision_actions_acted_at_idx').on(table.actedAt),
 ]);
+
+// 경제 파라미터 오버라이드 — 기본값은 shared 카탈로그, DB에는 오버라이드만 저장
+// farm_id NULL = 글로벌 오버라이드, 지정 = 농장별. 유효값 = 기본 < 글로벌 < 농장.
+export const economicParameters = pgTable('economic_parameters', {
+  paramId: uuid('param_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').references(() => farms.farmId), // null = 글로벌
+  paramKey: varchar('param_key', { length: 50 }).notNull(),
+  value: doublePrecision('value').notNull(),
+  updatedBy: uuid('updated_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 // 프롬프트 개선 루프 — 실측 라벨 집계 → 규칙 기반 가이던스 (감사 가능, LLM 자기재작성 아님)
 export const promptGuidances = pgTable('prompt_guidances', {

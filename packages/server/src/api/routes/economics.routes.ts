@@ -7,10 +7,89 @@ import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { farmEconomics, farms, animals, feedPrograms } from '../../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
+import {
+  listEconomicParams,
+  upsertEconomicParam,
+  deleteEconomicParamOverride,
+  validateParameterValue,
+} from '../../services/economics/economic-params.service.js';
+import { isEconomicParameterKey } from '@cowtalk/shared';
+import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
 
 export const economicsRouter = Router();
 
 economicsRouter.use(authenticate);
+
+// ===========================
+// 경제 파라미터 (기본값 + 글로벌/농장 오버라이드)
+// 정적 경로 — /:farmId 보다 먼저 등록해야 한다
+// ===========================
+
+/** 파라미터 쓰기 권한: 글로벌 = 행정관리자만, 농장별 = 소속 농장주/수의사 + 행정관리자 */
+function assertParamWriteAccess(req: Request, farmId: string | undefined): void {
+  const user = req.user!;
+  if (user.role === 'government_admin') return;
+  if (!farmId) {
+    throw new ForbiddenError('글로벌 경제 파라미터는 행정관리자만 수정할 수 있습니다');
+  }
+  if (user.role !== 'farmer' && user.role !== 'veterinarian') {
+    throw new ForbiddenError('농장 경제 파라미터 수정 권한이 없습니다');
+  }
+  const farmIds = user.farmIds ?? [];
+  if (farmIds.length > 0 && !farmIds.includes(farmId)) {
+    throw new ForbiddenError('접근 권한이 없는 농장입니다');
+  }
+}
+
+// GET /economics/parameters?farmId= — 유효 파라미터 목록 (정의+값+출처)
+economicsRouter.get('/parameters', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = (req.query.farmId as string | undefined) || undefined;
+    const parameters = await listEconomicParams(farmId);
+    res.json({ success: true, data: { farmId: farmId ?? null, parameters } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /economics/parameters — 오버라이드 저장 { key, value, farmId? }
+economicsRouter.put('/parameters', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { key, value, farmId } = req.body as { key?: string; value?: number; farmId?: string };
+    const verdict = validateParameterValue(String(key), Number(value));
+    if (!verdict.ok) {
+      throw new BadRequestError(verdict.reason);
+    }
+    assertParamWriteAccess(req, farmId);
+    await upsertEconomicParam({
+      key: verdict.key,
+      value: Number(value),
+      farmId: farmId || undefined,
+      userId: req.user!.userId,
+    });
+    const parameters = await listEconomicParams(farmId || undefined);
+    res.json({ success: true, data: { farmId: farmId ?? null, parameters } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /economics/parameters/:key?farmId= — 오버라이드 제거 (상위 값으로 복귀)
+economicsRouter.delete('/parameters/:key', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const key = req.params.key as string;
+    if (!isEconomicParameterKey(key)) {
+      throw new BadRequestError(`알 수 없는 파라미터 키: ${key}`);
+    }
+    const farmId = (req.query.farmId as string | undefined) || undefined;
+    assertParamWriteAccess(req, farmId);
+    await deleteEconomicParamOverride(key, farmId);
+    const parameters = await listEconomicParams(farmId);
+    res.json({ success: true, data: { farmId: farmId ?? null, parameters } });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // POST /economics — 경제 데이터 저장
 economicsRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {

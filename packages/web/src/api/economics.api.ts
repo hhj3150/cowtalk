@@ -1,6 +1,36 @@
 // 경제성/생산성 분석 API
 
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, apiPut, apiDelete } from './client';
+import type { EconomicParameterView, EconomicParameterKey } from '@cowtalk/shared';
+
+export interface EconomicParametersResponse {
+  readonly farmId: string | null;
+  readonly parameters: readonly EconomicParameterView[];
+}
+
+/** 유효 경제 파라미터 목록 (기본값+오버라이드 병합, 출처 포함) */
+export function getEconomicParameters(farmId?: string): Promise<EconomicParametersResponse> {
+  return apiGet<EconomicParametersResponse>('/economics/parameters', farmId ? { farmId } : undefined);
+}
+
+/** 오버라이드 저장 — farmId 없으면 글로벌 (행정관리자 전용) */
+export function saveEconomicParameter(input: {
+  key: EconomicParameterKey;
+  value: number;
+  farmId?: string;
+}): Promise<EconomicParametersResponse> {
+  return apiPut<EconomicParametersResponse>('/economics/parameters', input);
+}
+
+/** 오버라이드 제거 — 상위(글로벌/기본값)로 복귀 */
+export function resetEconomicParameter(
+  key: EconomicParameterKey,
+  farmId?: string,
+): Promise<EconomicParametersResponse> {
+  return apiDelete<EconomicParametersResponse>(
+    `/economics/parameters/${key}${farmId ? `?farmId=${farmId}` : ''}`,
+  );
+}
 
 export interface EconomicEntry {
   readonly month: string;

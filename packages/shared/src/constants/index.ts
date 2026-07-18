@@ -41,6 +41,12 @@ export type {
   TargetAnimalCriteria,
 } from './vaccine-protocols.js';
 export {
+  ECONOMIC_PARAMETER_DEFS,
+  ECONOMIC_PARAMETER_MAP,
+  ECONOMIC_PARAMETER_KEYS,
+  isEconomicParameterKey,
+} from './economics.js';
+export {
   CLUSTER_DETECTION,
   ALERT_LEVEL_THRESHOLDS,
   SPREAD_RATE,
