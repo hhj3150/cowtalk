@@ -13,7 +13,8 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { getQuarantineDashboard, getActionQueue, getVaccinationStatus } from '../../services/epidemiology/quarantine-dashboard.service.js';
 import { getEarlyDetectionMetrics } from '../../services/epidemiology/early-detection-metrics.service.js';
-import { getNationalSituation, getProvinceDetail, getProvinceFarms, getAllMapFarms } from '../../services/epidemiology/national-situation.service.js';
+import { getNationalSituation, getProvinceDetail, getProvinceFarms, getAllMapFarms, getFarmIdsByProvince } from '../../services/epidemiology/national-situation.service.js';
+import { NO_FARM_SENTINEL } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farms, feedback } from '../../db/schema.js';
 import { eq, desc, count, sql, ilike, or } from 'drizzle-orm';
@@ -29,9 +30,19 @@ quarantineDashboardRouter.use(authenticate);
 // GET /quarantine/dashboard
 // ===========================
 
-quarantineDashboardRouter.get('/dashboard', async (_req, res, next) => {
+// ?province=전남 지정 시 KPI·차트·TOP5 위험농장 전체가 그 시도 농장 기준으로 집계된다.
+// 시도에 농장이 없으면 센티널로 빈 스코프 강제 (전국으로 새지 않음).
+async function resolveProvinceScope(province: string | undefined): Promise<readonly string[] | undefined> {
+  if (!province) return undefined;
+  const farmIds = await getFarmIdsByProvince(province);
+  return farmIds.length > 0 ? farmIds : [NO_FARM_SENTINEL];
+}
+
+quarantineDashboardRouter.get('/dashboard', async (req, res, next) => {
   try {
-    const data = await getQuarantineDashboard();
+    const province = (req.query.province as string | undefined) || undefined;
+    const farmIds = await resolveProvinceScope(province);
+    const data = await getQuarantineDashboard(farmIds ? { farmIds } : {});
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -42,9 +53,11 @@ quarantineDashboardRouter.get('/dashboard', async (_req, res, next) => {
 // GET /quarantine/action-queue
 // ===========================
 
-quarantineDashboardRouter.get('/action-queue', async (_req, res, next) => {
+quarantineDashboardRouter.get('/action-queue', async (req, res, next) => {
   try {
-    const queue = await getActionQueue();
+    const province = (req.query.province as string | undefined) || undefined;
+    const farmIds = await resolveProvinceScope(province);
+    const queue = await getActionQueue(farmIds ? { farmIds } : {});
     res.json({ success: true, data: queue });
   } catch (err) {
     next(err);

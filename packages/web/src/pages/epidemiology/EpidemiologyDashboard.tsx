@@ -70,12 +70,13 @@ interface DashboardData {
 // 데이터 훅
 // ===========================
 
-async function fetchDashboard(): Promise<DashboardData> {
-  return apiGet<DashboardData>('/quarantine/dashboard');
+// province 지정 시 KPI·차트·조치 큐 전체가 그 시도 기준으로 집계된다
+async function fetchDashboard(province?: string | null): Promise<DashboardData> {
+  return apiGet<DashboardData>('/quarantine/dashboard', province ? { province } : undefined);
 }
 
-async function fetchActionQueue(): Promise<ActionQueueItem[]> {
-  return apiGet<ActionQueueItem[]>('/quarantine/action-queue');
+async function fetchActionQueue(province?: string | null): Promise<ActionQueueItem[]> {
+  return apiGet<ActionQueueItem[]>('/quarantine/action-queue', province ? { province } : undefined);
 }
 
 interface VaccinationStatusData {
@@ -153,14 +154,14 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
   const [drillFarmName, setDrillFarmName] = useState<string>('');
 
   const { data: dashboard, isLoading: dashLoading } = useQuery({
-    queryKey: ['quarantine', 'dashboard'],
-    queryFn: fetchDashboard,
+    queryKey: ['quarantine', 'dashboard', selectedProvince ?? 'all'],
+    queryFn: () => fetchDashboard(selectedProvince),
     refetchInterval: 60_000,
   });
 
   const { data: actionQueue, isLoading: queueLoading } = useQuery({
-    queryKey: ['quarantine', 'action-queue'],
-    queryFn: fetchActionQueue,
+    queryKey: ['quarantine', 'action-queue', selectedProvince ?? 'all'],
+    queryFn: () => fetchActionQueue(selectedProvince),
     refetchInterval: 30_000,
   });
 
@@ -200,13 +201,32 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--ct-text)' }}>
-          🛡️ 방역관 전용 대시보드
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
-          실시간 역학 모니터링 — 자동 갱신 60초
-        </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--ct-text)' }}>
+            🛡️ 방역관 전용 대시보드
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--ct-text-secondary)' }}>
+            실시간 역학 모니터링 — 자동 갱신 60초
+          </p>
+        </div>
+        {/* 시도 전역 필터 배지 — 지도에서 시도 선택 시 KPI·차트·조치큐 전체가 해당 시도 기준 */}
+        {selectedProvince && (
+          <span
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold"
+            style={{ background: 'rgba(249,115,22,0.15)', color: '#f97316', border: '1px solid rgba(249,115,22,0.4)' }}
+          >
+            📍 {selectedProvince} 기준 집계 중
+            <button
+              type="button"
+              onClick={() => { setSelectedProvince(null); setShowFarmPanel(false); }}
+              className="rounded px-1.5 text-xs font-bold hover:bg-orange-500/20"
+              title="전국 기준으로 돌아가기"
+            >
+              전국으로 ✕
+            </button>
+          </span>
+        )}
       </div>
 
       {/* 위험 등급 배너 */}
@@ -309,7 +329,7 @@ export default function EpidemiologyDashboard(): React.JSX.Element {
       {showFarmPanel && selectedProvince && (
         <ProvinceFarmListPanel
           province={selectedProvince}
-          onClose={() => { setShowFarmPanel(false); setSelectedProvince(null); }}
+          onClose={() => { setShowFarmPanel(false); }}
           onAnimalSelect={(animalId, farmId, farmName) => {
             setDrillAnimalId(animalId);
             setDrillFarmId(farmId);
