@@ -10,3 +10,7 @@ export * from './constants/index.js';
 
 // 스키마
 export * from './schemas/index.js';
+
+// 유틸 (순수 함수)
+export { parseMilkCsv } from './utils/milk-csv.js';
+export type { MilkCsvResult } from './utils/milk-csv.js';

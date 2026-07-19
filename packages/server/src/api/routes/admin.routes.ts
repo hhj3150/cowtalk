@@ -23,6 +23,21 @@ adminRouter.get('/data-freshness', async (_req: Request, res: Response, next: Ne
   }
 });
 
+// POST /admin/morning-briefing — 아침 브리핑 즉시 발송 (시간대 가드 무시, 관리자 수동 테스트)
+adminRouter.post('/morning-briefing', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role !== 'government_admin') {
+      res.status(403).json({ success: false, error: '관리자만 실행할 수 있습니다' });
+      return;
+    }
+    const { runMorningBriefing } = await import('../../services/briefing/morning-briefing.service.js');
+    const summary = await runMorningBriefing(true);
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /admin/system — 시스템 상태 조회
 adminRouter.get('/system', async (_req: Request, res: Response, next: NextFunction) => {
   try {
