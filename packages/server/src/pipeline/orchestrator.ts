@@ -147,6 +147,16 @@ export class PipelineOrchestrator {
         },
       },
       {
+        // 아침 브리핑 — 15분 주기로 깨어나 KST 06시대에만 실제 발송 (내부 날짜 가드)
+        name: 'morning-briefing',
+        everyMs: 15 * 60 * 1000,
+        handler: async () => {
+          if (!this.state.isRunning) return;
+          const { runMorningBriefing } = await import('../services/briefing/morning-briefing.service.js');
+          await runMorningBriefing();
+        },
+      },
+      {
         // 자동화 룰 스윕 — 알람→조치 자동 연결. 멱등(rule+source 유니크)이라 겹쳐도 안전.
         name: 'automation-rules',
         everyMs: 10 * 60 * 1000,

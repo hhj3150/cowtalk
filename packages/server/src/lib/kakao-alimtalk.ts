@@ -20,7 +20,8 @@ export type AlimtalkTemplateId =
   | 'CALVING_IMMINENT'     // 분만 임박 알림
   | 'DISEASE_SUSPECTED'    // 질병 의심 알림
   | 'QUARANTINE_ALERT'     // 방역 경보
-  | 'APPROVAL_REQUESTED';  // 도구 실행 승인 요청 (수의사·행정관)
+  | 'APPROVAL_REQUESTED'   // 도구 실행 승인 요청 (수의사·행정관)
+  | 'MORNING_BRIEFING';    // 아침 브리핑 — 오늘 볼 소 N마리
 
 export interface AlimtalkVariable {
   readonly [key: string]: string;
@@ -82,6 +83,11 @@ const TEMPLATES: Readonly<Record<AlimtalkTemplateId, TemplateConfig>> = {
     templateCode: 'CT_APPROVAL_V1',
     content: '[CowTalk] 승인 요청\n\n목장: #{farmName}\n요청 조치: #{toolLabel}\n요청자: #{requesterRole}\n\nCowTalk 대시보드에서 검토 후 승인/거절해주세요.',
     smsFailover: '[CowTalk] #{farmName} #{toolLabel} 승인 요청. 대시보드 확인 바람.',
+  },
+  MORNING_BRIEFING: {
+    templateCode: 'CT_MORNING_V1',
+    content: '[CowTalk] 오늘의 목장 브리핑\n\n목장: #{farmName}\n오늘 볼 소 #{count}마리\n\n#{lines}\n\n자세한 근거와 조치는 CowTalk에서 확인하세요.',
+    smsFailover: '[CowTalk] #{farmName} 오늘 볼 소 #{count}마리. 앱에서 확인 바람.',
   },
   QUARANTINE_ALERT: {
     templateCode: 'CT_QUARANTINE_V1',

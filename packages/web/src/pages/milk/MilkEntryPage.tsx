@@ -1,0 +1,239 @@
+// 유량 입력 — 파일럿 1단계 핵심 화면
+//
+// 경제 환산("미조치 시 일 손실 N원")은 실측 유량이 있어야만 계산된다.
+// 이 화면이 그 원료를 넣는 곳: 날짜 하나 잡고 여러 마리를 표로 한 번에,
+// 또는 착유기/검정 CSV를 올려서 일괄 기록한다.
+
+import React, { useMemo, useRef, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { listAnimals } from '@web/api/animal.api';
+import { apiPost } from '@web/api/client';
+import { useFarmStore } from '@web/stores/farm.store';
+import { TitleAccentBar } from '@web/components/unified-dashboard/WidgetTitle';
+import { parseMilkCsv } from '@cowtalk/shared';
+
+interface BulkResultRow {
+  readonly success: boolean;
+  readonly earTag?: string | null;
+  readonly error?: string;
+}
+
+interface BulkResponse {
+  readonly total: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly results: readonly BulkResultRow[];
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function MilkEntryPage(): React.JSX.Element {
+  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  const [date, setDate] = useState(todayStr());
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [csvErrors, setCsvErrors] = useState<readonly string[]>([]);
+  const [lastResult, setLastResult] = useState<BulkResponse | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const { data: animalPage, isLoading } = useQuery({
+    queryKey: ['milk-entry-animals', selectedFarmId],
+    queryFn: () => listAnimals({ farmId: selectedFarmId ?? undefined, limit: 100, status: 'active' }),
+  });
+
+  const cows = useMemo(() => {
+    const list = animalPage?.data ?? [];
+    // 착유 대상 위주: 암소 우선 정렬 (귀번호 순)
+    return [...list].sort((a, b) => (a.earTag ?? '').localeCompare(b.earTag ?? ''));
+  }, [animalPage]);
+
+  const filledCount = cows.filter((c) => {
+    const v = values[c.earTag];
+    return v != null && v !== '' && Number.isFinite(Number(v));
+  }).length;
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const records = cows
+        .filter((c) => {
+          const v = values[c.earTag];
+          return v != null && v !== '' && Number.isFinite(Number(v));
+        })
+        .map((c) => ({
+          earTag: c.earTag,
+          farmId: c.farmId,
+          yieldL: Number(values[c.earTag]),
+          date,
+        }));
+      // 서버 한도 200건 — 청크 분할
+      let total = 0;
+      let succeeded = 0;
+      let failed = 0;
+      let results: BulkResultRow[] = [];
+      for (let i = 0; i < records.length; i += 200) {
+        const chunk = records.slice(i, i + 200);
+        const r = await apiPost<BulkResponse>('/milk/records/bulk', { records: chunk });
+        results = [...results, ...r.results];
+        total += r.total;
+        succeeded += r.succeeded;
+        failed += r.failed;
+      }
+      return { total, succeeded, failed, results } satisfies BulkResponse;
+    },
+    onSuccess: (r) => {
+      setLastResult(r);
+      if (r.failed === 0) setValues({});
+    },
+  });
+
+  const handleCsv = (file: File): void => {
+    void file.text().then((text) => {
+      const { rows, errors } = parseMilkCsv(text);
+      setCsvErrors(errors);
+      // CSV의 귀번호 → 표에 매핑 (표에 없는 귀번호는 오류로 안내)
+      const known = new Set(cows.map((c) => c.earTag));
+      const unknown: string[] = [];
+      const next: Record<string, string> = { ...values };
+      for (const [earTag, y] of rows) {
+        if (known.has(earTag)) next[earTag] = String(y);
+        else unknown.push(earTag);
+      }
+      if (unknown.length > 0) {
+        setCsvErrors((prev) => [...prev, `이 농장에 없는 귀번호 ${unknown.length}건: ${unknown.slice(0, 5).join(', ')}${unknown.length > 5 ? '…' : ''}`]);
+      }
+      setValues(next);
+    });
+  };
+
+  if (!selectedFarmId) {
+    return (
+      <div className="p-6 text-center text-sm" style={{ color: 'var(--ct-text-muted)' }}>
+        상단에서 농장을 먼저 선택해주세요.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
+      <div>
+        <h1 className="flex items-center gap-2 text-xl font-bold" style={{ color: 'var(--ct-text)' }}>
+          <TitleAccentBar />
+          🥛 유량 입력
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: 'var(--ct-text-secondary)' }}>
+          실측 유량이 있어야 개체별 경제 환산(미조치 시 손실액)이 계산됩니다. 같은 날짜에 다시 저장하면 갱신됩니다.
+        </p>
+      </div>
+
+      {/* 날짜 + CSV */}
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--ct-text)' }}>
+          측정일
+          <input
+            type="date"
+            value={date}
+            max={todayStr()}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded border px-2 py-1.5 text-sm"
+            style={{ background: 'var(--ct-card)', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="rounded-md border px-3 py-1.5 text-sm"
+          style={{ borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+        >
+          📄 CSV 불러오기 (귀번호,유량)
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.txt"
+          className="hidden"
+          aria-label="유량 CSV 파일"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleCsv(f);
+            e.target.value = '';
+          }}
+        />
+        <span className="text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+          입력 {filledCount}두 / 전체 {cows.length}두
+        </span>
+      </div>
+
+      {csvErrors.length > 0 && (
+        <div className="rounded border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+          {csvErrors.slice(0, 6).map((e, i) => <div key={i}>{e}</div>)}
+          {csvErrors.length > 6 && <div>…외 {csvErrors.length - 6}건</div>}
+        </div>
+      )}
+
+      {/* 입력 표 */}
+      {isLoading ? (
+        <div className="py-10 text-center text-sm" style={{ color: 'var(--ct-text-muted)' }}>개체 목록 로딩 중…</div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--ct-border)', background: 'var(--ct-card)' }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs" style={{ borderColor: 'var(--ct-border)', color: 'var(--ct-text-muted)' }}>
+                <th className="px-4 py-2">귀번호</th>
+                <th className="px-4 py-2">품종/산차</th>
+                <th className="px-4 py-2">유량 (L)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cows.map((c) => (
+                <tr key={c.animalId} className="border-b last:border-0" style={{ borderColor: 'var(--ct-border)' }}>
+                  <td className="px-4 py-1.5 font-semibold" style={{ color: 'var(--ct-text)' }}>{c.earTag}</td>
+                  <td className="px-4 py-1.5 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+                    {c.breed} · {c.parity}산
+                  </td>
+                  <td className="px-4 py-1.5">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={values[c.earTag] ?? ''}
+                      placeholder="—"
+                      aria-label={`${c.earTag} 유량`}
+                      onChange={(e) => setValues((v) => ({ ...v, [c.earTag]: e.target.value }))}
+                      className="w-24 rounded border px-2 py-1 text-sm"
+                      style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                    />
+                  </td>
+                </tr>
+              ))}
+              {cows.length === 0 && (
+                <tr><td colSpan={3} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--ct-text-muted)' }}>활성 개체가 없습니다</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 저장 */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={filledCount === 0 || mutation.isPending}
+          onClick={() => mutation.mutate()}
+          className="rounded-md px-5 py-2 text-sm font-bold text-white disabled:opacity-40"
+          style={{ background: 'var(--ct-primary)' }}
+        >
+          {mutation.isPending ? '저장 중…' : `${date} 유량 ${filledCount}두 저장`}
+        </button>
+        {mutation.isError && <span className="text-xs text-red-400">저장 실패 — 네트워크를 확인해주세요</span>}
+        {lastResult && (
+          <span className="text-xs" style={{ color: lastResult.failed > 0 ? '#fbbf24' : '#34d399' }}>
+            저장 완료: 성공 {lastResult.succeeded}건{lastResult.failed > 0 ? ` · 실패 ${lastResult.failed}건 (${lastResult.results.filter((r) => !r.success).slice(0, 3).map((r) => r.earTag ?? '?').join(', ')}…)` : ''}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
