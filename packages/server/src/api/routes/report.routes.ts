@@ -20,6 +20,7 @@ import {
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt, sql, inArray } from 'drizzle-orm';
 import { getEconomicParamValues } from '../../services/economics/economic-params.service.js';
+import { computeMilkPricePerL } from '@cowtalk/shared';
 import { ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromBreedingEventCounts } from '../../services/metrics/fertility-service.js';
 
@@ -228,6 +229,9 @@ reportRouter.get(
             recordCount: sql<number>`count(*)::int`,
             recordedDays: sql<number>`count(distinct ${milkRecords.date})::int`,
             animalsWithRecords: sql<number>`count(distinct ${milkRecords.animalId})::int`,
+            avgFat: sql<number | null>`avg(${milkRecords.fat})::float`,
+            avgProtein: sql<number | null>`avg(${milkRecords.protein})::float`,
+            avgScc: sql<number | null>`avg(${milkRecords.scc})::float`,
           })
           .from(milkRecords)
           .innerJoin(animals, eq(milkRecords.animalId, animals.animalId))
@@ -242,9 +246,24 @@ reportRouter.get(
       const healthAlertCount = monthEvents
         .filter((e) => e.eventType in HEALTH_EVENT_TYPES)
         .reduce((s, e) => s + e.cnt, 0);
-      const milk = milkRows[0] ?? { totalYieldL: 0, recordCount: 0, recordedDays: 0, animalsWithRecords: 0 };
+      const milk = milkRows[0] ?? {
+        totalYieldL: 0, recordCount: 0, recordedDays: 0, animalsWithRecords: 0,
+        avgFat: null, avgProtein: null, avgScc: null,
+      };
       const totalYieldL = Number(milk.totalYieldL);
       const recordCount = Number(milk.recordCount);
+      const avgFat = milk.avgFat != null ? Math.round(Number(milk.avgFat) * 100) / 100 : null;
+      const avgProtein = milk.avgProtein != null ? Math.round(Number(milk.avgProtein) * 100) / 100 : null;
+      const avgScc = milk.avgScc != null ? Math.round(Number(milk.avgScc)) : null;
+
+      // 유대단가 — 기본가 + 유지방 가감 + 체세포 1등급 가산 (유성분 기록 시 자동 반영)
+      const milkPrice = computeMilkPricePerL({
+        basePriceKrwPerL: econParams.milk_price_krw_per_l,
+        fatAdjustKrwPer01Pct: econParams.milk_fat_adjust_krw_per_01pct,
+        sccGrade1BonusKrwPerL: econParams.scc_grade1_bonus_krw_per_l,
+        avgFatPct: avgFat,
+        avgSccThousand: avgScc,
+      });
 
       const performance = {
         earlyDetection: {
@@ -258,12 +277,16 @@ reportRouter.get(
           animalsWithRecords: Number(milk.animalsWithRecords),
           totalYieldL: Math.round(totalYieldL),
           avgYieldPerRecordL: recordCount > 0 ? Math.round((totalYieldL / recordCount) * 10) / 10 : null,
+          avgFatPct: avgFat,
+          avgProteinPct: avgProtein,
+          avgSccThousand: avgScc,
         },
         economics: totalYieldL > 0
           ? {
-              // 기록 유량 × 적용 단가 — 실측 기록분에 한정한 원유 수입 추정 (estimated 명시)
-              milkRevenueEstimateKrw: Math.round(totalYieldL * econParams.milk_price_krw_per_l),
-              priceKrwPerL: econParams.milk_price_krw_per_l,
+              // 기록 유량 × 유대단가(유성분 반영) — 실측 기록분에 한정한 원유 수입 추정
+              milkRevenueEstimateKrw: Math.round(totalYieldL * milkPrice.pricePerL),
+              priceKrwPerL: milkPrice.pricePerL,
+              priceFormula: milkPrice.formula,
               estimated: true as const,
             }
           : null,

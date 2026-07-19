@@ -50,6 +50,7 @@ const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage
 const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
 const EconomicParametersPage = lazy(() => import('@web/pages/settings/EconomicParametersPage'));
 const MilkEntryPage = lazy(() => import('@web/pages/milk/MilkEntryPage'));
+const FeedRationPage = lazy(() => import('@web/pages/feed/FeedRationPage'));
 const ApprovalHistoryPage = lazy(() => import('@web/pages/vet/ApprovalHistoryPage'));
 // FLOW-02 Step3: 사이드바 등록 라우트 placeholder (404 해소)
 const CaseQueuePage = lazy(() => import('@web/pages/vet/CaseQueuePage'));
@@ -121,6 +122,7 @@ export function App(): React.JSX.Element {
               <Route path="/automation" element={<AutomationRulesPage />} />
               <Route path="/settings/economics" element={<EconomicParametersPage />} />
               <Route path="/milk-entry" element={<MilkEntryPage />} />
+              <Route path="/feed-ration" element={<FeedRationPage />} />
               <Route path="/epidemiology/radius" element={<RadiusAnalysisPage />} />
               <Route path="/epidemiology/simulation" element={<SpreadSimulationPage />} />
               <Route path="/epidemiology/contact-network" element={<ContactNetworkPage />} />

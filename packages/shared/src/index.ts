@@ -13,4 +13,11 @@ export * from './schemas/index.js';
 
 // 유틸 (순수 함수)
 export { parseMilkCsv } from './utils/milk-csv.js';
-export type { MilkCsvResult } from './utils/milk-csv.js';
+export type { MilkCsvResult, MilkCsvRow } from './utils/milk-csv.js';
+export {
+  computeMilkPricePerL,
+  computeDailyFeedCost,
+  MILK_FAT_BASE_PCT,
+  SCC_GRADE1_MAX,
+} from './utils/milk-price.js';
+export type { MilkPriceInput, MilkPriceEstimate, FeedIngredient } from './utils/milk-price.js';
