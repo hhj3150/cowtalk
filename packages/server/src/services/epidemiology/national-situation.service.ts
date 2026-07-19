@@ -332,6 +332,16 @@ export interface ProvinceFarmItem {
   readonly lng: number | null;
 }
 
+/**
+ * 시도명 → 소속 농장 farmId 목록 (좌표/주소/지역 공통 판별 — 집계·목록과 동일 기준).
+ * 방역 대시보드의 시도 전역 필터가 사용한다. 해당 시도에 농장이 없으면 빈 배열.
+ */
+export async function getFarmIdsByProvince(province: string): Promise<readonly string[]> {
+  const db = getDb();
+  const all = await getActiveFarmsWithProvince(db);
+  return all.filter((f) => f.province === province).map((f) => f.farmId);
+}
+
 export async function getProvinceFarms(province: string): Promise<readonly ProvinceFarmItem[]> {
   try {
     const db = getDb();

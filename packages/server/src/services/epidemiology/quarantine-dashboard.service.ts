@@ -627,9 +627,12 @@ export interface ActionQueueItem {
   readonly createdAt: string;
 }
 
-export async function getActionQueue(): Promise<readonly ActionQueueItem[]> {
+export async function getActionQueue(
+  opts: { farmIds?: readonly string[] } = {},
+): Promise<readonly ActionQueueItem[]> {
   const db = getDb();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const scopeIds = opts.farmIds && opts.farmIds.length > 0 ? opts.farmIds : null;
 
   const rows = await db
     .select({
@@ -648,6 +651,7 @@ export async function getActionQueue(): Promise<readonly ActionQueueItem[]> {
       and(
         gte(alerts.createdAt, since24h),
         sql`${alerts.status} in ('new', 'acknowledged')`,
+        ...(scopeIds ? [inArray(alerts.farmId, [...scopeIds])] : []),
       ),
     )
     .orderBy(desc(alerts.createdAt))
