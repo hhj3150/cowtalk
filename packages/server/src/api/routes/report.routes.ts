@@ -12,8 +12,14 @@ import {
   smaxtecEvents,
   breedingEvents,
   sensorDevices,
+  milkRecords,
+  treatments,
+  healthEvents,
+  decisionActions,
+  feedback,
 } from '../../db/schema.js';
-import { eq, and, count, gte, lt } from 'drizzle-orm';
+import { eq, and, count, gte, lt, sql, inArray } from 'drizzle-orm';
+import { getEconomicParamValues } from '../../services/economics/economic-params.service.js';
 import { ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromBreedingEventCounts } from '../../services/metrics/fertility-service.js';
 
@@ -166,9 +172,102 @@ reportRouter.get(
         ? Math.round((sensorAttached / totalAnimals) * 100)
         : 0;
 
-      // 센서 정확도: 레이블 피드백 기반 (간이 계산)
-      const alertAccuracy = 87; // smaXtec 공식 정확도 기반 기본값
-      const aiVsHumanDetection = sensorAttached > 0 ? 92 : 0;
+      // 알람 정확도: 이 농장·이 달 이벤트에 붙은 실제 피드백 레이블만 사용.
+      // 표본 10건 미만이면 null(집계 불가) — 하드코딩 홍보 수치 금지 (정직성 원칙).
+      const [labelRows] = await db
+        .select({
+          tp: sql<number>`count(*) filter (where ${feedback.feedbackType} not in ('alert_false_positive','disease_excluded'))::int`,
+          fp: sql<number>`count(*) filter (where ${feedback.feedbackType} in ('alert_false_positive','disease_excluded'))::int`,
+        })
+        .from(feedback)
+        .innerJoin(smaxtecEvents, eq(feedback.alertId, smaxtecEvents.eventId))
+        .where(and(
+          eq(smaxtecEvents.farmId, farmId),
+          gte(smaxtecEvents.detectedAt, start),
+          lt(smaxtecEvents.detectedAt, end),
+        ));
+      const labeled = Number(labelRows?.tp ?? 0) + Number(labelRows?.fp ?? 0);
+      const alertAccuracy = labeled >= 10
+        ? Math.round((Number(labelRows?.tp ?? 0) / labeled) * 100)
+        : null;
+
+      // ── 6.5 파일럿 성과 집계 (전부 실측 — 표본 수 항상 동봉) ──
+      const healthTypeList = Object.keys(HEALTH_EVENT_TYPES);
+      const [ackedHealthRows, treatmentRows, decisionsRows, milkRows, econParams] = await Promise.all([
+        db
+          .select({ cnt: count() })
+          .from(smaxtecEvents)
+          .where(and(
+            eq(smaxtecEvents.farmId, farmId),
+            gte(smaxtecEvents.detectedAt, start),
+            lt(smaxtecEvents.detectedAt, end),
+            inArray(smaxtecEvents.eventType, healthTypeList),
+            eq(smaxtecEvents.acknowledged, true),
+          )),
+        db
+          .select({ cnt: count() })
+          .from(treatments)
+          .innerJoin(healthEvents, eq(treatments.healthEventId, healthEvents.eventId))
+          .innerJoin(animals, eq(healthEvents.animalId, animals.animalId))
+          .where(and(
+            eq(animals.farmId, farmId),
+            gte(treatments.administeredAt, start),
+            lt(treatments.administeredAt, end),
+          )),
+        db
+          .select({ cnt: count() })
+          .from(decisionActions)
+          .where(and(
+            eq(decisionActions.farmId, farmId),
+            gte(decisionActions.actedAt, start),
+            lt(decisionActions.actedAt, end),
+          )),
+        db
+          .select({
+            totalYieldL: sql<number>`coalesce(sum(${milkRecords.yield}), 0)::float`,
+            recordCount: sql<number>`count(*)::int`,
+            recordedDays: sql<number>`count(distinct ${milkRecords.date})::int`,
+            animalsWithRecords: sql<number>`count(distinct ${milkRecords.animalId})::int`,
+          })
+          .from(milkRecords)
+          .innerJoin(animals, eq(milkRecords.animalId, animals.animalId))
+          .where(and(
+            eq(animals.farmId, farmId),
+            gte(milkRecords.date, start.toISOString().slice(0, 10)),
+            lt(milkRecords.date, end.toISOString().slice(0, 10)),
+          )),
+        getEconomicParamValues(farmId),
+      ]);
+
+      const healthAlertCount = monthEvents
+        .filter((e) => e.eventType in HEALTH_EVENT_TYPES)
+        .reduce((s, e) => s + e.cnt, 0);
+      const milk = milkRows[0] ?? { totalYieldL: 0, recordCount: 0, recordedDays: 0, animalsWithRecords: 0 };
+      const totalYieldL = Number(milk.totalYieldL);
+      const recordCount = Number(milk.recordCount);
+
+      const performance = {
+        earlyDetection: {
+          healthAlertCount,
+          ackedCount: Number(ackedHealthRows[0]?.cnt ?? 0),
+          treatmentCount: Number(treatmentRows[0]?.cnt ?? 0),
+        },
+        decisionsCompleted: Number(decisionsRows[0]?.cnt ?? 0),
+        milk: {
+          recordedDays: Number(milk.recordedDays),
+          animalsWithRecords: Number(milk.animalsWithRecords),
+          totalYieldL: Math.round(totalYieldL),
+          avgYieldPerRecordL: recordCount > 0 ? Math.round((totalYieldL / recordCount) * 10) / 10 : null,
+        },
+        economics: totalYieldL > 0
+          ? {
+              // 기록 유량 × 적용 단가 — 실측 기록분에 한정한 원유 수입 추정 (estimated 명시)
+              milkRevenueEstimateKrw: Math.round(totalYieldL * econParams.milk_price_krw_per_l),
+              priceKrwPerL: econParams.milk_price_krw_per_l,
+              estimated: true as const,
+            }
+          : null,
+      };
 
       // ── 7. AI 코멘트 ──
       const aiComment = buildAiComment({
@@ -196,9 +295,10 @@ reportRouter.get(
         health: healthData,
         sensor: {
           sensorCoverage,
-          alertAccuracy,
-          aiVsHumanDetection,
+          alertAccuracy, // null = 레이블 10건 미만 (집계 불가)
+          alertAccuracyLabels: labeled,
         },
+        performance,
         aiComment,
       });
     } catch (error) {
