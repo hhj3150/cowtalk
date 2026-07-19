@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import type { FarmProfitData, FarmProfitEntryInput } from '@cowtalk/shared';
 import { useFarmProfit, useSaveFarmProfit } from '../../hooks/useUnifiedDashboard';
-import { useFarmStore } from '../../stores/farm.store';
+import { useEffectiveFarmId } from '../../hooks/useEffectiveFarmId';
 
 const SOURCE_BADGE: Record<FarmProfitData['dataSource'], { label: string; color: string }> = {
   actual: { label: '실제 입력', color: '#34d399' },
@@ -106,7 +106,8 @@ function EntryForm({ farmId, period, onSaved }: {
 
 export function FarmProfitWidget(): React.JSX.Element {
   const { data, isLoading } = useFarmProfit();
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  // 배정 농장 1개인 목장주는 자동 결정 — 입력 폼이 숨는 문제 방지
+  const selectedFarmId = useEffectiveFarmId();
   const [showForm, setShowForm] = useState(false);
 
   if (isLoading || !data) {

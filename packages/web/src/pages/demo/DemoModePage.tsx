@@ -1,8 +1,10 @@
 // 데모 모드 — 전체화면 자동 순환 (슬라이드별 차별화된 KPI + 기능 미리보기)
 // BUG-008: AI 정확도/건강 점수/정상 비율 등 ground truth 없는 mock 수치 제거.
 //          확정 사실 (농장 수, 두수, 지원 역할 수 등)만 표시. 나머지는 "—" (학습 중).
+// 규모 수치(농장·두수)는 하드코딩하지 않고 /api/public/stats 실시간 집계를 사용한다.
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import axios from 'axios';
 
 interface SlideConfig {
   readonly key: string;
@@ -13,15 +15,24 @@ interface SlideConfig {
   readonly features: readonly string[];
 }
 
-const SLIDES: readonly SlideConfig[] = [
+interface LiveScale {
+  readonly totalFarms: number;
+  readonly totalCattle: number;
+}
+
+function buildSlides(scale: LiveScale | null): readonly SlideConfig[] {
+  const farms = scale?.totalFarms ?? null;
+  const cattle = scale?.totalCattle ?? null;
+  const farmsLabel = farms != null ? `${farms}개 농장` : '전체 농장';
+  return [
   {
     key: 'overview',
     title: '축산 디지털 운영체제',
     description: 'smaXtec 위내센서 + 공공데이터 + AI 해석 = 통합 플랫폼',
     icon: '🐄',
     kpis: [
-      { label: '연동 농장', value: 146, suffix: '개' },
-      { label: '관리 두수', value: 7158, suffix: '두' },
+      { label: '연동 농장', value: farms, suffix: farms != null ? '개' : '실시간' },
+      { label: '관리 두수', value: cattle, suffix: cattle != null ? '두' : '실시간' },
       { label: '24/7 모니터링', value: 24, suffix: 'h', color: 'text-green-400' },
       // D4/D5 (BUG-008): hardcoded "95%+" mock 제거. ground truth 부족 시 "—".
       { label: 'AI 감지 정확도', value: null, suffix: '학습 중' },
@@ -45,10 +56,10 @@ const SLIDES: readonly SlideConfig[] = [
   {
     key: 'vet',
     title: '수의사 뷰',
-    description: '56개 담당 농장 한눈에 — 임상 의사결정 지원',
+    description: '담당 농장을 한눈에 — 임상 의사결정 지원',
     icon: '🩺',
     kpis: [
-      { label: '담당 농장', value: 56, suffix: '개' },
+      { label: '담당 농장', value: null, suffix: '계약별' },
       { label: '긴급 방문', value: null, suffix: '실시간', color: 'text-red-400' },
       { label: '체온 이상', value: null, suffix: '실시간', color: 'text-orange-400' },
       { label: '처방 기록', value: null, suffix: '누적' },
@@ -58,10 +69,10 @@ const SLIDES: readonly SlideConfig[] = [
   {
     key: 'quarantine',
     title: '방역관 뷰',
-    description: '146개 농장 통합 방역 — 조기 경보 시스템',
+    description: `${farmsLabel} 통합 방역 — 조기 경보 시스템`,
     icon: '🛡️',
     kpis: [
-      { label: '감시 농장', value: 146, suffix: '개' },
+      { label: '감시 농장', value: farms, suffix: farms != null ? '개' : '실시간' },
       { label: '발열 클러스터', value: null, suffix: '실시간', color: 'text-red-400' },
       { label: '의심 개체', value: null, suffix: '실시간', color: 'text-orange-400' },
       // D5: "정상 비율 97.3%" mock 제거.
@@ -86,17 +97,18 @@ const SLIDES: readonly SlideConfig[] = [
   {
     key: 'export',
     title: '수출 전략 플랫폼',
-    description: '1농장 → 146농장 → 지역 → 국가 → 글로벌',
+    description: '1농장 → 전국 → 국가 → 글로벌',
     icon: '🌏',
     kpis: [
-      { label: '한국 목장', value: 146, suffix: '개' },
+      { label: '한국 목장', value: farms, suffix: farms != null ? '개' : '실시간' },
       { label: '공공데이터 API', value: 8, suffix: '종' },
       { label: '지원 역할', value: 6, suffix: '개' },
       { label: '다국어 지원', value: 3, suffix: '종', color: 'text-blue-400' },
     ],
     features: ['국가별 어댑터 패턴 — 한국 특화이되 글로벌 확장', 'i18n 지원 (한/영/러)', '축산 디지털 주권 — 아날로그→디지털 전환'],
   },
-];
+  ];
+}
 
 const INTERVAL = 10_000;
 
@@ -104,9 +116,18 @@ export default function DemoModePage(): React.JSX.Element {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
+  // 실시간 규모 (농장·두수) — 실패 시 숫자 대신 "실시간" 표기 (옛 수치 하드코딩 금지)
+  const [scale, setScale] = useState<LiveScale | null>(null);
+  useEffect(() => {
+    axios.get<{ success: boolean; data: LiveScale }>('/api/public/stats')
+      .then((r) => setScale(r.data.data))
+      .catch(() => { /* 스탯 실패해도 데모는 동작 */ });
+  }, []);
+  const SLIDES = useMemo(() => buildSlides(scale), [scale]);
+
   const nextSlide = useCallback(() => {
     setCurrentIndex((prev) => (prev + 1) % SLIDES.length);
-  }, []);
+  }, [SLIDES.length]);
 
   useEffect(() => {
     if (isPaused) return;
@@ -123,7 +144,7 @@ export default function DemoModePage(): React.JSX.Element {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [SLIDES.length]);
 
   // 스와이프 지원
   useEffect(() => {
@@ -140,7 +161,7 @@ export default function DemoModePage(): React.JSX.Element {
     document.addEventListener('touchstart', onTouchStart);
     document.addEventListener('touchend', onTouchEnd);
     return () => { document.removeEventListener('touchstart', onTouchStart); document.removeEventListener('touchend', onTouchEnd); };
-  }, []);
+  }, [SLIDES.length]);
 
   const slide = SLIDES[currentIndex]!;
 

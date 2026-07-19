@@ -6,7 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiDelete } from '@web/api/client';
-import { useFarmStore } from '@web/stores/farm.store';
+import { useEffectiveFarmId } from '@web/hooks/useEffectiveFarmId';
 import { TitleAccentBar } from '@web/components/unified-dashboard/WidgetTitle';
 import { computeDailyFeedCost } from '@cowtalk/shared';
 
@@ -45,7 +45,8 @@ function draftsToIngredients(drafts: readonly IngredientDraft[]) {
 }
 
 export default function FeedRationPage(): React.JSX.Element {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  // 배정 농장 1개인 목장주는 자동 결정 — "농장을 선택하라" 빈 화면 방지
+  const selectedFarmId = useEffectiveFarmId();
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState<{

@@ -3776,8 +3776,18 @@ const farmProfitEntrySchema = z.object({
 unifiedDashboardRouter.get('/farm-profit', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
-    const farmId = req.query.farmId as string | undefined;
     const period = (req.query.period as string | undefined) ?? getCurrentPeriod();
+    // 농장 스코프 강제 — 배정 사용자(목장주 등)는 배정 농장만.
+    // farmId 미지정 + 배정 1개면 그 농장으로 자동 결정 (전체 집계 누수 방지).
+    const scoped = scopedFarmIds(req);
+    let farmId = req.query.farmId as string | undefined;
+    if (scoped) {
+      if (farmId && !scoped.includes(farmId)) {
+        res.status(403).json({ success: false, error: '접근 권한이 없는 농장입니다' });
+        return;
+      }
+      if (!farmId && scoped.length === 1) farmId = scoped[0];
+    }
 
     if (farmId) {
       const farmRows = await db.select({
