@@ -31,8 +31,28 @@ interface MonthlyReport {
   };
   readonly sensor: {
     readonly sensorCoverage: number;
-    readonly alertAccuracy: number;
-    readonly aiVsHumanDetection: number;
+    /** null = 레이블 표본 10건 미만 (집계 불가) */
+    readonly alertAccuracy: number | null;
+    readonly alertAccuracyLabels: number;
+  };
+  readonly performance?: {
+    readonly earlyDetection: {
+      readonly healthAlertCount: number;
+      readonly ackedCount: number;
+      readonly treatmentCount: number;
+    };
+    readonly decisionsCompleted: number;
+    readonly milk: {
+      readonly recordedDays: number;
+      readonly animalsWithRecords: number;
+      readonly totalYieldL: number;
+      readonly avgYieldPerRecordL: number | null;
+    };
+    readonly economics: {
+      readonly milkRevenueEstimateKrw: number;
+      readonly priceKrwPerL: number;
+      readonly estimated: true;
+    } | null;
   };
   readonly aiComment: string;
 }
@@ -132,6 +152,62 @@ export default function MonthlyReportPage(): React.JSX.Element {
               ))}
             </div>
           </div>
+
+          {/* 파일럿 성과 — 전부 실측 (표본 수 동봉) */}
+          {report.performance && (
+            <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 20 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 4px' }}>📈 이 달의 성과 (실측)</h2>
+              <p style={{ fontSize: 10, color: 'var(--ct-text-muted)', margin: '0 0 12px' }}>
+                아래 수치는 이 농장의 실제 기록에서만 집계됩니다. 추정치는 (추정)으로 표기합니다.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 12 }}>
+                <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--ct-bg)' }}>
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>건강 알림 → 확인</div>
+                  <div style={{ fontSize: 20, fontWeight: 800 }}>
+                    {report.performance.earlyDetection.ackedCount}
+                    <span style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}> / {report.performance.earlyDetection.healthAlertCount}건</span>
+                  </div>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--ct-bg)' }}>
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>치료 기록</div>
+                  <div style={{ fontSize: 20, fontWeight: 800 }}>{report.performance.earlyDetection.treatmentCount}건</div>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--ct-bg)' }}>
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>결정 카드 조치 완료</div>
+                  <div style={{ fontSize: 20, fontWeight: 800 }}>{report.performance.decisionsCompleted}건</div>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--ct-bg)' }}>
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>유량 기록</div>
+                  <div style={{ fontSize: 20, fontWeight: 800 }}>
+                    {report.performance.milk.recordedDays}일
+                    <span style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}> · {report.performance.milk.animalsWithRecords}두</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12, fontSize: 12 }}>
+                <span>
+                  월 기록 유량 <b>{report.performance.milk.totalYieldL.toLocaleString()}L</b>
+                  {report.performance.milk.avgYieldPerRecordL != null && (
+                    <span style={{ color: 'var(--ct-text-muted)' }}> (두당 평균 {report.performance.milk.avgYieldPerRecordL}L/일)</span>
+                  )}
+                </span>
+                {report.performance.economics ? (
+                  <span>
+                    기록분 원유 수입 <b style={{ color: '#34d399' }}>{Math.round(report.performance.economics.milkRevenueEstimateKrw / 10000).toLocaleString()}만원</b>
+                    <span style={{ color: 'var(--ct-text-muted)' }}> (추정 · {report.performance.economics.priceKrwPerL.toLocaleString()}원/L 적용)</span>
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--ct-text-muted)' }}>유량을 기록하면 원유 수입 추정이 표시됩니다</span>
+                )}
+                <span>
+                  알람 정확도{' '}
+                  {report.sensor.alertAccuracy != null
+                    ? <b>{report.sensor.alertAccuracy}% <span style={{ fontWeight: 400, color: 'var(--ct-text-muted)' }}>(레이블 {report.sensor.alertAccuracyLabels}건)</span></b>
+                    : <span style={{ color: 'var(--ct-text-muted)' }}>레이블 {report.sensor.alertAccuracyLabels}건 — 10건부터 집계</span>}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* 건강 요약 */}
           <div style={{ background: 'var(--ct-card)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 20 }}>
