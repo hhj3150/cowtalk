@@ -112,6 +112,11 @@ milkRouter.post(
         return;
       }
 
+      // 두당 평균은 파생값 — 총 유량과 착유두수가 있으면 자동 계산 (수기 입력보다 우선)
+      if (fields.totalYieldL !== null && typeof fields.milkingCount === 'number' && fields.milkingCount > 0) {
+        fields.avgYieldPerCowL = Math.round(((fields.totalYieldL as number) / fields.milkingCount) * 10) / 10;
+      }
+
       const db = getDb();
       const values = {
         farmId,

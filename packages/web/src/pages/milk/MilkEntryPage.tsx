@@ -96,6 +96,15 @@ function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly d
     onError: () => setSaved(null),
   });
 
+  // 두당 평균 = 총 유량 ÷ 착유두수 (자동 계산 — 둘 다 있으면 입력 불가)
+  const autoAvg = (() => {
+    const total = Number(draft.totalYieldL);
+    const cnt = Number(draft.milkingCount);
+    return Number.isFinite(total) && total > 0 && Number.isFinite(cnt) && cnt > 0
+      ? Math.round((total / cnt) * 10) / 10
+      : null;
+  })();
+
   const FIELDS: readonly { key: string; label: string; step?: string }[] = [
     { key: 'milkingCount', label: '착유 두수' },
     { key: 'totalYieldL', label: '총 유량 (L)' },
@@ -124,22 +133,26 @@ function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly d
       {open && (
         <div className="border-t px-4 py-3" style={{ borderColor: 'var(--ct-border)' }}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {FIELDS.map((f) => (
+            {FIELDS.map((f) => {
+              const isAutoAvg = f.key === 'avgYieldPerCowL' && autoAvg !== null;
+              return (
               <label key={f.key} className="flex flex-col gap-1 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
-                {f.label}
+                {f.label}{isAutoAvg ? ' (자동)' : ''}
                 <input
                   type="number"
                   min={0}
                   step={f.step ?? '1'}
                   inputMode="decimal"
-                  value={draft[f.key] ?? ''}
+                  value={isAutoAvg ? String(autoAvg) : (draft[f.key] ?? '')}
                   placeholder="—"
+                  disabled={isAutoAvg}
                   onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                  className="rounded border px-2 py-1 text-sm"
-                  style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                  className="rounded border px-2 py-1 text-sm disabled:opacity-70"
+                  style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: isAutoAvg ? '#34d399' : 'var(--ct-text)' }}
                 />
               </label>
-            ))}
+              );
+            })}
           </div>
           <p className="mt-2 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
             유대는 3단으로 계산됩니다: 자체가공 물량을 뺀 납유분이 <b>1일 쿼터량까지 납유 단가</b>,
