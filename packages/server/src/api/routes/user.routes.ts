@@ -6,8 +6,9 @@ import { authenticate } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { users, userFarmAccess, farms } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { isOwnerUserId, setUserApproval } from '../../services/auth/approval.service.js';
+import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
 import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
 
 export const userRouter = Router();
@@ -36,6 +37,45 @@ userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res
       .orderBy(users.name);
 
     res.json({ success: true, data: userList });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /users/:userId/farms — 목장 배정 교체 (관리자 전용)
+// body: { farmIds: string[] } — 전달된 목록으로 배정을 전면 교체한다 (빈 배열 = 전체 해제)
+userRouter.put('/:userId/farms', requirePermission('user', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getDb();
+    const targetUserId = req.params.userId as string;
+    const { farmIds } = req.body as { farmIds?: unknown };
+
+    if (!Array.isArray(farmIds) || farmIds.some((f) => typeof f !== 'string') || farmIds.length > 500) {
+      throw new BadRequestError('farmIds는 문자열 배열(최대 500개)이어야 합니다');
+    }
+    const unique = [...new Set(farmIds as string[])];
+
+    // 존재하는 농장만 배정 (오타·삭제 농장 방지)
+    if (unique.length > 0) {
+      const found = await db
+        .select({ farmId: farms.farmId })
+        .from(farms)
+        .where(inArray(farms.farmId, unique));
+      if (found.length !== unique.length) {
+        throw new BadRequestError('존재하지 않는 농장이 포함되어 있습니다');
+      }
+    }
+
+    // 전면 교체: 기존 배정 삭제 → 새 배정 삽입
+    await db.delete(userFarmAccess).where(eq(userFarmAccess.userId, targetUserId));
+    if (unique.length > 0) {
+      await db.insert(userFarmAccess).values(unique.map((farmId) => ({ userId: targetUserId, farmId })));
+    }
+
+    // 대상자 세션 폐기 — 다음 로그인/갱신부터 새 스코프의 JWT를 받는다
+    await revokeAllUserRefreshTokens(targetUserId);
+
+    res.json({ success: true, data: { userId: targetUserId, farmIds: unique } });
   } catch (error) {
     next(error);
   }

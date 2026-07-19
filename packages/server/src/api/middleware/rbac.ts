@@ -54,9 +54,11 @@ export function requireFarmAccess(
     throw new UnauthorizedError();
   }
 
-  // 관리 역할 + 마스터 토큰(역할 전환 포함)은 전체 농장 접근 가능
+  // 마스터 토큰(역할 전환 포함)은 전체 농장 접근 가능.
+  // 관리 역할(행정·방역관)은 **배정이 없을 때만** 전체 — 배정된 관리 계정은
+  // 배정 목장으로 제한된다 (배정 우선 규칙, 목록뿐 아니라 직접 조회도 동일).
   const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (adminRoles.includes(req.user.role) || req.user.isMaster) {
+  if (req.user.isMaster || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
     next();
     return;
   }
@@ -174,7 +176,7 @@ export function enforceFarmScope(
   }
 
   const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (adminRoles.includes(req.user.role) || req.user.isMaster) {
+  if (req.user.isMaster || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
     next();
     return;
   }

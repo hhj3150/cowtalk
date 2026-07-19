@@ -92,4 +92,15 @@ describe('requireFarmAccess — 미배정 farm-scoped 사용자', () => {
     expect(run({ userId: 'u11', role: 'government_admin', farmIds: [] }, { farmId: 'any' }).passed).toBe(true);
     expect(run({ userId: 'u12', role: 'quarantine_officer', farmIds: [] }, { farmId: 'any' }).passed).toBe(true);
   });
+
+  it('배정된 관리 역할은 배정 목장만 — 배정 밖 직접 조회 403 (우회 차단)', () => {
+    expect(run({ userId: 'u13', role: 'quarantine_officer', farmIds: ['fa'] }, { farmId: 'fa' }).passed).toBe(true);
+    expect(run({ userId: 'u13', role: 'quarantine_officer', farmIds: ['fa'] }, { farmId: 'fb' }).passed).toBe(false);
+    expect(run({ userId: 'u14', role: 'government_admin', farmIds: ['fa'] }, { farmId: 'fb' }).passed).toBe(false);
+  });
+
+  it('마스터 토큰(isMaster)은 역할 전환 후에도 전체 접근', () => {
+    expect(run({ userId: 'u15', role: 'farmer', farmIds: [], isMaster: true }, { farmId: 'any' }).passed).toBe(true);
+    expect(scopedFarmIds(makeReq({ userId: 'u15', role: 'farmer', farmIds: [], isMaster: true }))).toBeNull();
+  });
 });

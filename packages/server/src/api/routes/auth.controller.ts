@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import type { LoginInput, RegisterInput, Role } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { farms, regions } from '../../db/schema.js';
+import { isOwnerUserId } from '../../services/auth/approval.service.js';
 import {
   hashPassword,
   verifyPassword,
@@ -241,19 +242,24 @@ export async function register(req: Request, res: Response): Promise<void> {
 
   const passwordHash = await hashPassword(input.password);
 
+  // 소유자가 직접 발급하는 계정은 즉시 승인 — "아이디를 부여하면 바로 쓸 수 있어야" 한다.
+  // 그 외 경로(온보딩 등)로 만들어진 계정은 승인 대기.
+  const creatorIsOwner = req.user ? await isOwnerUserId(req.user.userId) : false;
+  const approvalStatus = creatorIsOwner ? 'approved' : 'pending';
+
   const user = await createUser({
     name: input.name,
     email: input.email,
     passwordHash,
     role: input.role,
     status: 'active',
+    approvalStatus,
   });
 
   if (input.farmIds && input.farmIds.length > 0) {
     await addUserFarmAccess(user.userId, input.farmIds);
   }
 
-  // 신규 가입은 승인 대기(pending) 상태 — 소유자 승인 후 로그인 가능
   res.status(201).json({
     success: true,
     data: {
@@ -261,8 +267,10 @@ export async function register(req: Request, res: Response): Promise<void> {
       name: user.name,
       email: user.email,
       role: user.role,
-      approvalStatus: 'pending',
-      message: '가입이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.',
+      approvalStatus,
+      message: creatorIsOwner
+        ? '계정이 생성되었고 즉시 사용할 수 있습니다.'
+        : '가입이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.',
     },
   });
 }
