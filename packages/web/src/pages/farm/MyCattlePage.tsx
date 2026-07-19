@@ -2,11 +2,13 @@
 
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet } from '@web/api/client';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useFarmStore } from '@web/stores/farm.store';
 import { ExportButton } from '@web/components/data/ExportButton';
+import { AnimalFormPanel } from '@web/components/animal/AnimalFormPanel';
+import type { AnimalRecord as MdmAnimalRecord } from '@web/api/animal-management.api';
 
 interface AnimalRecord {
   readonly animalId: string;
@@ -135,11 +137,14 @@ interface AnimalListViewProps {
   readonly sensorCount: number;
   readonly onAnimalClick: (animalId: string) => void;
   readonly farmId: string | null;
+  /** 개체 정보 수정 (목장주 동선) */
+  readonly onEdit: (animal: AnimalRecord) => void;
+  readonly onCreate: () => void;
 }
 
 function AnimalListView({
   animals, isLoading, filterTab, onFilterChange,
-  search, onSearchChange, totalCount, sensorCount, onAnimalClick, farmId,
+  search, onSearchChange, totalCount, sensorCount, onAnimalClick, farmId, onEdit, onCreate,
 }: AnimalListViewProps): React.JSX.Element {
   return (
     <>
@@ -173,6 +178,13 @@ function AnimalListView({
           }}
         />
         {farmId && <ExportButton target="animals" params={{ farmId }} />}
+        <button
+          type="button"
+          onClick={onCreate}
+          style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#10b981', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >
+          ＋ 등록
+        </button>
       </div>
 
       {/* 목록 */}
@@ -246,7 +258,17 @@ function AnimalListView({
                   {animal.daysInMilk != null && (
                     <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>DIM {animal.daysInMilk}</div>
                   )}
-                  <div style={{ fontSize: 18, color: '#64748b' }}>›</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      aria-label={`${tag} 정보 수정`}
+                      onClick={(e) => { e.stopPropagation(); onEdit(animal); }}
+                      style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 15, padding: 2 }}
+                    >
+                      ✎
+                    </button>
+                    <span style={{ fontSize: 18, color: '#64748b' }}>›</span>
+                  </div>
                 </div>
               </div>
 
@@ -262,7 +284,17 @@ function AnimalListView({
                 <div style={{ color: 'var(--ct-text-muted, #94a3b8)' }}>{statusLabel}</div>
                 <div>{hasSensor ? '🟢' : '⚪'}</div>
                 <div style={{ color: '#f59e0b', fontWeight: 600 }}>{animal.daysInMilk ?? '-'}</div>
-                <div style={{ color: '#64748b' }}>›</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    aria-label={`${tag} 정보 수정`}
+                    onClick={(e) => { e.stopPropagation(); onEdit(animal); }}
+                    style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, padding: 2 }}
+                  >
+                    ✎
+                  </button>
+                  <span style={{ color: '#64748b' }}>›</span>
+                </div>
               </div>
             </div>
           );
@@ -286,11 +318,16 @@ function AnimalListView({
 
 function MyCattlePage(): React.JSX.Element {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const farmIds = useAuthStore((s) => s.user?.farmIds);
   const { farms, selectedFarmId } = useFarmStore();
 
   // 전체 선택 모드일 때 로컬에서 선택한 목장 ID (드릴다운)
   const [browseFarmId, setBrowseFarmId] = useState<string | null>(null);
+
+  // 개체 등록/수정 패널 상태
+  const [showAnimalForm, setShowAnimalForm] = useState(false);
+  const [editAnimal, setEditAnimal] = useState<MdmAnimalRecord | null>(null);
 
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [search, setSearch] = useState('');
@@ -418,6 +455,25 @@ function MyCattlePage(): React.JSX.Element {
           sensorCount={sensorCount}
           onAnimalClick={(id) => navigate(`/cow/${id}`)}
           farmId={activeFarmId}
+          onEdit={(animal) => {
+            if (!activeFarmId) return;
+            setEditAnimal({ ...animal, farmId: activeFarmId } as unknown as MdmAnimalRecord);
+            setShowAnimalForm(true);
+          }}
+          onCreate={() => { setEditAnimal(null); setShowAnimalForm(true); }}
+        />
+      )}
+
+      {/* 개체 등록/수정 패널 — 목장주 동선 (기존 관리자용 AnimalFormPanel 재사용) */}
+      {showAnimalForm && activeFarmId && (
+        <AnimalFormPanel
+          farmId={activeFarmId}
+          editAnimal={editAnimal}
+          onClose={() => setShowAnimalForm(false)}
+          onSaved={() => {
+            setShowAnimalForm(false);
+            void queryClient.invalidateQueries({ queryKey: ['my-cattle', activeFarmId] });
+          }}
         />
       )}
     </div>

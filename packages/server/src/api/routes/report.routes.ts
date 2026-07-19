@@ -17,6 +17,7 @@ import {
   healthEvents,
   decisionActions,
   feedback,
+  feedPrograms,
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt, sql, inArray } from 'drizzle-orm';
 import { getEconomicParamValues } from '../../services/economics/economic-params.service.js';
@@ -194,7 +195,7 @@ reportRouter.get(
 
       // ── 6.5 파일럿 성과 집계 (전부 실측 — 표본 수 항상 동봉) ──
       const healthTypeList = Object.keys(HEALTH_EVENT_TYPES);
-      const [ackedHealthRows, treatmentRows, decisionsRows, milkRows, econParams] = await Promise.all([
+      const [ackedHealthRows, treatmentRows, decisionsRows, milkRows, econParams, feedRows] = await Promise.all([
         db
           .select({ cnt: count() })
           .from(smaxtecEvents)
@@ -241,6 +242,15 @@ reportRouter.get(
             lt(milkRecords.date, end.toISOString().slice(0, 10)),
           )),
         getEconomicParamValues(farmId),
+        db
+          .select({ dailyCostPerHead: feedPrograms.dailyCostPerHead })
+          .from(feedPrograms)
+          .where(and(
+            eq(feedPrograms.farmId, farmId),
+            eq(feedPrograms.isActive, true),
+            eq(feedPrograms.targetGroup, 'lactating'),
+          ))
+          .limit(1),
       ]);
 
       const healthAlertCount = monthEvents
@@ -282,13 +292,25 @@ reportRouter.get(
           avgSccThousand: avgScc,
         },
         economics: totalYieldL > 0
-          ? {
-              // 기록 유량 × 유대단가(유성분 반영) — 실측 기록분에 한정한 원유 수입 추정
-              milkRevenueEstimateKrw: Math.round(totalYieldL * milkPrice.pricePerL),
-              priceKrwPerL: milkPrice.pricePerL,
-              priceFormula: milkPrice.formula,
-              estimated: true as const,
-            }
+          ? (() => {
+              const avgYieldPerRecordL = recordCount > 0 ? totalYieldL / recordCount : null;
+              const feedCostPerHeadDayKrw = feedRows[0]?.dailyCostPerHead ?? null;
+              // 두당 일 마진 = 두당 평균 유량 × 유대단가 − 착유우 배합 두당 일 사료비
+              // 유량 기록과 착유우 배합이 모두 있을 때만 계산 (없으면 null — 과장 금지)
+              const marginPerHeadDayKrw =
+                avgYieldPerRecordL != null && feedCostPerHeadDayKrw != null
+                  ? Math.round(avgYieldPerRecordL * milkPrice.pricePerL - feedCostPerHeadDayKrw)
+                  : null;
+              return {
+                // 기록 유량 × 유대단가(유성분 반영) — 실측 기록분에 한정한 원유 수입 추정
+                milkRevenueEstimateKrw: Math.round(totalYieldL * milkPrice.pricePerL),
+                priceKrwPerL: milkPrice.pricePerL,
+                priceFormula: milkPrice.formula,
+                feedCostPerHeadDayKrw,
+                marginPerHeadDayKrw,
+                estimated: true as const,
+              };
+            })()
           : null,
       };
 
