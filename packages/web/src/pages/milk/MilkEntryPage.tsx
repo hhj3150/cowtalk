@@ -8,7 +8,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { listAnimals } from '@web/api/animal.api';
 import { apiPost } from '@web/api/client';
-import { useFarmStore } from '@web/stores/farm.store';
+import { useEffectiveFarmId } from '@web/hooks/useEffectiveFarmId';
 import { TitleAccentBar } from '@web/components/unified-dashboard/WidgetTitle';
 import { parseMilkCsv } from '@cowtalk/shared';
 
@@ -43,7 +43,8 @@ function optNum(raw: string | undefined): number | undefined {
 }
 
 export default function MilkEntryPage(): React.JSX.Element {
-  const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
+  // 배정 농장 1개인 목장주는 자동 결정 — "농장을 선택하라" 빈 화면 방지
+  const selectedFarmId = useEffectiveFarmId();
   const [date, setDate] = useState(todayStr());
   const [values, setValues] = useState<Record<string, RowDraft>>({});
   const [csvErrors, setCsvErrors] = useState<readonly string[]>([]);
