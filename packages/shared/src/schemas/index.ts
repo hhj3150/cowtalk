@@ -22,6 +22,7 @@ export {
   dateRangeSchema,
   uuidParamSchema,
   loginSchema,
+  loginIdSchema,
   refreshTokenSchema,
   registerSchema,
   farmQuerySchema,
