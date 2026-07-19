@@ -49,7 +49,9 @@ interface MonthlyReport {
       readonly avgYieldPerRecordL: number | null;
       readonly avgFatPct?: number | null;
       readonly avgProteinPct?: number | null;
+      readonly avgLactosePct?: number | null;
       readonly avgSccThousand?: number | null;
+      readonly source?: 'individual' | 'herd_summary';
     };
     readonly economics: {
       readonly milkRevenueEstimateKrw: number;
@@ -183,7 +185,7 @@ export default function MonthlyReportPage(): React.JSX.Element {
                   <div style={{ fontSize: 20, fontWeight: 800 }}>{report.performance.decisionsCompleted}건</div>
                 </div>
                 <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--ct-bg)' }}>
-                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>유량 기록</div>
+                  <div style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>유량 기록{report.performance.milk.source === 'herd_summary' ? ' (우군)' : ''}</div>
                   <div style={{ fontSize: 20, fontWeight: 800 }}>
                     {report.performance.milk.recordedDays}일
                     <span style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}> · {report.performance.milk.animalsWithRecords}두</span>
@@ -202,6 +204,7 @@ export default function MonthlyReportPage(): React.JSX.Element {
                     유성분 평균{' '}
                     {report.performance.milk.avgFatPct != null && <>유지방 <b>{report.performance.milk.avgFatPct}%</b> </>}
                     {report.performance.milk.avgProteinPct != null && <>유단백 <b>{report.performance.milk.avgProteinPct}%</b> </>}
+                    {report.performance.milk.avgLactosePct != null && <>유당 <b>{report.performance.milk.avgLactosePct}%</b> </>}
                     {report.performance.milk.avgSccThousand != null && <>체세포 <b>{report.performance.milk.avgSccThousand}천/mL</b></>}
                   </span>
                 )}

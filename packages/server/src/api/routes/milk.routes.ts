@@ -7,7 +7,7 @@ import { authenticate } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { recordMilkYield, type RecordMilkYieldInput } from '../../services/milk/milk-record.service.js';
 import { getDb } from '../../config/database.js';
-import { milkRecords } from '../../db/schema.js';
+import { milkRecords, farmMilkSummary } from '../../db/schema.js';
 import { and, eq, gte, desc } from 'drizzle-orm';
 
 export const milkRouter = Router();
@@ -52,6 +52,126 @@ milkRouter.post(
         success: succeeded > 0,
         data: { total: records.length, succeeded, failed: records.length - succeeded, results },
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ===========================
+// 우군(농장) 단위 기록 — 벌크탱크 기준 평균 성적
+// ===========================
+
+function optRange(v: unknown, min: number, max: number): number | null | 'invalid' {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < min || n > max) return 'invalid';
+  return n;
+}
+
+// POST /milk/farm-summary — 우군 일별 기록 (같은 농장+날짜는 갱신)
+// body: { farmId, date, milkingCount?, totalYieldL?, avgYieldPerCowL?, avgFat?, avgProtein?, avgLactose?, avgScc?, priceKrwPerL?, note? }
+milkRouter.post(
+  '/farm-summary',
+  requirePermission('animal', 'update'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const b = req.body as Record<string, unknown>;
+      const farmId = typeof b.farmId === 'string' ? b.farmId : '';
+      const dateStr = typeof b.date === 'string' ? b.date : '';
+      if (!farmId || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        res.status(400).json({ success: false, error: 'farmId와 date(YYYY-MM-DD)가 필요합니다' });
+        return;
+      }
+      // 농장 쓰기 스코프 — 배정 사용자는 배정 농장만
+      const user = req.user!;
+      const userFarmIds = user.farmIds ?? [];
+      if (user.role !== 'government_admin' && !user.isMaster && !userFarmIds.includes(farmId)) {
+        res.status(403).json({ success: false, error: '접근 권한이 없는 농장입니다' });
+        return;
+      }
+
+      const fields = {
+        milkingCount: optRange(b.milkingCount, 0, 100000),
+        totalYieldL: optRange(b.totalYieldL, 0, 1000000),
+        avgYieldPerCowL: optRange(b.avgYieldPerCowL, 0, 100),
+        avgFat: optRange(b.avgFat, 0, 10),
+        avgProtein: optRange(b.avgProtein, 0, 10),
+        avgLactose: optRange(b.avgLactose, 0, 10),
+        avgScc: optRange(b.avgScc, 0, 10000),
+        priceKrwPerL: optRange(b.priceKrwPerL, 0, 100000),
+      };
+      const invalid = Object.entries(fields).filter(([, v]) => v === 'invalid').map(([k]) => k);
+      if (invalid.length > 0) {
+        res.status(400).json({ success: false, error: `값 범위 이상: ${invalid.join(', ')}` });
+        return;
+      }
+      if (fields.totalYieldL === null && fields.avgYieldPerCowL === null) {
+        res.status(400).json({ success: false, error: '총 유량 또는 두당 평균 유량 중 하나는 입력해야 합니다' });
+        return;
+      }
+
+      const db = getDb();
+      const values = {
+        farmId,
+        date: dateStr,
+        milkingCount: fields.milkingCount as number | null,
+        totalYieldL: fields.totalYieldL as number | null,
+        avgYieldPerCowL: fields.avgYieldPerCowL as number | null,
+        avgFat: fields.avgFat as number | null,
+        avgProtein: fields.avgProtein as number | null,
+        avgLactose: fields.avgLactose as number | null,
+        avgScc: fields.avgScc as number | null,
+        priceKrwPerL: fields.priceKrwPerL as number | null,
+        note: typeof b.note === 'string' ? b.note.slice(0, 500) : null,
+        createdBy: user.userId,
+      };
+
+      const [existing] = await db
+        .select({ summaryId: farmMilkSummary.summaryId })
+        .from(farmMilkSummary)
+        .where(and(eq(farmMilkSummary.farmId, farmId), eq(farmMilkSummary.date, dateStr)))
+        .limit(1);
+
+      if (existing) {
+        await db.update(farmMilkSummary)
+          .set({ ...values, updatedAt: new Date() })
+          .where(eq(farmMilkSummary.summaryId, existing.summaryId));
+      } else {
+        await db.insert(farmMilkSummary).values(values);
+      }
+
+      res.json({ success: true, data: { farmId, date: dateStr, updated: Boolean(existing) } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// GET /milk/farm-summary?farmId=&days=31 — 우군 기록 조회 (최근순)
+milkRouter.get(
+  '/farm-summary',
+  requirePermission('animal', 'read'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const farmId = req.query.farmId as string | undefined;
+      if (!farmId) {
+        res.status(400).json({ success: false, error: 'farmId가 필요합니다' });
+        return;
+      }
+      const daysRaw = Number(req.query.days);
+      const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 365) : 31;
+      const sinceStr = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
+      const db = getDb();
+      const rows = await db
+        .select()
+        .from(farmMilkSummary)
+        .where(and(eq(farmMilkSummary.farmId, farmId), gte(farmMilkSummary.date, sinceStr)))
+        .orderBy(desc(farmMilkSummary.date))
+        .limit(365);
+
+      res.json({ success: true, data: rows });
     } catch (error) {
       next(error);
     }
