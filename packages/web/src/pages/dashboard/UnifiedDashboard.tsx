@@ -68,6 +68,7 @@ import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonito
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
 import { FarmAnimalListPanel } from '@web/components/unified-dashboard/FarmAnimalListPanel';
 import { FarmProfitWidget } from '@web/components/unified-dashboard/FarmProfitWidget';
+import { ActionRateWidget } from '@web/components/unified-dashboard/ActionRateWidget';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
@@ -907,6 +908,11 @@ export default function UnifiedDashboard(): React.JSX.Element {
                 setTinkerbellTrigger(`[팅커벨 AI — 결정 카드 정밀 분석]\n[조치] ${card.title}\n[대상] ${card.subject.earTag ?? ''} (${card.subject.farmName ?? ''})\n[근거] ${card.why.join(' / ')}\n이 개체의 센서 데이터·최근 알람·이력을 조회해 이 조치가 타당한지 검증하고, 지금 해야 할 행동을 단계별로 알려주세요. (${Date.now()})`);
               }}
             />
+          </SectionErrorBoundary>
+
+          {/* ── 조치 기록률 — 알림→행동 완결 지표 (파일럿 KPI) ── */}
+          <SectionErrorBoundary label="조치 기록률">
+            <ActionRateWidget />
           </SectionErrorBoundary>
 
           {/* ── 전염병 배너 ── */}

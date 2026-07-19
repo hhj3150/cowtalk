@@ -14,10 +14,26 @@ import {
   countCompletedActions,
 } from '../../services/decision/decision-action.service.js';
 import type { CompleteDecisionInput } from '@cowtalk/shared';
+import { getActionRate } from '../../services/decision/action-rate.service.js';
 
 export const decisionRouter = Router();
 
 decisionRouter.use(authenticate);
+
+// GET /decision/action-rate?farmId=&days= — 조치 기록률 (파일럿 지표)
+decisionRouter.get('/action-rate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requestedFarmId = typeof req.query.farmId === 'string' && req.query.farmId ? [req.query.farmId] : [];
+    const effective = resolveScopedFarmIds(requestedFarmId, scopedFarmIds(req));
+    const daysRaw = Number(req.query.days);
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 90) : 7;
+
+    const data = await getActionRate(effective.length > 0 ? effective : null, days);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
 
 decisionRouter.get('/queue', async (req: Request, res: Response, next: NextFunction) => {
   try {
