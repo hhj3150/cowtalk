@@ -100,6 +100,7 @@ milkRouter.post(
         avgLactose: optRange(b.avgLactose, 0, 10),
         avgScc: optRange(b.avgScc, 0, 10000),
         priceKrwPerL: optRange(b.priceKrwPerL, 0, 100000),
+        selfProcessedYieldL: optRange(b.selfProcessedYieldL, 0, 1000000),
       };
       const invalid = Object.entries(fields).filter(([, v]) => v === 'invalid').map(([k]) => k);
       if (invalid.length > 0) {
@@ -123,6 +124,7 @@ milkRouter.post(
         avgLactose: fields.avgLactose as number | null,
         avgScc: fields.avgScc as number | null,
         priceKrwPerL: fields.priceKrwPerL as number | null,
+        selfProcessedYieldL: fields.selfProcessedYieldL as number | null,
         note: typeof b.note === 'string' ? b.note.slice(0, 500) : null,
         createdBy: user.userId,
       };

@@ -58,6 +58,7 @@ interface FarmSummaryRow {
   readonly avgLactose: number | null;
   readonly avgScc: number | null;
   readonly priceKrwPerL: number | null;
+  readonly selfProcessedYieldL: number | null;
 }
 
 function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly date: string }): React.JSX.Element {
@@ -85,6 +86,7 @@ function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly d
         avgLactose: draft.avgLactose || undefined,
         avgScc: draft.avgScc || undefined,
         priceKrwPerL: draft.priceKrwPerL || undefined,
+        selfProcessedYieldL: draft.selfProcessedYieldL || undefined,
       }),
     onSuccess: () => {
       setSaved(`${date} 우군 기록 저장 완료`);
@@ -102,7 +104,8 @@ function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly d
     { key: 'avgProtein', label: '유단백 (%)', step: '0.01' },
     { key: 'avgLactose', label: '유당 (%)', step: '0.01' },
     { key: 'avgScc', label: '체세포 (천/mL)' },
-    { key: 'priceKrwPerL', label: '유대단가 (원/L)', step: '0.1' },
+    { key: 'selfProcessedYieldL', label: '자체가공 물량 (L)', step: '0.1' },
+    { key: 'priceKrwPerL', label: '단일 단가 (원/L, 선택)', step: '0.1' },
   ];
 
   return (
@@ -139,8 +142,9 @@ function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly d
             ))}
           </div>
           <p className="mt-2 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
-            유대단가는 목장마다 다릅니다 (조합·유업체 납유, 유기농, 직접 가공·판매) — 실제 단가를 기록하면
-            월간 손익이 추정 대신 <b>기록한 단가</b>로 계산됩니다. 총 유량 또는 두당 평균 중 하나만 있어도 저장됩니다.
+            유대는 3단으로 계산됩니다: 자체가공 물량을 뺀 납유분이 <b>1일 쿼터량까지 납유 단가</b>,
+            <b>초과분은 가공유 단가</b>, <b>자체가공 물량은 자체가공 단가</b>로 배분됩니다 (단가·쿼터량은
+            경제 파라미터에서 목장별 설정). 전량 단일 단가로 정산하면 "단일 단가"에 입력 — 그 값이 최우선입니다.
           </p>
           <div className="mt-2 flex items-center gap-3">
             <button

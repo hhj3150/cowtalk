@@ -17,7 +17,14 @@ export type { MilkCsvResult, MilkCsvRow, DelimitedTable, MilkColumnMapping } fro
 export {
   computeMilkPricePerL,
   computeDailyFeedCost,
+  computeTieredRevenue,
   MILK_FAT_BASE_PCT,
   SCC_GRADE1_MAX,
 } from './utils/milk-price.js';
-export type { MilkPriceInput, MilkPriceEstimate, FeedIngredient } from './utils/milk-price.js';
+export type {
+  MilkPriceInput,
+  MilkPriceEstimate,
+  FeedIngredient,
+  TieredRevenueInput,
+  TieredRevenueResult,
+} from './utils/milk-price.js';

@@ -22,7 +22,7 @@ import {
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt, sql, inArray } from 'drizzle-orm';
 import { getEconomicParamValues } from '../../services/economics/economic-params.service.js';
-import { computeMilkPricePerL } from '@cowtalk/shared';
+import { computeMilkPricePerL, computeTieredRevenue } from '@cowtalk/shared';
 import { ratioPct } from '../../lib/metrics-clamp.js';
 import { computeCR, decisionsFromBreedingEventCounts } from '../../services/metrics/fertility-service.js';
 
@@ -309,9 +309,28 @@ reportRouter.get(
         avgFatPct: avgFat,
         avgSccThousand: avgScc,
       });
+      // 3단 유대 (쿼터/초과/자체가공) — 우군 기록이 있고, 쿼터량이 설정됐거나
+      // 자체가공 물량이 기록된 경우 일별로 배분 계산. 단일 단가 기록이 최우선.
+      const tiered = summaryRows.length > 0 && recordedPrice == null &&
+        (econParams.daily_quota_l > 0 || summaryRows.some((r) => (r.selfProcessedYieldL ?? 0) > 0))
+        ? computeTieredRevenue({
+            days: summaryRows.map((r) => ({
+              totalL: r.totalYieldL ?? ((r.avgYieldPerCowL != null && r.milkingCount != null) ? r.avgYieldPerCowL * r.milkingCount : 0),
+              selfL: r.selfProcessedYieldL,
+            })),
+            dailyQuotaL: econParams.daily_quota_l,
+            quotaPriceKrwPerL: econParams.milk_quota_price_krw_per_l,
+            surplusPriceKrwPerL: econParams.milk_surplus_price_krw_per_l,
+            selfPriceKrwPerL: econParams.milk_self_price_krw_per_l,
+          })
+        : null;
+
       const milkPrice = recordedPrice != null
         ? { pricePerL: recordedPrice, formula: `실기록 단가 ${recordedPrice.toLocaleString()}원/L (우군 기록 ${summaryRows.filter((r) => r.priceKrwPerL != null).length}일 평균)` }
-        : estimatedPrice;
+        : tiered != null
+          ? { pricePerL: tiered.avgPricePerL, formula: tiered.formula }
+          : estimatedPrice;
+      const tieredRevenueKrw = tiered?.revenueKrw ?? null;
 
       const performance = {
         earlyDetection: {
@@ -346,8 +365,8 @@ reportRouter.get(
                   ? Math.round(avgYieldPerRecordL * milkPrice.pricePerL - feedCostPerHeadDayKrw)
                   : null;
               return {
-                // 기록 유량 × 유대단가(유성분 반영) — 실측 기록분에 한정한 원유 수입 추정
-                milkRevenueEstimateKrw: Math.round(totalYieldL * milkPrice.pricePerL),
+                // 3단 배분 수입(쿼터/초과/자체가공) 우선, 아니면 기록 유량 × 유대단가
+                milkRevenueEstimateKrw: tieredRevenueKrw ?? Math.round(totalYieldL * milkPrice.pricePerL),
                 priceKrwPerL: milkPrice.pricePerL,
                 priceFormula: milkPrice.formula,
                 feedCostPerHeadDayKrw,
