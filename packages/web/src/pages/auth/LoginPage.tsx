@@ -74,11 +74,11 @@ const I18N: Readonly<Record<Lang, Strings>> = {
   ko: {
     tagline: '축산 AX 플랫폼 — 데이터에서 행동까지, AI가 연결합니다',
     corporation: 'D2O Corp. | 농업회사법인',
-    email: '이메일',
+    email: '이메일 또는 아이디',
     password: '비밀번호',
     login: '로그인',
     loggingIn: '로그인 중...',
-    loginFailed: '로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.',
+    loginFailed: '로그인에 실패했습니다. 아이디와 비밀번호를 확인해 주세요.',
     demoMode: '데모 모드 — 로그인 없이 둘러보기',
     signupCta: '🐄 CowTalk 시작하기 — 3분 무료 가입',
     rolePrompt: '역할을 선택하여 바로 입장',
@@ -598,12 +598,13 @@ export default function LoginPage(): React.JSX.Element {
               </label>
               <input
                 id="email"
-                type="email"
+                type="text"
+                inputMode="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 aria-required="true"
-                autoComplete="email"
+                autoComplete="username"
                 style={{
                   width: '100%',
                   padding: '10px 12px',

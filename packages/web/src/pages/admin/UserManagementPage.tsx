@@ -183,11 +183,15 @@ interface FormErrors {
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 일반 아이디 허용 (영문/숫자/._- 3~50자) — 이메일 없는 목장주 계정 발급 지원
+const PLAIN_ID_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
 
 function validateUserForm(fields: { name: string; email: string; password: string }): FormErrors {
   const errors: Record<string, string> = {};
   if (fields.name.trim().length < 2) errors.name = '이름은 2자 이상이어야 합니다';
-  if (!EMAIL_REGEX.test(fields.email)) errors.email = '유효한 이메일 주소를 입력하세요';
+  if (!EMAIL_REGEX.test(fields.email) && !PLAIN_ID_REGEX.test(fields.email)) {
+    errors.email = '이메일 또는 아이디(영문/숫자 3자 이상)를 입력하세요';
+  }
   if (fields.password.length < 8) errors.password = '비밀번호는 8자 이상이어야 합니다';
   return errors;
 }
@@ -240,7 +244,7 @@ function UserForm({ onClose }: { onClose: () => void }): React.JSX.Element {
           {submitted && errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
         </div>
         <div>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="이메일 *" type="email" className={inputClass('email')} />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="이메일 또는 아이디 *" type="text" className={inputClass('email')} />
           {submitted && errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
         </div>
         <select value={role} onChange={(e) => setRole(e.target.value)} className="rounded border px-3 py-2 text-sm" aria-label="역할">

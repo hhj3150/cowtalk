@@ -22,8 +22,17 @@ export const uuidParamSchema = z.object({
 
 // === 인증 ===
 
+/**
+ * 로그인 식별자 — 이메일 또는 일반 아이디(영문/숫자/._- 3~50자).
+ * 소유자가 목장주 등에게 이메일 없이 아이디만 발급하는 운영을 지원한다.
+ */
+export const loginIdSchema = z.union([
+  z.string().email(),
+  z.string().regex(/^[a-zA-Z0-9._-]{3,50}$/),
+]);
+
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: loginIdSchema,
   password: z.string().min(8).max(128),
 });
 
@@ -33,7 +42,7 @@ export const refreshTokenSchema = z.object({
 
 export const registerSchema = z.object({
   name: z.string().min(2).max(100),
-  email: z.string().email(),
+  email: loginIdSchema,
   password: z.string().min(8).max(128),
   role: z.enum([
     'farmer', 'veterinarian',
