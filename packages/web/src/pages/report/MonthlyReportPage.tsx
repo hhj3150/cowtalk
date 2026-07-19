@@ -47,10 +47,14 @@ interface MonthlyReport {
       readonly animalsWithRecords: number;
       readonly totalYieldL: number;
       readonly avgYieldPerRecordL: number | null;
+      readonly avgFatPct?: number | null;
+      readonly avgProteinPct?: number | null;
+      readonly avgSccThousand?: number | null;
     };
     readonly economics: {
       readonly milkRevenueEstimateKrw: number;
       readonly priceKrwPerL: number;
+      readonly priceFormula?: string;
       readonly estimated: true;
     } | null;
   };
@@ -191,10 +195,21 @@ export default function MonthlyReportPage(): React.JSX.Element {
                     <span style={{ color: 'var(--ct-text-muted)' }}> (두당 평균 {report.performance.milk.avgYieldPerRecordL}L/일)</span>
                   )}
                 </span>
+                {(report.performance.milk.avgFatPct != null || report.performance.milk.avgSccThousand != null) && (
+                  <span style={{ color: 'var(--ct-text-secondary)' }}>
+                    유성분 평균{' '}
+                    {report.performance.milk.avgFatPct != null && <>유지방 <b>{report.performance.milk.avgFatPct}%</b> </>}
+                    {report.performance.milk.avgProteinPct != null && <>유단백 <b>{report.performance.milk.avgProteinPct}%</b> </>}
+                    {report.performance.milk.avgSccThousand != null && <>체세포 <b>{report.performance.milk.avgSccThousand}천/mL</b></>}
+                  </span>
+                )}
                 {report.performance.economics ? (
                   <span>
                     기록분 원유 수입 <b style={{ color: '#34d399' }}>{Math.round(report.performance.economics.milkRevenueEstimateKrw / 10000).toLocaleString()}만원</b>
-                    <span style={{ color: 'var(--ct-text-muted)' }}> (추정 · {report.performance.economics.priceKrwPerL.toLocaleString()}원/L 적용)</span>
+                    <span style={{ color: 'var(--ct-text-muted)' }}>
+                      {' '}(추정 · 유대단가 {report.performance.economics.priceKrwPerL.toLocaleString()}원/L
+                      {report.performance.economics.priceFormula ? ` = ${report.performance.economics.priceFormula}` : ''})
+                    </span>
                   </span>
                 ) : (
                   <span style={{ color: 'var(--ct-text-muted)' }}>유량을 기록하면 원유 수입 추정이 표시됩니다</span>

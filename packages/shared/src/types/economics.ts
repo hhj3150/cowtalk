@@ -14,7 +14,9 @@ export type EconomicParameterKey =
   | 'calf_value_krw'
   | 'treatment_cost_per_case_krw'
   | 'labor_hour_cost_krw'
-  | 'sensor_cost_per_head_krw';
+  | 'sensor_cost_per_head_krw'
+  | 'milk_fat_adjust_krw_per_01pct'
+  | 'scc_grade1_bonus_krw_per_l';
 
 /** 파라미터 값의 출처 — UI에서 어디서 온 값인지 항상 표시한다 */
 export type EconomicParameterSource = 'default' | 'global' | 'farm';

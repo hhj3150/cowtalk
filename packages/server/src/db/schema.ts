@@ -944,7 +944,8 @@ export const feedPrograms = pgTable('feed_programs', {
   farmId: uuid('farm_id').notNull().references(() => farms.farmId),
   name: varchar('name', { length: 200 }).notNull(),
   targetGroup: varchar('target_group', { length: 50 }).notNull(), // lactating, dry, heifer, calf
-  ingredients: jsonb('ingredients').notNull().$type<Array<{ name: string; ratio: number; costPerKg: number }>>(),
+  // amountKgPerDay(급여량 kg/일/두) 기반 사료비 계산. ratio는 레거시 배합비(%) — 병행 허용
+  ingredients: jsonb('ingredients').notNull().$type<Array<{ name: string; amountKgPerDay?: number; ratio?: number; costPerKg: number }>>(),
   dailyCostPerHead: real('daily_cost_per_head'),
   isActive: boolean('is_active').notNull().default(true),
   createdBy: uuid('created_by').references(() => users.userId),

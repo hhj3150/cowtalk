@@ -29,10 +29,23 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+interface RowDraft {
+  readonly y?: string;
+  readonly fat?: string;
+  readonly protein?: string;
+  readonly scc?: string;
+}
+
+function optNum(raw: string | undefined): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export default function MilkEntryPage(): React.JSX.Element {
   const selectedFarmId = useFarmStore((s) => s.selectedFarmId);
   const [date, setDate] = useState(todayStr());
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, RowDraft>>({});
   const [csvErrors, setCsvErrors] = useState<readonly string[]>([]);
   const [lastResult, setLastResult] = useState<BulkResponse | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -48,8 +61,12 @@ export default function MilkEntryPage(): React.JSX.Element {
     return [...list].sort((a, b) => (a.earTag ?? '').localeCompare(b.earTag ?? ''));
   }, [animalPage]);
 
+  const setField = (earTag: string, field: keyof RowDraft, value: string): void => {
+    setValues((v) => ({ ...v, [earTag]: { ...v[earTag], [field]: value } }));
+  };
+
   const filledCount = cows.filter((c) => {
-    const v = values[c.earTag];
+    const v = values[c.earTag]?.y;
     return v != null && v !== '' && Number.isFinite(Number(v));
   }).length;
 
@@ -57,15 +74,21 @@ export default function MilkEntryPage(): React.JSX.Element {
     mutationFn: async () => {
       const records = cows
         .filter((c) => {
-          const v = values[c.earTag];
+          const v = values[c.earTag]?.y;
           return v != null && v !== '' && Number.isFinite(Number(v));
         })
-        .map((c) => ({
-          earTag: c.earTag,
-          farmId: c.farmId,
-          yieldL: Number(values[c.earTag]),
-          date,
-        }));
+        .map((c) => {
+          const d = values[c.earTag]!;
+          return {
+            earTag: c.earTag,
+            farmId: c.farmId,
+            yieldL: Number(d.y),
+            date,
+            fat: optNum(d.fat),
+            protein: optNum(d.protein),
+            scc: optNum(d.scc),
+          };
+        });
       // 서버 한도 200건 — 청크 분할
       let total = 0;
       let succeeded = 0;
@@ -94,10 +117,16 @@ export default function MilkEntryPage(): React.JSX.Element {
       // CSV의 귀번호 → 표에 매핑 (표에 없는 귀번호는 오류로 안내)
       const known = new Set(cows.map((c) => c.earTag));
       const unknown: string[] = [];
-      const next: Record<string, string> = { ...values };
-      for (const [earTag, y] of rows) {
-        if (known.has(earTag)) next[earTag] = String(y);
-        else unknown.push(earTag);
+      const next: Record<string, RowDraft> = { ...values };
+      for (const [earTag, row] of rows) {
+        if (known.has(earTag)) {
+          next[earTag] = {
+            y: String(row.yieldL),
+            fat: row.fat != null ? String(row.fat) : undefined,
+            protein: row.protein != null ? String(row.protein) : undefined,
+            scc: row.scc != null ? String(row.scc) : undefined,
+          };
+        } else unknown.push(earTag);
       }
       if (unknown.length > 0) {
         setCsvErrors((prev) => [...prev, `이 농장에 없는 귀번호 ${unknown.length}건: ${unknown.slice(0, 5).join(', ')}${unknown.length > 5 ? '…' : ''}`]);
@@ -145,7 +174,7 @@ export default function MilkEntryPage(): React.JSX.Element {
           className="rounded-md border px-3 py-1.5 text-sm"
           style={{ borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
         >
-          📄 CSV 불러오기 (귀번호,유량)
+          📄 CSV 불러오기 (귀번호,유량[,유지방,유단백,체세포] — 검정성적 호환)
         </button>
         <input
           ref={fileRef}
@@ -179,37 +208,47 @@ export default function MilkEntryPage(): React.JSX.Element {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs" style={{ borderColor: 'var(--ct-border)', color: 'var(--ct-text-muted)' }}>
-                <th className="px-4 py-2">귀번호</th>
-                <th className="px-4 py-2">품종/산차</th>
-                <th className="px-4 py-2">유량 (L)</th>
+                <th className="px-3 py-2">귀번호</th>
+                <th className="px-3 py-2">품종/산차</th>
+                <th className="px-3 py-2">유량 (L)</th>
+                <th className="px-3 py-2">유지방 (%)</th>
+                <th className="px-3 py-2">유단백 (%)</th>
+                <th className="px-3 py-2">체세포 (천/mL)</th>
               </tr>
             </thead>
             <tbody>
-              {cows.map((c) => (
-                <tr key={c.animalId} className="border-b last:border-0" style={{ borderColor: 'var(--ct-border)' }}>
-                  <td className="px-4 py-1.5 font-semibold" style={{ color: 'var(--ct-text)' }}>{c.earTag}</td>
-                  <td className="px-4 py-1.5 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
-                    {c.breed} · {c.parity}산
-                  </td>
-                  <td className="px-4 py-1.5">
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      max={100}
-                      step={0.1}
-                      value={values[c.earTag] ?? ''}
-                      placeholder="—"
-                      aria-label={`${c.earTag} 유량`}
-                      onChange={(e) => setValues((v) => ({ ...v, [c.earTag]: e.target.value }))}
-                      className="w-24 rounded border px-2 py-1 text-sm"
-                      style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {cows.map((c) => {
+                const d = values[c.earTag] ?? {};
+                const cell = (field: keyof RowDraft, label: string, max: number, step: number, width: string) => (
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={max}
+                    step={step}
+                    value={d[field] ?? ''}
+                    placeholder="—"
+                    aria-label={`${c.earTag} ${label}`}
+                    onChange={(e) => setField(c.earTag, field, e.target.value)}
+                    className={`${width} rounded border px-2 py-1 text-sm`}
+                    style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                  />
+                );
+                return (
+                  <tr key={c.animalId} className="border-b last:border-0" style={{ borderColor: 'var(--ct-border)' }}>
+                    <td className="px-3 py-1.5 font-semibold" style={{ color: 'var(--ct-text)' }}>{c.earTag}</td>
+                    <td className="px-3 py-1.5 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+                      {c.breed} · {c.parity}산
+                    </td>
+                    <td className="px-3 py-1.5">{cell('y', '유량', 100, 0.1, 'w-20')}</td>
+                    <td className="px-3 py-1.5">{cell('fat', '유지방', 10, 0.1, 'w-16')}</td>
+                    <td className="px-3 py-1.5">{cell('protein', '유단백', 10, 0.1, 'w-16')}</td>
+                    <td className="px-3 py-1.5">{cell('scc', '체세포', 10000, 1, 'w-20')}</td>
+                  </tr>
+                );
+              })}
               {cows.length === 0 && (
-                <tr><td colSpan={3} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--ct-text-muted)' }}>활성 개체가 없습니다</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--ct-text-muted)' }}>활성 개체가 없습니다</td></tr>
               )}
             </tbody>
           </table>

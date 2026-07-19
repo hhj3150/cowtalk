@@ -35,6 +35,7 @@ import { vitalMonitorRouter } from './routes/vital-monitor.routes.js';
 import { decisionRouter } from './routes/decision.routes.js';
 import { ontologyRouter } from './routes/ontology.routes.js';
 import { milkRouter } from './routes/milk.routes.js';
+import { feedRouter } from './routes/feed.routes.js';
 import { approvalRouter } from './routes/approval.routes.js';
 import { automationRouter } from './routes/automation.routes.js';
 import { labelChatRouter } from './routes/label-chat.routes.js';
@@ -103,6 +104,7 @@ export function createApiRouter(): Router {
   api.use('/decision', decisionRouter);
   api.use('/ontology', ontologyRouter);
   api.use('/milk', milkRouter);
+  api.use('/feed', feedRouter);
   api.use('/approvals', approvalRouter);
   api.use('/automation', automationRouter);
   api.use('/label-chat', labelChatRouter);

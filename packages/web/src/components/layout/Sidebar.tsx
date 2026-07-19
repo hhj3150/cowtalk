@@ -161,6 +161,14 @@ function IconMilk(): React.JSX.Element {
   );
 }
 
+function IconWheat(): React.JSX.Element {
+  return (
+    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21V8m0 13c0-3 2.5-5 5.5-5-0 3-2.5 5-5.5 5zm0 0c0-3-2.5-5-5.5-5 0 3 2.5 5 5.5 5zm0-8c0-3 2.5-5 5.5-5 0 3-2.5 5-5.5 5zm0 0c0-3-2.5-5-5.5-5 0 3 2.5 5 5.5 5zm0-5c0-2.5 1.5-4 3-5-1.5-1-3-2.5-3-3-0 .5-1.5 2-3 3 1.5 1 3 2.5 3 5z" />
+    </svg>
+  );
+}
+
 // MenuItem.icon 문자열 → 인라인 SVG 아이콘 매핑.
 // (lucide-react 미설치 → 프로젝트 컨벤션인 인라인 SVG 컴포넌트 재사용)
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -182,6 +190,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Zap:             <IconBolt />,
   Calculator:      <IconCalculator />,
   Milk:            <IconMilk />,
+  Wheat:           <IconWheat />,
 };
 
 /**
