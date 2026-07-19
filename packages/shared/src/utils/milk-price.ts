@@ -59,6 +59,78 @@ export function computeMilkPricePerL(input: MilkPriceInput): MilkPriceEstimate {
 }
 
 // ===========================
+// 3단 유대 수입 — 쿼터(납유) / 초과(가공유) / 자체가공 (순수)
+// ===========================
+
+export interface TieredRevenueInput {
+  /** 일별 물량: 총 유량과 그중 자체가공 물량 (L) */
+  readonly days: readonly { readonly totalL: number; readonly selfL?: number | null }[];
+  /** 1일 쿼터량 (L). 0 이하 = 쿼터 미설정 → 납유분 전량 쿼터 단가 */
+  readonly dailyQuotaL: number;
+  /** 납유(쿼터 내) 단가 원/L */
+  readonly quotaPriceKrwPerL: number;
+  /** 가공유(쿼터 초과) 단가 원/L */
+  readonly surplusPriceKrwPerL: number;
+  /** 자체가공 환산 단가 원/L */
+  readonly selfPriceKrwPerL: number;
+}
+
+export interface TieredRevenueResult {
+  readonly quotaL: number;
+  readonly surplusL: number;
+  readonly selfL: number;
+  readonly revenueKrw: number;
+  /** 가중평균 단가 (원/L) — 총 물량 0이면 0 */
+  readonly avgPricePerL: number;
+  /** 사람이 읽는 내역 — 리포트에 그대로 노출 */
+  readonly formula: string;
+  readonly estimated: true;
+}
+
+/**
+ * 일별로 자체가공 물량을 먼저 떼고, 남은 납유분을 쿼터량까지 납유 단가,
+ * 초과분을 가공유 단가로 배분한다. 쿼터 미설정(0)이면 납유분 전량 쿼터 단가.
+ */
+export function computeTieredRevenue(input: TieredRevenueInput): TieredRevenueResult {
+  let quotaL = 0;
+  let surplusL = 0;
+  let selfL = 0;
+
+  for (const day of input.days) {
+    const total = Number.isFinite(day.totalL) && day.totalL > 0 ? day.totalL : 0;
+    if (total <= 0) continue;
+    const self = Math.min(Math.max(day.selfL ?? 0, 0), total);
+    const shipped = total - self; // 납유 대상
+    const quota = input.dailyQuotaL > 0 ? Math.min(shipped, input.dailyQuotaL) : shipped;
+    quotaL += quota;
+    surplusL += shipped - quota;
+    selfL += self;
+  }
+
+  const revenueKrw = Math.round(
+    quotaL * input.quotaPriceKrwPerL +
+    surplusL * input.surplusPriceKrwPerL +
+    selfL * input.selfPriceKrwPerL,
+  );
+  const totalL = quotaL + surplusL + selfL;
+
+  const parts: string[] = [];
+  if (quotaL > 0) parts.push(`쿼터 ${Math.round(quotaL).toLocaleString()}L×${input.quotaPriceKrwPerL.toLocaleString()}원`);
+  if (surplusL > 0) parts.push(`초과 ${Math.round(surplusL).toLocaleString()}L×${input.surplusPriceKrwPerL.toLocaleString()}원`);
+  if (selfL > 0) parts.push(`자체가공 ${Math.round(selfL).toLocaleString()}L×${input.selfPriceKrwPerL.toLocaleString()}원`);
+
+  return {
+    quotaL: Math.round(quotaL),
+    surplusL: Math.round(surplusL),
+    selfL: Math.round(selfL),
+    revenueKrw,
+    avgPricePerL: totalL > 0 ? Math.round((revenueKrw / totalL) * 10) / 10 : 0,
+    formula: parts.length > 0 ? parts.join(' + ') : '물량 없음',
+    estimated: true,
+  };
+}
+
+// ===========================
 // TMR 배합비 — 두당 일 사료비 (순수)
 // ===========================
 

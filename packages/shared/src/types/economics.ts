@@ -16,7 +16,11 @@ export type EconomicParameterKey =
   | 'labor_hour_cost_krw'
   | 'sensor_cost_per_head_krw'
   | 'milk_fat_adjust_krw_per_01pct'
-  | 'scc_grade1_bonus_krw_per_l';
+  | 'scc_grade1_bonus_krw_per_l'
+  | 'milk_quota_price_krw_per_l'
+  | 'milk_surplus_price_krw_per_l'
+  | 'milk_self_price_krw_per_l'
+  | 'daily_quota_l';
 
 /** 파라미터 값의 출처 — UI에서 어디서 온 값인지 항상 표시한다 */
 export type EconomicParameterSource = 'default' | 'global' | 'farm';

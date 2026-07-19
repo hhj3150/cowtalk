@@ -491,6 +491,8 @@ export const farmMilkSummary = pgTable('farm_milk_summary', {
   avgLactose: real('avg_lactose'),
   avgScc: integer('avg_scc'),
   priceKrwPerL: real('price_krw_per_l'),
+  // 자체가공 물량 (L) — 3단 유대 배분: 자체가공 → 남은 납유분을 쿼터/초과로 분할
+  selfProcessedYieldL: real('self_processed_yield_l'),
   note: text('note'),
   createdBy: uuid('created_by').references(() => users.userId),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

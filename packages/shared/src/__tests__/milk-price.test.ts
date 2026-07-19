@@ -1,7 +1,7 @@
 // 유대단가·사료비 순수 함수 테스트
 
 import { describe, it, expect } from 'vitest';
-import { computeMilkPricePerL, computeDailyFeedCost, MILK_FAT_BASE_PCT } from '../utils/milk-price.js';
+import { computeMilkPricePerL, computeDailyFeedCost, computeTieredRevenue, MILK_FAT_BASE_PCT } from '../utils/milk-price.js';
 
 const BASE = {
   basePriceKrwPerL: 1084,
@@ -44,6 +44,67 @@ describe('computeMilkPricePerL', () => {
 
   it('기준치 상수는 3.4%다 (국내 원유 기본가 기준)', () => {
     expect(MILK_FAT_BASE_PCT).toBe(3.4);
+  });
+});
+
+describe('computeTieredRevenue (쿼터/초과/자체가공 3단 유대)', () => {
+  const PRICES = { quotaPriceKrwPerL: 1084, surplusPriceKrwPerL: 887, selfPriceKrwPerL: 2000 };
+
+  it('쿼터 내 물량은 납유 단가, 초과분은 가공유 단가', () => {
+    const r = computeTieredRevenue({
+      days: [{ totalL: 1200 }],
+      dailyQuotaL: 1000,
+      ...PRICES,
+    });
+    expect(r.quotaL).toBe(1000);
+    expect(r.surplusL).toBe(200);
+    expect(r.revenueKrw).toBe(1000 * 1084 + 200 * 887);
+    expect(r.formula).toContain('쿼터');
+    expect(r.formula).toContain('초과');
+  });
+
+  it('자체가공 물량을 먼저 떼고 남은 납유분을 쿼터/초과로 배분한다', () => {
+    const r = computeTieredRevenue({
+      days: [{ totalL: 1500, selfL: 300 }],
+      dailyQuotaL: 1000,
+      ...PRICES,
+    });
+    expect(r.selfL).toBe(300);
+    expect(r.quotaL).toBe(1000);
+    expect(r.surplusL).toBe(200);
+    expect(r.revenueKrw).toBe(1000 * 1084 + 200 * 887 + 300 * 2000);
+  });
+
+  it('쿼터 미설정(0)이면 납유분 전량 쿼터 단가', () => {
+    const r = computeTieredRevenue({ days: [{ totalL: 1200 }], dailyQuotaL: 0, ...PRICES });
+    expect(r.quotaL).toBe(1200);
+    expect(r.surplusL).toBe(0);
+  });
+
+  it('일별로 배분한다 — 어떤 날은 쿼터 미달, 어떤 날은 초과', () => {
+    const r = computeTieredRevenue({
+      days: [{ totalL: 800 }, { totalL: 1300 }],
+      dailyQuotaL: 1000,
+      ...PRICES,
+    });
+    expect(r.quotaL).toBe(800 + 1000);
+    expect(r.surplusL).toBe(300);
+  });
+
+  it('자체가공이 총량을 넘으면 총량까지만 인정', () => {
+    const r = computeTieredRevenue({
+      days: [{ totalL: 500, selfL: 900 }],
+      dailyQuotaL: 1000,
+      ...PRICES,
+    });
+    expect(r.selfL).toBe(500);
+    expect(r.quotaL).toBe(0);
+  });
+
+  it('가중평균 단가를 함께 반환한다', () => {
+    const r = computeTieredRevenue({ days: [{ totalL: 1000 }], dailyQuotaL: 0, ...PRICES });
+    expect(r.avgPricePerL).toBe(1084);
+    expect(r.estimated).toBe(true);
   });
 });
 
