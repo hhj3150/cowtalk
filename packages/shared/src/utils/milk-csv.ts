@@ -13,6 +13,8 @@ export interface MilkCsvRow {
   readonly fat?: number;
   /** 유단백 % */
   readonly protein?: number;
+  /** 유당 % */
+  readonly lactose?: number;
   /** 체세포 (천/mL) */
   readonly scc?: number;
 }
@@ -71,6 +73,7 @@ export interface MilkColumnMapping {
   readonly yieldL: number;
   readonly fat?: number;
   readonly protein?: number;
+  readonly lactose?: number;
   readonly scc?: number;
 }
 
@@ -80,6 +83,7 @@ const HEADER_PATTERNS: Readonly<Record<keyof MilkColumnMapping, RegExp>> = {
   yieldL: /일\s*유량|유량|산유량|착유량|젖|milk\s*(yield)?|yield|production/i,
   fat: /유지방|지방|fat/i,
   protein: /유단백|단백|protein/i,
+  lactose: /유당|lactose/i,
   scc: /체세포|scc|somatic/i,
 };
 
@@ -97,6 +101,8 @@ export function detectMilkColumns(headers: readonly string[]): MilkColumnMapping
   if (fat >= 0) used.push(fat);
   const protein = find('protein', used);
   if (protein >= 0) used.push(protein);
+  const lactose = find('lactose', used);
+  if (lactose >= 0) used.push(lactose);
   const scc = find('scc', used);
 
   return {
@@ -104,6 +110,7 @@ export function detectMilkColumns(headers: readonly string[]): MilkColumnMapping
     yieldL,
     ...(fat >= 0 ? { fat } : {}),
     ...(protein >= 0 ? { protein } : {}),
+    ...(lactose >= 0 ? { lactose } : {}),
     ...(scc >= 0 ? { scc } : {}),
   };
 }
@@ -130,14 +137,16 @@ export function extractMilkRows(
     }
     const fat = mapping.fat != null ? parseOptionalNumber(cells[mapping.fat], 0, 10) : { invalid: false as const };
     const protein = mapping.protein != null ? parseOptionalNumber(cells[mapping.protein], 0, 10) : { invalid: false as const };
+    const lactose = mapping.lactose != null ? parseOptionalNumber(cells[mapping.lactose], 0, 10) : { invalid: false as const };
     const scc = mapping.scc != null ? parseOptionalNumber(cells[mapping.scc], 0, 10000) : { invalid: false as const };
-    if (fat.invalid || protein.invalid || scc.invalid) {
+    if (fat.invalid || protein.invalid || lactose.invalid || scc.invalid) {
       errors.push(`${rowNo}행 (${earTag}): 유성분 값 이상`);
     }
     rows.set(earTag, {
       yieldL,
       ...('value' in fat && fat.value != null ? { fat: fat.value } : {}),
       ...('value' in protein && protein.value != null ? { protein: protein.value } : {}),
+      ...('value' in lactose && lactose.value != null ? { lactose: lactose.value } : {}),
       ...('value' in scc && scc.value != null ? { scc: scc.value } : {}),
     });
   });

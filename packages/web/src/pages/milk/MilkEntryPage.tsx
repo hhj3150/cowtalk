@@ -5,9 +5,9 @@
 // 또는 착유기/검정 CSV를 올려서 일괄 기록한다.
 
 import React, { useMemo, useRef, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listAnimals } from '@web/api/animal.api';
-import { apiPost } from '@web/api/client';
+import { apiGet, apiPost } from '@web/api/client';
 import { useEffectiveFarmId } from '@web/hooks/useEffectiveFarmId';
 import { TitleAccentBar } from '@web/components/unified-dashboard/WidgetTitle';
 import { parseMilkCsv, parseDelimited, detectMilkColumns, extractMilkRows } from '@cowtalk/shared';
@@ -34,6 +34,7 @@ interface RowDraft {
   readonly y?: string;
   readonly fat?: string;
   readonly protein?: string;
+  readonly lactose?: string;
   readonly scc?: string;
 }
 
@@ -41,6 +42,136 @@ function optNum(raw: string | undefined): number | undefined {
   if (raw == null || raw === '') return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
+}
+
+// ===========================
+// 우군(농장) 전체 기록 — 벌크탱크 기준 평균 성적 + 실제 유대단가
+// ===========================
+
+interface FarmSummaryRow {
+  readonly date: string;
+  readonly milkingCount: number | null;
+  readonly totalYieldL: number | null;
+  readonly avgYieldPerCowL: number | null;
+  readonly avgFat: number | null;
+  readonly avgProtein: number | null;
+  readonly avgLactose: number | null;
+  readonly avgScc: number | null;
+  readonly priceKrwPerL: number | null;
+}
+
+function FarmSummaryCard({ farmId, date }: { readonly farmId: string; readonly date: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const { data: recent } = useQuery({
+    queryKey: ['farm-milk-summary', farmId],
+    queryFn: () => apiGet<readonly FarmSummaryRow[]>('/milk/farm-summary', { farmId, days: 7 }),
+    enabled: open,
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiPost('/milk/farm-summary', {
+        farmId,
+        date,
+        milkingCount: draft.milkingCount || undefined,
+        totalYieldL: draft.totalYieldL || undefined,
+        avgYieldPerCowL: draft.avgYieldPerCowL || undefined,
+        avgFat: draft.avgFat || undefined,
+        avgProtein: draft.avgProtein || undefined,
+        avgLactose: draft.avgLactose || undefined,
+        avgScc: draft.avgScc || undefined,
+        priceKrwPerL: draft.priceKrwPerL || undefined,
+      }),
+    onSuccess: () => {
+      setSaved(`${date} 우군 기록 저장 완료`);
+      setDraft({});
+      void queryClient.invalidateQueries({ queryKey: ['farm-milk-summary', farmId] });
+    },
+    onError: () => setSaved(null),
+  });
+
+  const FIELDS: readonly { key: string; label: string; step?: string }[] = [
+    { key: 'milkingCount', label: '착유 두수' },
+    { key: 'totalYieldL', label: '총 유량 (L)' },
+    { key: 'avgYieldPerCowL', label: '두당 평균 (L)', step: '0.1' },
+    { key: 'avgFat', label: '유지방 (%)', step: '0.01' },
+    { key: 'avgProtein', label: '유단백 (%)', step: '0.01' },
+    { key: 'avgLactose', label: '유당 (%)', step: '0.01' },
+    { key: 'avgScc', label: '체세포 (천/mL)' },
+    { key: 'priceKrwPerL', label: '유대단가 (원/L)', step: '0.1' },
+  ];
+
+  return (
+    <div className="rounded-xl border" style={{ borderColor: 'var(--ct-border)', background: 'var(--ct-card)' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-sm font-bold" style={{ color: 'var(--ct-text)' }}>
+          🧺 우군 전체 기록 (벌크탱크 기준) <span className="text-xs font-normal" style={{ color: 'var(--ct-text-muted)' }}>— 개체별 기록이 어려운 날은 여기에</span>
+        </span>
+        <span style={{ color: 'var(--ct-text-muted)' }}>{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t px-4 py-3" style={{ borderColor: 'var(--ct-border)' }}>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {FIELDS.map((f) => (
+              <label key={f.key} className="flex flex-col gap-1 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+                {f.label}
+                <input
+                  type="number"
+                  min={0}
+                  step={f.step ?? '1'}
+                  inputMode="decimal"
+                  value={draft[f.key] ?? ''}
+                  placeholder="—"
+                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                  className="rounded border px-2 py-1 text-sm"
+                  style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                />
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+            유대단가는 목장마다 다릅니다 (조합·유업체 납유, 유기농, 직접 가공·판매) — 실제 단가를 기록하면
+            월간 손익이 추정 대신 <b>기록한 단가</b>로 계산됩니다. 총 유량 또는 두당 평균 중 하나만 있어도 저장됩니다.
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              disabled={mutation.isPending || (!draft.totalYieldL && !draft.avgYieldPerCowL)}
+              onClick={() => mutation.mutate()}
+              className="rounded-md px-4 py-1.5 text-sm font-bold text-white disabled:opacity-40"
+              style={{ background: 'var(--ct-primary)' }}
+            >
+              {mutation.isPending ? '저장 중…' : `${date} 우군 기록 저장`}
+            </button>
+            {saved && <span className="text-xs" style={{ color: '#34d399' }}>{saved}</span>}
+            {mutation.isError && <span className="text-xs text-red-400">저장 실패 — 값을 확인해주세요</span>}
+          </div>
+
+          {(recent ?? []).length > 0 && (
+            <div className="mt-3 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+              최근 기록:{' '}
+              {(recent ?? []).slice(0, 5).map((r) => (
+                <span key={r.date} className="mr-3">
+                  {r.date.slice(5)} {r.totalYieldL != null ? `${r.totalYieldL}L` : r.avgYieldPerCowL != null ? `두당 ${r.avgYieldPerCowL}L` : ''}
+                  {r.avgFat != null ? ` 지방${r.avgFat}%` : ''}
+                  {r.priceKrwPerL != null ? ` @${r.priceKrwPerL}원` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function MilkEntryPage(): React.JSX.Element {
@@ -88,6 +219,7 @@ export default function MilkEntryPage(): React.JSX.Element {
             date,
             fat: optNum(d.fat),
             protein: optNum(d.protein),
+            lactose: optNum(d.lactose),
             scc: optNum(d.scc),
           };
         });
@@ -123,6 +255,7 @@ export default function MilkEntryPage(): React.JSX.Element {
           y: String(row.yieldL),
           fat: row.fat != null ? String(row.fat) : undefined,
           protein: row.protein != null ? String(row.protein) : undefined,
+          lactose: row.lactose != null ? String(row.lactose) : undefined,
           scc: row.scc != null ? String(row.scc) : undefined,
         };
       } else unknown.push(earTag);
@@ -185,6 +318,7 @@ export default function MilkEntryPage(): React.JSX.Element {
       yieldL,
       ...(idx('fat') != null ? { fat: idx('fat') } : {}),
       ...(idx('protein') != null ? { protein: idx('protein') } : {}),
+      ...(idx('lactose') != null ? { lactose: idx('lactose') } : {}),
       ...(idx('scc') != null ? { scc: idx('scc') } : {}),
     };
     const r = extractMilkRows(mappingTable, mapping);
@@ -250,6 +384,9 @@ export default function MilkEntryPage(): React.JSX.Element {
         </span>
       </div>
 
+      {/* 우군 전체 기록 — 개체별 기록이 어려운 날의 대안 + 실제 유대단가 */}
+      <FarmSummaryCard farmId={selectedFarmId} date={date} />
+
       {csvErrors.length > 0 && (
         <div className="rounded border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
           {csvErrors.slice(0, 6).map((e, i) => <div key={i}>{e}</div>)}
@@ -267,6 +404,7 @@ export default function MilkEntryPage(): React.JSX.Element {
               { key: 'yieldL', label: '유량 열 *' },
               { key: 'fat', label: '유지방 열' },
               { key: 'protein', label: '유단백 열' },
+              { key: 'lactose', label: '유당 열' },
               { key: 'scc', label: '체세포 열' },
             ] as const).map((f) => (
               <label key={f.key} className="flex flex-col gap-1 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
@@ -311,6 +449,7 @@ export default function MilkEntryPage(): React.JSX.Element {
                 <th className="px-3 py-2">유량 (L)</th>
                 <th className="px-3 py-2">유지방 (%)</th>
                 <th className="px-3 py-2">유단백 (%)</th>
+                <th className="px-3 py-2">유당 (%)</th>
                 <th className="px-3 py-2">체세포 (천/mL)</th>
               </tr>
             </thead>
@@ -341,12 +480,13 @@ export default function MilkEntryPage(): React.JSX.Element {
                     <td className="px-3 py-1.5">{cell('y', '유량', 100, 0.1, 'w-20')}</td>
                     <td className="px-3 py-1.5">{cell('fat', '유지방', 10, 0.1, 'w-16')}</td>
                     <td className="px-3 py-1.5">{cell('protein', '유단백', 10, 0.1, 'w-16')}</td>
+                    <td className="px-3 py-1.5">{cell('lactose', '유당', 10, 0.1, 'w-16')}</td>
                     <td className="px-3 py-1.5">{cell('scc', '체세포', 10000, 1, 'w-20')}</td>
                   </tr>
                 );
               })}
               {cows.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--ct-text-muted)' }}>활성 개체가 없습니다</td></tr>
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--ct-text-muted)' }}>활성 개체가 없습니다</td></tr>
               )}
             </tbody>
           </table>

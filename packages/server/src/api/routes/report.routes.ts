@@ -18,6 +18,7 @@ import {
   decisionActions,
   feedback,
   feedPrograms,
+  farmMilkSummary,
 } from '../../db/schema.js';
 import { eq, and, count, gte, lt, sql, inArray } from 'drizzle-orm';
 import { getEconomicParamValues } from '../../services/economics/economic-params.service.js';
@@ -253,6 +254,16 @@ reportRouter.get(
           .limit(1),
       ]);
 
+      // 우군(벌크탱크) 일별 기록 — 개체 기록이 없어도 월 집계 가능, 실기록 단가는 추정보다 우선
+      const summaryRows = await db
+        .select()
+        .from(farmMilkSummary)
+        .where(and(
+          eq(farmMilkSummary.farmId, farmId),
+          gte(farmMilkSummary.date, start.toISOString().slice(0, 10)),
+          lt(farmMilkSummary.date, end.toISOString().slice(0, 10)),
+        ));
+
       const healthAlertCount = monthEvents
         .filter((e) => e.eventType in HEALTH_EVENT_TYPES)
         .reduce((s, e) => s + e.cnt, 0);
@@ -260,20 +271,47 @@ reportRouter.get(
         totalYieldL: 0, recordCount: 0, recordedDays: 0, animalsWithRecords: 0,
         avgFat: null, avgProtein: null, avgScc: null,
       };
-      const totalYieldL = Number(milk.totalYieldL);
+      // 개체 기록 집계
+      let totalYieldL = Number(milk.totalYieldL);
       const recordCount = Number(milk.recordCount);
-      const avgFat = milk.avgFat != null ? Math.round(Number(milk.avgFat) * 100) / 100 : null;
-      const avgProtein = milk.avgProtein != null ? Math.round(Number(milk.avgProtein) * 100) / 100 : null;
-      const avgScc = milk.avgScc != null ? Math.round(Number(milk.avgScc)) : null;
+      let avgFat = milk.avgFat != null ? Math.round(Number(milk.avgFat) * 100) / 100 : null;
+      let avgProtein = milk.avgProtein != null ? Math.round(Number(milk.avgProtein) * 100) / 100 : null;
+      let avgScc = milk.avgScc != null ? Math.round(Number(milk.avgScc)) : null;
 
-      // 유대단가 — 기본가 + 유지방 가감 + 체세포 1등급 가산 (유성분 기록 시 자동 반영)
-      const milkPrice = computeMilkPricePerL({
+      // 우군 기록 집계 — 개체 기록이 없으면 우군 기록으로 월 총량·유성분을 채운다
+      const avgOf = (vals: (number | null)[]): number | null => {
+        const nums = vals.filter((v): v is number => v != null && Number.isFinite(v));
+        return nums.length > 0 ? Math.round((nums.reduce((s, v) => s + v, 0) / nums.length) * 100) / 100 : null;
+      };
+      const summaryTotalL = summaryRows.reduce((s, r) => {
+        if (r.totalYieldL != null) return s + r.totalYieldL;
+        if (r.avgYieldPerCowL != null && r.milkingCount != null) return s + r.avgYieldPerCowL * r.milkingCount;
+        return s;
+      }, 0);
+      let milkSource: 'individual' | 'herd_summary' = 'individual';
+      if (totalYieldL === 0 && summaryTotalL > 0) {
+        totalYieldL = summaryTotalL;
+        milkSource = 'herd_summary';
+        avgFat = avgFat ?? avgOf(summaryRows.map((r) => r.avgFat));
+        avgProtein = avgProtein ?? avgOf(summaryRows.map((r) => r.avgProtein));
+        avgScc = avgScc ?? (avgOf(summaryRows.map((r) => r.avgScc)) != null ? Math.round(avgOf(summaryRows.map((r) => r.avgScc))!) : null);
+      }
+      const avgLactose = avgOf(summaryRows.map((r) => r.avgLactose));
+      // 실기록 유대단가 — 기록이 있으면 추정 대신 우선 적용 (목장별 단가: 납유/유기농/직접가공)
+      const recordedPrice = avgOf(summaryRows.map((r) => r.priceKrwPerL));
+
+      // 유대단가 — 실기록(우군 기록의 단가)이 있으면 그 값을, 없으면
+      // 파라미터 기반 추정 (기본가 + 유지방 가감 + 체세포 1등급 가산)
+      const estimatedPrice = computeMilkPricePerL({
         basePriceKrwPerL: econParams.milk_price_krw_per_l,
         fatAdjustKrwPer01Pct: econParams.milk_fat_adjust_krw_per_01pct,
         sccGrade1BonusKrwPerL: econParams.scc_grade1_bonus_krw_per_l,
         avgFatPct: avgFat,
         avgSccThousand: avgScc,
       });
+      const milkPrice = recordedPrice != null
+        ? { pricePerL: recordedPrice, formula: `실기록 단가 ${recordedPrice.toLocaleString()}원/L (우군 기록 ${summaryRows.filter((r) => r.priceKrwPerL != null).length}일 평균)` }
+        : estimatedPrice;
 
       const performance = {
         earlyDetection: {
@@ -283,17 +321,23 @@ reportRouter.get(
         },
         decisionsCompleted: Number(decisionsRows[0]?.cnt ?? 0),
         milk: {
-          recordedDays: Number(milk.recordedDays),
+          recordedDays: milkSource === 'herd_summary' ? summaryRows.length : Number(milk.recordedDays),
           animalsWithRecords: Number(milk.animalsWithRecords),
           totalYieldL: Math.round(totalYieldL),
-          avgYieldPerRecordL: recordCount > 0 ? Math.round((totalYieldL / recordCount) * 10) / 10 : null,
+          avgYieldPerRecordL: recordCount > 0 ? Math.round((Number(milk.totalYieldL) / recordCount) * 10) / 10 : null,
           avgFatPct: avgFat,
           avgProteinPct: avgProtein,
+          avgLactosePct: avgLactose,
           avgSccThousand: avgScc,
+          /** individual = 개체 기록, herd_summary = 우군(벌크탱크) 기록 */
+          source: milkSource,
         },
         economics: totalYieldL > 0
           ? (() => {
-              const avgYieldPerRecordL = recordCount > 0 ? totalYieldL / recordCount : null;
+              // 두당 평균 유량 — 개체 기록 우선, 없으면 우군 기록의 두당 평균
+              const avgYieldPerRecordL = recordCount > 0
+                ? Number(milk.totalYieldL) / recordCount
+                : avgOf(summaryRows.map((r) => r.avgYieldPerCowL));
               const feedCostPerHeadDayKrw = feedRows[0]?.dailyCostPerHead ?? null;
               // 두당 일 마진 = 두당 평균 유량 × 유대단가 − 착유우 배합 두당 일 사료비
               // 유량 기록과 착유우 배합이 모두 있을 때만 계산 (없으면 null — 과장 금지)

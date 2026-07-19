@@ -23,6 +23,8 @@ export interface RecordMilkYieldInput {
   readonly date?: string;
   readonly fat?: number;
   readonly protein?: number;
+  /** 유당 (%) */
+  readonly lactose?: number;
   readonly scc?: number;
 }
 
@@ -81,7 +83,7 @@ export async function recordMilkYield(input: RecordMilkYieldInput): Promise<Reco
   if (existing) {
     await db
       .update(milkRecords)
-      .set({ yield: input.yieldL, fat: input.fat, protein: input.protein, scc: input.scc })
+      .set({ yield: input.yieldL, fat: input.fat, protein: input.protein, lactose: input.lactose, scc: input.scc })
       .where(eq(milkRecords.recordId, existing.recordId));
   } else {
     await db.insert(milkRecords).values({
@@ -90,6 +92,7 @@ export async function recordMilkYield(input: RecordMilkYieldInput): Promise<Reco
       yield: input.yieldL,
       fat: input.fat,
       protein: input.protein,
+      lactose: input.lactose,
       scc: input.scc,
     });
   }

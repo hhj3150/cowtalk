@@ -469,10 +469,34 @@ export const milkRecords = pgTable('milk_records', {
   yield: real('yield').notNull(),
   fat: real('fat'),
   protein: real('protein'),
+  lactose: real('lactose'),
   scc: integer('scc'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('milk_records_animal_id_idx').on(table.animalId),
+]);
+
+// 우군(농장) 단위 유량·유성분 일별 기록 — 벌크탱크 기준.
+// price_krw_per_l 기록 시 월간 리포트 유대 추정보다 실기록 단가가 우선한다
+// (목장마다 단가가 다름: 조합/유업체 납유, 유기농 납유, 직접 가공·판매).
+export const farmMilkSummary = pgTable('farm_milk_summary', {
+  summaryId: uuid('summary_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  date: date('date').notNull(),
+  milkingCount: integer('milking_count'),
+  totalYieldL: real('total_yield_l'),
+  avgYieldPerCowL: real('avg_yield_per_cow_l'),
+  avgFat: real('avg_fat'),
+  avgProtein: real('avg_protein'),
+  avgLactose: real('avg_lactose'),
+  avgScc: integer('avg_scc'),
+  priceKrwPerL: real('price_krw_per_l'),
+  note: text('note'),
+  createdBy: uuid('created_by').references(() => users.userId),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('farm_milk_summary_farm_date_idx2').on(table.farmId, table.date),
 ]);
 
 export const lactationRecords = pgTable('lactation_records', {
