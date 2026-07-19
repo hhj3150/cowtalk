@@ -25,6 +25,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'epi-dash',     label: '방역 대시보드', href: '/epidemiology/dashboard', icon: 'ShieldAlert',     roles: ['master','government_admin','quarantine_officer'],                          order: 60,  group: 'analytics' },
   { id: 'automation',   label: '자동화 룰',     href: '/automation',             icon: 'Zap',             roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 78,  group: 'core' },
   { id: 'alerts',       label: '알림 설정',     href: '/notifications',          icon: 'Bell',            roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 80,  group: 'core' },
+  { id: 'econ-params',  label: '경제 파라미터', href: '/settings/economics',     icon: 'Calculator',      roles: ['master','farmer','veterinarian','government_admin'],                       order: 82,  group: 'core' },
   { id: 'subscription', label: '구독 관리',     href: '/subscription',           icon: 'CreditCard',      roles: ['master','farmer'],                                                          order: 85,  group: 'core' },
   { id: 'admin-farms',  label: '목장 관리',     href: '/admin/farms',            icon: 'Building2',       roles: ['master'],                                                                    order: 90,  group: 'admin' },
   { id: 'admin-users',  label: '사용자 관리',   href: '/admin/users',            icon: 'Users',           roles: ['master'],                                                                    order: 95,  group: 'admin' },

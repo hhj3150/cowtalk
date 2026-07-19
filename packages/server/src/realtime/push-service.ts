@@ -4,6 +4,7 @@
 import webpush from 'web-push';
 import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
+import { getChannelPrefs, shouldDeliver } from '../services/notification/notification-gate.service.js';
 
 // ── VAPID 설정 ──
 
@@ -83,13 +84,19 @@ export async function sendPushToFarm(farmId: string, payload: PushPayload): Prom
   const payloadSeverity = SEVERITY_ORDER[payload.severity] ?? 0;
   let sentCount = 0;
 
-  const targets = Array.from(subscriptions.values()).filter((entry) => {
+  const candidates = Array.from(subscriptions.values()).filter((entry) => {
     // farmId 필터: 빈 배열이면 전체 구독
     if (entry.farmIds.length > 0 && !entry.farmIds.includes(farmId)) return false;
-    // severity 필터
+    // severity 필터 (구독 시점 설정)
     const minLevel = SEVERITY_ORDER[entry.minSeverity] ?? 0;
     return payloadSeverity >= minLevel;
   });
+
+  // 사용자별 채널 설정(민감도·무음시간) 적용 — critical은 무음시간 우회
+  const prefs = await getChannelPrefs(candidates.map((e) => e.userId), 'push');
+  const targets = candidates.filter((entry) =>
+    shouldDeliver(prefs.get(entry.userId) ?? null, payload.severity),
+  );
 
   const pushData = JSON.stringify({
     title: payload.title,

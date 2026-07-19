@@ -33,6 +33,8 @@ interface AlarmPoint {
 interface TempTimelineData {
   readonly timeline: readonly TimelinePoint[];
   readonly alarms: readonly AlarmPoint[];
+  /** 실측 커버리지 부족 — 서버가 합성 대신 정직하게 빈 곡선을 반환함 */
+  readonly noData?: boolean;
   readonly summary: {
     readonly meanTemp: number;
     readonly highAlarms: number;
@@ -148,7 +150,9 @@ export function TemperatureScatter({ data, height = 280 }: Props): React.JSX.Ele
   if (!data || !data.timeline || data.timeline.length === 0) {
     return (
       <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ct-text-muted)', fontSize: 12 }}>
-        체온 시계열 데이터를 불러오는 중...
+        {data?.noData
+          ? '최근 24시간 실측 체온 데이터가 부족합니다 (센서 수집 대기 중)'
+          : '체온 시계열 데이터를 불러오는 중...'}
       </div>
     );
   }

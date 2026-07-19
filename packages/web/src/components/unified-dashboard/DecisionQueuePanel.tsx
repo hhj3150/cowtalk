@@ -5,6 +5,7 @@
 import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { DecisionCard, DecisionQueueData } from '@cowtalk/shared';
+import { URGENCY_LABELS, classifyUrgency } from '@cowtalk/shared';
 import { TitleAccentBar } from './WidgetTitle';
 import { completeDecision, undoDecision } from '../../api/unified-dashboard.api';
 import { useT } from '../../i18n';
@@ -22,6 +23,15 @@ const SEVERITY_META: Record<string, { color: string; label: string }> = {
   high: { color: '#f97316', label: '높음' },
   medium: { color: '#f59e0b', label: '보통' },
   low: { color: '#64748b', label: '낮음' },
+};
+
+// 5단계 긴급도 칩 색 — "언제까지"를 심각도와 별도로 표시
+const URGENCY_COLOR: Record<string, string> = {
+  emergency: '#ef4444',
+  today: '#f97316',
+  within_48h: '#eab308',
+  watch: '#38bdf8',
+  info: '#64748b',
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -48,6 +58,9 @@ function DecisionCardRow({ card, done, onToggleDone, onAnimalClick, onFarmClick,
 }): React.JSX.Element {
   const sev = SEVERITY_META[card.severity] ?? SEVERITY_META.medium!;
   const due = dueLabel(card.dueInHours);
+  // 배포 전환기 캐시 응답에 urgency가 없을 수 있음 — 동일 분류기로 폴백
+  const urgency = card.urgency ?? classifyUrgency(card.severity, card.dueInHours);
+  const urgencyColor = URGENCY_COLOR[urgency] ?? URGENCY_COLOR.info!;
 
   return (
     <div
@@ -98,17 +111,17 @@ function DecisionCardRow({ card, done, onToggleDone, onAnimalClick, onFarmClick,
           }}>
             {card.title}
           </span>
-          {due && !done && (
+          {!done && (
             <span style={{
               fontSize: 10,
               fontWeight: 700,
-              color: sev.color,
-              background: `${sev.color}1a`,
+              color: urgencyColor,
+              background: `${urgencyColor}1a`,
               padding: '2px 7px',
               borderRadius: 6,
               whiteSpace: 'nowrap',
             }}>
-              ⏱ {due}
+              {URGENCY_LABELS[urgency]}{due ? ` · ⏱ ${due}` : ''}
             </span>
           )}
           <span style={{ fontSize: 10, color: 'var(--ct-text-muted)' }}>

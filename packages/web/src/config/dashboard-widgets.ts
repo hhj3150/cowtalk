@@ -38,6 +38,7 @@ const ROLE_WIDGET_LAYOUTS: Readonly<Record<Role, readonly DashboardWidgetId[]>> 
     'todo_list',
     'vital_monitor_chart',
     'alert_trend_chart',
+    'farm_profit',             // 내 농장 손익 — 절감액 확인 + 월별 입력
     'ai_briefing',
   ],
 

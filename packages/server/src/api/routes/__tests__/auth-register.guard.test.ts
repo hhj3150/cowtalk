@@ -27,6 +27,12 @@ vi.mock('../auth.controller.js', () => {
   };
 });
 
+// 승인 게이트 모킹 — 이 테스트는 인가(역할) 게이트만 검증. 승인 로직은 approval.service 테스트에서 다룸.
+vi.mock('../../../services/auth/approval.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../services/auth/approval.service.js')>();
+  return { ...actual, isUserApproved: vi.fn(async () => true) };
+});
+
 const { authRouter } = await import('../auth.routes.js');
 const { errorHandler } = await import('../../middleware/error.js');
 

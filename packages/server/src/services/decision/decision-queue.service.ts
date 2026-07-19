@@ -10,6 +10,8 @@ import { predictions, smaxtecEvents, animals, farms } from '../../db/schema.js';
 import { and, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { getBreedingPipeline } from '../breeding/breeding-pipeline.service.js';
 import { estimateDailyLoss, LOSS_FRACTION_BY_EVENT } from './economic-impact.service.js';
+import { getEconomicParamValuesByFarm } from '../economics/economic-params.service.js';
+import { classifyUrgency } from '@cowtalk/shared';
 import { getAvgDailyYield } from '../milk/milk-record.service.js';
 import { logger } from '../../lib/logger.js';
 import type {
@@ -142,6 +144,7 @@ export function buildDecisionCards(
       source: c.source,
       detectedAt: c.detectedAt,
       dueInHours: c.dueInHours,
+      urgency: classifyUrgency(s.severity, c.dueInHours),
     };
   });
 
@@ -413,13 +416,22 @@ export async function getDecisionQueue(params: {
       .map((w, i) => ({ w, i }))
       .filter(({ w }) => w.lossFraction != null && w.animalId);
     if (econTargets.length > 0) {
-      const yields = await getAvgDailyYield(econTargets.map(({ w }) => w.animalId!), 7);
+      // 농장별 계약 단가 반영 — 기본값(카탈로그)은 오버라이드 없을 때만 사용
+      const [yields, paramsByFarm] = await Promise.all([
+        getAvgDailyYield(econTargets.map(({ w }) => w.animalId!), 7),
+        getEconomicParamValuesByFarm(
+          econTargets.map(({ w }) => w.farmId).filter((f): f is string => f != null),
+        ),
+      ]);
       enriched = cards.map((card, i) => {
         const winner = winners[i];
         if (!winner?.lossFraction || !winner.animalId) return card;
         const avgYield = yields.get(winner.animalId);
         if (avgYield == null) return card;
-        const impact = estimateDailyLoss(avgYield, winner.lossFraction);
+        const milkPrice = winner.farmId
+          ? paramsByFarm.get(winner.farmId)?.milk_price_krw_per_l
+          : undefined;
+        const impact = estimateDailyLoss(avgYield, winner.lossFraction, milkPrice);
         return impact ? { ...card, economicImpact: impact } : card;
       });
     }

@@ -67,6 +67,7 @@ import { ClusterDetailModal } from '@web/components/epidemic/ClusterDetailModal'
 import { VitalMonitorChart } from '@web/components/unified-dashboard/VitalMonitorChart';
 import { FarmMapWidget, buildFarmMapMarkers } from '@web/components/unified-dashboard/FarmMapWidget';
 import { FarmAnimalListPanel } from '@web/components/unified-dashboard/FarmAnimalListPanel';
+import { FarmProfitWidget } from '@web/components/unified-dashboard/FarmProfitWidget';
 import type { TodoItem } from '@cowtalk/shared';
 import { useRoleDashboard } from '@web/hooks/useRoleDashboard';
 import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
@@ -1147,6 +1148,14 @@ export default function UnifiedDashboard(): React.JSX.Element {
             )}
 
           </div>
+          </>)}
+
+          {/* ── 농장 손익 — 데이터 출처(실제/시뮬레이션) 배지 필수 ── */}
+          {isVisible('farm_profit') && (<>
+          <SectionLabel>농장 손익</SectionLabel>
+          <ChartCard title="이번 달 손익" icon="💰" delay={80}>
+            <FarmProfitWidget />
+          </ChartCard>
           </>)}
 
           {/* ── 센서 분석 (개별 농장 선택 시에만 표시) ── */}

@@ -2136,32 +2136,41 @@ unifiedDashboardRouter.get('/temperature-distribution', async (req: Request, res
       };
     });
 
-    // 3) 24시간 시계열 곡선 생성 (10분 간격 = 144포인트)
-    // 위내센서 패턴: 평균 38.3°C + 미세 변동 + 음수 시 급격 하강(-1~-2°C) → 30분 내 회복
-    const now = new Date();
-    const start = new Date(now.getTime() - 24 * 3600 * 1000);
+    // 3) 24시간 시계열 곡선 — 실측 sensor_measurements 10분 버킷 평균
+    // (이전 구현의 Math.random() 합성 곡선 제거 — 데이터 없으면 noData로 정직 표시)
     const INTERVAL_MS = 10 * 60 * 1000; // 10분
-    const MEAN_TEMP = 38.3;
-    const POINTS_COUNT = 144;
+    const INTERVAL_SEC = 600;
 
-    // 음수 시간대 (하루 평균 8~12회 음수 — 새벽 적고 낮에 많음)
-    const drinkingTimes: number[] = [];
-    const drinkHours = [5, 7, 8, 10, 11, 13, 14, 16, 17, 19, 21];
-    for (const h of drinkHours) {
-      const minuteOffset = Math.floor(Math.random() * 40);
-      const t = new Date(start);
-      t.setHours(start.getHours() + h, minuteOffset, 0, 0);
-      if (t.getTime() <= now.getTime()) {
-        drinkingTimes.push(t.getTime());
-      }
-    }
+    const bucketRows = await db
+      .select({
+        bucketEpoch: sql<number>`(FLOOR(EXTRACT(EPOCH FROM ${sensorMeasurements.timestamp}) / ${INTERVAL_SEC}) * ${INTERVAL_SEC})::bigint`,
+        avgTemp: sql<number>`AVG(${sensorMeasurements.value})`,
+      })
+      .from(sensorMeasurements)
+      .innerJoin(animals, eq(sensorMeasurements.animalId, animals.animalId))
+      .where(whereAll(
+        farmCondition(animals.farmId, farmId),
+        gte(sensorMeasurements.timestamp, last24h),
+        eq(sensorMeasurements.metricType, 'temp'),
+        eq(sensorMeasurements.qualityFlag, 'good'),
+      ))
+      .groupBy(sql`1`)
+      .orderBy(sql`1`);
 
-    // 알람 시간 → 시계열 반영용 맵
+    // 알람 시간 → 버킷 슬롯 맵 (실 이벤트 오버레이)
     const alarmTimeMap = new Map<number, typeof alarmPoints[0]>();
     for (const ap of alarmPoints) {
       const slot = Math.round(new Date(ap.time).getTime() / INTERVAL_MS) * INTERVAL_MS;
       alarmTimeMap.set(slot, ap);
     }
+
+    // 최소 커버리지: 2시간(버킷 12개) 미만이면 곡선을 그리지 않는다 — 합성으로 메우지 않음
+    const MIN_BUCKETS = 12;
+    const hasEnoughData = bucketRows.length >= MIN_BUCKETS;
+
+    const meanTemp = hasEnoughData
+      ? Math.round((bucketRows.reduce((s, r) => s + Number(r.avgTemp), 0) / bucketRows.length) * 10) / 10
+      : 0;
 
     const timeline: {
       time: string;
@@ -2173,58 +2182,32 @@ unifiedDashboardRouter.get('/temperature-distribution', async (req: Request, res
       eventDetail?: string;
     }[] = [];
 
-    for (let i = 0; i < POINTS_COUNT; i++) {
-      const t = new Date(start.getTime() + i * INTERVAL_MS);
-      if (t.getTime() > now.getTime()) break;
-
-      const slot = Math.round(t.getTime() / INTERVAL_MS) * INTERVAL_MS;
-
-      // 기본 체온 = 평균 + 미세 노이즈 (±0.15°C)
-      const u1 = Math.random();
-      const u2 = Math.random();
-      const noise = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * 0.08;
-      let temp = MEAN_TEMP + noise;
-
-      // 음수 효과: 음수 시점으로부터 0~30분 이내면 하강 곡선
-      for (const dt of drinkingTimes) {
-        const elapsed = t.getTime() - dt;
-        if (elapsed >= 0 && elapsed < 30 * 60 * 1000) {
-          // 급격 하강 후 회복: V자 곡선
-          // 최저점: 음수 후 5~8분 (약 -1.0~-1.8°C)
-          const progress = elapsed / (30 * 60 * 1000); // 0→1
-          const dipDepth = 1.0 + Math.random() * 0.8; // 1.0~1.8°C 하강
-          if (progress < 0.25) {
-            // 급격 하강 구간
-            temp = MEAN_TEMP - dipDepth * (progress / 0.25);
-          } else {
-            // 점진적 회복 구간
-            const recovery = (progress - 0.25) / 0.75;
-            temp = MEAN_TEMP - dipDepth * (1 - recovery);
-          }
-          temp += noise * 0.5; // 회복 중에도 미세 변동
-          break;
-        }
+    if (hasEnoughData) {
+      for (const row of bucketRows) {
+        const slotMs = Number(row.bucketEpoch) * 1000;
+        const temp = Math.round(Number(row.avgTemp) * 10) / 10;
+        const alarm = alarmTimeMap.get(slotMs);
+        timeline.push({
+          time: new Date(slotMs).toISOString(),
+          temp,
+          avg: meanTemp,
+          upperThreshold: 39.0,
+          lowerThreshold: 37.0,
+          event: alarm ? (alarm.type === 'high' ? '체온상승' : '체온하강') : undefined,
+          eventDetail: alarm
+            ? `${alarm.earTag}번 (${alarm.farmName}) ${alarm.temp.toFixed(1)}°C`
+            : undefined,
+        });
       }
+    }
 
-      // 알람 이벤트가 있는 시점
-      const alarm = alarmTimeMap.get(slot);
-      let eventLabel: string | undefined;
-      let eventDetail: string | undefined;
-      if (alarm) {
-        temp = alarm.temp;
-        eventLabel = alarm.type === 'high' ? '체온상승' : '체온하강';
-        eventDetail = `${alarm.earTag}번 (${alarm.farmName}) ${temp.toFixed(1)}°C`;
-      }
-
-      timeline.push({
-        time: t.toISOString(),
-        temp: Math.round(temp * 10) / 10,
-        avg: MEAN_TEMP,
-        upperThreshold: 39.0,
-        lowerThreshold: 37.0,
-        event: eventLabel,
-        eventDetail,
-      });
+    // 음수 딥 추정: 평균 대비 0.5°C 이상 하락한 연속 구간 수 (실측 곡선 기반)
+    let drinkingDips = 0;
+    let inDip = false;
+    for (const p of timeline) {
+      const isDip = p.temp < meanTemp - 0.5;
+      if (isDip && !inDip) drinkingDips++;
+      inDip = isDip;
     }
 
     // 4) 알람 요약 통계
@@ -2236,12 +2219,13 @@ unifiedDashboardRouter.get('/temperature-distribution', async (req: Request, res
       data: {
         timeline,
         alarms: alarmPoints,
+        noData: !hasEnoughData,
         summary: {
-          meanTemp: MEAN_TEMP,
+          meanTemp,
           highAlarms: highCount,
           lowAlarms: lowCount,
           totalAlarms: highCount + lowCount,
-          drinkingEvents: drinkingTimes.length,
+          drinkingEvents: drinkingDips,
         },
       },
     });

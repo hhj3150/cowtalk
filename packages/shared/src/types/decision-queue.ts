@@ -5,6 +5,9 @@
 
 export type DecisionSeverity = 'critical' | 'high' | 'medium' | 'low';
 
+/** 사용자향 5단계 긴급도 — "언제까지 해야 하는가" (분류기: constants/urgency.ts) */
+export type ActionUrgency = 'emergency' | 'today' | 'within_48h' | 'watch' | 'info';
+
 export type DecisionSource = 'sovereign' | 'smaxtec' | 'breeding' | 'weather';
 
 export type DecisionActionKind = 'animal' | 'farm' | 'ai_analysis';
@@ -45,6 +48,8 @@ export interface DecisionCard {
   readonly detectedAt: string;
   /** 조치 골든타임 (시간). 없으면 시간 제약 없는 조치 */
   readonly dueInHours?: number;
+  /** 5단계 긴급도 — severity+골든타임에서 결정적으로 분류 */
+  readonly urgency: ActionUrgency;
   /** 경제 환산 — 실측 유량 보유 개체만, 항상 '추정' 표기 */
   readonly economicImpact?: DecisionEconomicImpact;
   /** 완료 여부 — decision_actions DB 기록 (기기·사용자 간 공유) */

@@ -40,6 +40,13 @@ export type {
   VaccineFrequency,
   TargetAnimalCriteria,
 } from './vaccine-protocols.js';
+export { URGENCY_ORDER, URGENCY_LABELS, classifyUrgency } from './urgency.js';
+export {
+  ECONOMIC_PARAMETER_DEFS,
+  ECONOMIC_PARAMETER_MAP,
+  ECONOMIC_PARAMETER_KEYS,
+  isEconomicParameterKey,
+} from './economics.js';
 export {
   CLUSTER_DETECTION,
   ALERT_LEVEL_THRESHOLDS,

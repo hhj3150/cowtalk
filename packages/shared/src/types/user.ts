@@ -72,4 +72,9 @@ export interface AuthTokenPayload {
   readonly userId: string;
   readonly role: Role;
   readonly farmIds: readonly string[];
+  /** 소유자(마스터) 토큰 — 역할 전환 시에도 전체 농장 접근 유지 */
+  readonly isMaster?: boolean;
 }
+
+/** 계정 승인 상태 — 소유자가 승인한 계정만 접근 가능 */
+export type ApprovalStatus = 'approved' | 'pending' | 'revoked';

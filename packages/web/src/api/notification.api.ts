@@ -2,7 +2,7 @@
 
 import { apiGet, apiPost } from './client';
 
-export type NotificationChannel = 'kakao' | 'sms' | 'email' | 'inapp';
+export type NotificationChannel = 'kakao' | 'sms' | 'email' | 'inapp' | 'push';
 
 export interface NotificationPreference {
   readonly channel: NotificationChannel;
@@ -31,7 +31,10 @@ interface PreferencesResponse {
   }[];
 }
 
-const ALL_CHANNELS: readonly NotificationChannel[] = ['kakao', 'sms', 'email', 'inapp'];
+const ALL_CHANNELS: readonly NotificationChannel[] = ['kakao', 'sms', 'email', 'inapp', 'push'];
+
+// 설정 행이 없을 때의 기본값 — 서버 게이트도 '설정 없음 = 허용'이므로 push는 기본 on
+const DEFAULT_ENABLED: ReadonlySet<NotificationChannel> = new Set(['inapp', 'push']);
 
 export async function getPreferences(): Promise<readonly NotificationPreference[]> {
   const raw = await apiGet<PreferencesResponse | readonly NotificationPreference[]>('/notifications/preferences');
@@ -45,7 +48,7 @@ export async function getPreferences(): Promise<readonly NotificationPreference[
       const found = channelMap.get(ch);
       return {
         channel: ch,
-        enabled: found?.isEnabled ?? false,
+        enabled: found?.isEnabled ?? DEFAULT_ENABLED.has(ch),
         urgentOnly: found?.minSeverity === 'critical',
         quietHoursStart: found?.quietHoursStart ?? null,
         quietHoursEnd: found?.quietHoursEnd ?? null,
@@ -59,7 +62,7 @@ export async function getPreferences(): Promise<readonly NotificationPreference[
   // 데이터 없을 때 기본값
   return ALL_CHANNELS.map((ch) => ({
     channel: ch,
-    enabled: ch === 'inapp',
+    enabled: DEFAULT_ENABLED.has(ch),
     urgentOnly: false,
     quietHoursStart: null,
     quietHoursEnd: null,

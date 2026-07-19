@@ -7,6 +7,7 @@ import { getDb } from '../../config/database.js';
 import { notificationPreferences, userFarmAccess, alerts, farms } from '../../db/schema.js';
 import { eq, inArray, desc } from 'drizzle-orm';
 import { addSubscription, removeSubscription, sendPushToFarm, getSubscriptionCount } from '../../realtime/push-service.js';
+import { invalidateNotificationGateCache } from '../../services/notification/notification-gate.service.js';
 import { config } from '../../config/index.js';
 
 export const notificationRouter = Router();
@@ -129,6 +130,9 @@ notificationRouter.post('/preferences', async (req: Request, res: Response, next
 
       await db.insert(notificationPreferences).values(values);
     }
+
+    // 발송 게이트가 새 설정을 즉시 반영하도록 캐시 무효화
+    invalidateNotificationGateCache();
 
     res.json({
       success: true,

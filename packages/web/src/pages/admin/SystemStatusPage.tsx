@@ -36,14 +36,9 @@ export default function SystemStatusPage(): React.JSX.Element {
 
   if (isLoading) return <LoadingSkeleton lines={6} />;
 
-  // 기본값
-  const services: readonly ServiceStatus[] = data?.services ?? [
-    { name: '서버', status: 'healthy', lastCheck: new Date().toISOString(), details: null },
-    { name: '센서 커넥터', status: 'healthy', lastCheck: new Date().toISOString(), details: null },
-    { name: 'PostgreSQL', status: 'healthy', lastCheck: new Date().toISOString(), details: null },
-    { name: 'Redis', status: 'healthy', lastCheck: new Date().toISOString(), details: null },
-    { name: 'Claude API', status: data?.ai?.claudeAvailable ? 'healthy' : 'degraded', lastCheck: new Date().toISOString(), details: null },
-  ];
+  // API 무응답 시 "모두 정상" 가짜 목록을 보여주지 않는다 — 상태 미확인을 그대로 표시
+  const services: readonly ServiceStatus[] = data?.services ?? [];
+  const statusUnknown = !data?.services;
 
   return (
     <div className="space-y-6">
@@ -57,6 +52,11 @@ export default function SystemStatusPage(): React.JSX.Element {
       {/* 서비스 상태 */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-800">서비스 상태</h2>
+        {statusUnknown && (
+          <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            상태 API에서 서비스 목록을 받지 못했습니다 — 각 서비스 상태를 확인할 수 없습니다.
+          </div>
+        )}
         <div className="space-y-2">
           {services.map((svc) => (
             <div key={svc.name} className="flex items-center justify-between rounded bg-gray-50 px-4 py-2">
