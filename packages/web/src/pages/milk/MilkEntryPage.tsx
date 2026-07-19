@@ -10,7 +10,8 @@ import { listAnimals } from '@web/api/animal.api';
 import { apiPost } from '@web/api/client';
 import { useEffectiveFarmId } from '@web/hooks/useEffectiveFarmId';
 import { TitleAccentBar } from '@web/components/unified-dashboard/WidgetTitle';
-import { parseMilkCsv } from '@cowtalk/shared';
+import { parseMilkCsv, parseDelimited, detectMilkColumns, extractMilkRows } from '@cowtalk/shared';
+import type { MilkCsvRow, DelimitedTable, MilkColumnMapping } from '@cowtalk/shared';
 
 interface BulkResultRow {
   readonly success: boolean;
@@ -111,29 +112,84 @@ export default function MilkEntryPage(): React.JSX.Element {
     },
   });
 
+  // 파싱된 기록을 입력 표에 반영 (표에 없는 귀번호는 오류로 안내)
+  const applyRows = (rows: Map<string, MilkCsvRow>, baseErrors: readonly string[]): void => {
+    const known = new Set(cows.map((c) => c.earTag));
+    const unknown: string[] = [];
+    const next: Record<string, RowDraft> = { ...values };
+    for (const [earTag, row] of rows) {
+      if (known.has(earTag)) {
+        next[earTag] = {
+          y: String(row.yieldL),
+          fat: row.fat != null ? String(row.fat) : undefined,
+          protein: row.protein != null ? String(row.protein) : undefined,
+          scc: row.scc != null ? String(row.scc) : undefined,
+        };
+      } else unknown.push(earTag);
+    }
+    const errors = [...baseErrors];
+    if (unknown.length > 0) {
+      errors.push(`이 농장에 없는 귀번호 ${unknown.length}건: ${unknown.slice(0, 5).join(', ')}${unknown.length > 5 ? '…' : ''}`);
+    }
+    setCsvErrors(errors);
+    setValues(next);
+  };
+
+  // 열 수동 매핑 상태 (자동 인식 실패 시 — Lely T4C 등 임의 열 배치)
+  const [mappingTable, setMappingTable] = useState<DelimitedTable | null>(null);
+  const [mappingDraft, setMappingDraft] = useState<Record<string, string>>({});
+
   const handleCsv = (file: File): void => {
     void file.text().then((text) => {
-      const { rows, errors } = parseMilkCsv(text);
-      setCsvErrors(errors);
-      // CSV의 귀번호 → 표에 매핑 (표에 없는 귀번호는 오류로 안내)
-      const known = new Set(cows.map((c) => c.earTag));
-      const unknown: string[] = [];
-      const next: Record<string, RowDraft> = { ...values };
-      for (const [earTag, row] of rows) {
-        if (known.has(earTag)) {
-          next[earTag] = {
-            y: String(row.yieldL),
-            fat: row.fat != null ? String(row.fat) : undefined,
-            protein: row.protein != null ? String(row.protein) : undefined,
-            scc: row.scc != null ? String(row.scc) : undefined,
-          };
-        } else unknown.push(earTag);
+      setMappingTable(null);
+      // 1) 표준 형식 (귀번호,유량[,유성분]) 시도
+      const simple = parseMilkCsv(text);
+      if (simple.rows.size > 0) {
+        applyRows(simple.rows, simple.errors);
+        return;
       }
-      if (unknown.length > 0) {
-        setCsvErrors((prev) => [...prev, `이 농장에 없는 귀번호 ${unknown.length}건: ${unknown.slice(0, 5).join(', ')}${unknown.length > 5 ? '…' : ''}`]);
+      // 2) 임의 열 배치 — 헤더 이름으로 자동 감지 (Lely T4C 내보내기 등)
+      const table = parseDelimited(text);
+      const detected = detectMilkColumns(table.headers);
+      if (detected) {
+        const r = extractMilkRows(table, detected);
+        applyRows(r.rows, [
+          `열 자동 인식: 귀번호=${table.headers[detected.earTag]}, 유량=${table.headers[detected.yieldL]}` +
+            (detected.fat != null ? `, 유지방=${table.headers[detected.fat]}` : ''),
+          ...r.errors,
+        ]);
+        return;
       }
-      setValues(next);
+      // 3) 자동 인식 실패 → 열 수동 매핑 UI
+      if (table.dataRows.length > 0 && table.headers.length >= 2) {
+        setMappingTable(table);
+        setMappingDraft({});
+        setCsvErrors(['열을 자동으로 인식하지 못했습니다 — 아래에서 귀번호·유량 열을 지정해주세요.']);
+      } else {
+        setCsvErrors(['파일에서 데이터를 읽지 못했습니다 — CSV(콤마/탭 구분) 형식인지 확인해주세요.']);
+      }
     });
+  };
+
+  const applyManualMapping = (): void => {
+    if (!mappingTable) return;
+    const idx = (k: string): number | undefined => {
+      const v = mappingDraft[k];
+      return v != null && v !== '' ? Number(v) : undefined;
+    };
+    const earTag = idx('earTag');
+    const yieldL = idx('yieldL');
+    if (earTag == null || yieldL == null) return;
+    const mapping: MilkColumnMapping = {
+      earTag,
+      yieldL,
+      ...(idx('fat') != null ? { fat: idx('fat') } : {}),
+      ...(idx('protein') != null ? { protein: idx('protein') } : {}),
+      ...(idx('scc') != null ? { scc: idx('scc') } : {}),
+    };
+    const r = extractMilkRows(mappingTable, mapping);
+    applyRows(r.rows, r.errors);
+    setMappingTable(null);
   };
 
   if (!selectedFarmId) {
@@ -198,6 +254,47 @@ export default function MilkEntryPage(): React.JSX.Element {
         <div className="rounded border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
           {csvErrors.slice(0, 6).map((e, i) => <div key={i}>{e}</div>)}
           {csvErrors.length > 6 && <div>…외 {csvErrors.length - 6}건</div>}
+        </div>
+      )}
+
+      {/* 열 수동 매핑 — Lely T4C 등 자동 인식 실패한 내보내기 파일 */}
+      {mappingTable && (
+        <div className="rounded-xl border p-3" style={{ borderColor: 'var(--ct-border)', background: 'var(--ct-card)' }}>
+          <div className="mb-2 text-sm font-semibold" style={{ color: 'var(--ct-text)' }}>열 지정 (착유기 내보내기 파일)</div>
+          <div className="flex flex-wrap gap-3">
+            {([
+              { key: 'earTag', label: '귀번호 열 *' },
+              { key: 'yieldL', label: '유량 열 *' },
+              { key: 'fat', label: '유지방 열' },
+              { key: 'protein', label: '유단백 열' },
+              { key: 'scc', label: '체세포 열' },
+            ] as const).map((f) => (
+              <label key={f.key} className="flex flex-col gap-1 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+                {f.label}
+                <select
+                  value={mappingDraft[f.key] ?? ''}
+                  onChange={(e) => setMappingDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                  className="rounded border px-2 py-1 text-sm"
+                  style={{ background: 'var(--ct-surface-2, rgba(255,255,255,0.03))', borderColor: 'var(--ct-border)', color: 'var(--ct-text)' }}
+                >
+                  <option value="">선택 안 함</option>
+                  {mappingTable.headers.map((h, i) => <option key={i} value={i}>{h}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="mt-1 text-xs" style={{ color: 'var(--ct-text-muted)' }}>
+            미리보기: {mappingTable.dataRows[0]?.slice(0, 6).join(' | ')}
+          </div>
+          <button
+            type="button"
+            disabled={mappingDraft.earTag == null || mappingDraft.earTag === '' || mappingDraft.yieldL == null || mappingDraft.yieldL === ''}
+            onClick={applyManualMapping}
+            className="mt-2 rounded-md px-4 py-1.5 text-sm font-bold text-white disabled:opacity-40"
+            style={{ background: 'var(--ct-primary)' }}
+          >
+            이 열 배치로 불러오기
+          </button>
         </div>
       )}
 
