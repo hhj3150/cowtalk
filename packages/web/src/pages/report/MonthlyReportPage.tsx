@@ -55,6 +55,8 @@ interface MonthlyReport {
       readonly milkRevenueEstimateKrw: number;
       readonly priceKrwPerL: number;
       readonly priceFormula?: string;
+      readonly feedCostPerHeadDayKrw?: number | null;
+      readonly marginPerHeadDayKrw?: number | null;
       readonly estimated: true;
     } | null;
   };
@@ -214,6 +216,19 @@ export default function MonthlyReportPage(): React.JSX.Element {
                 ) : (
                   <span style={{ color: 'var(--ct-text-muted)' }}>유량을 기록하면 원유 수입 추정이 표시됩니다</span>
                 )}
+                {report.performance.economics?.marginPerHeadDayKrw != null ? (
+                  <span>
+                    두당 일 마진{' '}
+                    <b style={{ color: report.performance.economics.marginPerHeadDayKrw >= 0 ? '#34d399' : '#f87171' }}>
+                      {report.performance.economics.marginPerHeadDayKrw.toLocaleString()}원
+                    </b>
+                    <span style={{ color: 'var(--ct-text-muted)' }}>
+                      {' '}(추정 · 유대 − 사료비 {Number(report.performance.economics.feedCostPerHeadDayKrw).toLocaleString()}원)
+                    </span>
+                  </span>
+                ) : report.performance.economics ? (
+                  <span style={{ color: 'var(--ct-text-muted)' }}>착유우 TMR 배합을 등록하면 두당 일 마진이 표시됩니다</span>
+                ) : null}
                 <span>
                   알람 정확도{' '}
                   {report.sensor.alertAccuracy != null
