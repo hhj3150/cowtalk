@@ -2,14 +2,18 @@
 
 import { apiClient } from './client';
 
-export type TtsVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-export type TtsModel = 'tts-1' | 'tts-1-hd';
+export type TtsVoice =
+  | 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  | 'coral' | 'sage' | 'ash' | 'ballad' | 'verse';
+export type TtsModel = 'tts-1' | 'tts-1-hd' | 'gpt-4o-mini-tts';
 
 export interface SpeakRequest {
   readonly text: string;
   readonly voice?: TtsVoice;
   readonly model?: TtsModel;
   readonly maxChars?: number;
+  /** 말투 지시 (gpt-4o-mini-tts 전용) */
+  readonly instructions?: string;
 }
 
 export interface SpeakResult {

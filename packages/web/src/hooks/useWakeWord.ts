@@ -53,6 +53,12 @@ interface UseWakeWordOptions {
   readonly onInterrupt?: (heardText: string) => void;
   readonly extraInterruptPatterns?: readonly RegExp[];
   readonly lang?: string;
+  /**
+   * 들린 텍스트를 무시할지 판정한다 (에코 가드).
+   * 스피커로 나간 자기 음성이 마이크로 되들어오는 경우 true를 돌려주면
+   * 답변 중에도 마이크를 열어둘 수 있다 → 진짜 barge-in.
+   */
+  readonly shouldIgnore?: (heardText: string) => boolean;
 }
 
 interface UseWakeWordResult {
@@ -79,6 +85,7 @@ export function useWakeWord({
   onWake,
   onInterrupt,
   extraInterruptPatterns,
+  shouldIgnore,
   lang = 'ko-KR',
 }: UseWakeWordOptions): UseWakeWordResult {
   const [listening, setListening] = useState(false);
@@ -86,6 +93,7 @@ export function useWakeWord({
   const onWakeRef = useRef(onWake);
   const onInterruptRef = useRef(onInterrupt);
   const extraPatternsRef = useRef(extraInterruptPatterns);
+  const shouldIgnoreRef = useRef(shouldIgnore);
   const enabledRef = useRef(enabled);
   const restartTimeoutRef = useRef<number | null>(null);
 
@@ -99,6 +107,9 @@ export function useWakeWord({
   useEffect(() => {
     extraPatternsRef.current = extraInterruptPatterns;
   }, [extraInterruptPatterns]);
+  useEffect(() => {
+    shouldIgnoreRef.current = shouldIgnore;
+  }, [shouldIgnore]);
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
@@ -157,6 +168,9 @@ export function useWakeWord({
       const text = lastResult[0].transcript;
       const now = Date.now();
       if (now - lastFiredAt < COOLDOWN_MS) return;
+
+      // 자기 음성 에코면 버린다. 이 방어가 있어야 답변 중에도 청취를 유지할 수 있다.
+      if (shouldIgnoreRef.current?.(text)) return;
 
       // wake가 우선 (사용자가 "팅커벨"이라고 부르면 답변 중이라도 끊고 새 질문 모드)
       if (matchesWakeWord(text)) {

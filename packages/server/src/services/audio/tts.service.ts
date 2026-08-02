@@ -14,8 +14,10 @@ import { createHash } from 'node:crypto';
 
 // === 타입 ===
 
-export type TtsVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-export type TtsModel = 'tts-1' | 'tts-1-hd';
+export type TtsVoice =
+  | 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  | 'coral' | 'sage' | 'ash' | 'ballad' | 'verse';
+export type TtsModel = 'tts-1' | 'tts-1-hd' | 'gpt-4o-mini-tts';
 export type TtsFormat = 'mp3' | 'opus' | 'aac' | 'flac';
 
 export interface SynthesizeOptions {
@@ -24,6 +26,13 @@ export interface SynthesizeOptions {
   readonly model?: TtsModel;
   readonly format?: TtsFormat;
   readonly maxChars?: number; // 응답 앞 N자만 합성 (비용 절감)
+  /** 말투 지시 — gpt-4o-mini-tts에서만 반영된다 (구 모델은 무시) */
+  readonly instructions?: string;
+}
+
+/** instructions 파라미터를 지원하는 모델 */
+function supportsInstructions(model: TtsModel): boolean {
+  return model === 'gpt-4o-mini-tts';
 }
 
 export interface SynthesizeResult {
@@ -47,10 +56,18 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const audioCache = new Map<string, CacheEntry>();
 
-function makeCacheKey(text: string, voice: TtsVoice, model: TtsModel, format: TtsFormat): string {
+function makeCacheKey(
+  text: string,
+  voice: TtsVoice,
+  model: TtsModel,
+  format: TtsFormat,
+  instructions: string,
+): string {
   // 텍스트 해시 + 옵션으로 키 생성 (긴 텍스트도 짧은 키로)
+  // instructions가 바뀌면 음색이 달라지므로 키에 포함해야 한다.
   const hash = createHash('sha1').update(text).digest('hex').slice(0, 16);
-  return `${hash}:${voice}:${model}:${format}`;
+  const instrHash = instructions ? createHash('sha1').update(instructions).digest('hex').slice(0, 8) : 'none';
+  return `${hash}:${voice}:${model}:${format}:${instrHash}`;
 }
 
 function getFromCache(key: string): CacheEntry | null {
@@ -220,6 +237,9 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   const model = options.model ?? config.OPENAI_TTS_MODEL;
   const format = options.format ?? config.OPENAI_TTS_FORMAT;
   const maxChars = options.maxChars ?? config.OPENAI_TTS_MAX_CHARS;
+  const instructions = supportsInstructions(model)
+    ? (options.instructions ?? config.OPENAI_TTS_INSTRUCTIONS)
+    : '';
 
   // 1) 마크다운 제거
   const stripped = stripMarkdownForTts(options.text);
@@ -233,7 +253,7 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   const truncated = finalText.length < originalLength;
 
   // 3) 캐시 조회
-  const cacheKey = makeCacheKey(finalText, voice, model, format);
+  const cacheKey = makeCacheKey(finalText, voice, model, format, instructions);
   const cached = getFromCache(cacheKey);
   if (cached) {
     logger.debug({ voice, model, length: finalText.length }, '[tts] cache hit');
@@ -255,12 +275,16 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
+    // gpt-4o-mini-tts는 speed를 받지 않고 instructions로 속도·톤을 지시한다.
+    // 구 모델(tts-1/tts-1-hd)은 반대로 instructions를 모르고 speed만 받는다.
     body: JSON.stringify({
       model,
       input: finalText,
       voice,
       response_format: format,
-      speed: config.OPENAI_TTS_SPEED,
+      ...(supportsInstructions(model)
+        ? (instructions ? { instructions } : {})
+        : { speed: config.OPENAI_TTS_SPEED }),
     }),
   });
 
