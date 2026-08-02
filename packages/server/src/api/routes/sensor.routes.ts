@@ -9,6 +9,7 @@ import { sensorQuerySchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { sensorMeasurements, sensorDevices, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const sensorRouter = Router();
 
@@ -44,7 +45,7 @@ sensorRouter.get('/', requirePermission('sensor', 'read'), validate({ query: sen
 });
 
 // GET /sensors/latest/:animalId — 최신 센서 수치
-sensorRouter.get('/latest/:animalId', requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+sensorRouter.get('/latest/:animalId', requireAnimalAccess(), requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -75,7 +76,7 @@ sensorRouter.get('/latest/:animalId', requirePermission('sensor', 'read'), async
 });
 
 // GET /sensors/devices/:animalId — 동물의 센서 디바이스 목록
-sensorRouter.get('/devices/:animalId', requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+sensorRouter.get('/devices/:animalId', requireAnimalAccess(), requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -122,7 +123,7 @@ const RANGE_HOURS: Record<string, number> = {
   '30d': 720,
 };
 
-sensorRouter.get('/:animalId/history', requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+sensorRouter.get('/:animalId/history', requireAnimalAccess(), requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;

@@ -7,13 +7,14 @@ import { authenticate } from '../middleware/auth.js';
 import { getDifferentialDiagnosis } from '../../services/vet/differential-diagnosis.service.js';
 import { getDb } from '../../config/database.js';
 import { logger } from '../../lib/logger.js';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const diagnosisRouter = Router();
 
 diagnosisRouter.use(authenticate);
 
 // GET /diagnosis/:animalId?symptoms=유방부종,식욕감소
-diagnosisRouter.get('/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+diagnosisRouter.get('/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const animalId = String(req.params.animalId ?? '');
     if (!animalId) {
@@ -42,7 +43,7 @@ diagnosisRouter.get('/:animalId', async (req: Request, res: Response, next: Next
 });
 
 // GET /diagnosis/:animalId/history — 개체별 진단 이력 조회
-diagnosisRouter.get('/:animalId/history', async (req: Request, res: Response, next: NextFunction) => {
+diagnosisRouter.get('/:animalId/history', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const animalId = String(req.params.animalId ?? '');
     const limit = Math.min(Number(req.query.limit) || 20, 100);

@@ -1141,7 +1141,7 @@ function getSmaxtecCategory(smaxtecType: string): string {
   return 'health';
 }
 
-unifiedDashboardRouter.get('/animal/:animalId/timeline', async (req: Request, res: Response, next: NextFunction) => {
+unifiedDashboardRouter.get('/animal/:animalId/timeline', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -1266,7 +1266,7 @@ async function getSmaxtecConnector(): Promise<SmaxtecConnector | null> {
   }
 }
 
-unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request, res: Response, next: NextFunction) => {
+unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -3460,6 +3460,7 @@ import type {
 } from '@cowtalk/shared';
 import { farmProfitEntries } from '../../db/schema.js';
 import { z } from 'zod';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 /** Seeded pseudo-random for reproducible demo data per farmId+month */
 function seededRandom(seed: string): () => number {

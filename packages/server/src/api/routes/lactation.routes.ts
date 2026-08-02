@@ -6,13 +6,14 @@ import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { milkRecords, lactationRecords, animals } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const lactationRouter = Router();
 
 lactationRouter.use(authenticate);
 
 // GET /lactation/:animalId — 비유곡선 데이터
-lactationRouter.get('/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+lactationRouter.get('/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
