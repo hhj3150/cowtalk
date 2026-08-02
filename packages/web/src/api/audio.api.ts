@@ -25,14 +25,30 @@ export interface SpeakResult {
 }
 
 /**
+ * 받은 바이트가 MP3인지 판별한다.
+ * MP3는 ID3 태그("ID3")로 시작하거나 프레임 싱크(0xFF 0xEx~0xFx)로 시작한다.
+ * 게이트웨이가 본문을 압축하거나 텍스트로 변형하면 여기서 걸린다.
+ */
+export function looksLikeMp3(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 3) return false;
+  const b = new Uint8Array(buf, 0, 3);
+  // "ID3"
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return true;
+  // 프레임 싱크: 상위 11비트가 모두 1
+  if (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0) return true;
+  // gzip 매직(0x1f 0x8b) — 압축된 채로 왔다는 뜻이라 명시적으로 거짓
+  return false;
+}
+
+/**
  * 텍스트를 음성으로 합성하여 mp3 Blob 반환.
  * 호출자는 Blob을 URL.createObjectURL → <audio>.src 로 재생.
  *
  * ⚠️ Netlify 프록시를 경유하지 않고 Railway를 직접 호출한다.
  *    transcribeAudio가 이미 같은 이유로 그렇게 하고 있다 —
  *    Netlify 프록시가 audio/* 바이너리를 변조해 재생이 깨진다.
- *    서버가 Content-Encoding: identity / no-transform / Accept-Ranges: none을 붙여
- *    방어하고 있지만, 프록시를 아예 타지 않는 쪽이 확실하다.
+ *    (서버는 no-transform / Accept-Ranges: none 으로 함께 방어한다.
+ *     Content-Encoding: identity 는 HTTP/2에서 디코드 실패를 유발해 제거했다)
  *    (MP3가 한 바이트라도 변형되면 브라우저는 NotSupportedError만 던지고 조용히 죽는다)
  */
 export async function speak(request: SpeakRequest): Promise<SpeakResult> {
@@ -84,9 +100,19 @@ export async function speak(request: SpeakRequest): Promise<SpeakResult> {
   if (contentType.includes('html') || contentType.includes('json')) {
     throw new Error(`음성 대신 ${contentType} 응답이 왔습니다 — 프록시 경유 의심`);
   }
+  // 실제 바이트가 MP3인지 확인한다. 헤더는 audio/mpeg인데 본문이 깨져 오는 경우가 있어
+  // (중간 게이트웨이의 인코딩 처리), 여기서 잡지 않으면 브라우저가 NotSupportedError만 던지고
+  // 원인을 알 수 없게 된다.
+  if (!looksLikeMp3(buf)) {
+    throw new Error(
+      `음성 데이터가 MP3가 아닙니다 (${String(buf.byteLength)}바이트, ${contentType}) — 전송 중 손상`,
+    );
+  }
 
   return {
-    audioBlob: new Blob([buf], { type: contentType }),
+    // 서버 헤더를 그대로 믿지 않고 요청한 형식으로 고정한다.
+    // 엉뚱한 MIME이 붙어 오면 브라우저가 디코드를 시도조차 하지 않는다.
+    audioBlob: new Blob([buf], { type: 'audio/mpeg' }),
     cached: res.headers.get('x-tts-cached') === 'true',
     truncated: res.headers.get('x-tts-truncated') === 'true',
     originalLength: Number(res.headers.get('x-tts-original-length') ?? 0),

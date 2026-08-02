@@ -68,6 +68,8 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
   /** stop() 이후 도착하는 비동기 결과를 무시하기 위한 세대 카운터 */
   const generationRef = useRef(0);
   const spokenAnythingRef = useRef(false);
+  /** 실제로 소리가 난 적이 있는지. 합성은 됐는데 재생이 막히는 경우를 구분한다. */
+  const playedAnythingRef = useRef(false);
   const allTextRef = useRef('');
 
   // 옵션 콜백은 ref로 — 매 렌더 새 함수가 와도 드레인 루프가 재시작되지 않도록
@@ -164,7 +166,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
         audio.onerror = done;
 
         audio.play().then(
-          () => setIsSpeaking(true),
+          () => { playedAnythingRef.current = true; setIsSpeaking(true); },
           (err: unknown) => {
             const name = (err as { name?: string })?.name ?? '';
             console.warn('[streaming-voice] 재생 실패:', name);
@@ -219,7 +221,10 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
       if (generationRef.current === generation) {
         drainingRef.current = false;
         setIsSpeaking(false);
-        if (!spokenAnythingRef.current && allTextRef.current.trim()) {
+        // 합성이 됐는지가 아니라 "실제로 소리가 났는지"로 판정한다.
+        // 재생이 전부 막힌 경우(NotSupportedError 등)에도 브라우저 음성으로 폴백해야
+        // 사용자가 완전한 무음을 겪지 않는다.
+        if (!playedAnythingRef.current && allTextRef.current.trim()) {
           optsRef.current.onAllFailed?.(allTextRef.current.trim());
         } else {
           optsRef.current.onDrained?.();
@@ -259,6 +264,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
     endedRef.current = false;
     drainingRef.current = false;
     spokenAnythingRef.current = false;
+    playedAnythingRef.current = false;
     allTextRef.current = '';
     inflightRef.current = 0;
     releaseAudio();
