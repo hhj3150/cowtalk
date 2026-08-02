@@ -11,6 +11,7 @@
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 import { createHash } from 'node:crypto';
+import { getAudioModels } from './model-registry.js';
 
 // === 타입 ===
 
@@ -35,25 +36,6 @@ function supportsInstructions(model: TtsModel): boolean {
   return model === 'gpt-4o-mini-tts';
 }
 
-// === 모델 자동 강등 ===
-// 기본 모델을 gpt-4o-mini-tts로 올렸지만, 조직의 API 키에 그 모델 권한이 없을 수 있다.
-// 그 경우 운영자가 환경변수를 고치기 전까지 음성이 통째로 죽는다 — 현장에서는 치명적이다.
-// → 모델 접근 실패로 보이는 응답이 오면 즉시 구형 모델로 재시도하고, 성공하면 프로세스 수명 동안 기억한다.
-//   (권한이 생기면 재배포 시 초기화되어 자동으로 신형 모델로 복귀한다)
-
-const LEGACY_TTS_MODEL: TtsModel = 'tts-1-hd';
-let degradedToLegacy = false;
-
-/** 모델 미승인/미존재로 보이는 응답인지 — 입력 오류와 구분한다 */
-function looksLikeModelAccessError(status: number, body: string): boolean {
-  if (status !== 400 && status !== 403 && status !== 404) return false;
-  return /model|does not (exist|have access)|not authorized|unsupported_value|invalid_value/i.test(body);
-}
-
-/** 진단·테스트용 — 현재 강등 여부 */
-export function isTtsDegraded(): boolean {
-  return degradedToLegacy;
-}
 
 export interface SynthesizeResult {
   readonly audio: Buffer;
@@ -284,7 +266,8 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   }
 
   const voice = options.voice ?? config.OPENAI_TTS_VOICE;
-  const model = options.model ?? config.OPENAI_TTS_MODEL;
+  // 레지스트리가 이 키로 실제 사용 가능함을 확인한 최상위 모델. 호출자 지정이 있으면 그것을 존중한다.
+  const model = options.model ?? (await getAudioModels()).tts;
   const format = options.format ?? config.OPENAI_TTS_FORMAT;
   const maxChars = options.maxChars ?? config.OPENAI_TTS_MAX_CHARS;
   const instructions = supportsInstructions(model)
@@ -317,29 +300,10 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
     };
   }
 
-  // 4) OpenAI API 호출 (모델 권한 없으면 구형 모델로 자동 강등)
+  // 4) OpenAI API 호출 — 모델은 레지스트리가 이미 "사용 가능함을 확인한" 것만 넘어온다
   const startedAt = Date.now();
-  // 이전에 강등된 적이 있으면 처음부터 구형 모델로 — 매 요청마다 실패를 반복하지 않는다
-  const effectiveModel = degradedToLegacy && supportsInstructions(model) ? LEGACY_TTS_MODEL : model;
-
-  let response = await callSpeechApi(apiKey, effectiveModel, finalText, voice, format, instructions);
-  let usedModel = effectiveModel;
-
-  if (!response.ok && supportsInstructions(effectiveModel)) {
-    const errBody = await response.clone().text().catch(() => '');
-    if (looksLikeModelAccessError(response.status, errBody)) {
-      logger.warn(
-        { status: response.status, from: effectiveModel, to: LEGACY_TTS_MODEL },
-        '[tts] 모델 접근 불가 — 구형 모델로 자동 강등 (OPENAI_API_KEY 권한 확인 권장)',
-      );
-      const retry = await callSpeechApi(apiKey, LEGACY_TTS_MODEL, finalText, voice, format, '');
-      if (retry.ok) {
-        degradedToLegacy = true; // 폴백이 실제로 통했을 때만 기억한다
-        response = retry;
-        usedModel = LEGACY_TTS_MODEL;
-      }
-    }
-  }
+  const usedModel = model;
+  const response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, instructions);
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
@@ -388,6 +352,5 @@ export const __testing = {
   stripMarkdownForTts,
   truncateToSentence,
   clearCache: () => audioCache.clear(),
-  resetDegraded: () => { degradedToLegacy = false; },
   cacheSize: () => audioCache.size,
 };

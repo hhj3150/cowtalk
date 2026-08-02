@@ -8,6 +8,8 @@ import { authenticate } from '../middleware/auth.js';
 import { synthesize, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
 import { transcribe } from '../../services/audio/stt.service.js';
 import { logger } from '../../lib/logger.js';
+import { getAudioModels, TTS_PREFERENCE, STT_PREFERENCE } from '../../services/audio/model-registry.js';
+import { config } from '../../config/index.js';
 
 export const audioRouter = Router();
 
@@ -146,6 +148,43 @@ audioRouter.post(
     }
   },
 );
+
+// GET /api/audio/health — 지금 실제로 어떤 음성 모델이 쓰이는지 확인한다.
+// "업그레이드가 됐나?"를 추측이 아니라 눈으로 확인하기 위한 엔드포인트.
+//   ttsSource/sttSource:
+//     probed-best          = 이 키로 쓸 수 있는 것 중 최상위가 확정됨 (정상)
+//     env-pinned           = 운영자가 환경변수로 고정함
+//     preferred-unverified = 모델 목록 조회 실패 — 선호 모델을 그대로 사용 중
+audioRouter.get('/health', async (_req, res) => {
+  try {
+    const models = await getAudioModels();
+    const ttsIsBest = models.tts === TTS_PREFERENCE[0];
+    const sttIsBest = models.stt === STT_PREFERENCE[0];
+    res.json({
+      success: true,
+      data: {
+        configured: Boolean(config.OPENAI_API_KEY),
+        tts: { model: models.tts, source: models.ttsSource, isLatest: ttsIsBest, preference: TTS_PREFERENCE },
+        stt: { model: models.stt, source: models.sttSource, isLatest: sttIsBest, preference: STT_PREFERENCE },
+        availableAudioModels: models.availableAudioModels,
+        probeError: models.probeError ?? null,
+        resolvedAt: models.resolvedAt,
+        // 한눈에 보는 판정 — 대시보드·운영자용
+        verdict: !config.OPENAI_API_KEY
+          ? 'not_configured'
+          : models.probeError
+            ? 'unverified'
+            : ttsIsBest && sttIsBest
+              ? 'latest'
+              : 'outdated',
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, msg }, '[audio.routes] health failed');
+    res.status(500).json({ success: false, error: { code: 'AUDIO_HEALTH_FAILED', message: msg } });
+  }
+});
 
 // GET /api/audio/voices — 사용 가능한 음성 목록 (UI에서 선택 옵션 표시용)
 audioRouter.get('/voices', (_req, res) => {

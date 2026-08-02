@@ -6,6 +6,7 @@
 
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
+import { getAudioModels } from './model-registry.js';
 
 export interface TranscribeOptions {
   readonly audio: Buffer;
@@ -36,25 +37,6 @@ export const LIVESTOCK_STT_PROMPT =
   '발정, 수정, 인공수정, 임신감정, 분만, 건유, 유방염, 케토시스, 유열, 자궁내막염, 후산정체, ' +
   '반추, 산차, 공태일, 수태율, 체세포수, 유량, 유지방, 유단백, 이력제, 개체번호, 귀표번호, ' +
   '두수, 착유우, 육성우, 한우, 젖소, TMR, DIM, BCS, SCC, THI, 팅커벨, 카우톡.';
-
-// === 모델 자동 강등 ===
-// 기본 STT를 gpt-4o-transcribe로 올렸지만 조직 키에 권한이 없을 수 있다.
-// 권한 문제로 보이면 whisper-1로 즉시 재시도하고, 성공하면 프로세스 수명 동안 기억한다.
-// (권한이 생기면 재배포 시 초기화되어 자동 복귀)
-
-const LEGACY_STT_MODEL: SttModel = 'whisper-1';
-let degradedToLegacy = false;
-
-/** 모델 미승인/미존재로 보이는 응답인지 — 오디오 형식 오류와 구분한다 */
-function looksLikeModelAccessError(status: number, body: string): boolean {
-  if (status !== 400 && status !== 403 && status !== 404) return false;
-  return /model|does not (exist|have access)|not authorized|unsupported_value|invalid_value/i.test(body);
-}
-
-/** 진단·테스트용 */
-export function isSttDegraded(): boolean {
-  return degradedToLegacy;
-}
 
 function buildForm(opts: TranscribeOptions, model: SttModel, ext: string): FormData {
   const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
@@ -89,29 +71,12 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
   }
 
   // FormData 구성 — Node 18+ 글로벌 FormData/Blob 사용
+  // 모델은 레지스트리가 "이 키로 실제 사용 가능함"을 확인한 것만 넘어온다
   const ext = inferExt(opts.contentType);
-  const requested = opts.model ?? config.OPENAI_STT_MODEL;
-  // 이전에 강등된 적이 있으면 처음부터 구형 모델로 — 매 요청마다 실패를 반복하지 않는다
-  let model: SttModel = degradedToLegacy && requested !== LEGACY_STT_MODEL ? LEGACY_STT_MODEL : requested;
+  const model: SttModel = opts.model ?? (await getAudioModels()).stt;
 
   const startedAt = Date.now();
-  let response = await callTranscribeApi(apiKey, buildForm(opts, model, ext));
-
-  if (!response.ok && model !== LEGACY_STT_MODEL) {
-    const errBody = await response.clone().text().catch(() => '');
-    if (looksLikeModelAccessError(response.status, errBody)) {
-      logger.warn(
-        { status: response.status, from: model, to: LEGACY_STT_MODEL },
-        '[stt.service] 모델 접근 불가 — whisper-1로 자동 강등 (OPENAI_API_KEY 권한 확인 권장)',
-      );
-      const retry = await callTranscribeApi(apiKey, buildForm(opts, LEGACY_STT_MODEL, ext));
-      if (retry.ok) {
-        degradedToLegacy = true; // 폴백이 실제로 통했을 때만 기억한다
-        response = retry;
-        model = LEGACY_STT_MODEL;
-      }
-    }
-  }
+  const response = await callTranscribeApi(apiKey, buildForm(opts, model, ext));
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');

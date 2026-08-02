@@ -4,10 +4,10 @@
 // 마크다운 기호를 그대로 읽으면 "별표 별표 발정" 같은 소리가 나온다.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { synthesize, isTtsDegraded, __testing } from '@server/services/audio/tts.service';
+import { synthesize, __testing } from '@server/services/audio/tts.service';
 import { config } from '@server/config/index';
 
-const { stripMarkdownForTts, truncateToSentence, clearCache, resetDegraded } = __testing;
+const { stripMarkdownForTts, truncateToSentence, clearCache } = __testing;
 
 describe('stripMarkdownForTts', () => {
   it('마크다운 기호를 읽지 않는다', () => {
@@ -127,85 +127,5 @@ describe('synthesize — 모델별 요청 파라미터', () => {
   it('키가 없으면 명확한 에러를 던진다', async () => {
     (config as { OPENAI_API_KEY?: string }).OPENAI_API_KEY = undefined;
     await expect(synthesize({ text: '테스트' })).rejects.toThrow(/OPENAI_API_KEY/);
-  });
-});
-
-// 기본 모델을 gpt-4o-mini-tts로 올렸는데 조직 키에 권한이 없으면 음성이 통째로 죽는다.
-// 운영자가 환경변수를 고치기 전까지 현장이 멈추면 안 되므로 스스로 구형 모델로 내려앉아야 한다.
-describe('synthesize — 모델 권한 없을 때 자동 강등', () => {
-  const originalKey = config.OPENAI_API_KEY;
-  let fetchMock: ReturnType<typeof vi.fn>;
-
-  const ok = (): Response =>
-    new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'audio/mpeg' } });
-  const modelDenied = (): Response =>
-    new Response(JSON.stringify({ error: { message: "The model 'gpt-4o-mini-tts' does not exist or you do not have access to it." } }), { status: 403 });
-
-  beforeEach(() => {
-    clearCache();
-    resetDegraded();
-    (config as { OPENAI_API_KEY?: string }).OPENAI_API_KEY = 'sk-test-key';
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    (config as { OPENAI_API_KEY?: string }).OPENAI_API_KEY = originalKey;
-    clearCache();
-    resetDegraded();
-  });
-
-  function bodyOf(callIndex: number): Record<string, unknown> {
-    const call = fetchMock.mock.calls[callIndex] as [string, { body: string }];
-    return JSON.parse(call[1].body) as Record<string, unknown>;
-  }
-
-  it('모델 접근 거부 → tts-1-hd로 재시도하여 음성을 만들어낸다', async () => {
-    fetchMock = vi.fn()
-      .mockImplementationOnce(() => Promise.resolve(modelDenied()))
-      .mockImplementationOnce(() => Promise.resolve(ok()));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await synthesize({ text: '423번 소 확인했습니다.', model: 'gpt-4o-mini-tts' });
-
-    expect(result.audio.length).toBeGreaterThan(0);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(bodyOf(0).model).toBe('gpt-4o-mini-tts');
-    expect(bodyOf(1).model).toBe('tts-1-hd');
-    expect(isTtsDegraded()).toBe(true);
-  });
-
-  it('한 번 강등되면 이후 요청은 곧바로 구형 모델로 간다 — 실패를 반복하지 않는다', async () => {
-    fetchMock = vi.fn()
-      .mockImplementationOnce(() => Promise.resolve(modelDenied()))
-      .mockImplementation(() => Promise.resolve(ok()));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await synthesize({ text: '첫 번째 요청입니다.', model: 'gpt-4o-mini-tts' });
-    fetchMock.mockClear();
-
-    await synthesize({ text: '두 번째 요청입니다.', model: 'gpt-4o-mini-tts' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(bodyOf(0).model).toBe('tts-1-hd');
-  });
-
-  it('입력 오류(모델과 무관한 400)는 강등시키지 않는다', async () => {
-    fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(JSON.stringify({ error: { message: 'Input text is too long' } }), { status: 400 })),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(synthesize({ text: '테스트입니다.', model: 'gpt-4o-mini-tts' })).rejects.toThrow(/OpenAI TTS/);
-    expect(fetchMock).toHaveBeenCalledTimes(1); // 재시도 없음
-    expect(isTtsDegraded()).toBe(false);
-  });
-
-  it('폴백도 실패하면 강등 상태를 기억하지 않는다 — 일시 장애일 수 있다', async () => {
-    fetchMock = vi.fn()
-      .mockImplementationOnce(() => Promise.resolve(modelDenied()))
-      .mockImplementationOnce(() => Promise.resolve(new Response('', { status: 500 })));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(synthesize({ text: '테스트입니다.', model: 'gpt-4o-mini-tts' })).rejects.toThrow(/OpenAI TTS/);
-    expect(isTtsDegraded()).toBe(false);
   });
 });
