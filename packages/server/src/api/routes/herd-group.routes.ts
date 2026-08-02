@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { animalGroups, animalGroupMembers, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, count, inArray, gte, desc, sql } from 'drizzle-orm';
+import { requireGroupAccess } from '../middleware/resource-access.js';
 
 export const herdGroupRouter = Router();
 
@@ -73,7 +74,7 @@ herdGroupRouter.post('/farm/:farmId', requirePermission('farm', 'update'), async
 });
 
 // PATCH /herd-groups/:groupId — 그룹 수정
-herdGroupRouter.patch('/:groupId', requirePermission('farm', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+herdGroupRouter.patch('/:groupId', requireGroupAccess, requirePermission('farm', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const groupId = req.params.groupId as string;
@@ -106,7 +107,7 @@ herdGroupRouter.patch('/:groupId', requirePermission('farm', 'update'), async (r
 });
 
 // DELETE /herd-groups/:groupId — 그룹 삭제
-herdGroupRouter.delete('/:groupId', requirePermission('farm', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+herdGroupRouter.delete('/:groupId', requireGroupAccess, requirePermission('farm', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const groupId = req.params.groupId as string;
@@ -122,7 +123,7 @@ herdGroupRouter.delete('/:groupId', requirePermission('farm', 'update'), async (
 });
 
 // POST /herd-groups/:groupId/members — 개체 추가
-herdGroupRouter.post('/:groupId/members', requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+herdGroupRouter.post('/:groupId/members', requireGroupAccess, requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const groupId = req.params.groupId as string;
@@ -147,7 +148,7 @@ herdGroupRouter.post('/:groupId/members', requirePermission('animal', 'update'),
 });
 
 // POST /herd-groups/:groupId/members/remove — 개체 제거
-herdGroupRouter.post('/:groupId/members/remove', requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+herdGroupRouter.post('/:groupId/members/remove', requireGroupAccess, requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const groupId = req.params.groupId as string;
@@ -214,7 +215,7 @@ herdGroupRouter.post('/move', requirePermission('animal', 'update'), async (req:
 });
 
 // GET /herd-groups/:groupId/summary — 그룹 요약 대시보드
-herdGroupRouter.get('/:groupId/summary', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+herdGroupRouter.get('/:groupId/summary', requireGroupAccess, requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const groupId = req.params.groupId as string;
