@@ -234,6 +234,8 @@ export async function approveAndExecute(params: {
       userId: params.approverId,
       role: params.approverRole,
       farmId: req.farmId ?? undefined,
+      // 승인 실행은 요청이 접수된 농장에 한정된다 — 승인자가 다른 농장으로 확대할 수 없다
+      assignedFarmIds: req.farmId ? [req.farmId] : undefined,
     },
   );
 
