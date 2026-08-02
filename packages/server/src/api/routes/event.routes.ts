@@ -9,7 +9,6 @@ import { smaxtecEvents, farmEvents, animals } from '../../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { recordFarmEventFeedback } from '../../intelligence-loop/event-feedback.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 /**
  * 열린 루프 닫기 — 사용자 farm_event 를 정답 feedback 으로 적재하고 같은 동물의
@@ -174,7 +173,7 @@ eventRouter.post('/bulk', async (req: Request, res: Response, next: NextFunction
 });
 
 // GET /events/:animalId — 개체별 이벤트 조회
-eventRouter.get('/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
+eventRouter.get('/:animalId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;

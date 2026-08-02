@@ -10,8 +10,6 @@ import { getDb } from '../../config/database.js';
 import { predictions, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, desc, count, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
-import { requirePredictionAccess } from '../middleware/resource-access.js';
 
 // animal + time 조건 빌더
 function animalSince(animalId: string, since: Date) {
@@ -69,7 +67,7 @@ predictionRouter.get('/', requirePermission('prediction', 'read'), validate({ qu
 });
 
 // GET /predictions/:predictionId — 예측 상세
-predictionRouter.get('/:predictionId', requirePredictionAccess, requirePermission('prediction', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+predictionRouter.get('/:predictionId', requirePermission('prediction', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const predictionId = req.params.predictionId as string;
@@ -110,7 +108,7 @@ predictionRouter.get('/:predictionId', requirePredictionAccess, requirePermissio
 // GET /api/predictions/health/:cowId
 // ===========================
 
-predictionRouter.get('/health/:cowId', requireAnimalAccess({ param: 'cowId' }), async (req: Request, res: Response, next: NextFunction) => {
+predictionRouter.get('/health/:cowId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cowId = req.params.cowId as string;
     const db = getDb();
@@ -160,7 +158,7 @@ predictionRouter.get('/health/:cowId', requireAnimalAccess({ param: 'cowId' }), 
 // GET /api/predictions/estrus/:cowId
 // ===========================
 
-predictionRouter.get('/estrus/:cowId', requireAnimalAccess({ param: 'cowId' }), async (req: Request, res: Response, next: NextFunction) => {
+predictionRouter.get('/estrus/:cowId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cowId = req.params.cowId as string;
     const db = getDb();
@@ -205,7 +203,7 @@ predictionRouter.get('/estrus/:cowId', requireAnimalAccess({ param: 'cowId' }), 
 // GET /api/predictions/calving/:cowId
 // ===========================
 
-predictionRouter.get('/calving/:cowId', requireAnimalAccess({ param: 'cowId' }), async (req: Request, res: Response, next: NextFunction) => {
+predictionRouter.get('/calving/:cowId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cowId = req.params.cowId as string;
     const db = getDb();

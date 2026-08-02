@@ -84,33 +84,12 @@ adminRouter.get('/system', async (_req: Request, res: Response, next: NextFuncti
       // 테이블 없을 수 있음
     }
 
-    // 음성 모델 — 최신 모델이 실제로 물렸는지를 시스템 상태에서 바로 확인한다.
-    // (조회 실패해도 시스템 상태 조회 자체를 막지 않는다)
-    const { getAudioModels, TTS_PREFERENCE, STT_PREFERENCE } = await import('../../services/audio/model-registry.js');
-    const audio = await getAudioModels().catch(() => null);
-    const audioLatest = audio !== null
-      && audio.tts === TTS_PREFERENCE[0]
-      && audio.stt === STT_PREFERENCE[0];
-    const audioDetails = !config.OPENAI_API_KEY
-      ? 'API 키 미설정'
-      : audio === null
-        ? '모델 확인 실패'
-        : `TTS ${audio.tts} / STT ${audio.stt}${audioLatest ? ' (최신)' : ' — 최신 모델 접근 권한 확인 필요'}`;
-
     const services = [
       { name: '서버', status: 'healthy' as const, lastCheck: new Date().toISOString(), details: null },
       { name: 'PostgreSQL', status: dbStatus, lastCheck: new Date().toISOString(), details: null },
       { name: 'Redis', status: 'healthy' as const, lastCheck: new Date().toISOString(), details: null },
       { name: '센서 커넥터', status: 'healthy' as const, lastCheck: new Date().toISOString(), details: null },
       { name: 'Claude API', status: claudeAvailable ? 'healthy' as const : 'degraded' as const, lastCheck: new Date().toISOString(), details: claudeAvailable ? null : 'API 키 미설정' },
-      {
-        name: '음성 (TTS/STT)',
-        status: !config.OPENAI_API_KEY || audio === null
-          ? 'degraded' as const
-          : audioLatest ? 'healthy' as const : 'degraded' as const,
-        lastCheck: new Date().toISOString(),
-        details: audioDetails,
-      },
     ];
 
     res.json({

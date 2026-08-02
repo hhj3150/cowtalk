@@ -7,7 +7,6 @@ import { getDb } from '../../config/database.js';
 import { weightMeasurements } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const weightRouter = Router();
 
@@ -83,7 +82,7 @@ weightRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
 });
 
 // GET /weight/:animalId — 개체별 체중 기록 목록
-weightRouter.get('/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
+weightRouter.get('/:animalId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const animalId = String(req.params.animalId ?? '');
     if (!animalId) {
@@ -135,7 +134,7 @@ weightRouter.get('/:animalId', requireAnimalAccess(), async (req: Request, res: 
 });
 
 // GET /weight/:animalId/latest — 최신 기록 1건
-weightRouter.get('/:animalId/latest', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
+weightRouter.get('/:animalId/latest', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const animalId = String(req.params.animalId ?? '');
     if (!animalId) {

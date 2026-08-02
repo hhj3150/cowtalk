@@ -21,7 +21,6 @@ import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks, calving
 import { TraceabilityConnector } from '../../pipeline/connectors/public-data/traceability.connector.js';
 import { GradeConnector } from '../../pipeline/connectors/public-data/grade.connector.js';
 import { eq, and, sql, desc, count, inArray } from 'drizzle-orm';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 // 이력추적 커넥터 싱글톤 (매 요청마다 생성하지 않음)
 let traceConnector: TraceabilityConnector | null = null;
@@ -109,7 +108,7 @@ animalRouter.get('/', requirePermission('animal', 'read'), validate({ query: ani
 });
 
 // GET /animals/:animalId — 동물 상세 (AI 해석 포함)
-animalRouter.get('/:animalId', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+animalRouter.get('/:animalId', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -270,7 +269,7 @@ animalRouter.post(
 // PATCH /animals/:animalId — 동물 수정 (부분 업데이트)
 animalRouter.patch(
   '/:animalId',
-  requireAnimalAccess(), requirePermission('animal', 'update'),
+  requirePermission('animal', 'update'),
   validate({ body: updateAnimalSchema, params: z.object({ animalId: z.string().uuid() }) }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -296,7 +295,7 @@ animalRouter.patch(
 // DELETE /animals/:animalId — 소프트 삭제 (등록 실수 취소용)
 animalRouter.delete(
   '/:animalId',
-  requireAnimalAccess(), requirePermission('animal', 'delete'),
+  requirePermission('animal', 'delete'),
   validate({ params: z.object({ animalId: z.string().uuid() }) }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -320,7 +319,7 @@ animalRouter.delete(
 // POST /animals/:animalId/status — 상태 변경 (sold/dead/culled/transferred)
 animalRouter.post(
   '/:animalId/status',
-  requireAnimalAccess(), requirePermission('animal', 'update'),
+  requirePermission('animal', 'update'),
   validate({ body: changeAnimalStatusSchema, params: z.object({ animalId: z.string().uuid() }) }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -346,7 +345,7 @@ animalRouter.post(
 // POST /animals/:animalId/sensor — 센서 매핑 (deviceId:null 이면 해제)
 animalRouter.post(
   '/:animalId/sensor',
-  requireAnimalAccess(), requirePermission('animal', 'update'),
+  requirePermission('animal', 'update'),
   validate({ body: assignSensorSchema, params: z.object({ animalId: z.string().uuid() }) }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -373,7 +372,7 @@ animalRouter.post(
 // 캐시 히트면 { status:'ready', interpretation } 을 즉시 반환(<1s).
 // 미스면 { status:'computing', interpretation:null } 을 반환하고 백그라운드로 계산.
 // 프론트는 computing 동안 폴링하여 ready 결과를 수신한다.
-animalRouter.get('/:animalId/interpretation', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
+animalRouter.get('/:animalId/interpretation', requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const animalId = req.params.animalId as string;
     const role = (req.user?.role ?? 'farmer') as Role;
@@ -386,7 +385,7 @@ animalRouter.get('/:animalId/interpretation', requireAnimalAccess(), requirePerm
 });
 
 // GET /animals/:animalId/trace — 축산물이력추적 (이동이력·도축정보)
-animalRouter.get('/:animalId/trace', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+animalRouter.get('/:animalId/trace', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { animalId } = req.params as { animalId: string };
@@ -456,7 +455,7 @@ animalRouter.get('/:animalId/trace', requireAnimalAccess(), requirePermission('a
 });
 
 // GET /animals/:animalId/breeding-timeline — 임신 관리 통합 타임라인
-animalRouter.get('/:animalId/breeding-timeline', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
+animalRouter.get('/:animalId/breeding-timeline', requirePermission('animal', 'read'), async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -726,7 +725,7 @@ animalRouter.get('/:animalId/breeding-timeline', requireAnimalAccess(), requireP
 });
 
 // GET /animals/:animalId/breeding-history — breeding-timeline 별칭 (CowProfilePage 호환)
-animalRouter.get('/:animalId/breeding-history', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+animalRouter.get('/:animalId/breeding-history', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -785,7 +784,7 @@ animalRouter.get('/:animalId/breeding-history', requireAnimalAccess(), requirePe
 
 // GET /animals/:animalId/vaccine-history — 백신접종이력 + 방역검사 통합 조회
 // 공공데이터(이력추적) + 로컬 DB(접종기록) 병합
-animalRouter.get('/:animalId/vaccine-history', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+animalRouter.get('/:animalId/vaccine-history', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { animalId } = req.params as { animalId: string };
@@ -876,7 +875,7 @@ async function getGradeConnector(): Promise<GradeConnector> {
   return gradeConnector;
 }
 
-animalRouter.get('/:animalId/grade', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+animalRouter.get('/:animalId/grade', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { animalId } = req.params as { animalId: string };

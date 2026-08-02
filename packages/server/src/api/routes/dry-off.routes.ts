@@ -8,14 +8,13 @@ import { requirePermission } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { dryOffRecords, animals, animalGroupMembers, animalGroups } from '../../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const dryOffRouter = Router();
 
 dryOffRouter.use(authenticate);
 
 // POST /dry-off/:animalId — 건유 전환 실행
-dryOffRouter.post('/:animalId', requireAnimalAccess(), requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+dryOffRouter.post('/:animalId', requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -137,7 +136,7 @@ dryOffRouter.get('/farm/:farmId', requirePermission('farm', 'read'), async (req:
 });
 
 // GET /dry-off/:animalId/history — 개체별 건유 이력
-dryOffRouter.get('/:animalId/history', requireAnimalAccess(), requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+dryOffRouter.get('/:animalId/history', requirePermission('animal', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;

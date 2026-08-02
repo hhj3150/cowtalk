@@ -8,7 +8,6 @@ import { executeTool } from './tool-executor.js';
 import { logger } from '../../lib/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { Role } from '@cowtalk/shared';
-import { resolveAllowedFarms, findScopeViolations, describeViolations, intersectRequestedFarms } from './tool-scope.js';
 
 // ===========================
 // 도구 → 도메인 매핑
@@ -110,13 +109,6 @@ export interface ToolCallContext {
   readonly farmId?: string;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
   readonly requestId?: string; // 동일 대화의 여러 tool 호출 그룹핑
-  /**
-   * JWT에 담긴 배정 농장 — **권한의 유일한 근거**.
-   * 위의 farmId/farmIds는 클라이언트가 보낸 "요청"이라 권한 판단에 쓰면 안 된다.
-   * 미지정이면 스코프 검사를 건너뛰므로, 호출부는 반드시 채워야 한다.
-   */
-  readonly assignedFarmIds?: readonly string[];
-  readonly isMaster?: boolean;
 }
 
 export interface ToolCallResult {
@@ -164,38 +156,6 @@ export async function executeToolWithGateway(
     return { success: false, result, toolName, domain, executionMs: 0, denied: true, approvalRequired: false };
   }
 
-  // 1.5 데이터 스코프 검증 — AI가 접근 제어의 뒷문이 되지 않게 한다.
-  //     HTTP 라우트(#148/#149)는 미들웨어로 막았지만 도구는 DB를 직접 읽으므로
-  //     같은 규칙을 여기서 한 번 더 강제해야 한다. 권한 근거는 JWT(assignedFarmIds)뿐이다.
-  const allowedFarms = resolveAllowedFarms({
-    role: String(context.role),
-    assignedFarmIds: context.assignedFarmIds,
-    isMaster: context.isMaster,
-  });
-
-  const violations = await findScopeViolations(input, allowedFarms);
-  if (violations.length > 0) {
-    const result = JSON.stringify({ error: describeViolations(violations) });
-    await writeAuditLog({
-      requestId,
-      userId: context.userId,
-      role: context.role,
-      farmId: context.farmId,
-      toolName,
-      domain,
-      inputSummary: truncateJson(input),
-      resultStatus: 'denied',
-      resultSummary: result,
-      executionMs: Date.now() - startTime,
-      approvalRequired: false,
-    });
-    logger.warn(
-      { toolName, role: context.role, userId: context.userId, violations },
-      '[ToolGateway] 스코프 위반 거부 — 배정되지 않은 목장 데이터 요청',
-    );
-    return { success: false, result, toolName, domain, executionMs: Date.now() - startTime, denied: true, approvalRequired: false };
-  }
-
   // 2. 승인 필요 확인 (역할 의존) — 요청을 영속화하고 실행은 승인 시점으로 미룬다
   const approvalRequired = needsApproval(toolName, String(context.role));
   if (approvalRequired) {
@@ -237,15 +197,6 @@ export async function executeToolWithGateway(
     return { success: true, result, toolName, domain, executionMs: 0, denied: false, approvalRequired: true };
   }
 
-  // 실효 농장 — 권한과 요청의 교집합. 요청이 스코프 밖이면 배정 농장으로 되돌린다.
-  const requestedFarms = context.farmIds ?? (context.farmId ? [context.farmId] : []);
-  const effectiveFarmList = intersectRequestedFarms(requestedFarms, allowedFarms);
-  const effectiveFarmIds = effectiveFarmList.length > 0 ? effectiveFarmList : undefined;
-  const effectiveFarmId =
-    context.farmId && (allowedFarms === null || allowedFarms.includes(context.farmId))
-      ? context.farmId
-      : effectiveFarmList.length === 1 ? effectiveFarmList[0] : undefined;
-
   // 3. 도구 실행 (30초 타임아웃)
   // 외부 API(data.go.kr/EKAPE/smaXtec) 행 방지 — 시연 중 90초 SSE 타임아웃까지 대기 회피
   let resultStatus = 'success';
@@ -254,15 +205,7 @@ export async function executeToolWithGateway(
 
   try {
     resultText = await Promise.race([
-      executeTool(toolName, input, {
-        userId: context.userId,
-        role: String(context.role),
-        // 클라이언트가 보낸 농장 요청을 권한과 합성한다 — 스코프 밖은 조용히 확대하지 않는다
-        farmId: effectiveFarmId,
-        farmIds: effectiveFarmIds,
-        // 식별자(earTag/traceId)처럼 미리 농장을 알 수 없는 조회는 실행부가 이 값으로 필터링한다
-        allowedFarmIds: allowedFarms,
-      }),
+      executeTool(toolName, input, { userId: context.userId, role: String(context.role), farmId: context.farmId, farmIds: context.farmIds }),
       new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`도구 '${toolName}' 실행 타임아웃 (${TOOL_TIMEOUT_MS / 1000}초 초과)`)),

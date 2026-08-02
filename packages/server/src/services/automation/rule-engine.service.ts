@@ -262,9 +262,6 @@ async function executeRuleAction(
       userId: rule.createdBy ?? undefined,
       role: rule.actorRole,
       farmId: candidate.farmId,
-      // 자동화는 룰이 걸린 농장에서만 동작한다. 우회 플래그를 주는 대신
-      // 스코프를 그 농장 하나로 좁혀 게이트웨이 검사를 그대로 통과시킨다.
-      assignedFarmIds: [candidate.farmId],
       requestId: `automation-${rule.ruleId}`,
     });
     status = runStatusFromGateway(result);
