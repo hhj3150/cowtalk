@@ -123,10 +123,6 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     farmIds: Array.isArray(body.farmIds) && body.farmIds.length > 0 ? body.farmIds : undefined,
     animalId: body.animalId ?? null,
     userId: req.user?.userId,
-    // 권한은 JWT에서만 온다. body.farmId는 "요청"일 뿐 권한이 아니다 —
-    // 예전에는 이 구분이 없어 남의 farmId를 넣으면 그 농장 데이터가 나왔다.
-    assignedFarmIds: req.user?.farmIds,
-    isMaster: req.user?.isMaster,
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,

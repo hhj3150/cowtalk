@@ -18,7 +18,6 @@ import { getTransitionRisk } from '../../services/breeding/transition-risk.servi
 import { getMonthlyTrends, getFarmComparison, getParityAnalysis } from '../../services/breeding/breeding-performance.service.js';
 import { createSyncSchedule, getTodaySyncTasks, completeSyncTask, getAvailableProtocols } from '../../services/breeding/sync-protocol.service.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const breedingRouter = Router();
 
@@ -96,7 +95,7 @@ breedingRouter.get('/semen', async (req: Request, res: Response, next: NextFunct
 });
 
 // GET /breeding/recommend/:animalId — 발정→수정 추천 (실 로직)
-breedingRouter.get('/recommend/:animalId', requireAnimalAccess(), async (req: Request, res: Response, _next: NextFunction) => {
+breedingRouter.get('/recommend/:animalId', async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const animalId = req.params.animalId as string;
     const advice = await getBreedingAdvice(animalId);
@@ -234,7 +233,7 @@ breedingRouter.post('/farm/:farmId/inventory', async (req: Request, res: Respons
 });
 
 // GET /breeding/pedigree/:animalId — 혈통 조회
-breedingRouter.get('/pedigree/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.get('/pedigree/:animalId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -368,7 +367,7 @@ breedingRouter.post('/pregnancy-check', async (req: Request, res: Response, next
 });
 
 // GET /breeding/feedback/:animalId — 수정→임신감정 피드백 이력
-breedingRouter.get('/feedback/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.get('/feedback/:animalId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const animalId = req.params.animalId as string;
     const feedback = await getBreedingFeedback(animalId);

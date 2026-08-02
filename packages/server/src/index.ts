@@ -12,7 +12,6 @@ import { startReportCleanup, stopReportCleanup } from './services/report/cleanup
 import { seedSemenCatalog, seedFarmSemenInventory } from './services/breeding/semen-seed.service.js';
 import { createSocketServer } from './realtime/socket-server.js';
 import { runAutoMigrations } from './db/auto-migrate.js';
-import { warmAudioModels } from './services/audio/model-registry.js';
 
 // 서버 시작 전 마이그레이션 자동 실행 — 파일별 격리(한 파일 실패가 이후를 막지 않음).
 await runAutoMigrations();
@@ -34,10 +33,6 @@ const server = httpServer.listen(config.PORT, () => {
 
   // 만료 보고서 자동 정리 (매 시간)
   startReportCleanup();
-
-  // 음성 모델 확정 — 이 키로 쓸 수 있는 최신 TTS/STT를 부팅 시 조회해 굳힌다.
-  // 첫 음성 요청이 조회를 기다리지 않도록 미리 워밍한다. 결과는 GET /api/audio/health로 확인.
-  warmAudioModels();
 
   // 씨수소 카탈로그 시딩 → 농장 보유 정액 시딩 (추천이 실제로 뜨도록)
   seedSemenCatalog()

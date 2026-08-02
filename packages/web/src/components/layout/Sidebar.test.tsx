@@ -40,49 +40,36 @@ describe('resolveMenuRole — master 본질 + 시뮬레이션', () => {
   });
 });
 
-describe('Sidebar 메뉴 산출 — 6개 시뮬레이션 시나리오 (STEP 1.C)', () => {
-  // 여기서 검증할 것은 "시뮬레이션 역할이 메뉴까지 제대로 이어지는가"이지
-  // 메뉴가 몇 개인가가 아니다. 개수를 하드코딩하면 메뉴가 하나 늘 때마다
-  // 무관한 PR의 CI가 빨개진다(실제로 그래서 오래 red였다).
-  // → 해당 역할의 메뉴와 "같은지"만 본다. 개수 검증은 sidebar-menu.test.ts가 맡는다.
-  function menuIds(
+describe('Sidebar 메뉴 개수 — 6개 시뮬레이션 시나리오 (STEP 1.C)', () => {
+  function menuCount(
     isMasterEssence: boolean,
     sim: Parameters<typeof resolveMenuRole>[1],
     userRole: Parameters<typeof resolveMenuRole>[2],
-  ): string[] {
-    return getMenuForRole(resolveMenuRole(isMasterEssence, sim, userRole)).map((i) => i.id);
+  ): number {
+    return getMenuForRole(resolveMenuRole(isMasterEssence, sim, userRole)).length;
   }
 
-  const idsFor = (role: Parameters<typeof getMenuForRole>[0]): string[] =>
-    getMenuForRole(role).map((i) => i.id);
-
-  it('isMasterEssence=true, sim=null → master 메뉴', () => {
-    expect(menuIds(true, null, 'government_admin')).toEqual(idsFor('master'));
+  it('isMasterEssence=true, sim=null → 16개', () => {
+    expect(menuCount(true, null, 'government_admin')).toBe(16);
   });
 
-  it('isMasterEssence=true, sim=farmer → farmer 메뉴', () => {
-    expect(menuIds(true, 'farmer', 'government_admin')).toEqual(idsFor('farmer'));
+  it('isMasterEssence=true, sim=farmer → 7개', () => {
+    expect(menuCount(true, 'farmer', 'government_admin')).toBe(7);
   });
 
-  it('isMasterEssence=true, sim=veterinarian → veterinarian 메뉴', () => {
-    expect(menuIds(true, 'veterinarian', 'government_admin')).toEqual(idsFor('veterinarian'));
+  it('isMasterEssence=true, sim=veterinarian → 8개', () => {
+    expect(menuCount(true, 'veterinarian', 'government_admin')).toBe(8);
   });
 
-  it('isMasterEssence=true, sim=government_admin → government_admin 메뉴', () => {
-    expect(menuIds(true, 'government_admin', 'government_admin')).toEqual(idsFor('government_admin'));
+  it('isMasterEssence=true, sim=government_admin → 7개', () => {
+    expect(menuCount(true, 'government_admin', 'government_admin')).toBe(7);
   });
 
-  it('isMasterEssence=true, sim=quarantine_officer → quarantine_officer 메뉴', () => {
-    expect(menuIds(true, 'quarantine_officer', 'government_admin')).toEqual(idsFor('quarantine_officer'));
+  it('isMasterEssence=true, sim=quarantine_officer → 5개', () => {
+    expect(menuCount(true, 'quarantine_officer', 'government_admin')).toBe(5);
   });
 
-  it('isMasterEssence=false, user.role=farmer → farmer 메뉴', () => {
-    expect(menuIds(false, null, 'farmer')).toEqual(idsFor('farmer'));
-  });
-
-  it('시뮬레이션은 실제로 메뉴를 바꾼다 — 항등식이 아님을 확인', () => {
-    // 위 단언들이 자기참조로 늘 통과하는 걸 막는 안전장치:
-    // master와 farmer 메뉴가 실제로 달라야 시뮬레이션 검증이 의미를 갖는다.
-    expect(menuIds(true, null, 'government_admin')).not.toEqual(menuIds(true, 'farmer', 'government_admin'));
+  it('isMasterEssence=false, user.role=farmer → 7개', () => {
+    expect(menuCount(false, null, 'farmer')).toBe(7);
   });
 });

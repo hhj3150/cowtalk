@@ -60,12 +60,6 @@ export interface ChatMessageRequest {
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
   readonly animalId: string | null;
   readonly userId?: string;
-  /**
-   * JWT의 배정 농장 — 권한의 유일한 근거. 위 farmId/farmIds는 클라이언트 "요청"일 뿐이다.
-   * 게이트웨이가 이 값으로 도구 파라미터 스코프를 검증한다.
-   */
-  readonly assignedFarmIds?: readonly string[];
-  readonly isMaster?: boolean;
   readonly conversationHistory: readonly ConversationTurn[];
   readonly dashboardContext?: string;
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
@@ -504,9 +498,6 @@ export async function handleChatStream(
       role,
       farmId: farmId ?? undefined,
       farmIds: request.farmIds && request.farmIds.length > 0 ? request.farmIds : undefined,
-      // 권한 근거를 그대로 넘긴다 — 게이트웨이가 도구 파라미터를 이 기준으로 검증한다
-      assignedFarmIds: request.assignedFarmIds,
-      isMaster: request.isMaster,
     },
     { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );

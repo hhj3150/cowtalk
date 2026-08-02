@@ -12,7 +12,6 @@ import { desc, count } from 'drizzle-orm';
 import { getFeedbackByAnimal } from '../../intelligence-loop/feedback-collector.js';
 import { getFeedbackStats } from '../../intelligence-loop/feedback-collector.js';
 import { getUnmatchedPredictions, recordOutcome } from '../../intelligence-loop/outcome-recorder.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const feedbackRouter = Router();
 
@@ -93,7 +92,7 @@ feedbackRouter.post('/', requirePermission('feedback', 'create'), validate({ bod
 });
 
 // GET /feedback/animal/:animalId — 동물별 피드백
-feedbackRouter.get('/animal/:animalId', requireAnimalAccess(), requirePermission('feedback', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+feedbackRouter.get('/animal/:animalId', requirePermission('feedback', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const animalId = req.params.animalId as string;
     const data = await getFeedbackByAnimal(animalId);

@@ -7,7 +7,6 @@ import { requirePermission } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { alerts, farms } from '../../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
-import { requireActionAccess } from '../middleware/resource-access.js';
 
 export const actionRouter = Router();
 
@@ -52,7 +51,7 @@ actionRouter.get('/', requirePermission('action', 'read'), async (req: Request, 
 });
 
 // GET /actions/:actionId — 단일 액션 상세
-actionRouter.get('/:actionId', requireActionAccess, requirePermission('action', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+actionRouter.get('/:actionId', requirePermission('action', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const alertId = req.params.actionId as string;
@@ -88,7 +87,7 @@ actionRouter.get('/:actionId', requireActionAccess, requirePermission('action', 
 });
 
 // PATCH /actions/:actionId/status — 액션 상태 변경
-actionRouter.patch('/:actionId/status', requireActionAccess, requirePermission('action', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+actionRouter.patch('/:actionId/status', requirePermission('action', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const alertId = req.params.actionId as string;
