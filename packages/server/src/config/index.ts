@@ -75,6 +75,11 @@ const envSchema = z.object({
   // OpenAI TTS (음성 합성) — 팅커벨 음성 답변
   // 키 발급: platform.openai.com → API keys (Audio 권한만 부여 권장)
   OPENAI_API_KEY: z.string().optional(),
+  // ⚠️ 모델 선택은 기본적으로 model-registry가 담당한다.
+  //    부팅 시 OpenAI에 "이 키로 쓸 수 있는 모델"을 물어 선호 순위 중 최상위를 확정한다.
+  //    아래 값은 "운영자가 특정 모델로 고정하고 싶을 때"만 의미가 있다 —
+  //    환경변수를 명시하면 레지스트리가 그 뜻을 존중해 조회 결과보다 우선한다(env-pinned).
+  //    기본값은 검증용일 뿐 강제 핀이 아니다(registry는 원본 env를 본다).
   // gpt-4o-mini-tts: 자연성이 tts-1-hd보다 높으면서 단가는 더 낮고,
   // instructions로 말투(톤·속도·감정)를 지정할 수 있다 → 팅커벨 페르소나를 음성에도 입힌다.
   OPENAI_TTS_MODEL: z.enum(['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']).default('gpt-4o-mini-tts'),
@@ -94,7 +99,8 @@ const envSchema = z.object({
   // (gpt-4o-mini-tts는 speed를 받지 않음 — OPENAI_TTS_INSTRUCTIONS로 속도를 지시한다)
   OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4.0).default(1.0),
 
-  // STT 모델 — gpt-4o-transcribe가 한국어 축산 전문어 인식률이 whisper-1보다 높다.
+  // STT 모델 — 미설정 시 model-registry가 최신 가용 모델을 확정한다.
+  // 명시하면 그 값으로 고정된다. gpt-4o-transcribe가 한국어 축산 전문어 인식률이 whisper-1보다 높다.
   OPENAI_STT_MODEL: z
     .enum(['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'])
     .default('gpt-4o-transcribe'),
