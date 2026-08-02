@@ -15,9 +15,13 @@ audioRouter.use(authenticate);
 
 const speakSchema = z.object({
   text: z.string().min(1).max(4000),
-  voice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).optional(),
-  model: z.enum(['tts-1', 'tts-1-hd']).optional(),
+  voice: z
+    .enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'coral', 'sage', 'ash', 'ballad', 'verse'])
+    .optional(),
+  model: z.enum(['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']).optional(),
   maxChars: z.number().int().min(50).max(4000).optional(),
+  /** 말투 지시 (gpt-4o-mini-tts 전용) */
+  instructions: z.string().max(1000).optional(),
 });
 
 audioRouter.post('/speak', async (req, res) => {
@@ -28,6 +32,7 @@ audioRouter.post('/speak', async (req, res) => {
       voice: input.voice as TtsVoice | undefined,
       model: input.model as TtsModel | undefined,
       maxChars: input.maxChars,
+      instructions: input.instructions,
     });
 
     // 클라이언트 친화 메타데이터를 헤더로 노출 (CORS 화이트리스트 필요할 수 있음)
@@ -119,7 +124,6 @@ audioRouter.post(
         audio,
         contentType: contentType as string,
         language,
-        prompt: '한우 젖소 발정 분만 임신 건강 술탄팜 CowTalk',
       });
 
       res.json({ success: true, data: result });
@@ -130,7 +134,7 @@ audioRouter.post(
         res.status(503).json({ success: false, error: { code: 'STT_NOT_CONFIGURED', message: '음성 인식이 아직 설정되지 않았습니다' } });
         return;
       }
-      if (msg.includes('Whisper')) {
+      if (msg.includes('OpenAI STT')) {
         const statusMatch = /HTTP (\d{3})/.exec(msg);
         res.status(502).json({
           success: false,
@@ -150,15 +154,21 @@ audioRouter.get('/voices', (_req, res) => {
     data: {
       voices: [
         { id: 'nova', label: 'Nova (여성, 따뜻)', recommended: true },
+        { id: 'coral', label: 'Coral (여성, 또렷·현장 권장)', recommended: true },
+        { id: 'sage', label: 'Sage (여성, 침착)', recommended: false },
         { id: 'shimmer', label: 'Shimmer (여성, 차분)', recommended: false },
         { id: 'alloy', label: 'Alloy (중성, 평균)', recommended: false },
+        { id: 'ash', label: 'Ash (남성, 단단)', recommended: false },
+        { id: 'ballad', label: 'Ballad (남성, 부드러움)', recommended: false },
+        { id: 'verse', label: 'Verse (중성, 표현력)', recommended: false },
         { id: 'fable', label: 'Fable (영국식, 이야기조)', recommended: false },
         { id: 'onyx', label: 'Onyx (남성, 깊은 톤)', recommended: false },
         { id: 'echo', label: 'Echo (남성, 평균)', recommended: false },
       ],
       models: [
+        { id: 'gpt-4o-mini-tts', label: '기본 (자연성 최고 · 말투 지시 지원)', costPer1MChars: 12 },
         { id: 'tts-1', label: '표준 (빠름)', costPer1MChars: 15 },
-        { id: 'tts-1-hd', label: 'HD (자연성 높음, 2배 비용)', costPer1MChars: 30 },
+        { id: 'tts-1-hd', label: 'HD (구형 고음질)', costPer1MChars: 30 },
       ],
     },
   });
