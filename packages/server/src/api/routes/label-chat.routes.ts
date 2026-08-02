@@ -23,6 +23,7 @@ import type {
   MisclassificationItem,
   DailyLabelCount,
 } from '@cowtalk/shared';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const labelChatRouter = Router();
 
@@ -456,7 +457,7 @@ labelChatRouter.get('/sovereign-stats', async (_req: Request, res: Response, nex
 // GET /api/label-chat/events/:animalId
 // ===========================
 
-labelChatRouter.get('/events/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/events/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -524,7 +525,7 @@ labelChatRouter.get('/events/:animalId', async (req: Request, res: Response, nex
 // GET /api/label-chat/animal-info/:animalId
 // ===========================
 
-labelChatRouter.get('/animal-info/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/animal-info/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -865,7 +866,7 @@ labelChatRouter.post('/observation', async (req: Request, res: Response, next: N
 // GET /api/label-chat/observations/:animalId
 // ===========================
 
-labelChatRouter.get('/observations/:animalId', async (_req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/observations/:animalId', requireAnimalAccess(), async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = _req.params.animalId as string;
@@ -955,7 +956,7 @@ labelChatRouter.post('/session', async (req: Request, res: Response, next: NextF
 // GET /api/label-chat/session/:animalId
 // ===========================
 
-labelChatRouter.get('/session/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/session/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
