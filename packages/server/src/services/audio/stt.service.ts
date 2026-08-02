@@ -37,6 +37,44 @@ export const LIVESTOCK_STT_PROMPT =
   '반추, 산차, 공태일, 수태율, 체세포수, 유량, 유지방, 유단백, 이력제, 개체번호, 귀표번호, ' +
   '두수, 착유우, 육성우, 한우, 젖소, TMR, DIM, BCS, SCC, THI, 팅커벨, 카우톡.';
 
+// === 모델 자동 강등 ===
+// 기본 STT를 gpt-4o-transcribe로 올렸지만 조직 키에 권한이 없을 수 있다.
+// 권한 문제로 보이면 whisper-1로 즉시 재시도하고, 성공하면 프로세스 수명 동안 기억한다.
+// (권한이 생기면 재배포 시 초기화되어 자동 복귀)
+
+const LEGACY_STT_MODEL: SttModel = 'whisper-1';
+let degradedToLegacy = false;
+
+/** 모델 미승인/미존재로 보이는 응답인지 — 오디오 형식 오류와 구분한다 */
+function looksLikeModelAccessError(status: number, body: string): boolean {
+  if (status !== 400 && status !== 403 && status !== 404) return false;
+  return /model|does not (exist|have access)|not authorized|unsupported_value|invalid_value/i.test(body);
+}
+
+/** 진단·테스트용 */
+export function isSttDegraded(): boolean {
+  return degradedToLegacy;
+}
+
+function buildForm(opts: TranscribeOptions, model: SttModel, ext: string): FormData {
+  const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
+  const form = new FormData();
+  form.append('file', blob, `recording.${ext}`);
+  form.append('model', model);
+  if (opts.language) form.append('language', opts.language);
+  form.append('prompt', opts.prompt ?? LIVESTOCK_STT_PROMPT);
+  form.append('response_format', 'json');
+  return form;
+}
+
+async function callTranscribeApi(apiKey: string, form: FormData): Promise<Response> {
+  return fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    body: form,
+  });
+}
+
 export async function transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
   const apiKey = config.OPENAI_API_KEY;
   if (!apiKey) {
@@ -52,23 +90,28 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
 
   // FormData 구성 — Node 18+ 글로벌 FormData/Blob 사용
   const ext = inferExt(opts.contentType);
-  const model = opts.model ?? config.OPENAI_STT_MODEL;
-  const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
-  const form = new FormData();
-  form.append('file', blob, `recording.${ext}`);
-  form.append('model', model);
-  if (opts.language) form.append('language', opts.language);
-  form.append('prompt', opts.prompt ?? LIVESTOCK_STT_PROMPT);
-  form.append('response_format', 'json');
+  const requested = opts.model ?? config.OPENAI_STT_MODEL;
+  // 이전에 강등된 적이 있으면 처음부터 구형 모델로 — 매 요청마다 실패를 반복하지 않는다
+  let model: SttModel = degradedToLegacy && requested !== LEGACY_STT_MODEL ? LEGACY_STT_MODEL : requested;
 
   const startedAt = Date.now();
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: form,
-  });
+  let response = await callTranscribeApi(apiKey, buildForm(opts, model, ext));
+
+  if (!response.ok && model !== LEGACY_STT_MODEL) {
+    const errBody = await response.clone().text().catch(() => '');
+    if (looksLikeModelAccessError(response.status, errBody)) {
+      logger.warn(
+        { status: response.status, from: model, to: LEGACY_STT_MODEL },
+        '[stt.service] 모델 접근 불가 — whisper-1로 자동 강등 (OPENAI_API_KEY 권한 확인 권장)',
+      );
+      const retry = await callTranscribeApi(apiKey, buildForm(opts, LEGACY_STT_MODEL, ext));
+      if (retry.ok) {
+        degradedToLegacy = true; // 폴백이 실제로 통했을 때만 기억한다
+        response = retry;
+        model = LEGACY_STT_MODEL;
+      }
+    }
+  }
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');

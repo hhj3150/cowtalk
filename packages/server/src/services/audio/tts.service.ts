@@ -35,6 +35,26 @@ function supportsInstructions(model: TtsModel): boolean {
   return model === 'gpt-4o-mini-tts';
 }
 
+// === 모델 자동 강등 ===
+// 기본 모델을 gpt-4o-mini-tts로 올렸지만, 조직의 API 키에 그 모델 권한이 없을 수 있다.
+// 그 경우 운영자가 환경변수를 고치기 전까지 음성이 통째로 죽는다 — 현장에서는 치명적이다.
+// → 모델 접근 실패로 보이는 응답이 오면 즉시 구형 모델로 재시도하고, 성공하면 프로세스 수명 동안 기억한다.
+//   (권한이 생기면 재배포 시 초기화되어 자동으로 신형 모델로 복귀한다)
+
+const LEGACY_TTS_MODEL: TtsModel = 'tts-1-hd';
+let degradedToLegacy = false;
+
+/** 모델 미승인/미존재로 보이는 응답인지 — 입력 오류와 구분한다 */
+function looksLikeModelAccessError(status: number, body: string): boolean {
+  if (status !== 400 && status !== 403 && status !== 404) return false;
+  return /model|does not (exist|have access)|not authorized|unsupported_value|invalid_value/i.test(body);
+}
+
+/** 진단·테스트용 — 현재 강등 여부 */
+export function isTtsDegraded(): boolean {
+  return degradedToLegacy;
+}
+
 export interface SynthesizeResult {
   readonly audio: Buffer;
   readonly contentType: string;
@@ -225,6 +245,36 @@ function stripMarkdownForTts(text: string): string {
   return out;
 }
 
+// === OpenAI 호출 ===
+
+// gpt-4o-mini-tts는 speed를 받지 않고 instructions로 속도·톤을 지시한다.
+// 구 모델(tts-1/tts-1-hd)은 반대로 instructions를 모르고 speed만 받는다.
+async function callSpeechApi(
+  apiKey: string,
+  model: TtsModel,
+  input: string,
+  voice: TtsVoice,
+  format: TtsFormat,
+  instructions: string,
+): Promise<Response> {
+  return fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      input,
+      voice,
+      response_format: format,
+      ...(supportsInstructions(model)
+        ? (instructions ? { instructions } : {})
+        : { speed: config.OPENAI_TTS_SPEED }),
+    }),
+  });
+}
+
 // === 메인: synthesize ===
 
 export async function synthesize(options: SynthesizeOptions): Promise<SynthesizeResult> {
@@ -267,33 +317,36 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
     };
   }
 
-  // 4) OpenAI API 호출
+  // 4) OpenAI API 호출 (모델 권한 없으면 구형 모델로 자동 강등)
   const startedAt = Date.now();
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    // gpt-4o-mini-tts는 speed를 받지 않고 instructions로 속도·톤을 지시한다.
-    // 구 모델(tts-1/tts-1-hd)은 반대로 instructions를 모르고 speed만 받는다.
-    body: JSON.stringify({
-      model,
-      input: finalText,
-      voice,
-      response_format: format,
-      ...(supportsInstructions(model)
-        ? (instructions ? { instructions } : {})
-        : { speed: config.OPENAI_TTS_SPEED }),
-    }),
-  });
+  // 이전에 강등된 적이 있으면 처음부터 구형 모델로 — 매 요청마다 실패를 반복하지 않는다
+  const effectiveModel = degradedToLegacy && supportsInstructions(model) ? LEGACY_TTS_MODEL : model;
+
+  let response = await callSpeechApi(apiKey, effectiveModel, finalText, voice, format, instructions);
+  let usedModel = effectiveModel;
+
+  if (!response.ok && supportsInstructions(effectiveModel)) {
+    const errBody = await response.clone().text().catch(() => '');
+    if (looksLikeModelAccessError(response.status, errBody)) {
+      logger.warn(
+        { status: response.status, from: effectiveModel, to: LEGACY_TTS_MODEL },
+        '[tts] 모델 접근 불가 — 구형 모델로 자동 강등 (OPENAI_API_KEY 권한 확인 권장)',
+      );
+      const retry = await callSpeechApi(apiKey, LEGACY_TTS_MODEL, finalText, voice, format, '');
+      if (retry.ok) {
+        degradedToLegacy = true; // 폴백이 실제로 통했을 때만 기억한다
+        response = retry;
+        usedModel = LEGACY_TTS_MODEL;
+      }
+    }
+  }
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
     // 보안: 키나 민감 정보가 포함될 수 있으니 마스킹
     const safeMsg = errBody.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***');
     logger.error(
-      { status: response.status, body: safeMsg.slice(0, 500), voice, model },
+      { status: response.status, body: safeMsg.slice(0, 500), voice, model: usedModel },
       '[tts] OpenAI API error',
     );
     throw new Error(`OpenAI TTS 실패 (HTTP ${String(response.status)})`);
@@ -307,7 +360,7 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   logger.info(
     {
       voice,
-      model,
+      model: usedModel,
       chars: finalText.length,
       audioBytes: audio.length,
       elapsedMs,
@@ -335,5 +388,6 @@ export const __testing = {
   stripMarkdownForTts,
   truncateToSentence,
   clearCache: () => audioCache.clear(),
+  resetDegraded: () => { degradedToLegacy = false; },
   cacheSize: () => audioCache.size,
 };
