@@ -87,15 +87,21 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
     return audioRef.current;
   }, []);
 
-  /** 재생만 멈추고 엘리먼트는 살려둔다 (iOS 활성화 상태 유지) */
+  /**
+   * 재생을 멈춘다.
+   *
+   * ⚠️ removeAttribute('src') + load() 를 부르면 안 된다.
+   *    src 없이 load()하면 미디어 엘리먼트가 MEDIA_ERR_SRC_NOT_SUPPORTED 상태로 들어가고,
+   *    그 뒤 새 src를 넣어도 play()가 NotSupportedError로 거부된다.
+   *    실제로 "오디오 형식을 재생할 수 없습니다"가 반복된 원인이 이것이었다.
+   *    다음 재생은 src를 갈아끼우는 것으로 충분하다 — 비우지 않는다.
+   */
   const releaseAudio = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
-      audio.pause();
       audio.onended = null;
       audio.onerror = null;
-      audio.removeAttribute('src');
-      audio.load();
+      try { audio.pause(); } catch { /* ignore */ }
     }
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
@@ -152,8 +158,6 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
         releaseAudio();
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
-        const audio = getAudioElement();
-        audio.src = url;
 
         let settled = false;
         const done = (): void => {
@@ -162,22 +166,48 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
           resolve();
         };
 
-        audio.onended = done;
-        audio.onerror = done;
+        const attach = (audio: HTMLAudioElement): void => {
+          audio.onended = done;
+          audio.onerror = done;
+          audio.src = url;
+          audio.load(); // 새 src로 로드 (src를 비운 채 load하면 엘리먼트가 에러 상태가 된다)
+        };
 
-        audio.play().then(
+        const reportFailure = (name: string): void => {
+          optsRef.current.onError?.(
+            name === 'NotAllowedError'
+              ? '브라우저가 자동 재생을 차단했습니다. 화면을 한 번 누른 뒤 다시 시도해 주세요.'
+              : name === 'NotSupportedError'
+                ? `오디오를 재생할 수 없습니다 (${String(blob.size)}바이트 ${blob.type || '형식불명'})`
+                : `오디오 재생 실패: ${name || 'unknown'}`,
+          );
+        };
+
+        const reused = getAudioElement();
+        attach(reused);
+
+        reused.play().then(
           () => { playedAnythingRef.current = true; setIsSpeaking(true); },
           (err: unknown) => {
             const name = (err as { name?: string })?.name ?? '';
             console.warn('[streaming-voice] 재생 실패:', name);
-            optsRef.current.onError?.(
-              name === 'NotAllowedError'
-                ? '브라우저가 자동 재생을 차단했습니다. 화면을 한 번 누른 뒤 다시 시도해 주세요.'
-                : name === 'NotSupportedError'
-                  ? '오디오 형식을 재생할 수 없습니다 (전송 중 손상 의심)'
-                  : `오디오 재생 실패: ${name || 'unknown'}`,
+            // 재사용 엘리먼트가 이전 오류 상태에 갇혔을 수 있다 — 새 엘리먼트로 한 번만 재시도한다.
+            // 이래도 실패하면 데이터 문제이므로 크기·형식을 실어 사유를 남긴다.
+            if (name !== 'NotSupportedError') { reportFailure(name); done(); return; }
+
+            const fresh = new Audio();
+            fresh.preload = 'auto';
+            audioRef.current = fresh;
+            attach(fresh);
+            fresh.play().then(
+              () => { playedAnythingRef.current = true; setIsSpeaking(true); },
+              (err2: unknown) => {
+                const name2 = (err2 as { name?: string })?.name ?? '';
+                console.warn('[streaming-voice] 재시도도 실패:', name2);
+                reportFailure(name2);
+                done();
+              },
             );
-            done();
           },
         );
       }),
