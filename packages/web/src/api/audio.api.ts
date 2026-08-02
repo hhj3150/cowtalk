@@ -26,22 +26,71 @@ export interface SpeakResult {
 
 /**
  * 텍스트를 음성으로 합성하여 mp3 Blob 반환.
- * 호출자는 Blob을 URL.createObjectURL → <audio>.src 또는 new Audio()로 재생.
+ * 호출자는 Blob을 URL.createObjectURL → <audio>.src 로 재생.
+ *
+ * ⚠️ Netlify 프록시를 경유하지 않고 Railway를 직접 호출한다.
+ *    transcribeAudio가 이미 같은 이유로 그렇게 하고 있다 —
+ *    Netlify 프록시가 audio/* 바이너리를 변조해 재생이 깨진다.
+ *    서버가 Content-Encoding: identity / no-transform / Accept-Ranges: none을 붙여
+ *    방어하고 있지만, 프록시를 아예 타지 않는 쪽이 확실하다.
+ *    (MP3가 한 바이트라도 변형되면 브라우저는 NotSupportedError만 던지고 조용히 죽는다)
  */
 export async function speak(request: SpeakRequest): Promise<SpeakResult> {
-  const response = await apiClient.post<ArrayBuffer>('/audio/speak', request, {
-    responseType: 'arraybuffer',
-    timeout: 30_000, // TTS는 평균 1~3초, 긴 텍스트도 10초 이내
-  });
+  const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  const url = `${apiBase}/api/audio/speak`;
+  const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
 
-  const audioBlob = new Blob([response.data], { type: response.headers['content-type'] ?? 'audio/mpeg' });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+      credentials: 'omit',
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = await res.json() as { error?: { code?: string; message?: string } };
+      detail = `${body?.error?.code ?? ''} ${body?.error?.message ?? ''}`.trim();
+    } catch { /* 본문이 JSON이 아닐 수 있다 */ }
+    const err = new Error(detail || `HTTP ${String(res.status)}`) as Error & {
+      response?: { status: number; data?: unknown };
+      status?: number;
+    };
+    err.status = res.status;
+    err.response = { status: res.status, data: { error: { message: detail } } };
+    throw err;
+  }
+
+  const buf = await res.arrayBuffer();
+  const contentType = res.headers.get('content-type') ?? 'audio/mpeg';
+
+  // 빈 응답·HTML 오류 페이지를 오디오로 재생하려다 조용히 실패하는 경우를 미리 잡는다
+  if (buf.byteLength === 0) {
+    throw new Error('음성 데이터가 비어 있습니다 (서버 또는 프록시 문제)');
+  }
+  if (contentType.includes('html') || contentType.includes('json')) {
+    throw new Error(`음성 대신 ${contentType} 응답이 왔습니다 — 프록시 경유 의심`);
+  }
 
   return {
-    audioBlob,
-    cached: response.headers['x-tts-cached'] === 'true',
-    truncated: response.headers['x-tts-truncated'] === 'true',
-    originalLength: Number(response.headers['x-tts-original-length'] ?? 0),
-    synthesizedLength: Number(response.headers['x-tts-synthesized-length'] ?? 0),
+    audioBlob: new Blob([buf], { type: contentType }),
+    cached: res.headers.get('x-tts-cached') === 'true',
+    truncated: res.headers.get('x-tts-truncated') === 'true',
+    originalLength: Number(res.headers.get('x-tts-original-length') ?? 0),
+    synthesizedLength: Number(res.headers.get('x-tts-synthesized-length') ?? 0),
   };
 }
 
