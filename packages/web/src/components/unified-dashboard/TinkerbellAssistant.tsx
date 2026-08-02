@@ -1187,6 +1187,9 @@ export function TinkerbellAssistant({
     stopSpeaking();
     try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     stopStreamingSpeech();
+    // 자기 음성을 이미 껐으므로 이전 발화는 더 이상 에코 판정 근거가 아니다.
+    // 비우지 않으면 답변에 나온 단어를 되쓰는 후속 질문이 에코로 오판돼 통째로 버려진다.
+    echoGuardRef.current.clear();
     unlockTts();
     if (import.meta.env.DEV) console.log('[Whisper] 1) 시작 — getUserMedia 요청');
 
@@ -1353,6 +1356,8 @@ export function TinkerbellAssistant({
     stopSpeaking();
     try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     stopStreamingSpeech();
+    // 마이크를 사용자에게 여는 순간 에코 기억을 비운다 (오판으로 질문이 삼켜지는 것 방지)
+    echoGuardRef.current.clear();
     unlockTts();
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
