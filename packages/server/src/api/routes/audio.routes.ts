@@ -46,10 +46,15 @@ audioRouter.post('/speak', async (req, res) => {
     res.setHeader('X-TTS-Synthesized-Length', String(result.synthesizedLength));
     // CDN/프록시의 바이너리 변조 방지 — 브라우저 NotSupportedError 예방
     //   no-transform: 중간 프록시가 content encoding을 바꾸지 못하게 (Fastly/Netlify 포함)
-    //   identity: gzip/brotli 비활성 — MP3 원본 그대로 전달 (손상 방지)
     //   X-Accel-Buffering: nginx 앞단 있을 때 버퍼링 금지
+    //
+    // ⚠️ Content-Encoding: identity 는 붙이지 않는다.
+    //    RFC 7231에서 응답의 Content-Encoding에 identity를 쓰는 것은 권장되지 않고,
+    //    HTTP/2 게이트웨이(Railway)를 거치면 브라우저가 "알 수 없는 인코딩"으로 보고
+    //    본문 디코드에 실패한다 → audio.play()가 NotSupportedError로 죽는다.
+    //    (원래 Netlify 프록시 대응으로 넣었던 헤더인데, 클라이언트가 Railway를 직접
+    //     호출하도록 바뀌면서 필요가 없어졌고 부작용만 남았다)
     res.setHeader('Cache-Control', 'private, max-age=3600, no-transform');
-    res.setHeader('Content-Encoding', 'identity');
     res.setHeader('X-Accel-Buffering', 'no');
     res.setHeader('Accept-Ranges', 'none'); // 부분 요청 방지 (일부 브라우저가 range로 바이너리 쪼개 요청 시 파손 방지)
 
