@@ -75,6 +75,8 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
   const playedAnythingRef = useRef(false);
   /** 마지막 실패 사유. 끝까지 소리가 안 났을 때만 보고한다. */
   const lastErrorRef = useRef<string | null>(null);
+  /** 지연 측정 — 어느 구간에서 시간을 쓰는지 콘솔로 확인하기 위한 것 */
+  const t0Ref = useRef(0);
   const allTextRef = useRef('');
 
   // 옵션 콜백은 ref로 — 매 렌더 새 함수가 와도 드레인 루프가 재시작되지 않도록
@@ -131,8 +133,14 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
 
       inflightRef.current++;
       const seq = seqRef.current++;
+      const reqAt = performance.now();
       const blob = synthesize({ text, voice: optsRef.current.voice, maxChars: optsRef.current.maxChars })
-        .then((r) => r.audioBlob)
+        .then((r) => {
+          if (seq === 0) {
+            console.info(`[voice] 2) 첫 청크 합성 완료 — ${String(Math.round(performance.now() - reqAt))}ms (서버 왕복)`);
+          }
+          return r.audioBlob;
+        })
         .catch((err: unknown) => {
           const status = (err as { status?: number })?.status;
           const msg = err instanceof Error ? err.message : String(err);
@@ -191,7 +199,12 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
         attach(reused);
 
         reused.play().then(
-          () => { playedAnythingRef.current = true; setIsSpeaking(true); },
+          () => {
+            if (!playedAnythingRef.current && t0Ref.current > 0) {
+              console.info(`[voice] 3) 첫 소리 재생 — 문장 확보 후 총 ${String(Math.round(performance.now() - t0Ref.current))}ms`);
+            }
+            playedAnythingRef.current = true; setIsSpeaking(true);
+          },
           (err: unknown) => {
             const name = (err as { name?: string })?.name ?? '';
             console.warn('[streaming-voice] 재생 실패:', name);
@@ -272,6 +285,10 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
   const enqueue = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    if (t0Ref.current === 0) {
+      t0Ref.current = performance.now();
+      console.info('[voice] 1) 첫 문장 확보 — 합성 요청 시작:', trimmed.slice(0, 30));
+    }
     allTextRef.current += (allTextRef.current ? ' ' : '') + trimmed;
     pendingTextRef.current.push(trimmed);
     pumpSynthesis();
@@ -302,6 +319,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
     spokenAnythingRef.current = false;
     playedAnythingRef.current = false;
     lastErrorRef.current = null;
+    t0Ref.current = 0;
     allTextRef.current = '';
     inflightRef.current = 0;
     releaseAudio();

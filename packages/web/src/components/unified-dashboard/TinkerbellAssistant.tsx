@@ -1103,8 +1103,20 @@ export function TinkerbellAssistant({
         // 재생이 다 끝나면 onDrained가 state를 idle로 돌리고 핸즈프리 재청취를 건다.
         for (const chunk of chunkerRef.current.flush()) enqueueSpeech(chunk);
         endSpeech();
+      } else if (answer.trim()) {
+        // 스트리밍 중 청크가 안 나온 경우(done 이벤트로만 도착 등).
+        // 예전에는 통짜로 500자를 한 번에 합성해 첫 소리까지 오래 걸렸다.
+        // 답변을 문장 단위로 쪼개 넣으면 첫 문장만 합성되는 즉시 말이 시작된다.
+        const tail = new ChunkAccumulator();
+        const pieces = [...tail.push(answer), ...tail.flush()];
+        if (pieces.length > 0) {
+          for (const piece of pieces) enqueueSpeech(piece);
+          endSpeech();
+        } else {
+          setState('idle');
+        }
       } else {
-        // 스트리밍 청크가 하나도 안 나온 경우(짧은 답변·done 이벤트로만 도착) — 통짜 합성
+        // 여기까지 오면 발화할 내용이 없다 — 통짜 경로로 마지막 시도
         echoGuardRef.current.noteSpoken(answer);
         ttsSpeakText(answer)
           .then(() => { setState('idle'); afterSpeechRef.current(); })
