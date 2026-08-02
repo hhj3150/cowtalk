@@ -137,6 +137,62 @@ export function requireAnimalAccess(options: AnimalAccessOptions = {}) {
   };
 }
 
+// ── 개체 외 리소스 (우군·알림·처방·치료 등) ──
+//
+// 개체와 같은 구멍이 리소스 id 경로에도 있다.
+//   DELETE /herd-groups/:groupId  — 남의 목장 우군을 지울 수 있다
+//   GET    /prescriptions/:prescriptionId/pdf — 남의 목장 처방전을 받을 수 있다
+// 리소스마다 소속 농장을 찾는 방법이 다르므로(직접 farmId / 개체 경유),
+// "id → farmId" 해석기만 주입받는 얇은 미들웨어로 일반화한다.
+
+/** 리소스 id로 소속 농장을 찾는 함수. 없으면 null. */
+export type FarmIdResolver = (resourceId: string) => Promise<string | null>;
+
+export interface ResourceAccessOptions {
+  readonly param: string;
+  readonly resolveFarmId: FarmIdResolver;
+  /** 오류 메시지에 쓸 리소스 이름 (예: '우군', '처방전') */
+  readonly label: string;
+}
+
+/**
+ * 요청된 리소스가 사용자의 접근 범위 안인지 강제한다.
+ * 판정 규칙은 requireAnimalAccess와 동일하다 — 배정 우선, 마스터/미배정 관리역할은 전체.
+ */
+export function requireResourceAccess(options: ResourceAccessOptions) {
+  const { param, resolveFarmId, label } = options;
+
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+
+      const raw: unknown = req.params[param];
+      const resourceId = typeof raw === 'string' ? raw : '';
+      if (!resourceId || !UUID_RE.test(resourceId)) {
+        throw new NotFoundError(`${label}을(를) 찾을 수 없습니다`);
+      }
+
+      const farmId = await resolveFarmId(resourceId);
+      if (!farmId) {
+        throw new NotFoundError(`${label}을(를) 찾을 수 없습니다`);
+      }
+
+      const scope = scopedFarmIds(req);
+      if (scope === null) { next(); return; }
+      if (scope.length === 1 && scope[0] === NO_FARM_SENTINEL) {
+        throw new ForbiddenError('배정된 목장이 없습니다 — 관리자에게 목장 배정을 요청하세요');
+      }
+      if (!scope.includes(farmId)) {
+        throw new ForbiddenError(`다른 목장의 ${label}입니다 — 접근 권한이 없습니다`);
+      }
+
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
 /** 테스트·진단용 */
 export const __testing = {
   clearCache: () => farmIdCache.clear(),

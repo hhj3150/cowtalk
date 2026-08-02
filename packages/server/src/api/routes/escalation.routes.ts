@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { alertEscalations, alerts, farms } from '../../db/schema.js';
 import { eq, and, count, desc } from 'drizzle-orm';
+import { requireAlertAccess } from '../middleware/resource-access.js';
 
 export const escalationRouter = Router();
 
@@ -43,7 +44,7 @@ escalationRouter.get('/unacknowledged', async (_req: Request, res: Response, nex
 });
 
 // POST /escalation/acknowledge/:alertId — 알림 확인
-escalationRouter.post('/acknowledge/:alertId', async (req: Request, res: Response, next: NextFunction) => {
+escalationRouter.post('/acknowledge/:alertId', requireAlertAccess, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const alertId = req.params.alertId as string;
