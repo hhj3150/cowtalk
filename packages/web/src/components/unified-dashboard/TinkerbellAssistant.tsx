@@ -752,7 +752,8 @@ export function TinkerbellAssistant({
   const streamingVoice = useStreamingVoice({
     voice: 'nova',
     maxChars: 400,
-    onFirstAudio: () => setState('speaking'),
+    // 소리가 실제로 나기 시작하면 이전 경고를 지운다 — 잘 들리는데 경고가 남아 있으면 안 된다
+    onFirstAudio: () => { setState('speaking'); setVoiceError(null); },
     // 발화 직전 텍스트를 기억 → 마이크로 되들어온 자기 음성을 사용자 발화로 오인하지 않는다
     onWillSpeak: (spoken) => echoGuardRef.current.noteSpoken(spoken),
     onDrained: () => { setState('idle'); afterSpeechRef.current(); },
@@ -873,6 +874,8 @@ export function TinkerbellAssistant({
     // (2) 텍스트로 물었으면 → voiceMode 토글이 ON일 때만 음성, 기본은 무음
     // 스트리밍 발화를 시작하려면 이 결정을 답변 도착 전에 내려야 한다.
     const shouldSpeak = inputMode === 'voice' || ttsVoiceMode;
+    // 지난 실패 배너를 새 질문까지 끌고 가지 않는다 (배너는 클릭 전까지 사라지지 않는다)
+    setVoiceError(null);
     chunkerRef.current.reset();
     resetSpeech();
     let streamedChunkCount = 0;
@@ -1100,8 +1103,20 @@ export function TinkerbellAssistant({
         // 재생이 다 끝나면 onDrained가 state를 idle로 돌리고 핸즈프리 재청취를 건다.
         for (const chunk of chunkerRef.current.flush()) enqueueSpeech(chunk);
         endSpeech();
+      } else if (answer.trim()) {
+        // 스트리밍 중 청크가 안 나온 경우(done 이벤트로만 도착 등).
+        // 예전에는 통짜로 500자를 한 번에 합성해 첫 소리까지 오래 걸렸다.
+        // 답변을 문장 단위로 쪼개 넣으면 첫 문장만 합성되는 즉시 말이 시작된다.
+        const tail = new ChunkAccumulator();
+        const pieces = [...tail.push(answer), ...tail.flush()];
+        if (pieces.length > 0) {
+          for (const piece of pieces) enqueueSpeech(piece);
+          endSpeech();
+        } else {
+          setState('idle');
+        }
       } else {
-        // 스트리밍 청크가 하나도 안 나온 경우(짧은 답변·done 이벤트로만 도착) — 통짜 합성
+        // 여기까지 오면 발화할 내용이 없다 — 통짜 경로로 마지막 시도
         echoGuardRef.current.noteSpoken(answer);
         ttsSpeakText(answer)
           .then(() => { setState('idle'); afterSpeechRef.current(); })
