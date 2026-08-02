@@ -234,16 +234,30 @@ const MAX_TOOL_ROUNDS = 4;
 // Extended Thinking 트리거 휴리스틱 — 진짜 깊은 추론이 필요한 케이스만
 // 일상 대화·짧은 질문에는 절대 활성화하지 않음 (지연 2~5초 발생)
 // 시연 D-4 — 보수적으로: 1~3% 케이스만 활성화
+//
+// ⚠️ 반드시 "사용자 원문"으로 판정할 것 (chat-service가 rawQuestion을 넘긴다).
+// 프런트가 조립한 question에는 모드 헤더·개체 컨텍스트·범위 지시문이 붙어 있어
+// 길이만으로 400자를 쉽게 넘긴다. 그것으로 판정하면 사용자가 무엇을 물었느냐가 아니라
+// 어느 화면에서 물었느냐로 추론 깊이가 갈리고, thinking이 켜지면 temperature가 1로
+// 강제되므로(Anthropic 제약) 같은 질문의 답변 성격까지 달라진다.
 const DEEP_REASONING_KEYWORDS = [
   '감별진단', 'differential diagnosis',
   '확산 시뮬레이션', '확산 예측',
   '근교계수', '유전체 평가',
+  // 사용자가 명시적으로 깊은 분석을 요청한 경우 — 화면의 "정밀 분석" 버튼 포함
+  '정밀 분석', '정밀분석', '종합 분석', '종합분석',
 ] as const;
 
+/** 사용자 원문이 400자 이상이면 자유서술형 상담으로 보고 깊은 추론을 켠다. */
+const LONG_QUESTION_CHARS = 400;
+
+/**
+ * @param userMessage 사용자가 실제로 입력·발화한 원문 (조립된 프롬프트 아님)
+ */
 export function shouldUseDeepThinking(userMessage: string): boolean {
   if (config.ANTHROPIC_THINKING_BUDGET <= 0) return false;
   // 매우 긴 질문(400자+)만 자동 활성화 — 농장주 일상 질문은 보통 100자 미만
-  if (userMessage.length >= 400) return true;
+  if (userMessage.length >= LONG_QUESTION_CHARS) return true;
   const lower = userMessage.toLowerCase();
   return DEEP_REASONING_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
 }
