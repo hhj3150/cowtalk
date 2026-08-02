@@ -756,6 +756,8 @@ export function TinkerbellAssistant({
     // 발화 직전 텍스트를 기억 → 마이크로 되들어온 자기 음성을 사용자 발화로 오인하지 않는다
     onWillSpeak: (spoken) => echoGuardRef.current.noteSpoken(spoken),
     onDrained: () => { setState('idle'); afterSpeechRef.current(); },
+    // 실패를 화면에 드러낸다 — 무음의 원인을 사용자가 알 수 있어야 한다
+    onError: (message) => { setVoiceError(message); },
     // 청크 합성이 전부 실패하면 브라우저 TTS로 폴백 — 무음보다 낫다
     onAllFailed: (fullText) => { speak(fullText, () => { setState('idle'); afterSpeechRef.current(); }); },
   });
@@ -1106,6 +1108,8 @@ export function TinkerbellAssistant({
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             console.warn('[Tinkerbell TTS] OpenAI 실패, 브라우저 TTS로 대체:', msg);
+            // 브라우저 TTS로 대체하되 원인은 남긴다 — 무음의 이유를 사용자가 알 수 있어야 한다
+            setVoiceError(`음성 합성 실패(브라우저 음성으로 대체): ${msg}`);
             speak(answer, () => { setState('idle'); afterSpeechRef.current(); });
           });
       }

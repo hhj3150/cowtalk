@@ -35,6 +35,11 @@ export interface UseStreamingVoiceOptions {
   readonly onDrained?: () => void;
   /** 합성이 한 건도 성공하지 못했을 때 — 호출자가 브라우저 TTS로 폴백한다 */
   readonly onAllFailed?: (fullText: string) => void;
+  /**
+   * 합성·재생 실패를 사용자에게 알리기 위한 콜백.
+   * 예전엔 console.warn만 남기고 조용히 무음이 됐다 — 사용자는 원인을 알 방법이 없었다.
+   */
+  readonly onError?: (message: string) => void;
 }
 
 export interface UseStreamingVoiceReturn {
@@ -116,7 +121,15 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
       const blob = synthesize({ text, voice: optsRef.current.voice, maxChars: optsRef.current.maxChars })
         .then((r) => r.audioBlob)
         .catch((err: unknown) => {
-          console.warn('[streaming-voice] 청크 합성 실패:', err instanceof Error ? err.message : err);
+          const status = (err as { status?: number })?.status;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn('[streaming-voice] 청크 합성 실패:', msg);
+          optsRef.current.onError?.(
+            status === 503 ? '음성 합성이 서버에 설정되지 않았습니다 (OPENAI_API_KEY 확인 필요)'
+            : status === 502 ? `음성 서비스 오류: ${msg}`
+            : status === 401 ? '음성 요청 인증 실패 — 다시 로그인해 주세요'
+            : `음성 합성 실패: ${msg}`,
+          );
           return null;
         })
         .finally(() => {
@@ -155,6 +168,13 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
           (err: unknown) => {
             const name = (err as { name?: string })?.name ?? '';
             console.warn('[streaming-voice] 재생 실패:', name);
+            optsRef.current.onError?.(
+              name === 'NotAllowedError'
+                ? '브라우저가 자동 재생을 차단했습니다. 화면을 한 번 누른 뒤 다시 시도해 주세요.'
+                : name === 'NotSupportedError'
+                  ? '오디오 형식을 재생할 수 없습니다 (전송 중 손상 의심)'
+                  : `오디오 재생 실패: ${name || 'unknown'}`,
+            );
             done();
           },
         );
