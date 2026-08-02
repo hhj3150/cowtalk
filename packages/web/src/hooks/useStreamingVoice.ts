@@ -36,8 +36,11 @@ export interface UseStreamingVoiceOptions {
   /** 합성이 한 건도 성공하지 못했을 때 — 호출자가 브라우저 TTS로 폴백한다 */
   readonly onAllFailed?: (fullText: string) => void;
   /**
-   * 합성·재생 실패를 사용자에게 알리기 위한 콜백.
-   * 예전엔 console.warn만 남기고 조용히 무음이 됐다 — 사용자는 원인을 알 방법이 없었다.
+   * 음성을 **한 번도 들려주지 못했을 때만** 호출된다.
+   *
+   * 청크 하나가 실패해도 나머지가 재생되면 사용자에겐 문제가 아니다.
+   * 그래서 실패를 즉시 알리지 않고 모아뒀다가, 재생이 전부 실패한 경우에만 보고한다.
+   * (즉시 알리면 소리는 잘 나오는데 경고가 뜨는 모순이 생긴다)
    */
   readonly onError?: (message: string) => void;
 }
@@ -70,6 +73,10 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
   const spokenAnythingRef = useRef(false);
   /** 실제로 소리가 난 적이 있는지. 합성은 됐는데 재생이 막히는 경우를 구분한다. */
   const playedAnythingRef = useRef(false);
+  /** 마지막 실패 사유. 끝까지 소리가 안 났을 때만 보고한다. */
+  const lastErrorRef = useRef<string | null>(null);
+  /** 지연 측정 — 어느 구간에서 시간을 쓰는지 콘솔로 확인하기 위한 것 */
+  const t0Ref = useRef(0);
   const allTextRef = useRef('');
 
   // 옵션 콜백은 ref로 — 매 렌더 새 함수가 와도 드레인 루프가 재시작되지 않도록
@@ -126,18 +133,23 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
 
       inflightRef.current++;
       const seq = seqRef.current++;
+      const reqAt = performance.now();
       const blob = synthesize({ text, voice: optsRef.current.voice, maxChars: optsRef.current.maxChars })
-        .then((r) => r.audioBlob)
+        .then((r) => {
+          if (seq === 0) {
+            console.info(`[voice] 2) 첫 청크 합성 완료 — ${String(Math.round(performance.now() - reqAt))}ms (서버 왕복)`);
+          }
+          return r.audioBlob;
+        })
         .catch((err: unknown) => {
           const status = (err as { status?: number })?.status;
           const msg = err instanceof Error ? err.message : String(err);
           console.warn('[streaming-voice] 청크 합성 실패:', msg);
-          optsRef.current.onError?.(
+          lastErrorRef.current =
             status === 503 ? '음성 합성이 서버에 설정되지 않았습니다 (OPENAI_API_KEY 확인 필요)'
             : status === 502 ? `음성 서비스 오류: ${msg}`
             : status === 401 ? '음성 요청 인증 실패 — 다시 로그인해 주세요'
-            : `음성 합성 실패: ${msg}`,
-          );
+            : `음성 합성 실패: ${msg}`;
           return null;
         })
         .finally(() => {
@@ -173,21 +185,26 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
           audio.load(); // 새 src로 로드 (src를 비운 채 load하면 엘리먼트가 에러 상태가 된다)
         };
 
+        // 즉시 알리지 않고 기록만 한다 — 뒤 문장이 재생되면 사용자에겐 문제가 아니다
         const reportFailure = (name: string): void => {
-          optsRef.current.onError?.(
+          lastErrorRef.current =
             name === 'NotAllowedError'
               ? '브라우저가 자동 재생을 차단했습니다. 화면을 한 번 누른 뒤 다시 시도해 주세요.'
               : name === 'NotSupportedError'
                 ? `오디오를 재생할 수 없습니다 (${String(blob.size)}바이트 ${blob.type || '형식불명'})`
-                : `오디오 재생 실패: ${name || 'unknown'}`,
-          );
+                : `오디오 재생 실패: ${name || 'unknown'}`;
         };
 
         const reused = getAudioElement();
         attach(reused);
 
         reused.play().then(
-          () => { playedAnythingRef.current = true; setIsSpeaking(true); },
+          () => {
+            if (!playedAnythingRef.current && t0Ref.current > 0) {
+              console.info(`[voice] 3) 첫 소리 재생 — 문장 확보 후 총 ${String(Math.round(performance.now() - t0Ref.current))}ms`);
+            }
+            playedAnythingRef.current = true; setIsSpeaking(true);
+          },
           (err: unknown) => {
             const name = (err as { name?: string })?.name ?? '';
             console.warn('[streaming-voice] 재생 실패:', name);
@@ -255,6 +272,8 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
         // 재생이 전부 막힌 경우(NotSupportedError 등)에도 브라우저 음성으로 폴백해야
         // 사용자가 완전한 무음을 겪지 않는다.
         if (!playedAnythingRef.current && allTextRef.current.trim()) {
+          // 한 번도 못 들려줬을 때만 사유를 알린다
+          if (lastErrorRef.current) optsRef.current.onError?.(lastErrorRef.current);
           optsRef.current.onAllFailed?.(allTextRef.current.trim());
         } else {
           optsRef.current.onDrained?.();
@@ -266,6 +285,10 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
   const enqueue = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    if (t0Ref.current === 0) {
+      t0Ref.current = performance.now();
+      console.info('[voice] 1) 첫 문장 확보 — 합성 요청 시작:', trimmed.slice(0, 30));
+    }
     allTextRef.current += (allTextRef.current ? ' ' : '') + trimmed;
     pendingTextRef.current.push(trimmed);
     pumpSynthesis();
@@ -295,6 +318,8 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
     drainingRef.current = false;
     spokenAnythingRef.current = false;
     playedAnythingRef.current = false;
+    lastErrorRef.current = null;
+    t0Ref.current = 0;
     allTextRef.current = '';
     inflightRef.current = 0;
     releaseAudio();
