@@ -8,6 +8,7 @@ import { getDb } from '../../config/database.js';
 import { prescriptions, prescriptionItems, drugDatabase, users } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requirePrescriptionAccess } from '../middleware/resource-access.js';
 
 export const prescriptionRouter = Router();
 
@@ -135,7 +136,7 @@ prescriptionRouter.get('/animal/:animalId', requireAnimalAccess(), async (req: R
 });
 
 // GET /prescriptions/:prescriptionId/pdf — 처방전 PDF (실생성·스트림)
-prescriptionRouter.get('/:prescriptionId/pdf', async (req: Request, res: Response, next: NextFunction) => {
+prescriptionRouter.get('/:prescriptionId/pdf', requirePrescriptionAccess, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prescriptionId = req.params.prescriptionId as string;
     const { generatePrescriptionPdf } = await import('../../services/vet/prescription-pdf.service.js');

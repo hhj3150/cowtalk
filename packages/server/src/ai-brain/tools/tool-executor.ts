@@ -44,6 +44,12 @@ export interface ExecutorContext {
   readonly role?: string;
   readonly farmId?: string;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구를 이 농장들로 데이터 레벨 한정
+  /**
+   * 게이트웨이가 JWT로 확정한 접근 가능 농장. null = 무제한.
+   * earTag/traceId처럼 미리 농장을 알 수 없는 조회는 이 값으로 반드시 필터링해야 한다
+   * (게이트웨이가 사전 검사할 수 없는 유일한 경로다).
+   */
+  readonly allowedFarmIds?: readonly string[] | null;
 }
 
 // ===========================
@@ -62,7 +68,7 @@ export async function executeTool(
 
     switch (name) {
       case 'query_animal':
-        result = await queryAnimal(input);
+        result = await queryAnimal(input, context);
         break;
       case 'query_animal_events':
         result = await queryAnimalEvents(input);
@@ -157,7 +163,7 @@ export async function executeTool(
 // 1. 개체 조회
 // ===========================
 
-async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
+async function queryAnimal(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const db = getDb();
   const earTag = input.earTag as string | undefined;
   const traceId = input.traceId as string | undefined;
@@ -168,6 +174,15 @@ async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
   }
 
   const conditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
+
+  // 농장 격리 — 이력번호는 귀표에 인쇄돼 외부에 노출된다. 필터가 없으면
+  // 번호만 알아도 남의 목장 개체가 조회된다(실제로 그랬다).
+  // animalId는 게이트웨이가 사전 검사하지만, earTag/traceId는 여기서만 막을 수 있다.
+  const allowed = context?.allowedFarmIds;
+  if (allowed != null) {
+    if (allowed.length === 0) return { error: '접근 가능한 목장이 없습니다.' };
+    conditions.push(inArray(animals.farmId, [...allowed]));
+  }
   if (animalId) conditions.push(eq(animals.animalId, animalId));
   else if (traceId) conditions.push(eq(animals.traceId, traceId));
   else if (earTag) conditions.push(eq(animals.earTag, earTag));

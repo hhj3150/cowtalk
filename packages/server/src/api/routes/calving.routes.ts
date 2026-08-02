@@ -7,6 +7,7 @@ import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { calvingEvents, calvingChecklists, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const calvingRouter = Router();
 
@@ -86,7 +87,7 @@ calvingRouter.post('/record', async (req: Request, res: Response, next: NextFunc
 });
 
 // POST /calving/newborn/:calfId/checklist — 신생아 체크리스트 업데이트
-calvingRouter.post('/newborn/:calfId/checklist', async (req: Request, res: Response, next: NextFunction) => {
+calvingRouter.post('/newborn/:calfId/checklist', requireAnimalAccess({ param: 'calfId' }), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const calfId = req.params.calfId as string;

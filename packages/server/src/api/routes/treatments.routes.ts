@@ -6,6 +6,7 @@ import { getDb } from '../../config/database.js';
 import { treatments, healthEvents, animals, sensorDailyAgg, type TreatmentDetails } from '../../db/schema.js';
 import { eq, desc, gte, and } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { requireTreatmentAccess } from '../middleware/resource-access.js';
 
 export const treatmentsRouter = Router();
 treatmentsRouter.use(authenticate);
@@ -96,7 +97,7 @@ treatmentsRouter.get('/pending-outcomes', async (_req: Request, res: Response, n
 
 // ── POST /treatments/:treatmentId/outcome — 수의사 결과 확인 ──
 
-treatmentsRouter.post('/:treatmentId/outcome', async (req: Request, res: Response, next: NextFunction) => {
+treatmentsRouter.post('/:treatmentId/outcome', requireTreatmentAccess, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const treatmentId = req.params.treatmentId as string;
     const { outcomeStatus, note } = req.body as {
