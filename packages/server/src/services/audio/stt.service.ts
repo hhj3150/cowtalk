@@ -6,6 +6,7 @@
 
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
+import { getAudioModels } from './model-registry.js';
 
 export interface TranscribeOptions {
   readonly audio: Buffer;
@@ -37,6 +38,25 @@ export const LIVESTOCK_STT_PROMPT =
   '반추, 산차, 공태일, 수태율, 체세포수, 유량, 유지방, 유단백, 이력제, 개체번호, 귀표번호, ' +
   '두수, 착유우, 육성우, 한우, 젖소, TMR, DIM, BCS, SCC, THI, 팅커벨, 카우톡.';
 
+function buildForm(opts: TranscribeOptions, model: SttModel, ext: string): FormData {
+  const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
+  const form = new FormData();
+  form.append('file', blob, `recording.${ext}`);
+  form.append('model', model);
+  if (opts.language) form.append('language', opts.language);
+  form.append('prompt', opts.prompt ?? LIVESTOCK_STT_PROMPT);
+  form.append('response_format', 'json');
+  return form;
+}
+
+async function callTranscribeApi(apiKey: string, form: FormData): Promise<Response> {
+  return fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    body: form,
+  });
+}
+
 export async function transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
   const apiKey = config.OPENAI_API_KEY;
   if (!apiKey) {
@@ -51,24 +71,12 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
   }
 
   // FormData 구성 — Node 18+ 글로벌 FormData/Blob 사용
+  // 모델은 레지스트리가 "이 키로 실제 사용 가능함"을 확인한 것만 넘어온다
   const ext = inferExt(opts.contentType);
-  const model = opts.model ?? config.OPENAI_STT_MODEL;
-  const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
-  const form = new FormData();
-  form.append('file', blob, `recording.${ext}`);
-  form.append('model', model);
-  if (opts.language) form.append('language', opts.language);
-  form.append('prompt', opts.prompt ?? LIVESTOCK_STT_PROMPT);
-  form.append('response_format', 'json');
+  const model: SttModel = opts.model ?? (await getAudioModels()).stt;
 
   const startedAt = Date.now();
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: form,
-  });
+  const response = await callTranscribeApi(apiKey, buildForm(opts, model, ext));
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');

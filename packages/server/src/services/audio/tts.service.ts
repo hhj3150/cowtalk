@@ -11,6 +11,7 @@
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 import { createHash } from 'node:crypto';
+import { getAudioModels } from './model-registry.js';
 
 // === 타입 ===
 
@@ -34,6 +35,7 @@ export interface SynthesizeOptions {
 function supportsInstructions(model: TtsModel): boolean {
   return model === 'gpt-4o-mini-tts';
 }
+
 
 export interface SynthesizeResult {
   readonly audio: Buffer;
@@ -225,6 +227,36 @@ function stripMarkdownForTts(text: string): string {
   return out;
 }
 
+// === OpenAI 호출 ===
+
+// gpt-4o-mini-tts는 speed를 받지 않고 instructions로 속도·톤을 지시한다.
+// 구 모델(tts-1/tts-1-hd)은 반대로 instructions를 모르고 speed만 받는다.
+async function callSpeechApi(
+  apiKey: string,
+  model: TtsModel,
+  input: string,
+  voice: TtsVoice,
+  format: TtsFormat,
+  instructions: string,
+): Promise<Response> {
+  return fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      input,
+      voice,
+      response_format: format,
+      ...(supportsInstructions(model)
+        ? (instructions ? { instructions } : {})
+        : { speed: config.OPENAI_TTS_SPEED }),
+    }),
+  });
+}
+
 // === 메인: synthesize ===
 
 export async function synthesize(options: SynthesizeOptions): Promise<SynthesizeResult> {
@@ -234,7 +266,8 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   }
 
   const voice = options.voice ?? config.OPENAI_TTS_VOICE;
-  const model = options.model ?? config.OPENAI_TTS_MODEL;
+  // 레지스트리가 이 키로 실제 사용 가능함을 확인한 최상위 모델. 호출자 지정이 있으면 그것을 존중한다.
+  const model = options.model ?? (await getAudioModels()).tts;
   const format = options.format ?? config.OPENAI_TTS_FORMAT;
   const maxChars = options.maxChars ?? config.OPENAI_TTS_MAX_CHARS;
   const instructions = supportsInstructions(model)
@@ -267,33 +300,17 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
     };
   }
 
-  // 4) OpenAI API 호출
+  // 4) OpenAI API 호출 — 모델은 레지스트리가 이미 "사용 가능함을 확인한" 것만 넘어온다
   const startedAt = Date.now();
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    // gpt-4o-mini-tts는 speed를 받지 않고 instructions로 속도·톤을 지시한다.
-    // 구 모델(tts-1/tts-1-hd)은 반대로 instructions를 모르고 speed만 받는다.
-    body: JSON.stringify({
-      model,
-      input: finalText,
-      voice,
-      response_format: format,
-      ...(supportsInstructions(model)
-        ? (instructions ? { instructions } : {})
-        : { speed: config.OPENAI_TTS_SPEED }),
-    }),
-  });
+  const usedModel = model;
+  const response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, instructions);
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
     // 보안: 키나 민감 정보가 포함될 수 있으니 마스킹
     const safeMsg = errBody.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***');
     logger.error(
-      { status: response.status, body: safeMsg.slice(0, 500), voice, model },
+      { status: response.status, body: safeMsg.slice(0, 500), voice, model: usedModel },
       '[tts] OpenAI API error',
     );
     throw new Error(`OpenAI TTS 실패 (HTTP ${String(response.status)})`);
@@ -307,7 +324,7 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   logger.info(
     {
       voice,
-      model,
+      model: usedModel,
       chars: finalText.length,
       audioBytes: audio.length,
       elapsedMs,
