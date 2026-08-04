@@ -7,9 +7,16 @@
 
 ---
 
+> **가장 빠른 방법:** `docs/CowTalk_NotebookLM_소스자료.pdf` **한 개만 업로드하면 된다.**
+> 이 PDF에 아래 §2의 내용과 §3의 슬라이드 구성·내레이션 규칙·금지사항이 모두 들어 있다.
+> (원본: `docs/CowTalk_NotebookLM_소스자료.html` — 수정 후 재생성 방법은 §7 참조)
+
+---
+
 ## 0. 사용 순서 (3단계)
 
-1. **소스 업로드** — 아래 §1 목록의 파일을 NotebookLM 노트북에 올리고, §2의 「핵심 소스 텍스트」를 새 소스(텍스트 붙여넣기)로 추가한다.
+1. **소스 업로드** — `docs/CowTalk_NotebookLM_소스자료.pdf`를 NotebookLM 노트북에 올린다.
+   맥락을 더 넣고 싶으면 §1 목록의 파일을 추가하고, PDF 없이 진행할 경우 §2의 「핵심 소스 텍스트」를 텍스트 소스로 붙여넣는다.
 2. **비디오 개요 생성** — 비디오 개요 → 맞춤설정에 §3 프롬프트를 붙여넣는다. (길이 제한이 걸리면 §3-B 단축본 사용)
 3. **오디오 개요 생성** — 오디오 개요 → 맞춤설정에 §4 프롬프트를 붙여넣는다.
 
@@ -19,6 +26,7 @@
 
 | 파일 | 역할 |
 |---|---|
+| **`docs/CowTalk_NotebookLM_소스자료.pdf`** | **기본 소스 — 이것만으로 충분하다** (10쪽: 문제 정의 → 3개 레이어 → AI 4층 → 4역할 활용 → 실측 규모 → 검증된 기능 → 정직한 한계 → 파일럿 → 미래성 → 제작 지침·용어집) |
 | `CLAUDE.md` | 프로젝트 정체성·아키텍처·규모·파일럿의 원천 |
 | `docs/cowtalk-capability-audit-20260625.md` | **실제 구현된 것 / 부분 구현 / 향후 보강**의 정직한 경계 |
 | `CowTalk_v5_Renewal_Blueprint.md` | 기술 스택·설계 사상 |
@@ -238,3 +246,19 @@ CowTalk의 목적은 시연이 아니라 실제 목장에 도움이 되는, 사�
 - [ ] "피트모스"가 아니라 "휴머스 기반 HBP 시스템"으로 표현되었는가
 - [ ] 파일럿 성과가 확정 사실이 아니라 검증 중으로 표현되었는가
 - [ ] 4개 역할이 모두 언급되었는가 (farmer / veterinarian / quarantine_officer / government_admin)
+
+---
+
+## 7. 소스 PDF 재생성 방법
+
+내용을 고칠 때는 `docs/CowTalk_NotebookLM_소스자료.html`을 수정한 뒤 다시 렌더링한다.
+(Chromium 헤드리스 인쇄 — 한글 폰트로 `fonts-noto-cjk`가 설치되어 있어야 한다)
+
+```bash
+chromium --headless --no-sandbox --disable-gpu --no-pdf-header-footer \
+  --print-to-pdf="docs/CowTalk_NotebookLM_소스자료.pdf" \
+  "docs/CowTalk_NotebookLM_소스자료.html"
+```
+
+규모 수치가 바뀌면 `GET /api/public/stats`의 최신 값으로 HTML의 §8 통계 블록과
+부록 A 9번 슬라이드 설명을 함께 갱신한다.
