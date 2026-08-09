@@ -6,6 +6,7 @@ import { getDb } from '../config/database.js';
 import { chatConversations, animalEvents, clinicalObservations, eventLabels, labelFollowUps } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { eq, and, gte, desc } from 'drizzle-orm';
+import { rememberFromConversation } from './memory/memory.service.js';
 
 // ── 학습 신호 타입 ──
 
@@ -161,7 +162,7 @@ export async function saveChatConversation(input: {
   const signals = extractLearningSignals(input.question);
 
   try {
-    await db.insert(chatConversations).values({
+    const [conversation] = await db.insert(chatConversations).values({
       userId: input.userId,
       role: input.role,
       animalId: input.animalId,
@@ -170,6 +171,17 @@ export async function saveChatConversation(input: {
       answer: input.answer,
       contextType: input.contextType,
       learningSignals: signals as unknown as Record<string, unknown>,
+    }).returning({ id: chatConversations.id });
+
+    // 장기기억 추출 — 임상 신호(위)가 '사건'을 담는다면 이쪽은 '지속되는 사실'을 담는다.
+    // fire-and-forget: 추출은 LLM 호출을 포함하므로 대화 저장 경로를 막지 않는다.
+    void rememberFromConversation({
+      userId: input.userId,
+      farmId: input.farmId,
+      animalId: input.animalId,
+      question: input.question,
+      answer: input.answer,
+      conversationId: conversation?.id ?? null,
     });
 
     // 학습 신호가 있으면 자동 기록 (진단 레이블은 전문가 역할만 — 농장주 추측 오염 방지)

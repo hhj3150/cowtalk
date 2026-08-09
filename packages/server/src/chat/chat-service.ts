@@ -23,6 +23,7 @@ import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelCo
 import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
 import { detectSkill } from '../services/skills/skills-registry.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
+import { buildMemoryContext } from './memory/memory.service.js';
 import { getActivePromptGuidances, formatPromptGuidances, type PromptGuidanceRow } from '../intelligence-loop/prompt-improver.service.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
@@ -138,6 +139,17 @@ export async function handleChatMessage(
   // 미사용 import 제거 방지 — getLabelContextForEventType/formatLabelContext는 다른 모듈에서 호출 가능
   void getLabelContextForEventType;
   void formatLabelContext;
+
+  // 2-b. 장기기억 회상 — 이 사용자·목장이 과거에 알려준 지속되는 사실
+  const memoryContext = await buildMemoryContext({
+    userId: request.userId ?? null,
+    farmId,
+    animalId,
+    question,
+  });
+  if (memoryContext) {
+    labelContext = labelContext ? `${labelContext}\n\n${memoryContext}` : memoryContext;
+  }
 
   // 3. 프롬프트 빌드 (목장 번식 설정 주입 — animal/farm 맥락일 때만)
   const farmBreedingSettings = await loadFarmBreedingSettings(context);
@@ -330,6 +342,15 @@ export async function handleChatStream(
     // 프롬프트 개선 루프가 만든 자기보정 가이던스 — 병렬 선로드 (실패 비치명)
     guidancePromise = getActivePromptGuidances(farmId).catch(() => []);
   }
+  // 장기기억 회상 — 농장이 없어도(사용자 스코프 기억) 동작하므로 farmId 조건 밖에서 시작
+  const memoryPromise = (request.userId ?? farmId ?? animalId)
+    ? buildMemoryContext({
+        userId: request.userId ?? null,
+        farmId,
+        animalId,
+        question,
+      }).catch(() => '')
+    : null;
   // 지역 스코프가 켜져 있으면 그 범위 요약을, 단일 농장이면 농장 펄스를 병렬로 미리 준비 (선제적 종합)
   const overviewPromise = request.farmIds && request.farmIds.length > 0
     ? buildScopedOverviewBlock(request.farmIds)
@@ -393,6 +414,14 @@ export async function handleChatStream(
       const guidanceBlock = formatPromptGuidances(guidances);
       if (guidanceBlock) {
         labelContext = labelContext ? `${labelContext}\n\n${guidanceBlock}` : guidanceBlock;
+      }
+    }
+
+    // 장기기억 — 이 사용자·목장이 알려준 지속되는 사실 (위에서 시작한 Promise를 await만)
+    if (memoryPromise) {
+      const memoryBlock = await memoryPromise;
+      if (memoryBlock) {
+        labelContext = labelContext ? `${labelContext}\n\n${memoryBlock}` : memoryBlock;
       }
     }
   } catch {

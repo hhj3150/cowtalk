@@ -943,6 +943,43 @@ export const chatConversations = pgTable('chat_conversations', {
   index('chat_conversations_created_at_idx').on(table.createdAt),
 ]);
 
+// ----------------------------------------------------------------------
+// 팅커벨 장기기억 — 대화에서 축적되는 '지속되는 사실'
+//
+// chat_conversations 가 원문 로그라면, 이 테이블은 그 로그에서 걸러낸 기억이다.
+// 반복 언급 → 강화(evidence_count↑), 모순 → 대체(superseded), 미확인 → 감쇠(decay).
+// 마이그레이션 0037 참조.
+// ----------------------------------------------------------------------
+
+export const tinkerbellMemories = pgTable('tinkerbell_memories', {
+  memoryId:      uuid('memory_id').primaryKey().defaultRandom(),
+  scope:         varchar('scope', { length: 10 }).notNull(),   // user | farm | animal
+  userId:        uuid('user_id').references(() => users.userId),
+  farmId:        uuid('farm_id').references(() => farms.farmId),
+  animalId:      uuid('animal_id').references(() => animals.animalId),
+  category:      varchar('category', { length: 20 }).notNull(),
+  subject:       varchar('subject', { length: 120 }).notNull(),
+  content:       text('content').notNull(),
+  confidence:    real('confidence').notNull().default(0.6),
+  importance:    integer('importance').notNull().default(3),
+  evidenceCount: integer('evidence_count').notNull().default(1),
+  status:        varchar('status', { length: 12 }).notNull().default('active'),
+  supersededBy:  uuid('superseded_by'),
+  source:        varchar('source', { length: 16 }).notNull().default('chat_auto'),
+  sourceConversationId: uuid('source_conversation_id').references(() => chatConversations.id),
+  sourceQuote:   text('source_quote'),
+  keywords:      jsonb('keywords').notNull().default('[]'),
+  createdBy:     uuid('created_by').references(() => users.userId),
+  lastConfirmedAt: timestamp('last_confirmed_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('tinkerbell_memories_farm_idx').on(table.farmId, table.status),
+  index('tinkerbell_memories_user_idx').on(table.userId, table.status),
+  index('tinkerbell_memories_animal_idx').on(table.animalId, table.status),
+  index('tinkerbell_memories_confirmed_idx').on(table.lastConfirmedAt),
+]);
+
 // ======================================================================
 // Q. 경제성
 // ======================================================================

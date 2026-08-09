@@ -26,6 +26,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'automation',   label: '자동화 룰',     href: '/automation',             icon: 'Zap',             roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 78,  group: 'core' },
   { id: 'alerts',       label: '알림 설정',     href: '/notifications',          icon: 'Bell',            roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 80,  group: 'core' },
   { id: 'econ-params',  label: '경제 파라미터', href: '/settings/economics',     icon: 'Calculator',      roles: ['master','farmer','veterinarian','government_admin'],                       order: 82,  group: 'core' },
+  { id: 'ai-memory',    label: '팅커벨 기억',   href: '/settings/memory',        icon: 'Brain',           roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 83,  group: 'core' },
   { id: 'milk-entry',   label: '유량 입력',     href: '/milk-entry',             icon: 'Milk',            roles: ['master','farmer'],                                                          order: 32,  group: 'core' },
   { id: 'feed-ration',  label: 'TMR 배합비',    href: '/feed-ration',            icon: 'Wheat',           roles: ['master','farmer'],                                                          order: 33,  group: 'core' },
   { id: 'subscription', label: '구독 관리',     href: '/subscription',           icon: 'CreditCard',      roles: ['master','farmer'],                                                          order: 85,  group: 'core' },
