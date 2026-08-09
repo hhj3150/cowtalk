@@ -41,9 +41,11 @@ export const REPORT_CONFIG = {
   LOGO_PATH: path.join(__dirname, '../../../public/cowtalk-logo.png'),
 
   AI: {
-    // Sonnet 4.0(2026-06-15 deprecated) → Sonnet 4.6. Sonnet 계열은 temperature 유지.
-    MODEL: 'claude-sonnet-4-6',
+    // 모델 ID 를 여기에 다시 적지 않는다 — 예전에 Sonnet 4.0 이 deprecated 된 뒤에도
+    // 이 상수만 남아 보고서 생성이 조용히 구형 모델을 쓰고 있었다.
+    // 실제 값은 config.ANTHROPIC_MODEL(환경변수로 교체 가능)에서 읽는다.
     MAX_TOKENS: 4096,
+    // sampling 파라미터를 받지 않는 모델에서는 temperatureParam 이 알아서 뺀다.
     TEMPERATURE: 0.2,
   },
 } as const;

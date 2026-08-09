@@ -8,7 +8,13 @@ import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
 import { executeToolWithGateway, TOOL_DOMAIN_MAP, ROLE_TOOL_ACCESS, type ToolCallContext } from './tools/tool-gateway.js';
-import { temperatureParam, thinkingParam, effortParam } from './claude-model-params.js';
+import {
+  temperatureParam,
+  thinkingParam,
+  effortParam,
+  supportsAdaptiveThinking,
+  thinkingSafeTemperature,
+} from './claude-model-params.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -183,7 +189,7 @@ export async function callClaudeForChat(
     const stream = anthropic.messages.stream({
       model: config.ANTHROPIC_MODEL,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-      temperature: config.ANTHROPIC_TEMPERATURE_CHAT,
+      ...temperatureParam(config.ANTHROPIC_MODEL, config.ANTHROPIC_TEMPERATURE_CHAT),
       system: buildCachedSystem(systemPrompt),
       messages: [{ role: 'user', content: prompt }],
     });
@@ -301,9 +307,16 @@ export async function callClaudeForChatWithTools(
     : [...TINKERBELL_TOOLS];
 
   // Extended Thinking 활성화 여부 (감별진단 등 복잡 추론용)
-  const useThinking = options?.useDeepThinking === true && config.ANTHROPIC_THINKING_BUDGET > 0;
-  const thinkingParam: { thinking?: { type: 'enabled'; budget_tokens: number } } = useThinking
-    ? { thinking: { type: 'enabled', budget_tokens: config.ANTHROPIC_THINKING_BUDGET } }
+  // adaptive 지원 모델은 budget 이 0 이어도 Claude 가 스스로 추론 깊이를 정하므로
+  // budget > 0 조건에 묶지 않는다. 구형 모델에서만 budget 이 실제 스위치다.
+  const useThinking =
+    options?.useDeepThinking === true &&
+    (config.ANTHROPIC_THINKING_BUDGET > 0 || supportsAdaptiveThinking(config.ANTHROPIC_MODEL));
+  // ⚠️ 로컬 변수로 가리지 말 것 — 예전에 여기서 import 한 thinkingParam 을 동명 지역
+  // 변수가 가려 { type: 'enabled', budget_tokens } 가 하드코딩됐고, 그 형태를 거부하는
+  // 최신 모델(Opus 4.7+/Claude 5)로 바꾸는 순간 채팅 전 요청이 400 이 될 상태였다.
+  const chatThinking = useThinking
+    ? thinkingParam(config.ANTHROPIC_MODEL, config.ANTHROPIC_THINKING_BUDGET)
     : {};
 
   logger.info({
@@ -341,9 +354,9 @@ export async function callClaudeForChatWithTools(
       const stream = anthropic.messages.stream({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-        // Extended Thinking 사용 시 temperature는 1로 강제됨 (Anthropic 제약)
-        temperature: useThinking ? 1 : config.ANTHROPIC_TEMPERATURE_CHAT,
-        ...thinkingParam,
+        // 구형: thinking 켜면 temperature=1 강제. 신형: temperature 자체를 안 받는다.
+        ...thinkingSafeTemperature(config.ANTHROPIC_MODEL, useThinking, config.ANTHROPIC_TEMPERATURE_CHAT),
+        ...chatThinking,
         system: buildCachedSystem(systemPrompt),
         messages,
         tools: toolsWithWebSearch,
@@ -474,7 +487,7 @@ export async function callClaudeForChatWithTools(
       const finalStream = anthropic.messages.stream({
         model: config.ANTHROPIC_MODEL,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-        temperature: config.ANTHROPIC_TEMPERATURE_CHAT_FINAL,
+        ...temperatureParam(config.ANTHROPIC_MODEL, config.ANTHROPIC_TEMPERATURE_CHAT_FINAL),
         system: buildCachedSystem(systemPrompt),
         messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
@@ -541,7 +554,7 @@ export async function callClaudeForChatJson(
     const response = await anthropic.messages.create({
       model: config.ANTHROPIC_MODEL,
       max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
-      temperature: config.ANTHROPIC_TEMPERATURE_CHAT,
+      ...temperatureParam(config.ANTHROPIC_MODEL, config.ANTHROPIC_TEMPERATURE_CHAT),
       system: buildCachedSystem(systemPrompt),
       messages: [{ role: 'user', content: prompt }],
     });
@@ -618,7 +631,7 @@ export async function callClaudeForVision(
     const response = await anthropic.messages.create({
       model: config.ANTHROPIC_MODEL, // Sonnet (비용 효율 + Vision 충분)
       max_tokens: 500,
-      temperature: 0.1, // 정확도 최우선
+      ...temperatureParam(config.ANTHROPIC_MODEL, 0.1), // 정확도 최우선
       messages: [{
         role: 'user',
         content: [

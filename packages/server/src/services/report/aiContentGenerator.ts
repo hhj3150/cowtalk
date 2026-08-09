@@ -8,6 +8,7 @@ import type { OutputFormat, ReportType } from './config.js';
 import type { ReportData } from './dataCollector.js';
 import { logger } from '../../lib/logger.js';
 import { deidentifyRecord } from '../../ai-brain/prompts/deidentify.js';
+import { temperatureParam } from '../../ai-brain/claude-model-params.js';
 
 let client: Anthropic | null = null;
 
@@ -62,9 +63,9 @@ ${JSON.stringify(safeDbData, null, 2)}
   const anthropic = getClient();
 
   const response = await anthropic.messages.create({
-    model: REPORT_CONFIG.AI.MODEL,
+    model: config.ANTHROPIC_MODEL,
     max_tokens: REPORT_CONFIG.AI.MAX_TOKENS,
-    temperature: REPORT_CONFIG.AI.TEMPERATURE,
+    ...temperatureParam(config.ANTHROPIC_MODEL, REPORT_CONFIG.AI.TEMPERATURE),
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
   });
