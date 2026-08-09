@@ -53,6 +53,12 @@ const envSchema = z.object({
 
   // Anthropic Claude API — 이중 모델 구성
   ANTHROPIC_API_KEY: z.string().optional(),
+  // 대화·추출 경로(빠른 응답) / 분석 경로(깊은 임상 추론).
+  // 파라미터 호환성은 ai-brain/claude-model-params.ts 가 모델 ID 로 판정하므로,
+  // 여기 값만 바꾸면 된다 — 호출부에 모델별 분기가 흩어져 있지 않다.
+  // 롤백은 환경변수 ANTHROPIC_MODEL / ANTHROPIC_MODEL_DEEP 로 즉시 가능하다.
+  // ⚠️ 기본값은 현재 운영 중인 세대를 유지한다. Claude 5 로 올리는 것은 실 API 확인
+  //    (npm run check:model) 이 끝난 뒤 환경변수로 먼저 전환하고, 안정되면 여기를 바꾼다.
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
   ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-8'),
   // adaptive thinking 활성화 시 thinking 토큰이 max_tokens 를 잠식 → JSON 답변 잘림 방지 위해 상향.
@@ -60,7 +66,12 @@ const envSchema = z.object({
   ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(8000),
   // deep(Opus) 분석 경로 effort — 임상추론 깊이. high=기본, max=정확도 최우선(비용↑).
   ANTHROPIC_ANALYSIS_EFFORT: z.enum(['low', 'medium', 'high', 'max']).default('high'),
-  ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(4000),
+  // 4000 → 8000. thinking 이 고정 budget(2048)에서 adaptive 로 바뀌면서 Claude 가
+  // 추론 깊이를 스스로 정한다 — 상한이 4000 이면 감별진단처럼 추론이 깊은 질문에서
+  // 추론 토큰이 답변 몫을 잠식해 문장이 잘린다. max_tokens 는 상한일 뿐이라
+  // 짧은 답변의 비용·지연에는 영향이 없다. (채팅 경로는 스트리밍이라
+  // 비-스트리밍 messages.create 의 ~16K 권장 한도와는 무관)
+  ANTHROPIC_MAX_TOKENS_CHAT: z.coerce.number().default(8000),
   // 채팅 온도 — 임상·번식·방역 답변은 정확도 > 창의성 (0.4 권장)
   // 도구 결과 종합용 final wrap-up 라운드는 더 낮춤 (0.3)
   ANTHROPIC_TEMPERATURE_CHAT: z.coerce.number().min(0).max(1).default(0.4),

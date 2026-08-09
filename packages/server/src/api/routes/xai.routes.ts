@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { getDb } from '../../config/database.js';
+import { config } from '../../config/index.js';
 import { animals, farms } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { buildAnimalProfile, buildFarmProfile } from '../../pipeline/profile-builder.js';
@@ -92,7 +93,8 @@ xaiRouter.get('/system', (_req: Request, res: Response) => {
       components: [
         {
           name: 'Claude AI 해석 엔진',
-          model: 'claude-opus-4-8 / claude-sonnet-4-6',
+          // 심사용 투명성 응답이다 — 하드코딩하면 실제 모델과 어긋난 채 제출된다.
+          model: `${config.ANTHROPIC_MODEL_DEEP} / ${config.ANTHROPIC_MODEL}`,
           provider: 'Anthropic',
           role: '센서 데이터 + 공공데이터 → 자연어 해석 + 역할별 액션 생성',
           fallback: 'v4 룰 엔진 (로컬)',
