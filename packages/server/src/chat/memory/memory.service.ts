@@ -8,7 +8,7 @@
 
 import { getDb } from '../../config/database.js';
 import { tinkerbellMemories } from '../../db/schema.js';
-import { and, eq, inArray, isNull, or, sql, desc, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, or, sql, desc, type SQL } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import type { MemoryCategory, MemoryScope, MemorySource } from '@cowtalk/shared';
 import {
@@ -31,15 +31,45 @@ import {
   type RecallableMemory,
 } from './memory-recall.js';
 
-/** 카테고리 → 스코프. 개체 특성은 개체에, 선호는 사람에, 나머지는 목장에 붙는다. */
+/**
+ * 카테고리 → 스코프. 개체 특성은 개체에, 선호는 사람에, 나머지는 목장에 붙는다.
+ *
+ * 개체 스코프는 농장이 함께 있을 때만 성립한다 — 개체 기억의 열람 권한은 그 개체가
+ * 속한 농장으로 판정하므로, farmId 없이 개체 기억을 만들면 누가 볼 수 있는지 알 수 없다.
+ */
 export function scopeForCategory(
   category: MemoryCategory,
   hasFarm: boolean,
   hasAnimal: boolean,
 ): MemoryScope {
-  if (category === 'animal_fact' && hasAnimal) return 'animal';
+  if (category === 'animal_fact' && hasAnimal && hasFarm) return 'animal';
   if (category === 'preference') return 'user';
   return hasFarm ? 'farm' : 'user';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 권한 경계 — 기억은 '그 계정이 접근할 수 있는 범위' 안에서만 회상된다.
+//
+// 왜 여기서 집행하는가: 채팅 라우트는 클라이언트가 보낸 farmId·animalId를 그대로 넘긴다
+// (기존 동작). 회상이 그 값을 무비판적으로 믿으면, 배정되지 않은 농장의 기억이
+// 프롬프트에 실려 나간다. 그래서 기억 계층이 스스로 스코프를 검증한다.
+// ══════════════════════════════════════════════════════════════════
+
+export interface MemoryAccess {
+  /** 요청 계정 — user 스코프 기억은 이 계정 것만 회상된다 */
+  readonly userId: string | null;
+  /**
+   * 이 계정이 접근할 수 있는 농장 목록.
+   * null = 제한 없음 (마스터·미배정 관리 역할). rbac.scopedFarmIds()의 반환과 같은 의미.
+   */
+  readonly permittedFarmIds: readonly string[] | null;
+}
+
+/** 이 계정이 해당 농장의 기억을 볼 수 있는가 */
+export function canAccessFarm(access: MemoryAccess, farmId: string | null): boolean {
+  if (farmId === null) return false;
+  if (access.permittedFarmIds === null) return true;
+  return access.permittedFarmIds.includes(farmId);
 }
 
 interface MemoryRow {
@@ -98,25 +128,42 @@ const MEMORY_COLUMNS = {
   lastConfirmedAt: tinkerbellMemories.lastConfirmedAt,
 } as const;
 
-/** 이 대화 맥락에서 볼 수 있는 활성 기억의 스코프 조건 */
+/**
+ * 이 대화 맥락에서 볼 수 있는 활성 기억의 스코프 조건.
+ *
+ * 요청된 맥락(farmId·animalId)과 계정 권한(access)의 **교집합**만 남긴다.
+ * 요청 맥락만 보면 클라이언트가 남의 농장 id를 보내는 순간 그 농장 기억이 새고,
+ * 권한만 보면 지금 대화와 무관한 농장 기억까지 프롬프트에 실린다.
+ */
 function scopeCondition(
-  userId: string | null,
+  access: MemoryAccess,
   farmId: string | null,
   animalId: string | null,
 ): SQL | undefined {
   const conditions: SQL[] = [];
-  if (userId) {
-    const c = and(eq(tinkerbellMemories.scope, 'user'), eq(tinkerbellMemories.userId, userId));
+
+  // 개인 기억 — 오직 본인. 관리자·마스터도 타인의 것은 회상되지 않는다.
+  if (access.userId) {
+    const c = and(eq(tinkerbellMemories.scope, 'user'), eq(tinkerbellMemories.userId, access.userId));
     if (c) conditions.push(c);
   }
-  if (farmId) {
-    const c = and(eq(tinkerbellMemories.scope, 'farm'), eq(tinkerbellMemories.farmId, farmId));
-    if (c) conditions.push(c);
+
+  // 농장·개체 기억 — 요청 농장이 이 계정의 권한 안에 있을 때만
+  if (farmId && canAccessFarm(access, farmId)) {
+    const farmCond = and(eq(tinkerbellMemories.scope, 'farm'), eq(tinkerbellMemories.farmId, farmId));
+    if (farmCond) conditions.push(farmCond);
+
+    if (animalId) {
+      // 개체 기억도 농장 일치를 함께 요구 — 개체 id만으로는 권한을 판정할 수 없다
+      const animalCond = and(
+        eq(tinkerbellMemories.scope, 'animal'),
+        eq(tinkerbellMemories.animalId, animalId),
+        eq(tinkerbellMemories.farmId, farmId),
+      );
+      if (animalCond) conditions.push(animalCond);
+    }
   }
-  if (animalId) {
-    const c = and(eq(tinkerbellMemories.scope, 'animal'), eq(tinkerbellMemories.animalId, animalId));
-    if (c) conditions.push(c);
-  }
+
   if (conditions.length === 0) return undefined;
   return conditions.length === 1 ? conditions[0] : or(...conditions);
 }
@@ -133,15 +180,20 @@ export function invalidateMemoryCache(): void {
 
 /** 이 맥락의 활성 기억 전체 (점수화 전) */
 async function loadActiveMemories(
-  userId: string | null,
+  access: MemoryAccess,
   farmId: string | null,
   animalId: string | null,
 ): Promise<readonly RecallableMemory[]> {
-  const cacheKey = `${userId ?? '-'}|${farmId ?? '-'}|${animalId ?? '-'}`;
+  // 캐시 키에 권한 지문을 포함한다 — 같은 농장을 보는 두 계정의 권한이 다르면
+  // 캐시가 섞여서는 안 된다 (권한 우회 경로가 캐시로 생기지 않게).
+  const permitFingerprint = access.permittedFarmIds === null
+    ? '*'
+    : [...access.permittedFarmIds].sort().join(',');
+  const cacheKey = `${access.userId ?? '-'}|${permitFingerprint}|${farmId ?? '-'}|${animalId ?? '-'}`;
   const cached = recallCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.rows;
 
-  const scope = scopeCondition(userId, farmId, animalId);
+  const scope = scopeCondition(access, farmId, animalId);
   if (!scope) return [];
 
   const db = getDb();
@@ -167,10 +219,18 @@ export async function buildMemoryContext(input: {
   readonly farmId: string | null;
   readonly animalId: string | null;
   readonly question: string;
+  /** 이 계정이 접근 가능한 농장. null = 제한 없음. 생략 시 '농장 기억 없음'으로 안전하게 처리한다. */
+  readonly permittedFarmIds?: readonly string[] | null;
   readonly limit?: number;
 }): Promise<string> {
   try {
-    const all = await loadActiveMemories(input.userId, input.farmId, input.animalId);
+    // permittedFarmIds를 주지 않은 호출부는 개인 기억만 받는다 —
+    // 권한 정보를 빠뜨린 호출이 조용히 전체 열람이 되는 것보다 조용히 축소되는 편이 안전하다.
+    const access: MemoryAccess = {
+      userId: input.userId,
+      permittedFarmIds: input.permittedFarmIds === undefined ? [] : input.permittedFarmIds,
+    };
+    const all = await loadActiveMemories(access, input.farmId, input.animalId);
     if (all.length === 0) return '';
     const selected = selectRelevantMemories(
       all,
@@ -193,6 +253,8 @@ export interface RememberInput {
   readonly question: string;
   readonly answer: string;
   readonly conversationId?: string | null;
+  /** 이 계정이 접근 가능한 농장. 기억을 어느 농장에 붙일지 판정하는 데도 쓰인다. */
+  readonly permittedFarmIds?: readonly string[] | null;
 }
 
 export interface RememberResult {
@@ -216,17 +278,20 @@ export async function rememberFromConversation(
   input: RememberInput,
 ): Promise<RememberResult> {
   try {
+    const access: MemoryAccess = {
+      userId: input.userId,
+      permittedFarmIds: input.permittedFarmIds === undefined ? [] : input.permittedFarmIds,
+    };
+    // 권한 밖 농장 맥락이면 그 농장에 기억을 쓰지 않는다 — 개인 기억으로만 남긴다.
+    const writableFarmId = canAccessFarm(access, input.farmId) ? input.farmId : null;
+
     const explicit = detectExplicitCommand(input.question);
     if (explicit?.kind === 'forget') {
-      const forgotten = await forgetByText(explicit.payload, {
-        userId: input.userId,
-        farmId: input.farmId,
-        animalId: input.animalId,
-      });
+      const forgotten = await forgetByText(explicit.payload, access, writableFarmId, input.animalId);
       return { ...EMPTY_RESULT, forgotten };
     }
 
-    const existingAll = await loadActiveMemories(input.userId, input.farmId, input.animalId);
+    const existingAll = await loadActiveMemories(access, writableFarmId, input.animalId);
     const candidates = await extractMemoryCandidates({
       question: input.question,
       answer: input.answer,
@@ -241,7 +306,7 @@ export async function rememberFromConversation(
     for (const candidate of candidates) {
       const scope = scopeForCategory(
         candidate.category,
-        input.farmId !== null,
+        writableFarmId !== null,
         input.animalId !== null,
       );
       // 같은 스코프·카테고리 안에서만 통합 — 선호와 목장 사실이 서로를 덮지 않게
@@ -269,14 +334,14 @@ export async function rememberFromConversation(
         continue;
       }
       if (decision.kind === 'supersede') {
-        const newId = await insertMemory(candidate, scope, input);
+        const newId = await insertMemory(candidate, scope, { ...input, farmId: writableFarmId });
         if (newId) {
           await markSuperseded(decision.targetId, newId);
           superseded += 1;
         }
         continue;
       }
-      const newId = await insertMemory(candidate, scope, input);
+      const newId = await insertMemory(candidate, scope, { ...input, farmId: writableFarmId });
       if (newId) inserted += 1;
     }
 
@@ -306,7 +371,9 @@ async function insertMemory(
       .values({
         scope,
         userId: scope === 'user' ? input.userId : null,
-        farmId: scope === 'farm' ? input.farmId : null,
+        // 개체 기억에도 farmId를 남긴다 — 열람 권한을 농장으로 판정하기 때문.
+        // (DB의 CHECK 제약도 animal 스코프에 farm_id를 요구한다)
+        farmId: scope === 'farm' || scope === 'animal' ? input.farmId : null,
         animalId: scope === 'animal' ? input.animalId : null,
         category: candidate.category,
         subject: candidate.subject.slice(0, 120),
@@ -375,9 +442,12 @@ const FORGET_FILLERS: ReadonlySet<string> = new Set([
  */
 export async function forgetByText(
   text: string,
-  scope: { readonly userId: string | null; readonly farmId: string | null; readonly animalId: string | null },
+  access: MemoryAccess,
+  farmId: string | null,
+  animalId: string | null,
 ): Promise<number> {
-  const active = await loadActiveMemories(scope.userId, scope.farmId, scope.animalId);
+  // 회상과 같은 스코프 조건을 쓴다 — 볼 수 없는 기억은 지울 수도 없다
+  const active = await loadActiveMemories(access, farmId, animalId);
   if (active.length === 0) return 0;
 
   // 지시어를 걷어낸 '지목어'만 남긴다 — 이게 없으면 무엇을 지울지 알 수 없다
@@ -489,11 +559,17 @@ export async function runMemoryDecay(now: Date = new Date()): Promise<DecayResul
 
 export interface MemoryListFilter {
   readonly userId: string | null;
-  readonly farmIds: readonly string[] | null; // null = 전체 (관리 역할)
+  readonly farmIds: readonly string[] | null; // null = 전체 농장 (마스터·미배정 관리 역할)
   readonly status?: string;
   readonly limit?: number;
 }
 
+/**
+ * 관리 화면 목록 — 회상과 같은 권한 규칙을 따른다.
+ *
+ * 개인(user) 기억은 farmIds가 null(전체 농장 권한)이어도 **본인 것만** 보인다.
+ * 전체 농장 권한은 '농장 데이터를 다 본다'는 뜻이지 '남의 개인 설정을 본다'는 뜻이 아니다.
+ */
 export async function listMemories(filter: MemoryListFilter) {
   const db = getDb();
   const conditions: SQL[] = [];
@@ -503,14 +579,23 @@ export async function listMemories(filter: MemoryListFilter) {
     conditions.push(eq(tinkerbellMemories.status, status));
   }
 
-  // 농장 스코프 사용자는 자기 농장 기억 + 자기 개인 기억만
-  if (filter.farmIds !== null) {
-    const visible: SQL[] = [inArray(tinkerbellMemories.farmId, [...filter.farmIds])];
-    if (filter.userId) {
-      const own = and(eq(tinkerbellMemories.userId, filter.userId), isNull(tinkerbellMemories.farmId));
-      if (own) visible.push(own);
-    }
-    const scoped = or(...visible);
+  // 농장·개체 기억: farmIds가 null이면 전체, 아니면 배정 농장만
+  const farmVisible: SQL | undefined =
+    filter.farmIds === null
+      ? sql`${tinkerbellMemories.scope} IN ('farm', 'animal')`
+      : and(
+          sql`${tinkerbellMemories.scope} IN ('farm', 'animal')`,
+          inArray(tinkerbellMemories.farmId, [...filter.farmIds]),
+        );
+
+  // 개인 기억: 언제나 본인 것만
+  const ownVisible: SQL | undefined = filter.userId
+    ? and(eq(tinkerbellMemories.scope, 'user'), eq(tinkerbellMemories.userId, filter.userId))
+    : undefined;
+
+  const visible = [farmVisible, ownVisible].filter((c): c is SQL => c !== undefined);
+  if (visible.length > 0) {
+    const scoped = visible.length === 1 ? visible[0] : or(...visible);
     if (scoped) conditions.push(scoped);
   }
 

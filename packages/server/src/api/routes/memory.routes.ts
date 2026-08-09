@@ -16,6 +16,9 @@ import {
   runMemoryDecay,
 } from '../../chat/memory/memory.service.js';
 import { ForbiddenError } from '../../lib/errors.js';
+import { getDb } from '../../config/database.js';
+import { animals } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
 
 export const memoryRouter = Router();
 
@@ -68,6 +71,23 @@ memoryRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     const scope = scopedFarmIds(req);
     if (body.farmId && scope !== null && !scope.includes(body.farmId)) {
       throw new ForbiddenError('해당 농장의 기억을 추가할 권한이 없습니다');
+    }
+    // 개체 기억은 그 개체가 속한 농장 권한으로 판정된다 — 개체가 지정 농장 소속인지 확인.
+    // (확인 없이 저장하면 남의 농장 개체에 기억이 붙고, 그 농장 사람들에게 보인다)
+    if (body.animalId) {
+      if (!body.farmId) {
+        res.status(400).json({ success: false, error: '개체 기억에는 farmId가 함께 필요합니다' });
+        return;
+      }
+      const db = getDb();
+      const [animal] = await db
+        .select({ farmId: animals.farmId })
+        .from(animals)
+        .where(eq(animals.animalId, body.animalId))
+        .limit(1);
+      if (!animal || animal.farmId !== body.farmId) {
+        throw new ForbiddenError('해당 개체의 기억을 추가할 권한이 없습니다');
+      }
     }
 
     const memoryId = await createManualMemory({

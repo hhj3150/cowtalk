@@ -157,6 +157,8 @@ export async function saveChatConversation(input: {
   readonly question: string;
   readonly answer: string;
   readonly contextType: string;
+  /** 이 계정이 접근할 수 있는 농장 (rbac 스코프). 기억을 어느 농장에 붙일지 판정한다. */
+  readonly permittedFarmIds?: readonly string[] | null;
 }): Promise<void> {
   const db = getDb();
   const signals = extractLearningSignals(input.question);
@@ -182,6 +184,7 @@ export async function saveChatConversation(input: {
       question: input.question,
       answer: input.answer,
       conversationId: conversation?.id ?? null,
+      permittedFarmIds: input.permittedFarmIds ?? null,
     });
 
     // 학습 신호가 있으면 자동 기록 (진단 레이블은 전문가 역할만 — 농장주 추측 오염 방지)

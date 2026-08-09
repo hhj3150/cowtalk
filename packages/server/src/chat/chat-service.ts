@@ -59,6 +59,12 @@ export interface ChatMessageRequest {
   readonly role: Role;
   readonly farmId: string | null;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
+  /**
+   * 이 **계정**이 접근할 수 있는 농장 (rbac.scopedFarmIds 결과). null = 제한 없음.
+   * 위의 farmIds가 '클라이언트가 요청한 범위'라면 이쪽은 '서버가 허용하는 범위'다.
+   * 장기기억 회상이 클라이언트가 보낸 farmId를 무비판적으로 믿지 않도록 하는 근거.
+   */
+  readonly permittedFarmIds?: readonly string[] | null;
   readonly animalId: string | null;
   readonly userId?: string;
   readonly conversationHistory: readonly ConversationTurn[];
@@ -146,6 +152,7 @@ export async function handleChatMessage(
     farmId,
     animalId,
     question,
+    permittedFarmIds: request.permittedFarmIds ?? null,
   });
   if (memoryContext) {
     labelContext = labelContext ? `${labelContext}\n\n${memoryContext}` : memoryContext;
@@ -179,6 +186,7 @@ export async function handleChatMessage(
         question,
         answer,
         contextType: detectedType,
+        permittedFarmIds: request.permittedFarmIds ?? null,
       });
     }
 
@@ -349,6 +357,7 @@ export async function handleChatStream(
         farmId,
         animalId,
         question,
+        permittedFarmIds: request.permittedFarmIds ?? null,
       }).catch(() => '')
     : null;
   // 지역 스코프가 켜져 있으면 그 범위 요약을, 단일 농장이면 농장 펄스를 병렬로 미리 준비 (선제적 종합)
@@ -496,6 +505,7 @@ export async function handleChatStream(
           question,
           answer: fullText,
           contextType: context.type,
+          permittedFarmIds: request.permittedFarmIds ?? null,
         });
       }
     },

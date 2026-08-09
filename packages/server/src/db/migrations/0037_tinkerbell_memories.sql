@@ -11,6 +11,14 @@
 -- 2) 반복 언급은 강화(evidence_count↑, confidence↑), 모순은 대체(superseded)하되 이력을 지운다.
 -- 3) 사용자가 언제든 보고·고치고·지울 수 있어야 한다 (status=rejected로 소프트 삭제).
 -- 4) 확인되지 않은 기억은 시간이 지나면 신뢰도가 떨어진다 (decay) — 오래된 오해가 영구화되지 않게.
+-- 5) 기억은 계정의 권한 안에서만 회상된다 (아래 스코프 규칙 참조).
+--
+-- 스코프 = 권한 경계 (memory.service.ts의 MemoryAccess가 이 규칙을 집행한다):
+--   user   — 오직 그 계정만. 관리자·마스터도 타인의 개인 기억은 볼 수 없다.
+--   farm   — 그 농장에 배정된 계정만 (목장주 + 담당 수의사). 목장 사실은 공유가 목적이다.
+--   animal — 그 개체가 속한 농장 권한으로 판정. 그래서 개체 기억도 farm_id를 함께 갖는다
+--            (비정규화가 아니라 권한 판정의 전제 — farm_id 없이는 누가 볼 수 있는지 알 수 없다).
+-- CHECK 제약으로 스코프별 필수 키를 DB 레벨에서 강제해, 권한 판정 불가능한 행이 아예 생기지 않게 한다.
 
 CREATE TABLE IF NOT EXISTS tinkerbell_memories (
   memory_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -41,7 +49,15 @@ CREATE TABLE IF NOT EXISTS tinkerbell_memories (
   created_by     UUID REFERENCES users(user_id),
   last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  -- 스코프별 필수 키 — 권한 판정이 불가능한 행을 애초에 만들지 못하게 한다.
+  -- (개체 기억에 farm_id가 없으면 "누가 이 기억을 볼 수 있는가"에 답할 수 없다)
+  CONSTRAINT tinkerbell_memories_scope_keys CHECK (
+    (scope = 'user'   AND user_id   IS NOT NULL) OR
+    (scope = 'farm'   AND farm_id   IS NOT NULL) OR
+    (scope = 'animal' AND animal_id IS NOT NULL AND farm_id IS NOT NULL)
+  )
 );
 
 -- 회상 경로: 스코프별 활성 기억 조회

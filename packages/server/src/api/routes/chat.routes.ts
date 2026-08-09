@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { scopedFarmIds } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { chatMessageSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
@@ -74,6 +75,8 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       farmId: body.farmId ?? null,
       animalId: body.animalId ?? null,
       userId: req.user?.userId,
+      // 계정의 실제 권한 범위 — 장기기억 회상이 클라이언트가 보낸 farmId를 그대로 믿지 않게 한다
+      permittedFarmIds: scopedFarmIds(req),
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
       dashboardContext: body.dashboardContext,
       uiLang: body.uiLang,
@@ -123,6 +126,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     farmIds: Array.isArray(body.farmIds) && body.farmIds.length > 0 ? body.farmIds : undefined,
     animalId: body.animalId ?? null,
     userId: req.user?.userId,
+    permittedFarmIds: scopedFarmIds(req),
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,
