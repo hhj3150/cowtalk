@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-//
 // AI 일일 브리핑 위젯 — 실패했을 때 '실패했다고 말하는가'.
 //
 // 회귀 대상 버그: 렌더 조건이 `isLoading || !briefing` 이라, 요청이 실패해도
@@ -9,7 +7,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import React from 'react';
 
 // 위젯이 쓰는 훅만 제어한다. 페이지의 다른 훅은 이 테스트에서 호출되지 않는다.
 const briefingState: {
