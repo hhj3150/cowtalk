@@ -447,6 +447,51 @@ DB 영속화:
 - 가시성: GET /ai/prompt-guidances (전체 목록 + source_stats)
 - 기존 threshold-learner(confidence multiplier 자동 보정)와 상호보완: 수치 보정 + 언어 보정
 
+## 팅커벨 장기기억 (2026-08-09, P5 — 대화 강화 루프)
+
+"대화에서 기억할 것을 기억한다". 기존 학습 루프가 못 담던 층을 채운다.
+
+| 층 | 담는 것 | 저장소 |
+|---|---|---|
+| chat_conversations | 대화 원문 로그 | 검색용 (프롬프트 주입 안 됨) |
+| learning_signals | 임상 '사건' (진단/치료/번식/분만/예후) | animal_events, event_labels |
+| prompt_guidances | 알람 통계 기반 자기보정 (라벨 10건 이상) | 프롬프트 주입 |
+| **tinkerbell_memories** | **사용자가 말해준 지속되는 사실** | **프롬프트 주입** |
+
+- 마이그레이션 0037. 카테고리 9종: farm_fact / protocol / preference / constraint /
+  equipment / economics / person / goal / animal_fact
+- **스코프 = 권한 경계** (계정별로 그 계정 권한 안의 기억만 회상):
+  | 스코프 | 담는 것 | 누가 회상하는가 |
+  |---|---|---|
+  | `user` | 개인 선호 (보고 방식·시간) | **오직 그 계정.** 마스터·행정관도 타인 것은 못 봄 |
+  | `farm` | 목장 사실·원칙·제약·장비 | 그 농장에 **배정된** 계정 (목장주 + 담당 수의사) |
+  | `animal` | 개체 특성 | 그 개체가 속한 **농장 권한**으로 판정 (행에 farmId 동반 저장) |
+  - 집행 위치: `memory.service.ts`의 `MemoryAccess` — 채팅 라우트가 클라이언트의 farmId를
+    검증 없이 넘기므로(기존 동작) 기억 계층이 `rbac.scopedFarmIds(req)`와 **교집합**을 취한다.
+    권한 밖 농장 맥락이면 회상도 저장도 하지 않고 개인 기억으로만 남는다.
+  - DB CHECK 제약(`tinkerbell_memories_scope_keys`)이 스코프별 필수 키를 강제 —
+    권한 판정이 불가능한 행은 애초에 만들어지지 않는다.
+  - 회상 캐시 키에 권한 지문 포함 — 캐시가 권한 우회 경로가 되지 않게.
+- **추출** (memory-extractor.ts): 게이트 → LLM 추출 → 검증
+  - 게이트가 먼저 — 순수 질의("오늘 할 일 알려줘")는 LLM 호출 없이 차단 (비용·지연)
+  - "기억해"/"잊어" 명시 지시는 LLM 없이 결정적 처리
+  - 일회성 사건("오늘 423번 열났어")은 기억으로 승격 금지 — animal_events 소관
+  - Claude 불가 시 규칙 기반 폴백 (더 낮은 신뢰도로 시작)
+- **통합** (memory-consolidation.ts) — 강화 학습의 심장부, 전부 순수 함수:
+  - 반복 언급 → **강화** (evidence_count↑, confidence는 상한 0.97로 점근)
+  - 같은 주제 다른 내용 → **대체** (superseded, 이력 보존)
+  - 부정 뒤집힘("쓴다"→"안 쓴다") → 유사도 무관하게 대체 (정반대 사실의 확신 방지)
+  - 한국어 어미 경량 어간 추출 — "보유한다"/"보유하고"가 다른 문장으로 잡히면
+    강화가 영원히 발동하지 않음
+- **회상** (memory-recall.ts): 점수 = 키워드겹침 + 신뢰도 + 중요도 + 스코프 + 최근성 + 증거수
+  → 상위 12개만 주입. 블록에 "기억은 발언이지 실측이 아니다, 데이터 우선" 규칙 명시
+- **감쇠**: 24h 배치(intelligence-loop). 반감기 120일 × min(증거수,5), 0.2 미만 만료.
+  user_explicit·manual 은 감쇠 면제 (사람이 의도적으로 넣은 것)
+- **가시성**: /settings/memory 화면 — 신뢰도·증거횟수·출처 원문 전부 노출 + 수정/삭제.
+  기억이 블랙박스면 잘못된 기억이 조용히 답변을 오염시킨다
+- API: GET/POST /memory, PATCH/DELETE /memory/:id, POST /memory/decay(관리자)
+- 테스트 66건 (게이트·명시지시·파싱·통합·감쇠·회상·망각·권한경계)
+
 ## 보고 형식 (매 작업 후)
 
 1. 분석한 것

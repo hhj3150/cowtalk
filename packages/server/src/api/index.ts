@@ -38,6 +38,7 @@ import { milkRouter } from './routes/milk.routes.js';
 import { feedRouter } from './routes/feed.routes.js';
 import { approvalRouter } from './routes/approval.routes.js';
 import { automationRouter } from './routes/automation.routes.js';
+import { memoryRouter } from './routes/memory.routes.js';
 import { labelChatRouter } from './routes/label-chat.routes.js';
 import { reportRouter } from './routes/report.routes.js';
 import { weatherRouter } from './routes/weather.routes.js';
@@ -107,6 +108,7 @@ export function createApiRouter(): Router {
   api.use('/feed', feedRouter);
   api.use('/approvals', approvalRouter);
   api.use('/automation', automationRouter);
+  api.use('/memory', memoryRouter);
   api.use('/label-chat', labelChatRouter);
   api.use('/reports', reportRouter);
   api.use('/weather', weatherRouter);

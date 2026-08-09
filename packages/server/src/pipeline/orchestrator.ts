@@ -583,6 +583,16 @@ export class PipelineOrchestrator {
         deactivated: promptResult.deactivated,
       }, '[Pipeline] Prompt improvement completed');
 
+      // 3c) 기억 감쇠 — 재확인되지 않은 대화 기억의 신뢰도 하향, 바닥 친 기억은 만료.
+      //     목장은 변한다. 오래된 기억이 영구 사실로 굳지 않게 하는 안전장치.
+      const { runMemoryDecay } = await import('../chat/memory/memory.service.js');
+      const decayResult = await runMemoryDecay();
+      logger.info({
+        scanned: decayResult.scanned,
+        decayed: decayResult.decayed,
+        expired: decayResult.expired,
+      }, '[Pipeline] Memory decay completed');
+
       // 4) 패턴 마이닝 — alarm_pattern_snapshots → 특성 벡터 추출 + 요약
       const { runPatternMining } = await import('../services/sovereign-alarm/pattern-mining.service.js');
       const miningResult = await runPatternMining();
