@@ -97,7 +97,9 @@ data.go.kr 공공데이터포털 API를 활용한다.
 - 백엔드: Express 5 + Drizzle ORM + Pino + Bull + Socket.IO
 - DB: PostgreSQL 16 + TimescaleDB + Redis
 - AI: Anthropic Claude API (핵심 해석 엔진) + v4 룰 엔진 (fallback/보조)
-  - 대화·추출: `ANTHROPIC_MODEL` (기본 claude-sonnet-5) / 깊은 분석: `ANTHROPIC_MODEL_DEEP` (기본 claude-opus-5)
+  - 대화·추출: `ANTHROPIC_MODEL` (기본 claude-sonnet-4-6) / 깊은 분석: `ANTHROPIC_MODEL_DEEP` (기본 claude-opus-4-8)
+  - 모델 교체 절차: 환경변수로 먼저 바꾸고 `npm run check:model` 로 실 API 확인 → 안정되면 기본값 변경
+  - `ANTHROPIC_THINKING_BUDGET=0` 은 추론 정지 스위치 (배포 없이 환경변수로 끔)
   - ⚠️ 모델별 파라미터 분기는 `ai-brain/claude-model-params.ts` 한 곳에만 둔다.
     호출부에 `temperature:` 를 직접 쓰지 말고 `temperatureParam(model, x)` 를 스프레드한다 —
     최신 세대는 sampling 파라미터·고정 budget thinking 을 거부하고 400 을 반환한다.

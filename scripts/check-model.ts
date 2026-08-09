@@ -12,7 +12,6 @@
 //
 // ⚠️ API 키는 출력하지 않는다. 로그·스크린샷으로 새어 나가면 폐기·재발급해야 한다.
 
-import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -21,15 +20,17 @@ import {
   effortParam,
   thinkingSafeTemperature,
 } from '../packages/server/src/ai-brain/claude-model-params.js';
+// 기본값을 여기에 다시 적지 않는다 — 검사 대상과 실제 서버가 다른 모델을 보면
+// 검사가 통과해도 아무것도 보장하지 못한다. config 가 .env 로드까지 담당한다.
+import { config } from '../packages/server/src/config/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
 
-const API_KEY = process.env.ANTHROPIC_API_KEY;
-const CHAT_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5';
-const DEEP_MODEL = process.env.ANTHROPIC_MODEL_DEEP ?? 'claude-opus-5';
-const THINKING_BUDGET = Number(process.env.ANTHROPIC_THINKING_BUDGET ?? 2048);
-const CHAT_TEMP = Number(process.env.ANTHROPIC_TEMPERATURE_CHAT ?? 0.4);
+const API_KEY = config.ANTHROPIC_API_KEY;
+const CHAT_MODEL = config.ANTHROPIC_MODEL;
+const DEEP_MODEL = config.ANTHROPIC_MODEL_DEEP;
+const THINKING_BUDGET = config.ANTHROPIC_THINKING_BUDGET;
+const CHAT_TEMP = config.ANTHROPIC_TEMPERATURE_CHAT;
 
 if (!API_KEY) {
   console.error('✗ ANTHROPIC_API_KEY 가 없습니다.');
@@ -52,12 +53,20 @@ const PROBES: readonly Probe[] = [
     params: { ...temperatureParam(CHAT_MODEL, CHAT_TEMP) },
   },
   {
-    label: '도구 + 깊은 추론 (감별진단 등)',
+    // claude-client 와 같은 조건으로 켠다 — THINKING_BUDGET=0 은 추론 정지 스위치라
+    // 그때는 서버도 thinking 을 보내지 않는다. 여기서만 보내면 검사가 거짓말을 한다.
+    label:
+      THINKING_BUDGET > 0
+        ? '도구 + 깊은 추론 (감별진단 등)'
+        : '도구 (추론 꺼짐 — THINKING_BUDGET=0)',
     model: CHAT_MODEL,
-    params: {
-      ...thinkingSafeTemperature(CHAT_MODEL, true, CHAT_TEMP),
-      ...thinkingParam(CHAT_MODEL, THINKING_BUDGET),
-    },
+    params:
+      THINKING_BUDGET > 0
+        ? {
+            ...thinkingSafeTemperature(CHAT_MODEL, true, CHAT_TEMP),
+            ...thinkingParam(CHAT_MODEL, THINKING_BUDGET),
+          }
+        : { ...temperatureParam(CHAT_MODEL, CHAT_TEMP) },
   },
   {
     label: '분석 (개체·농장 해석)',

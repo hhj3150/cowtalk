@@ -57,8 +57,10 @@ const envSchema = z.object({
   // 파라미터 호환성은 ai-brain/claude-model-params.ts 가 모델 ID 로 판정하므로,
   // 여기 값만 바꾸면 된다 — 호출부에 모델별 분기가 흩어져 있지 않다.
   // 롤백은 환경변수 ANTHROPIC_MODEL / ANTHROPIC_MODEL_DEEP 로 즉시 가능하다.
-  ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
-  ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-5'),
+  // ⚠️ 기본값은 현재 운영 중인 세대를 유지한다. Claude 5 로 올리는 것은 실 API 확인
+  //    (npm run check:model) 이 끝난 뒤 환경변수로 먼저 전환하고, 안정되면 여기를 바꾼다.
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
+  ANTHROPIC_MODEL_DEEP: z.string().default('claude-opus-4-8'),
   // adaptive thinking 활성화 시 thinking 토큰이 max_tokens 를 잠식 → JSON 답변 잘림 방지 위해 상향.
   // 비-스트리밍 messages.create 는 ~16K 이하 권장(SDK 타임아웃). 8000 = thinking + JSON 여유.
   ANTHROPIC_MAX_TOKENS_ANALYSIS: z.coerce.number().default(8000),

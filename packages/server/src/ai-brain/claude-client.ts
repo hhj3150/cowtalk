@@ -12,7 +12,6 @@ import {
   temperatureParam,
   thinkingParam,
   effortParam,
-  supportsAdaptiveThinking,
   thinkingSafeTemperature,
 } from './claude-model-params.js';
 
@@ -307,11 +306,11 @@ export async function callClaudeForChatWithTools(
     : [...TINKERBELL_TOOLS];
 
   // Extended Thinking 활성화 여부 (감별진단 등 복잡 추론용)
-  // adaptive 지원 모델은 budget 이 0 이어도 Claude 가 스스로 추론 깊이를 정하므로
-  // budget > 0 조건에 묶지 않는다. 구형 모델에서만 budget 이 실제 스위치다.
+  // ANTHROPIC_THINKING_BUDGET=0 은 운영상의 정지 스위치다 — 추론이 문제를 일으키면
+  // 배포 없이 환경변수 하나로 끌 수 있어야 한다. adaptive 모델은 budget 의 '양'을
+  // 무시하지만, 0 이라는 '끔' 신호까지 무시해서는 안 된다.
   const useThinking =
-    options?.useDeepThinking === true &&
-    (config.ANTHROPIC_THINKING_BUDGET > 0 || supportsAdaptiveThinking(config.ANTHROPIC_MODEL));
+    options?.useDeepThinking === true && config.ANTHROPIC_THINKING_BUDGET > 0;
   // ⚠️ 로컬 변수로 가리지 말 것 — 예전에 여기서 import 한 thinkingParam 을 동명 지역
   // 변수가 가려 { type: 'enabled', budget_tokens } 가 하드코딩됐고, 그 형태를 거부하는
   // 최신 모델(Opus 4.7+/Claude 5)로 바꾸는 순간 채팅 전 요청이 400 이 될 상태였다.
