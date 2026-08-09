@@ -70,8 +70,39 @@ function buildPrompt(facts: BriefingFacts): string {
 
 const SYSTEM = 'CowTalk 축산 플랫폼의 AI 비서 "팅커벨"이 매일 아침 브리핑을 작성합니다. 제공된 집계 수치만 사용하고, 없는 수치를 만들지 마세요. JSON 외 다른 텍스트를 출력하지 마세요.';
 
+/** 같은 키로 동시에 여러 생성이 돌지 않도록 진행 중 작업을 추적 */
+const inFlight = new Set<string>();
+
+/**
+ * 캐시된 브리핑만 즉시 반환하고, 없으면 백그라운드 생성을 시작한 뒤 null을 돌려준다.
+ *
+ * 왜 논블로킹인가: 예전에는 대시보드 요청이 Claude 생성을 최대 8초 기다렸다.
+ * 여기에 콜드 스타트가 겹치면 프론트 기본 타임아웃(15초)을 넘겨 위젯이 아무것도
+ * 그리지 못했다. 이제 첫 요청은 템플릿 요약으로 즉시 응답하고, 생성이 끝나면
+ * 다음 폴링(5분 주기 또는 새로고침)에서 Claude 요약으로 바뀐다.
+ * 응답의 summarySource 필드가 지금 어느 쪽인지 정직하게 알려준다.
+ */
+export function getCachedBriefingNarrative(facts: BriefingFacts): GenerativeBriefing | null {
+  if (!isClaudeAvailable()) return null;
+
+  const key = cacheKey(facts);
+  const cached = cache.get(key);
+  if (cached && Date.now() < cached.expiresAt) return cached.value;
+
+  if (!inFlight.has(key)) {
+    inFlight.add(key);
+    void generateBriefingNarrative(facts)
+      .catch((err: unknown) => {
+        logger.warn({ err }, '[Briefing] 백그라운드 브리핑 생성 실패 — 템플릿 유지');
+      })
+      .finally(() => inFlight.delete(key));
+  }
+  return null;
+}
+
 /**
  * Claude가 작성한 브리핑 요약·권장행동. 실패·타임아웃 시 null (호출부 템플릿 유지).
+ * 응답 경로를 막지 않으려면 getCachedBriefingNarrative를 쓰고, 이 함수는 배치·워밍업용으로 둔다.
  */
 export async function generateBriefingNarrative(
   facts: BriefingFacts,
@@ -108,4 +139,5 @@ export async function generateBriefingNarrative(
 /** 테스트용 — 캐시 초기화 */
 export function clearBriefingCache(): void {
   cache.clear();
+  inFlight.clear();
 }

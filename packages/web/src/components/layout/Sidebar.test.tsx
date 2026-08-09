@@ -40,36 +40,38 @@ describe('resolveMenuRole — master 본질 + 시뮬레이션', () => {
   });
 });
 
-describe('Sidebar 메뉴 개수 — 6개 시뮬레이션 시나리오 (STEP 1.C)', () => {
-  function menuCount(
+// resolveMenuRole → getMenuForRole 체인 검증.
+//
+// 역할별 '무엇이 보이는가'의 계약은 sidebar-menu.test.ts 가 소유한다. 여기서는
+// 역할 해석이 실제 메뉴 산출로 이어지는지, 즉 시뮬레이션이 화면을 바꾸는지만 본다.
+// (개수 하드코딩은 제거했다 — 메뉴가 늘 때마다 무관하게 깨지고, 그래서 방치됐다.)
+
+describe('resolveMenuRole → 메뉴 산출 연결', () => {
+  function menuIds(
     isMasterEssence: boolean,
     sim: Parameters<typeof resolveMenuRole>[1],
     userRole: Parameters<typeof resolveMenuRole>[2],
-  ): number {
-    return getMenuForRole(resolveMenuRole(isMasterEssence, sim, userRole)).length;
+  ): string[] {
+    return getMenuForRole(resolveMenuRole(isMasterEssence, sim, userRole)).map((m) => m.id);
   }
 
-  it('isMasterEssence=true, sim=null → 16개', () => {
-    expect(menuCount(true, null, 'government_admin')).toBe(16);
+  it('master 가 farmer 를 시뮬레이션하면 목장주 메뉴가 나온다', () => {
+    const ids = menuIds(true, 'farmer', 'government_admin');
+    expect(ids).toContain('my-cows');
+    expect(ids).not.toContain('admin-users'); // 시뮬레이션 중엔 마스터 도구가 사라져야 한다
   });
 
-  it('isMasterEssence=true, sim=farmer → 7개', () => {
-    expect(menuCount(true, 'farmer', 'government_admin')).toBe(7);
+  it('시뮬레이션을 끄면 master 전체 메뉴로 돌아온다', () => {
+    expect(menuIds(true, null, 'government_admin')).toContain('admin-users');
   });
 
-  it('isMasterEssence=true, sim=veterinarian → 8개', () => {
-    expect(menuCount(true, 'veterinarian', 'government_admin')).toBe(8);
+  it('비-master 계정은 시뮬레이션과 무관하게 본 계정 메뉴만 본다', () => {
+    const ids = menuIds(false, null, 'farmer');
+    expect(ids).toContain('my-cows');
+    expect(ids).not.toContain('admin-users');
   });
 
-  it('isMasterEssence=true, sim=government_admin → 7개', () => {
-    expect(menuCount(true, 'government_admin', 'government_admin')).toBe(7);
-  });
-
-  it('isMasterEssence=true, sim=quarantine_officer → 5개', () => {
-    expect(menuCount(true, 'quarantine_officer', 'government_admin')).toBe(5);
-  });
-
-  it('isMasterEssence=false, user.role=farmer → 7개', () => {
-    expect(menuCount(false, null, 'farmer')).toBe(7);
+  it('user 미로딩 상태에서도 빈 메뉴가 아니라 farmer 기본 메뉴가 나온다', () => {
+    expect(menuIds(false, null, undefined).length).toBeGreaterThan(0);
   });
 });
