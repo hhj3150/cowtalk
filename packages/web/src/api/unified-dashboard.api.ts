@@ -1,6 +1,6 @@
 // 통합 대시보드 API 클라이언트
 
-import { apiGet, apiPost } from './client';
+import { apiGet, apiGetWithRetry, apiPost } from './client';
 import type {
   UnifiedDashboardData,
   LiveAlarm,
@@ -68,8 +68,15 @@ export function getDashboardFarms(): Promise<{ farms: readonly DashboardFarm[]; 
   return apiGet<{ farms: readonly DashboardFarm[]; total: number }>('/unified-dashboard/farms');
 }
 
+/**
+ * AI 브리핑 — 콜드패스 재시도 경로를 쓴다 (8s → 15s → 30s).
+ *
+ * 이 엔드포인트는 24시간 집계 6종 + (캐시 미스 시) Claude 생성이 얹히는 무거운 경로라
+ * 서버 콜드 스타트나 첫 생성 때 기본 15초 타임아웃을 넘길 수 있다. 그때 실패하면
+ * 위젯이 아무것도 못 그리므로, 한 번의 사용자 대기 안에 데이터가 뜨도록 재시도한다.
+ */
 export function fetchAiBriefing(farmId?: string, role?: string, farmIds?: string): Promise<AiBriefing> {
-  return apiGet<AiBriefing>(`/unified-dashboard/ai-briefing${farmQuery(farmId, farmIds, role ? { role } : undefined)}`);
+  return apiGetWithRetry<AiBriefing>(`/unified-dashboard/ai-briefing${farmQuery(farmId, farmIds, role ? { role } : undefined)}`);
 }
 
 export function fetchAlertTrend(

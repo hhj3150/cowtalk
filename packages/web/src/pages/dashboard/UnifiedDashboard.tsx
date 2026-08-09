@@ -26,6 +26,7 @@ import {
   useFarmIndexTrend,
 } from '@web/hooks/useUnifiedDashboard';
 import { useQueryClient } from '@tanstack/react-query';
+import { describeColdPathError } from '@web/api/client';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useRoleSimulationStore } from '@web/stores/role-simulation.store';
@@ -243,10 +244,10 @@ function FarmFilterDropdown(): React.JSX.Element {
 
 // ── AI Briefing Card ──
 
-function AiBriefingCard({ onKpiClick }: {
+export function AiBriefingCard({ onKpiClick }: {
   readonly onKpiClick?: (filter: { eventType: string; label: string }) => void;
 }): React.JSX.Element {
-  const { data: briefing, isLoading } = useAiBriefing();
+  const { data: briefing, isLoading, isError, error, refetch, isFetching } = useAiBriefing();
   // FLOW-07: AI 추천 CTA — 패턴 매칭으로 도출, 클릭 시 액션.
   const navigate = useNavigate();
   const farms = useFarmStore((s) => s.farms);
@@ -277,7 +278,11 @@ function AiBriefingCard({ onKpiClick }: {
     }
   }
 
-  if (isLoading || !briefing) {
+  // 로딩 중일 때만 스켈레톤.
+  // (과거엔 `isLoading || !briefing` 이라 요청이 실패해도 스켈레톤이 영원히 돌았다 —
+  //  사용자에겐 "작동하는 것처럼 계속 진행만 되고 결과가 안 나오는" 상태로 보였다.
+  //  react-query 에러는 렌더 중 throw 하지 않으므로 상위 ErrorBoundary도 잡지 못한다.)
+  if (isLoading) {
     return (
       <div className="ct-fade-up" style={briefingCardBase}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -291,6 +296,42 @@ function AiBriefingCard({ onKpiClick }: {
     );
   }
 
+  // 실패·빈 응답 — 무엇이 잘못됐는지 말하고 다시 시도할 수단을 준다 (규칙 10: ErrorFallback 필수)
+  if (isError || !briefing) {
+    return (
+      <div className="ct-fade-up" style={briefingCardBase}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <BriefingIcon />
+          <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--ct-text)' }}>AI 일일 브리핑</span>
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--ct-text-muted)', margin: '0 0 12px' }}>
+          브리핑을 불러오지 못했습니다. 대시보드의 다른 지표는 정상 표시됩니다.
+        </p>
+        <p style={{ fontSize: 11, color: 'var(--ct-text-muted)', margin: '0 0 14px', opacity: 0.8 }}>
+          {isError ? describeColdPathError(error) : '서버가 브리핑 데이터를 반환하지 않았습니다.'}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            padding: '7px 14px',
+            borderRadius: 8,
+            border: '1px solid var(--ct-border)',
+            background: 'var(--ct-card)',
+            color: 'var(--ct-text)',
+            cursor: isFetching ? 'default' : 'pointer',
+            opacity: isFetching ? 0.6 : 1,
+          }}
+        >
+          {isFetching ? '불러오는 중…' : '다시 시도'}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="ct-fade-up" style={{ ...briefingCardBase, borderLeft: '3px solid var(--ct-primary)' }}>
       {/* Header */}
@@ -298,7 +339,7 @@ function AiBriefingCard({ onKpiClick }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <BriefingIcon />
           <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--ct-text)' }}>AI 일일 브리핑</span>
-          <ClaudeBadge />
+          <ClaudeBadge source={briefing.summarySource} />
         </div>
         <span style={{ fontSize: 11, color: 'var(--ct-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
           {new Date(briefing.generatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
@@ -436,20 +477,29 @@ function BriefingIcon(): React.JSX.Element {
   );
 }
 
-function ClaudeBadge(): React.JSX.Element {
+/**
+ * 요약의 실제 출처를 표시한다.
+ *
+ * 브리핑은 Claude 생성본이 준비되기 전까지 규칙 기반 템플릿 요약으로 먼저 나온다.
+ * 그때도 "CLAUDE" 배지를 붙이면 AI가 쓰지 않은 문장을 AI가 쓴 것처럼 보이게 된다.
+ */
+function ClaudeBadge({ source }: { readonly source?: 'ai' | 'template' }): React.JSX.Element {
+  const isAi = source !== 'template';
   return (
     <span style={{
       fontSize: 9,
       fontWeight: 700,
       padding: '3px 8px',
       borderRadius: 6,
-      background: 'linear-gradient(135deg, rgba(0,214,126,0.15), rgba(0,214,126,0.05))',
-      color: 'var(--ct-primary)',
+      background: isAi
+        ? 'linear-gradient(135deg, rgba(0,214,126,0.15), rgba(0,214,126,0.05))'
+        : 'rgba(148,163,184,0.12)',
+      color: isAi ? 'var(--ct-primary)' : 'var(--ct-text-muted)',
       letterSpacing: 0.8,
       textTransform: 'uppercase',
-      border: '1px solid rgba(0,214,126,0.2)',
+      border: isAi ? '1px solid rgba(0,214,126,0.2)' : '1px solid var(--ct-border)',
     }}>
-      Claude
+      {isAi ? 'Claude' : '기본 요약'}
     </span>
   );
 }

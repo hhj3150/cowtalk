@@ -24,7 +24,7 @@ import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/
 import { computeHerd, getHerdTotal, getLiveCountByFarm } from '../../services/metrics/herd-service.js';
 import { computeAccuracy } from '../../services/metrics/ai-performance-service.js';
 import { getAlertCountForWidget } from '../../services/alerts/alert-aggregator.js';
-import { generateBriefingNarrative } from '../../serving/briefing-ai.service.js';
+import { getCachedBriefingNarrative } from '../../serving/briefing-ai.service.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -727,8 +727,10 @@ async function buildAiBriefing(farmId: string | null, role = 'government_admin')
     alertStats, topAlertFarms, eventTypeDistribution, recentCritical, role,
   );
 
-  // Claude 생성 브리핑 (자비스 스타일) — 실패·타임아웃 시 템플릿 유지 (규칙 7)
-  const generative = await generateBriefingNarrative({
+  // Claude 생성 브리핑 (자비스 스타일) — 캐시가 있으면 즉시 사용, 없으면 백그라운드 생성 후
+  // 이번 응답은 템플릿으로 나간다. 응답 경로가 Claude를 기다리지 않으므로 콜드 스타트에서도
+  // 위젯이 반드시 무언가를 그린다 (규칙 7: Fallback 보장).
+  const generative = getCachedBriefingNarrative({
     role,
     farmId,
     farmCount: totalFarms,

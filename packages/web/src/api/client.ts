@@ -165,7 +165,9 @@ export async function apiGetWithRetry<T>(
 
 /** 콜드패스 에러 → 사용자용 한국어 메시지 */
 export function describeColdPathError(err: unknown): string {
-  const e = err as { code?: string; response?: { status?: number; data?: { error?: string } }; message?: string };
+  // unknown 을 받는다고 선언한 이상 null·undefined 에도 깨지면 안 된다.
+  // (에러 없이 데이터만 비어 있는 경우 호출부가 null 을 넘긴다)
+  const e = (err ?? {}) as { code?: string; response?: { status?: number; data?: { error?: string } }; message?: string };
   if (e.response?.status === 503) return '서버가 잠시 응답할 수 없습니다. 다시 시도해 주세요.';
   if (e.code === 'ECONNABORTED' || (e.message ?? '').toLowerCase().includes('timeout')) {
     return '서버 응답이 늦습니다. 다시 시도해 주세요.';
