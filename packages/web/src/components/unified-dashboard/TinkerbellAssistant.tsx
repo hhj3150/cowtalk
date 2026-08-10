@@ -6,7 +6,8 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuthStore } from '@web/stores/auth.store';
 import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useFarmStore } from '@web/stores/farm.store';
-import { useNavigate } from 'react-router-dom';
+import { useTinkerbellStore } from '@web/stores/tinkerbell.store';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useDashboardFarms } from '@web/hooks/useUnifiedDashboard';
 import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
@@ -709,6 +710,9 @@ export function TinkerbellAssistant({
   const selectedFarmIds = useFarmStore((s) => s.selectedFarmIds); // 지역(그룹) 필터 스코프 — AI 답변도 이 범위로 한정
   // 지역(시도) 명령용 — 농장 목록(시도 포함) + 선택 액션 + 네비게이션
   const navigate = useNavigate();
+  const location = useLocation();
+  // 개체 전담 모드를 켠 화면의 경로 — 그 화면을 떠나면 모드를 해제하는 기준
+  const animalContextPathRef = useRef<string | null>(null);
   const { data: farmsForRegion } = useDashboardFarms();
   const selectFarmGroup = useFarmStore((s) => s.selectFarmGroup);
   const clearFarmSelection = useFarmStore((s) => s.clearSelection);
@@ -872,6 +876,10 @@ export function TinkerbellAssistant({
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
           : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}${scopeDirective}\n\n질문: ${question}`,
+        // 위 question은 모드 헤더·개체 컨텍스트·범위 지시문이 붙은 조립 프롬프트다.
+        // 서버가 의도(Extended Thinking·Skill·정정·보고서)를 판정할 때는 이 원문을 쓴다 —
+        // 그래야 같은 질문이 화면·모드에 따라 다른 깊이로 처리되지 않는다.
+        rawQuestion: question,
         role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
         // 지역(그룹) 스코프 — 서버 집계 도구를 이 농장들로 데이터 레벨 한정 (방역 대시보드 등)
@@ -1087,6 +1095,8 @@ export function TinkerbellAssistant({
     // 개체 분석 trigger면 컨텍스트 저장 (이후 대화에도 유지)
     if (openTrigger.startsWith('[팅커벨 AI') || openTrigger.startsWith('[소버린 AI')) {
       setAnimalContext(openTrigger);
+      // 이 모드를 켠 화면을 기억 — 화면을 떠나면 아래 effect가 모드를 해제한다
+      animalContextPathRef.current = location.pathname;
       // trigger에서 animalId 추출 (여러 패턴 지원)
       const idMatch = /\[개체ID\]\s*([a-f0-9-]{36})/i.exec(openTrigger)
         ?? /animalId[=:]\s*([a-f0-9-]{36})/i.exec(openTrigger)
@@ -1098,6 +1108,7 @@ export function TinkerbellAssistant({
       // 자동 질문 없음 — 사용자가 물어보면 답하는 대화형
     } else {
       setAnimalContext(null);
+      animalContextPathRef.current = null;
       setAnimalIdForChat(null);
       setFarmIdForChat(null);
       pendingAskRef.current = openTrigger;
@@ -1105,7 +1116,26 @@ export function TinkerbellAssistant({
 
     setIsOpen(true);
     setMessages([]);
+    // location.pathname은 모드 진입 시점의 화면을 기록하는 용도 —
+    // 경로가 바뀔 때마다 이 effect를 다시 돌리면 안 되므로 의존성에서 제외한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTrigger]);
+
+  // 개체 전담 모드는 그 개체를 보던 화면에서만 유효하다.
+  // 화면을 떠나면 자동 해제 — 대시보드로 돌아왔는데 헤더만 "개체 전담"으로 남고
+  // 지역 스코프 가드(farmIds·범위 지시문)까지 꺼진 채 답하는 상태를 막는다.
+  // 대화 기록은 지우지 않는다. 사용자가 쌓아온 맥락을 화면 이동만으로 날리지 않기 위해서다.
+  useEffect(() => {
+    const origin = animalContextPathRef.current;
+    if (!origin || location.pathname === origin) return;
+    animalContextPathRef.current = null;
+    setAnimalContext(null);
+    setAnimalIdForChat(null);
+    setFarmIdForChat(null);
+    // store의 trigger도 비워 둔다. 남겨두면 다음 화면에서 stale 트리거가 되살아난다.
+    // (undefined면 위 trigger effect는 조기 return하므로 대화가 초기화되지 않는다)
+    useTinkerbellStore.getState().setTrigger(undefined);
+  }, [location.pathname]);
 
   // messages가 [] 로 초기화된 직후 pendingAsk 실행
   useEffect(() => {

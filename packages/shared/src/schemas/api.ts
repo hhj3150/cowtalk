@@ -194,6 +194,17 @@ const chatDocumentSchema = z.object({
 
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
+  /**
+   * 사용자가 실제로 입력·발화한 원문.
+   *
+   * question에는 프런트가 모드 헤더(개체 전담/대화 모드)·개체 컨텍스트·범위 지시문을
+   * 덧붙여 보낸다. 그래서 question 길이는 "질문의 복잡도"가 아니라 "우리가 붙인 헤더 길이"다.
+   * 의도 판정(Extended Thinking·Skill 활성화·정정 감지)은 반드시 이 원문으로 해야
+   * 같은 질문이 화면·모드에 따라 다르게 처리되는 일이 없다.
+   *
+   * 없으면 question으로 폴백 — 구버전 클라이언트 호환.
+   */
+  rawQuestion: z.string().max(2000).optional(),
   farmId: z.string().uuid().optional(),
   // 지역(그룹) 스코프 — 활성 지역 필터의 농장 id 목록. 집계 도구를 이 농장들로 데이터 레벨 한정.
   farmIds: z.array(z.string().uuid()).max(5000).optional(),
