@@ -318,6 +318,7 @@ const TRACKS = [
   {id:'natl',  name:'국가 · 방역기관',    desc:'전국 표준과 데이터 주권. 결재 문장 = "이게 표준이 될 수 있다".'},
   {id:'vet',   name:'전문가 · 거점병원',  desc:'수의사·수정사. 결재 문장 = "대체가 아니라 증폭이다".'},
   {id:'biz',   name:'파트너 · 비즈니스',  desc:'4주체 구조와 수익 모델. 투자·파트너 협상용.'},
+  {id:'impact',name:'기대효과 · 환경',    desc:'금액 환산과 탄소·환경. 근거 등급을 붙여 예산 심의에 그대로 쓴다.'},
   {id:'intl',  name:'Overseas (EN)',      desc:'해외 정부 관계자. 결재 문장 = "주권을 지키며 도입 가능하다".'},
 ];
 
@@ -512,63 +513,130 @@ add({t:['local','natl'], eyebrow:'방역', stage:'그래서 · 결과 ①',
      며칠 뒤에 몇 농가 차이가 나는지를 숫자로 냅니다. 행정 결정에 근거가 생기는 겁니다."</p>
      <p><b>주의:</b> 시뮬레이션 파라미터(R0 등)는 질병별 문헌값이다. "우리가 예측한다"가 아니라 "표준 모형으로 계산한다"고 말한다.</p>`});
 
-add({t:['local'], eyebrow:'ROI', stage:'그래서 · 결과 ②',
-  title:'연 <em>180억</em>은 비용이 아니라 <em>보험료</em>다',
-  lede:'경기 젖소 10만두 · 1,500 농가 · 두당 월 15,000원 · 기지국 500만원/농가 전제.',
-  body:`<div class="cols c2">
-    <table class="t">
-      <thead><tr><th>비용</th><th class="num">금액</th></tr></thead>
-      <tbody>
-        <tr><td>1년차 (구축 포함)</td><td class="num"><strong>255억</strong></td></tr>
-        <tr><td>2년차 ~ 매년</td><td class="num"><strong>180억</strong></td></tr>
-        <tr><td>5년 누적</td><td class="num">975억</td></tr>
-      </tbody>
-    </table>
-    <table class="t">
-      <thead><tr><th>농가 편익 (두당 24만원/년)</th><th class="num">금액</th></tr></thead>
-      <tbody>
-        <tr><td>번식효율 개선 (공태일 단축)</td><td class="num">100,000원</td></tr>
-        <tr><td>질병 조기대응</td><td class="num">60,000원</td></tr>
-        <tr><td>산유량 향상</td><td class="num">50,000원</td></tr>
-        <tr><td>노동 절감</td><td class="num">30,000원</td></tr>
-        <tr class="sum"><td>10만두 환산</td><td class="num">연 240억</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="metrics">
-    <div class="metric"><div class="fig">1.5</div><div class="lab">기본 BCR (농가 생산성 편익만)</div></div>
-    <div class="metric amber"><div class="fig">5.0</div><div class="lab">통합 BCR (사회·환경 포함, 보수 3.7~5.5)</div></div>
-    <div class="metric"><div class="fig">2.8년</div><div class="lab">투자 회수 기간</div></div>
-    <div class="metric"><div class="fig">+195억</div><div class="lab">5년 순편익 (기본 시나리오)</div></div>
-  </div>`,
-  n:`<p><b>전제 네 가지를 반드시 먼저 말한다.</b> 전제 없는 숫자는 반드시 반격당한다.</p>
-     <p>"BCR 5.0이 너무 높은 것 아닙니까"는 거의 확실히 나온다. 준비된 답:</p>
-     <p class="say">"정확한 지적입니다. 5.0의 대부분은 사회·환경 편익이고 그건 추정치가 섞여 있습니다.
-     <b>보수적으로 1.5로 보시고, 나머지는 옵션가치로 보시면 됩니다.</b>"</p>
-     <p>이렇게 답하면 오히려 1.5의 신뢰도가 올라간다.</p>`});
+add({t:['local','impact'], eyebrow:'근거', stage:'그래서 · 결과 ②',
+  title:'숫자마다 <em>어디서 왔는지</em>를 함께 드립니다',
+  lede:'A는 공표 통계, B는 문헌 범위의 하한, C는 우리 가정. 등급이 낮은 것은 낮다고 표시했습니다.',
+  body:`<table class="t">
+    <thead><tr><th>등급</th><th>의미</th><th>이 계산에서 쓴 예</th><th class="num">값</th></tr></thead>
+    <tbody>
+      <tr><td><strong class="yes">A</strong></td><td>정부·공공기관 공표 통계</td><td>원유 기본가격 (낙농진흥회, 3년 연속 동결)</td><td class="num">1,084원/L</td></tr>
+      <tr><td><strong class="yes">A</strong></td><td>정부·공공기관 공표 통계</td><td>젖소 분뇨 배출원단위 (농촌진흥청)</td><td class="num">28kg/두/일</td></tr>
+      <tr><td><strong class="yes">A</strong></td><td>정부·공공기관 공표 통계</td><td>가축전염병 살처분 보상금 (2019~2024, 4개 질병)</td><td class="num">5,289억</td></tr>
+      <tr><td><strong class="part">B</strong></td><td>문헌 범위의 <strong>하한</strong> 채택</td><td>유방염 1건 손실 (문헌 30~50만원)</td><td class="num">300,000원</td></tr>
+      <tr><td><strong class="part">B</strong></td><td>문헌 범위의 <strong>하한</strong> 채택</td><td>공태일 단축 (활동량센서 문헌 5~15일)</td><td class="num">5일</td></tr>
+      <tr><td><strong class="no">C</strong></td><td>우리 설계 가정 — <strong>파일럿 검증 대상</strong></td><td>육성우 감축률 · 탄소 사회적비용 단가</td><td class="num">15~45% / 10만원</td></tr>
+    </tbody>
+  </table>`,
+  foot:['출처','단가는 발표용으로 만든 숫자가 아니라 <strong>제품이 매일 경제 계산에 실제로 쓰는 파라미터 카탈로그</strong>이며, 농장별로 수정 가능합니다.'],
+  n:`<p><b>이 장이 예산 심의의 승부처다.</b> 여기서 등급을 구분해 발음하지 않으면 뒤의 모든 숫자가 한 덩어리로 의심받는다.</p>
+     <p class="say">"저희 숫자는 세 종류입니다. 공표 통계, 문헌 하한, 그리고 저희 가정입니다.
+     <b>어느 것이 어느 것인지 표시해서 드리겠습니다.</b>"</p>
+     <p>B등급에서 <b>"하한을 썼다"</b>는 점을 반드시 짚는다. 문헌이 5~15일인데 5일을 썼다는 사실이
+     나머지 전부의 신뢰를 만든다.</p>`});
 
-add({t:['local','natl'], eyebrow:'사회 · 환경', stage:'그래서 · 결과 ③',
-  title:'적게 키우고 더 잘 짠다 — <em>축산 정책이자 환경 정책</em>',
-  lede:'번식효율이 오르고 생애수명이 늘면 후보축(육성우)을 덜 키워도 된다. 사육두수는 줄고 우유 총생산량은 유지된다.',
-  body:`<div class="cols c52">
-    <div class="card accent"><div class="kicker">메커니즘</div><h4>두수 ↓ · 생산량 →</h4>
-      <p>공태일이 줄고 폐사가 줄면 대체 후보축 수요가 줄어든다. 경기 육성우 약 8만두 중
-      <strong>3.6만두 감축</strong>을 기본 시나리오로 본다.</p></div>
-    <table class="t">
-      <thead><tr><th>육성우 3.6만두 감축 기준</th><th class="num">연간 효과</th></tr></thead>
-      <tbody>
-        <tr><td>사료비 절감 (농가)</td><td class="num"><strong>432억</strong></td></tr>
-        <tr><td>분뇨 배출 28.8만톤 감소 → 처리비</td><td class="num">86억</td></tr>
-        <tr><td>탄소 10.8만톤 CO₂eq 저감 → 사회적 가치</td><td class="num">108억</td></tr>
-        <tr class="sum"><td>사회 · 환경 소계</td><td class="num">약 626억 / 년</td></tr>
-      </tbody>
-    </table>
+add({t:['local','impact'], eyebrow:'정정', stage:'그래서 · 결과 ②',
+  title:'발표 전에 <em>저희 숫자 4건을 스스로 고쳤습니다</em>',
+  lede:'공개 통계와 대조하고 계산 정합성을 검토한 결과입니다. 대부분 유리한 방향이지만, 틀린 건 틀린 것입니다.',
+  body:`<table class="t">
+    <thead><tr><th>기존 브리핑</th><th>실제 (공표 통계)</th><th>영향</th></tr></thead>
+    <tbody>
+      <tr><td>경기 젖소 <strong>100,000두</strong></td><td><strong>150,364두</strong> (2026.3 축산물이력제)</td><td>사업 규모 1.5배 — 100,000두는 <strong>보급률 67% 시나리오</strong>로 재정의</td></tr>
+      <tr><td>경기 낙농가 <strong>1,500호</strong></td><td>전국 5,313호 · 목장당 69~70두<br>→ 경기 추정 <strong>약 2,100호</strong></td><td>기지국 구축비 75억 → <strong>약 107억</strong> 재산정</td></tr>
+      <tr><td>젖소 두수 기준연도 불명확</td><td>전국 36.5~37.5만두 (2026)<br>3년새 농가 <strong>9.7% 감소</strong></td><td>경기 비중 <strong>40.6%</strong> — "전국 최대 낙농 거점" 표현은 정확</td></tr>
+      <tr><td>육성우 감축을 <strong>8만두 전체</strong>에 적용</td><td>감축은 <strong>보급된 농가에서만</strong> 발생<br>→ 대상 53,600두</td><td>사회·환경 편익 <strong>약 33% 하향</strong></td></tr>
+    </tbody>
+  </table>`,
+  foot:['왜 먼저 말하나','우리가 우리 숫자를 고쳐 왔다는 사실 자체가, 남은 숫자에 대한 <strong>가장 강한 신뢰 근거</strong>입니다.'],
+  n:`<p><b>이 슬라이드를 빼자는 제안이 반드시 나온다. 절대 빼지 마라.</b></p>
+     <p>심의위원은 "이 사람들이 자기 숫자를 검증하는가"를 본다. 4건을 스스로 고쳐 왔다는 것은
+     나머지 숫자도 같은 방식으로 검증됐다는 증거가 된다.</p>
+     <p class="say">"발표 준비하면서 저희 숫자를 공개 통계와 다시 대조했습니다. 4건이 틀렸습니다. 먼저 정정하고 시작하겠습니다."</p>`});
+
+add({t:['local','impact'], eyebrow:'ROI', stage:'그래서 · 결과 ②',
+  title:'가장 보수적으로 잡아도 <em>BCR 1.10</em>입니다',
+  lede:'경기 젖소 150,364두 중 100,000두 보급(약 67%) · 두당 월 15,000원 · 연 비용 180억 기준.',
+  body:`<table class="t">
+    <thead><tr><th>편익 항목</th><th class="num">A 보수</th><th class="num">B 기준</th><th class="num">C 적극</th></tr></thead>
+    <tbody>
+      <tr><td>농가 개체 편익 (두당 8.05만 / 20.5만 / 24만원)</td><td class="num">80.5억</td><td class="num">204.7억</td><td class="num">240.0억</td></tr>
+      <tr><td>육성우 감축 — 사료비 절감</td><td class="num">96.5억</td><td class="num">193.0억</td><td class="num">289.4억</td></tr>
+      <tr><td>육성우 감축 — 분뇨 처리비</td><td class="num">19.3억</td><td class="num">38.6억</td><td class="num">57.9억</td></tr>
+      <tr><td>육성우 감축 — 탄소 (시장가 / 중간 / 사회적비용)</td><td class="num">2.4억</td><td class="num">14.5억</td><td class="num">72.4억</td></tr>
+      <tr><td>방역 (옵션가치)</td><td class="num">계상 안 함</td><td class="num">30억</td><td class="num">30억</td></tr>
+      <tr class="sum"><td>연간 총편익 / 비용 180억</td><td class="num">198.7억</td><td class="num">480.8억</td><td class="num">689.7억</td></tr>
+    </tbody>
+  </table>
+  <div class="metrics">
+    <div class="metric amber"><div class="fig">1.10</div><div class="lab">A 보수 — <strong>이 숫자로 말합니다</strong></div></div>
+    <div class="metric"><div class="fig">2.67</div><div class="lab">B 기준 (문헌 중간값)</div></div>
+    <div class="metric"><div class="fig">3.83</div><div class="lab">C 적극 (사회적 탄소비용 반영)</div></div>
+    <div class="metric"><div class="fig">1.9년</div><div class="lab">자가도입 시 회수기간 (보수 가정)</div></div>
   </div>`,
-  foot:['보정 필요','육성우 감축률·탄소 사회적가치 단가·낙농 원단위는 <strong>문헌 기반 추정</strong>이다. 해당 지자체 실측으로 보정해야 한다 — 이것이 파일럿의 목적이다.'],
-  n:`<p><b>지자체 발표에서 가장 크게 먹히는 장이다.</b> 축산과 예산이 환경 성과로 연결되기 때문이다.</p>
-     <p class="say">"이건 축산 정책이면서 동시에 환경 정책입니다. 악취 민원, 탄소중립, 분뇨 처리 —
-     지금 지자체가 가장 아픈 세 가지가 한꺼번에 움직입니다."</p>
-     <p class="warnline">foot의 보정 고지를 반드시 소리 내어 말한다. 이 고지가 오히려 숫자 전체의 신뢰를 만든다.</p>`});
+  n:`<p><b>1.10을 먼저 말한다.</b> 3.83을 먼저 말하면 나머지가 다 의심받는다. 순서가 전부다.</p>
+     <p class="say">"가장 보수적으로 잡아도 1.1입니다. 저희는 이 숫자로 말씀드리겠습니다. 나머지는 파일럿이 증명할 몫입니다."</p>
+     <p><b>반드시 함께 밝힐 것:</b> 개체 편익만 보면 보수 시나리오는 BCR 0.45로 미달한다.
+     이 사업의 정당성은 농가 수익이 아니라 <b>자원효율</b>에 있다. 이걸 먼저 말하면 공격이 들어올 자리가 사라진다.</p>`});
+
+add({t:['impact'], eyebrow:'민감도', stage:'그래서 · 결과 ②',
+  title:'성패는 <em>두 가지</em>로 수렴합니다',
+  lede:'BCR을 흔드는 순서. 상위 두 개가 압도적이고, 나머지는 논쟁 대비 영향이 작습니다.',
+  body:`<table class="t">
+    <thead><tr><th>순위</th><th>가정</th><th>변동 폭</th><th class="num">BCR (기준 2.67)</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><strong>육성우 감축률</strong> (30%)</td><td>±15%p</td><td class="num"><strong>1.99 ~ 3.35</strong></td></tr>
+      <tr><td>2</td><td><strong>두당 월 요금</strong> (15,000원)</td><td>12,000 ↔ 18,000원</td><td class="num"><strong>3.34 ~ 2.23</strong></td></tr>
+      <tr><td>3</td><td>산유량 향상 (50L)</td><td>0 ↔ 100L</td><td class="num">2.37 ~ 2.97</td></tr>
+      <tr><td>4</td><td>공태일 단축 (10일)</td><td>5일 ↔ 15일</td><td class="num">2.45 ~ 2.89</td></tr>
+      <tr><td>5</td><td>탄소 가치 단가 (3만원/톤)</td><td>시장가 1만 ↔ 사회적 10만</td><td class="num">2.62 ~ 2.86</td></tr>
+    </tbody>
+  </table>`,
+  foot:['시사점','① <strong>육성우를 실제로 줄일 수 있는가</strong> ② <strong>두당 요금을 얼마로 협상하는가</strong>. 나머지 정밀도를 높이는 데 시간을 쓸 이유가 없습니다.'],
+  n:`<p>이 장은 <b>우리가 우리 모델의 약점을 안다</b>는 증명이다. 심의위원이 가장 좋아하는 슬라이드다.</p>
+     <p>5위(탄소 단가)를 짚으며 한 마디: "탄소 단가는 논쟁이 가장 뜨거운데 <b>BCR 영향은 가장 작습니다.</b>
+     그 논쟁에 시간을 쓰지 않으셔도 됩니다."</p>
+     <p>1위가 파일럿 1번 측정 항목이 되는 이유를 여기서 연결한다.</p>`});
+
+add({t:['local','natl','impact'], eyebrow:'탄소 · 기후', stage:'그래서 · 결과 ③',
+  title:'축산은 <em>감축 수단이 없는데</em> 30%를 줄여야 합니다',
+  lede:'2030 NDC — 국가 40%, 농축수산 25.9%, 축산 분야 30% 감축. 그런데 축산의 배출은 생물의 대사입니다.',
+  body:`<div class="cols c52">
+    <div class="card risk"><div class="kicker">구조적 난제</div><h4>연료를 바꾸듯<br>바꿀 수가 없다</h4>
+      <p>제조업은 연료를, 발전은 전원을 바꾸면 된다. 축산은 소가 되새김하며 내는 메탄이다.
+      저메탄 사료·분뇨처리 고도화는 <strong>단위당 저감</strong>이고 농가에 비용을 지운다.</p></div>
+    <div class="card accent"><div class="kicker">CowTalk의 경로</div><h4>한 마리가 덜 배출하게 하는 대신<br>더 적은 소로 같은 우유를</h4>
+      <p>번식효율↑ · 생애수명↑ → 대체 후보축(육성우) 수요↓ → <strong>사육두수↓, 생산량 유지</strong>.
+      육성우는 2년간 생산 없이 먹고 배출한다. 그 두수가 줄면 사료·분뇨·메탄이 동시에 준다.</p>
+      <p><strong>환경 성과를 위해 새로 할 일이 없다. 번식·건강을 잘하면 환경이 따라온다.</strong></p></div>
+  </div>`,
+  foot:['가장 강한 한 문장','<strong>농가에 비용을 부담시키지 않고 축산 온실가스를 줄이는 거의 유일한 수단입니다.</strong>'],
+  n:`<p><b>정책 담당자에게 규모감을 주는 비교:</b> 젖소 한 마리는 연 약 4.2톤 CO₂eq를 배출한다.
+     승용차 1대가 약 2톤이다. <b>젖소 한 마리 = 승용차 두 대.</b></p>
+     <p>4.2톤은 공표된 두당 계수가 아니라 <b>총량과 축종별 기여율에서 역산한 유도값</b>이다.
+     유도 과정을 공개했다고 반드시 밝힌다 (등급 C).</p>
+     <p class="say">"축산에 30% 감축 목표를 주셨는데, 쓸 수 있는 수단이 많지 않습니다. 하나 더 드리겠습니다."</p>`});
+
+add({t:['local','natl','impact'], eyebrow:'환경부담', stage:'그래서 · 결과 ③',
+  title:'탄소보다 먼저 <em>악취 민원</em>이 줄어듭니다',
+  lede:'분뇨의 87%가 농경지에 살포되고, 악취 민원의 절반이 거기서 나옵니다. 총량이 줄면 원인 물질이 줍니다.',
+  body:`<table class="t">
+    <thead><tr><th>육성우 감축</th><th class="num">탄소 저감</th><th class="num">경기 젖소 2030<br>감축목표 대비</th><th class="num">분뇨 감소</th><th class="num">사료비 절감</th></tr></thead>
+    <tbody>
+      <tr><td><strong>15%</strong> · 8,040두 (보수)</td><td class="num">2.4만톤</td><td class="num"><strong>약 13%</strong></td><td class="num">6.4만톤</td><td class="num">96.5억</td></tr>
+      <tr><td><strong>30%</strong> · 16,080두 (기준)</td><td class="num">4.8만톤</td><td class="num"><strong>약 25%</strong></td><td class="num">12.9만톤</td><td class="num">193.0억</td></tr>
+      <tr><td><strong>45%</strong> · 24,120두 (적극)</td><td class="num">7.2만톤</td><td class="num"><strong>약 38%</strong></td><td class="num">19.3만톤</td><td class="num">289.4억</td></tr>
+    </tbody>
+  </table>
+  <div class="cols c3">
+    <div class="card"><div class="kicker">분뇨 총량</div><p>전국 연 <strong>5,073만톤</strong> 중 젖소 9.1%. 퇴비 75.3% · 액비 11.7%가 <strong>농경지로 간다</strong></p></div>
+    <div class="card"><div class="kicker">질소 · 인 부하</div><p>분뇨 감소에 비례해 수질 오염 부하 저감. <strong>살포 가능 농지 제약도 완화</strong></p></div>
+    <div class="card"><div class="kicker">사료 자원</div><p>수입 조사료·곡물 의존도 감소 → <strong>식량안보에도 기여</strong></p></div>
+  </div>`,
+  n:`<p><b>순서를 바꿔 말한다.</b> 지자체 담당자에게는 탄소보다 악취가 급하다.</p>
+     <p class="say">"분뇨가 연 12.9만톤 줄어듭니다. 그 87%가 농경지에 뿌려지던 것이고,
+     악취 민원의 절반이 거기서 나옵니다. <b>탄소는 그 다음 이야기입니다.</b>"</p>
+     <p><b>로드맵으로 덧붙일 것 (물으면):</b> 휴머스(HUMUS)를 활용한 HBP 시스템 —
+     축사 깔짚을 휴머스 기반으로 운용해 분뇨를 축사 내에서 발효시키고, 퇴비·토양 순환으로 경축순환을 완성하는 모듈.
+     낙농·비육우·육계·양돈에 적용 가능하며 <b>축산환경관리 및 경축순환모델 확립</b>이 프레이밍이다.</p>`});
 
 add({t:['local'], eyebrow:'요청', stage:'그래서',
   title:'저희 숫자가 아니라 <em>여러분 지역의 숫자</em>를 만드는 것',
@@ -964,6 +1032,40 @@ add({t:['intl'], eyebrow:'Markets', stage:'So what',
      <p class="say">"I will not give you a number today, because the honest answer depends on your herd structure.
      Let us design the pilot first and price from real data."</p>
      <p>Financing is the real gate in Southeast Asia. <b>Design the funding route before the product pitch.</b></p>`});
+
+/* ══ ONE-PAGE SUMMARY (모든 트랙 공통 · 마지막 직전) ══ */
+add({t:['core','local','natl','vet','biz','impact','intl'], eyebrow:'한 장 요약', stage:'전체',
+  title:'왜 → 무엇을 → 어떻게 → <em>그래서 무엇을 얻는가</em>',
+  lede:'결재에 필요한 것은 이 한 장에 전부 있습니다.',
+  body:`<div class="cols c4">
+    <div class="card"><div class="kicker">왜</div><h4>셋 다 보이지 않아서<br>생기는 문제다</h4>
+      <p><strong>지킬 사람이 없다</strong> — 농장동물 수의사 897명(11.2%)<br>
+      <strong>질병은 늦게 발견된다</strong> — 살처분 보상금 5,289억<br>
+      <strong>감축 수단이 없다</strong> — 축산 2030년 30% 감축 목표</p></div>
+    <div class="card"><div class="kicker">무엇을</div><h4>알람과 행동 사이에<br>다리를 놓는다</h4>
+      <p>소의 몸속 신호를 국가 공공데이터·AI와 결합해
+      <strong>농가·수의사·방역관·행정이 각자의 언어로 "지금 무엇을 할지"</strong>를 받는 플랫폼.</p></div>
+    <div class="card"><div class="kicker">어떻게</div><h4>한 화면에서<br>끝난다</h4>
+      <p>감지 → 맥락 결합 → 추천 → 현장 실행 → 결과 피드백.<br>
+      데이터 통합 · AI 해석 · 역할별 서빙 · 학습 루프 <strong>4층 전부 구현·가동 중</strong>.</p></div>
+    <div class="card accent"><div class="kicker">그래서</div><h4>네 개의 성과를<br>금액으로</h4>
+      <p><strong>① 농가</strong> 두당 연 8~24만원 · 자가도입 1.9년 회수<br>
+      <strong>② 방역</strong> 럼피스킨 1회 = 271억<br>
+      <strong>③ 환경</strong> 감축목표의 13~38%<br>
+      <strong>④ 수의</strong> 1인 담당 15~20호 → 30~40호</p></div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="fig">180억</div><div class="lab">연간 비용 (경기 10만두 · 월 15,000원)</div></div>
+    <div class="metric amber"><div class="fig">1.10</div><div class="lab">BCR — <strong>보수 시나리오. 이 숫자로 말합니다</strong></div></div>
+    <div class="metric"><div class="fig">2.67</div><div class="lab">BCR — 기준 시나리오 (문헌 중간값)</div></div>
+    <div class="metric wide"><div class="fig">파일럿 5개 지표</div><div class="lab">감축두수·공태일·리드타임·조치기록률·두당마진</div></div>
+  </div>`,
+  foot:['요청','① <strong>시범사업</strong>(시군 + 공수의사 + 거점 대동물병원) ② <strong>데이터 연계 협조</strong>(KAHIS·이력제) ③ <strong>확산 로드맵 공동 수립</strong>'],
+  n:`<p><b>한 장만 인쇄해서 들어가야 한다면 이 장이다.</b> 결재 라인에 그대로 넘길 수 있게 설계했다.</p>
+     <p>네 칸을 손으로 짚으며 순서대로 읽는다. 각 칸에 30초. 2분이면 끝난다.</p>
+     <p class="say">"평가 기준을 저희가 먼저 제안드리겠습니다. <b>이 다섯 지표가 움직이지 않으면 확산하지 마십시오.</b>"</p>
+     <p><b>정직성 한 줄을 반드시 붙인다:</b> "개체 편익만 보면 보수 시나리오는 BCR 0.45로 미달합니다.
+     이 사업의 정당성은 농가 수익이 아니라 <b>자원효율</b>에 있습니다."</p>`});
 
 /* ══ CLOSING ══ */
 add({t:['core','local','natl','vet','biz','intl'], eyebrow:'클로징', stage:'그래서',
