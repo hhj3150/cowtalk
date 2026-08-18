@@ -983,8 +983,8 @@ add({t:['biz'], eyebrow:'파트너 구조', stage:'무엇을',
   title:'네 주체가 <em>같은 층에서 경쟁하지 않게</em> 설계한다',
   lede:'각자 다른 층을 소유하고 층과 층은 인터페이스로만 만난다. 한 주체가 빠져도 그 층만 교체하면 되는 것 — 국가 인프라의 조건이다.',
   body:`<div class="stack-layers">
-    <div class="layer l4"><div class="lno">L4 · 거버넌스</div><div><div class="lmain"><div class="lname">데이터센터 — 주권 · 보관 · 감사</div><div class="lowner">국가 · 지자체 (또는 합작 SPC)</div></div><div class="ldesc">데이터 보관·연산·백업 · 접근통제 · 국가별 소버린 존 운영</div></div></div>
-    <div class="layer l3"><div class="lno">L3 · 플랫폼</div><div><div class="lmain"><div class="lname">D2O Corp — CowTalk 개발 · 운영</div><div class="lowner">SW IP 100% 보유</div></div><div class="ldesc">AI 해석 · 4역할 서비스 · 공공데이터 커넥터 · 현지화 어댑터</div></div></div>
+    <div class="layer l4"><div class="lno">L4 · 거버넌스</div><div><div class="lmain"><div class="lname">데이터센터 — 주권 · 보관 · 감사 <span style="color:var(--amber)">(외주)</span></div><div class="lowner">운영사 미선정</div></div><div class="ldesc">보관·연산·백업 · 접근통제 · 소버린 존. <strong>D2O는 계약·감독만, 직접 운영하지 않는다</strong></div></div></div>
+    <div class="layer l3"><div class="lno">L3 · 플랫폼</div><div><div class="lmain"><div class="lname">농업회사법인 (주)디투오 — 플랫폼 · 영업 · 교육</div><div class="lowner">SW IP 100% 보유</div></div><div class="ldesc">AI 해석 · 4역할 서비스 · 커넥터 · 자사 영업 고객 센서 공급 · <strong>실행은 파트너 교육으로 확장</strong></div></div></div>
     <div class="layer l2"><div class="lno">L2 · 실행</div><div><div class="lmain"><div class="lname">코리아제네틱스 — 유전자원 · 시술</div><div class="lowner">유전자원 IP · 시술 네트워크</div></div><div class="ldesc">정액·수정란 공급 · 수정사 네트워크 · 번식 실행 · 수정 결과 데이터 생산</div></div></div>
     <div class="layer l1"><div class="lno">L1 · 센싱</div><div><div class="lmain"><div class="lname">smaXtec — 위내센서 · 이벤트 엔진</div><div class="lowner">센서 IP · 알고리즘</div></div><div class="ldesc">위내 볼루스 · 농장 기지국 · 발정/분만/질병 이벤트</div></div></div>
   </div>`,
@@ -1038,35 +1038,48 @@ add({t:['biz'], eyebrow:'판매 구조', stage:'그래서',
 
 add({t:['biz'], eyebrow:'자금 흐름', stage:'어떻게',
   title:'12,000원 중 <em>7,700원이 수입 단가</em>로 나갑니다',
-  lede:'현행 실거래 구조입니다. 설계안이 아닙니다. 하드웨어는 별도 청구 없이 구독료에 전부 포함됩니다.',
+  lede:'현행 실거래 구조입니다. smaXtec까지 밸류체인 전 구간이 순수 구독 — 하드웨어 비용이 아예 없습니다.',
   body:`<div class="cols c52">
     <table class="t">
       <thead><tr><th>주체</th><th>역할</th><th class="num">원/두/월</th><th class="num">비중</th></tr></thead>
       <tbody>
         <tr><td><strong>목장</strong></td><td>지불</td><td class="num"><strong>12,000</strong></td><td class="num">100%</td></tr>
         <tr><td><strong>코리아제네틱스</strong></td><td>수입 · 통관 · 유통</td><td class="num"><strong>(7,700)</strong></td><td class="num"><strong>64.2%</strong></td></tr>
-        <tr><td><sub>↳ smaXtec 몫 (추정)</sub></td><td><sub>제조 · 데이터 해석</sub></td><td class="num"><sub>약 6,220</sub></td><td class="num"><sub>51.8%</sub></td></tr>
-        <tr><td><sub>↳ KG 수입 마진 (추정)</sub></td><td><sub>통관 · 유통 · 재고</sub></td><td class="num"><sub>약 1,480</sub></td><td class="num"><sub>12.3%</sub></td></tr>
+        <tr><td><sub>↳ smaXtec 구독료 + KG 마진</sub></td><td><sub>내역은 KG만 안다</sub></td><td class="num"><sub>7,700</sub></td><td class="num"><sub>—</sub></td></tr>
         <tr><td><strong>D2O</strong></td><td>판매 · 플랫폼 · 운영</td><td class="num"><strong>4,300</strong></td><td class="num"><strong>35.8%</strong></td></tr>
         <tr><td><sub>↳ 운영 직접비 (추정)</sub></td><td><sub>DC · AI · CS · 결제</sub></td><td class="num"><sub>(2,850)</sub></td><td class="num"><sub>23.7%</sub></td></tr>
-        <tr class="sum"><td>D2O 기여이익</td><td></td><td class="num">1,450</td><td class="num">12.1%</td></tr>
+        <tr><td><sub>↳ 구독 기여이익</sub></td><td></td><td class="num"><sub>1,450</sub></td><td class="num"><sub>12.1%</sub></td></tr>
+        <tr><td><sub>↳ 설치 마진 환산 (70두·4년)</sub></td><td><sub>목장당 250만 ÷ 70두 ÷ 48개월</sub></td><td class="num"><sub>+744</sub></td><td class="num"><sub></sub></td></tr>
+        <tr class="sum"><td>D2O 통합 기여이익</td><td></td><td class="num">2,194</td><td class="num">16.3%</td></tr>
+        <tr><td colspan="2"><strong>손익분기</strong> — 1인 체제(고정비 1.2억)</td><td class="num"><strong>약 4,600두</strong></td><td class="num">목장 66곳</td></tr>
       </tbody>
     </table>
     <div>
-      <div class="card"><div class="kicker">설치 매출 (1회)</div><h4>500만원 / 목장</h4>
-        <p>통신중계기 HW·시공 + <strong>개체 삽입 시술 · 개체 기록 · 시스템 등록</strong> 포함.
-        <strong>최소 2회 방문</strong>이 필요해 원가 부담이 크다 — 권역 일괄 설치로 개선 대상.</p></div>
-      <div class="card accent" style="margin-top:1.2cqw"><div class="kicker">가장 중요한 사실</div><h4>지금까지 전액 목장이 냈다</h4>
-        <p><strong>보조금 없이 팔린 제품</strong>이라는 뜻이다. 지자체 심의에서 이보다 강한 시장 검증 증거는 없다.</p></div>
+      <div class="card"><div class="kicker">설치 매출 (1회)</div><h4>500만원 − 원가 250만원<br>= 마진 <strong>250만원 (50%)</strong></h4>
+        <p>중계기 HW·시공 + <strong>개체 삽입 시술 · 기록 · 등록</strong> 포함, <strong>최소 2회 방문</strong>.
+        70두 목장 4년 환산 시 <strong>두당 월 744원</strong> — 손익분기를 57,500두 → <strong>38,000두</strong>로 낮춘다.</p></div>
+      <div class="card accent" style="margin-top:1.2cqw"><div class="kicker">고정비가 거의 없다</div>
+        <p>데이터센터 <strong>외주</strong> · 설치 <strong>파트너</strong> · D2O는 <strong>1인 영업 체제</strong>.
+        손익분기 <strong>약 4,600두(목장 66곳)</strong>. <strong>자본은 제약이 아니다.</strong></p></div>
+      <div class="card warn" style="margin-top:1.2cqw"><div class="kicker">⚠️ 진짜 제약</div>
+        <p><strong>실행 역량</strong> — 3년차엔 하루 6곳을 설치해야 한다.<br>
+        <strong>설치 마진은 성장 연동</strong> — 신규가 멈추면 0.<br>
+        <strong>재삽입 원가 미계상</strong> — 도태율 30%면 구독 기여이익의 34%.</p></div>
     </div>
   </div>`,
-  foot:['협상 과제','매출의 <strong>64.2%가 수입 단가</strong>다. <strong>볼륨 구간별 단가 테이블</strong>이 계약에 없으면 두수가 늘어도 규모의 이점이 D2O에 오지 않는다.'],
+  foot:['협상 과제','하드웨어가 없으니 <strong>협상할 것은 구독료 하나뿐</strong>이다. <strong>볼륨 구간별 인하 조항</strong>과 <strong>해지 시 설치 센서 처리 조건</strong> — 이 둘이 계약의 전부다.'],
   n:`<p class="warnline"><b>이 장은 대외 배포 금지.</b> 투자자·파트너 협상 자리에서만 연다.
      지자체·농가 앞에서 D2O 손익을 여는 것은 금물이다.</p>
      <p>smaXtec 몫과 KG 마진은 <b>공개 참고시세($89 센서 + $2.49/두/월)에서 역산한 추정</b>이다.
      실제 수입 원가는 코리아제네틱스만 안다 — <b>그 숫자를 확인하는 것이 협상의 1단계</b>다.</p>
      <p class="say">"목장이 내는 12,000원 중 7,700원이 수입 단가입니다. 저희가 남기는 4,300원으로
-     플랫폼 개발·운영·CS·데이터센터를 전부 해야 합니다. <b>볼륨이 커지면 단가가 내려가는 구조를 함께 만들어 주십시오.</b>"</p>`});
+     플랫폼 개발·운영·CS·데이터센터를 전부 해야 합니다. 하드웨어 없이 구독으로만 가는 구조이니
+     <b>볼륨 구간별로 단가가 내려가는 테이블</b>을 함께 만들어 주십시오."</p>
+     <p><b>성장 시나리오:</b> 3년차 80,000두 기준 매출 150.9억, 기여이익 31.78억,
+     고정비 5억(5~6인) 차감 시 <b>영업이익 26.78억</b>. 1년차도 +1.46억으로 흑자다.</p>
+     <p class="warnline"><b>심의에서 반드시 나오는 질문:</b> "1인 회사가 이 규모를 감당합니까?"
+     준비된 답 셋 — ① 플랫폼이 이미 자동화돼 있다 ② 실행은 파트너·외주가 한다
+     ③ 고정비가 낮아 <b>적자 없이 단계적으로 확충</b>할 수 있다. 먼저 말해야 방어된다.</p>`});
 
 add({t:['biz','natl'], eyebrow:'미해결 과제', stage:'그래서',
   title:'데이터센터 운영사와 <em>데이터 주권 귀속</em>이 아직 없습니다',
