@@ -28,6 +28,8 @@
 | [`09-climate-environment.md`](09-climate-environment.md) | **탄소 저감·기후·환경부담** — 2030 NDC 정합, 분뇨·악취 | 지자체·환경부서 |
 | [`10-one-pager.md`](10-one-pager.md) | **한 장 요약** — 왜/무엇을/어떻게/그래서 (정책결정권자용) | 결재 라인 전달 |
 | [`deck/`](deck/) | 웹 발표덱(HTML) · PPTX 빌더 · PDF 배포본 | 실제 발표 |
+| [`handouts/farmer-guide.html`](handouts/farmer-guide.html) | **농가용 안내서 겸 교재** — 3터치 루틴·알림 대응·FAQ·미래상 | 농가 배포 · 온보딩 교육 |
+| [`handouts/government-briefing.html`](handouts/government-briefing.html) | **대정부 설명자료** — 근거 등급 표기, 성과 4종, 시범사업, 미래상 | 지자체·중앙정부 제출 |
 
 ---
 
