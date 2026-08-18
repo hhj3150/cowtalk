@@ -1,0 +1,1050 @@
+<title>축산 디지털 운영체제</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Gowun+Batang:wght@400;700&display=swap">
+
+<style>
+:root{
+  --ground:#F2F5F6; --surface:#FFFFFF; --surface-2:#F6F9F9; --surface-3:#EAF1F1;
+  --ink:#0B2239; --ink-2:#243B53; --muted:#5A6B76; --faint:#8B9BA5;
+  --line:#D6E0E4; --line-strong:#B6C6CD;
+  --teal:#0E7C7B; --teal-deep:#095352; --mint:#16B0A6;
+  --amber:#B06A16; --amber-soft:#F5EBDC;
+  --risk:#A8322F; --risk-soft:#F7E7E6;
+  --ok:#0E7C7B;
+  --rail:#0B2239; --rail-ink:#DCE7EB; --rail-muted:#7C93A0; --rail-line:#1D3444;
+  --shadow:0 1px 2px rgba(11,34,57,.06), 0 8px 28px -12px rgba(11,34,57,.18);
+  --sans:"IBM Plex Sans KR",-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --serif:"Gowun Batang",Batang,"Times New Roman",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#060F14; --surface:#0D1B23; --surface-2:#112530; --surface-3:#16303C;
+    --ink:#E6EFF2; --ink-2:#C4D6DD; --muted:#95A9B3; --faint:#6C838F;
+    --line:#1E3743; --line-strong:#2C4B59;
+    --teal:#2FBFB4; --teal-deep:#7BD8CF; --mint:#4FD8CC;
+    --amber:#E0A052; --amber-soft:#2A2013;
+    --risk:#EC7A75; --risk-soft:#2E1614;
+    --ok:#2FBFB4;
+    --rail:#040C10; --rail-ink:#D2E2E7; --rail-muted:#6F8794; --rail-line:#17303C;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#060F14; --surface:#0D1B23; --surface-2:#112530; --surface-3:#16303C;
+  --ink:#E6EFF2; --ink-2:#C4D6DD; --muted:#95A9B3; --faint:#6C838F;
+  --line:#1E3743; --line-strong:#2C4B59;
+  --teal:#2FBFB4; --teal-deep:#7BD8CF; --mint:#4FD8CC;
+  --amber:#E0A052; --amber-soft:#2A2013;
+  --risk:#EC7A75; --risk-soft:#2E1614;
+  --ok:#2FBFB4;
+  --rail:#040C10; --rail-ink:#D2E2E7; --rail-muted:#6F8794; --rail-line:#17303C;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-weight:400; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,p,ul,ol,figure{margin:0}
+ul{padding-left:0; list-style:none}
+a{color:var(--teal)}
+
+/* ── shell ─────────────────────────────────────────── */
+.shell{display:grid; grid-template-columns:236px minmax(0,1fr); min-height:100vh}
+.rail{
+  background:var(--rail); color:var(--rail-ink);
+  padding:26px 20px 40px; position:sticky; top:0; height:100vh;
+  overflow-y:auto; border-right:1px solid var(--rail-line);
+}
+.rail-mark{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--mint)}
+.rail-title{font-size:19px; font-weight:600; margin-top:8px; letter-spacing:-.01em; line-height:1.25}
+.rail-sub{font-size:11.5px; color:var(--rail-muted); margin-top:7px; line-height:1.5}
+.rail-hr{height:1px; background:var(--rail-line); margin:22px 0 16px; border:0}
+.rail-label{font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--rail-muted); margin-bottom:10px}
+.tracks{display:flex; flex-direction:column; gap:3px}
+.track-btn{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  background:none; border:0; border-radius:5px; padding:8px 9px;
+  color:var(--rail-ink); font-family:var(--sans); font-size:12.5px; cursor:pointer;
+  transition:background .14s ease;
+}
+.track-btn:hover{background:rgba(255,255,255,.06)}
+.track-btn[aria-pressed="true"]{background:rgba(47,191,180,.16); color:#fff}
+.track-btn:focus-visible{outline:2px solid var(--mint); outline-offset:1px}
+.dot{width:7px; height:7px; border-radius:50%; flex:none; background:currentColor; opacity:.55}
+.track-btn[aria-pressed="true"] .dot{opacity:1; background:var(--mint)}
+.tcount{margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--rail-muted)}
+.rail-note{font-size:11px; color:var(--rail-muted); line-height:1.6; margin-top:6px}
+.rail-note b{color:var(--rail-ink); font-weight:500}
+
+.stage{padding:34px clamp(16px,3.4vw,52px) 88px; min-width:0}
+.stage-head{max-width:1180px; margin:0 auto 26px; display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; justify-content:space-between}
+.stage-head h1{font-size:15px; font-weight:600; letter-spacing:-.01em}
+.stage-head p{font-size:12.5px; color:var(--muted); margin-top:3px}
+.toolbar{display:flex; gap:7px}
+.tool{
+  font-family:var(--mono); font-size:11px; letter-spacing:.04em;
+  background:var(--surface); color:var(--muted); border:1px solid var(--line);
+  border-radius:5px; padding:6px 11px; cursor:pointer;
+}
+.tool:hover{color:var(--ink); border-color:var(--line-strong)}
+.tool:focus-visible{outline:2px solid var(--teal); outline-offset:1px}
+
+.deck{max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:30px}
+.slide-wrap{display:flex; flex-direction:column; gap:0}
+.slide-wrap[hidden]{display:none}
+
+/* ── slide card ───────────────────────────────────── */
+.slide{
+  container-type:inline-size;
+  position:relative; aspect-ratio:16/9; background:var(--surface);
+  border:1px solid var(--line); border-radius:3px; box-shadow:var(--shadow);
+  padding:4.6cqw 5cqw 4.2cqw; display:flex; flex-direction:column; overflow:hidden;
+}
+.slide::before{content:""; position:absolute; inset:0 auto 0 0; width:3px; background:var(--teal)}
+.slide.is-cover::before{background:var(--amber)}
+.s-top{display:flex; align-items:baseline; gap:1.4cqw; margin-bottom:2.1cqw}
+.eyebrow{
+  font-family:var(--mono); font-size:1.05cqw; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--teal); font-weight:500;
+}
+.stage-chip{
+  margin-left:auto; font-family:var(--mono); font-size:.95cqw; letter-spacing:.1em;
+  color:var(--faint); border:1px solid var(--line); border-radius:99px; padding:.3cqw 1cqw;
+}
+.s-title{font-size:2.55cqw; font-weight:600; line-height:1.28; letter-spacing:-.018em; text-wrap:balance; max-width:88%}
+.s-title em{font-style:normal; color:var(--teal)}
+.s-lede{font-size:1.34cqw; color:var(--muted); margin-top:1.1cqw; line-height:1.6; max-width:78%}
+.s-body{margin-top:2.6cqw; flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; gap:1.6cqw}
+.s-foot{
+  margin-top:auto; padding-top:1.6cqw; border-top:1px solid var(--line);
+  font-size:1.12cqw; color:var(--ink-2); display:flex; gap:1cqw; align-items:baseline;
+}
+.s-foot .k{font-family:var(--mono); font-size:.95cqw; letter-spacing:.12em; text-transform:uppercase; color:var(--teal); flex:none}
+.pageno{position:absolute; right:2.2cqw; bottom:1.6cqw; font-family:var(--mono); font-size:1cqw; color:var(--faint)}
+
+/* content primitives (cqw-scaled) */
+.cols{display:grid; gap:1.5cqw; flex:1; min-height:0}
+.cols.c2{grid-template-columns:1fr 1fr}
+.cols.c3{grid-template-columns:repeat(3,1fr)}
+.cols.c4{grid-template-columns:repeat(4,1fr)}
+.cols.c25{grid-template-columns:1.25fr 1fr}
+.cols.c52{grid-template-columns:1fr 1.6fr}
+/* a grid holding a table must not stretch its rows — table rows would fan apart */
+.cols:has(> table.t){align-content:center}
+.cols:has(> div > table.t){align-content:center}
+.s-body > table.t{align-self:start}
+.cols > table.t{align-self:start}
+.card{
+  background:var(--surface-2); border:1px solid var(--line); border-radius:3px;
+  padding:1.7cqw 1.8cqw; display:flex; flex-direction:column; gap:.7cqw; min-height:0;
+}
+.card.accent{background:var(--surface-3); border-color:var(--line-strong)}
+.card.warn{background:var(--amber-soft); border-color:var(--amber)}
+.card.risk{background:var(--risk-soft); border-color:var(--risk)}
+.card .kicker{font-family:var(--mono); font-size:.95cqw; letter-spacing:.14em; text-transform:uppercase; color:var(--teal)}
+.card.warn .kicker{color:var(--amber)}
+.card.risk .kicker{color:var(--risk)}
+.card h4{font-size:1.42cqw; font-weight:600; line-height:1.35; letter-spacing:-.01em}
+.card p{font-size:1.12cqw; color:var(--muted); line-height:1.62}
+.card p strong{color:var(--ink); font-weight:600}
+
+.bul{display:flex; flex-direction:column; gap:.85cqw}
+.bul li{font-size:1.18cqw; line-height:1.6; color:var(--ink-2); padding-left:1.5cqw; position:relative}
+.bul li::before{content:""; position:absolute; left:0; top:.72cqw; width:.5cqw; height:.5cqw; border-radius:50%; background:var(--teal)}
+.bul li strong{color:var(--ink); font-weight:600}
+.bul.dense li{font-size:1.06cqw}
+
+.metrics{display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:1.5cqw}
+.metric{border-top:2px solid var(--teal); padding-top:1.1cqw; display:flex; flex-direction:column; gap:.35cqw}
+.metric.amber{border-color:var(--amber)}
+.metric .fig{font-family:var(--mono); font-size:2.9cqw; font-weight:600; letter-spacing:-.02em; line-height:1; font-variant-numeric:tabular-nums}
+.metric.amber .fig{color:var(--amber)}
+.metric .lab{font-size:1.05cqw; color:var(--muted); line-height:1.45}
+.metric.wide .fig{font-size:1.95cqw}
+
+table.t{width:100%; border-collapse:collapse; font-size:1.08cqw}
+table.t th{
+  text-align:left; font-family:var(--mono); font-size:.92cqw; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--teal); font-weight:500;
+  padding:0 .9cqw .7cqw 0; border-bottom:1px solid var(--line-strong);
+}
+table.t td{padding:.72cqw .9cqw .72cqw 0; border-bottom:1px solid var(--line); color:var(--ink-2); vertical-align:top; line-height:1.5}
+table.t td strong{color:var(--ink); font-weight:600}
+table.t .num{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; padding-right:0}
+table.t tr:last-child td{border-bottom:0}
+table.t tr.sum td{border-top:1px solid var(--line-strong); border-bottom:0; font-weight:600; color:var(--ink)}
+
+.yes{color:var(--ok); font-weight:600}
+.no{color:var(--risk); font-weight:600}
+.part{color:var(--amber); font-weight:600}
+
+.stack-layers{display:flex; flex-direction:column; gap:.55cqw; flex:1}
+.layer{
+  display:grid; grid-template-columns:7.5cqw 1fr; gap:1.4cqw; align-items:center;
+  border:1px solid var(--line); border-left:3px solid var(--teal);
+  background:var(--surface-2); border-radius:2px; padding:1.05cqw 1.4cqw; flex:1;
+}
+.layer .lno{font-family:var(--mono); font-size:.95cqw; letter-spacing:.1em; color:var(--teal); text-transform:uppercase}
+.layer .lname{font-size:1.3cqw; font-weight:600; letter-spacing:-.01em}
+.layer .ldesc{font-size:1.04cqw; color:var(--muted); line-height:1.5; margin-top:.18cqw}
+.layer .lowner{margin-left:auto; font-family:var(--mono); font-size:.95cqw; color:var(--faint); white-space:nowrap}
+.layer .lmain{display:flex; align-items:baseline; gap:1cqw; flex-wrap:wrap}
+.layer.l4{border-left-color:var(--amber)} .layer.l4 .lno{color:var(--amber)}
+.layer.l3{border-left-color:var(--teal)}
+.layer.l2{border-left-color:var(--mint)} .layer.l2 .lno{color:var(--mint)}
+.layer.l1{border-left-color:var(--ink-2)} .layer.l1 .lno{color:var(--ink-2)}
+
+.flow{display:flex; align-items:stretch; gap:.8cqw; flex-wrap:nowrap}
+.step{
+  flex:1; background:var(--surface-2); border:1px solid var(--line); border-radius:2px;
+  padding:1.2cqw 1.1cqw; display:flex; flex-direction:column; gap:.45cqw; min-width:0;
+}
+.step .sn{font-family:var(--mono); font-size:.92cqw; color:var(--teal); letter-spacing:.1em}
+.step .st{font-size:1.16cqw; font-weight:600; line-height:1.32}
+.step .sd{font-size:1cqw; color:var(--muted); line-height:1.5}
+.arrow{align-self:center; color:var(--faint); font-size:1.5cqw; flex:none}
+
+.quote{
+  font-family:var(--serif); font-size:2.05cqw; line-height:1.5; color:var(--ink);
+  border-left:3px solid var(--amber); padding-left:2cqw; max-width:86%; letter-spacing:-.01em;
+}
+.quote small{display:block; font-family:var(--sans); font-size:1.1cqw; color:var(--muted); margin-top:1.2cqw; letter-spacing:0}
+
+.boundary{border:1px dashed var(--line-strong); border-radius:3px; padding:1.4cqw 1.6cqw; display:flex; flex-direction:column; justify-content:center; gap:.9cqw}
+.boundary .bt{font-family:var(--mono); font-size:.95cqw; letter-spacing:.13em; text-transform:uppercase; color:var(--faint)}
+
+/* cover */
+.slide.is-cover{justify-content:center; gap:0}
+.cover-mark{font-family:var(--mono); font-size:1.1cqw; letter-spacing:.3em; text-transform:uppercase; color:var(--amber)}
+.cover-h{font-size:4.4cqw; font-weight:600; letter-spacing:-.03em; line-height:1.12; margin-top:1.6cqw}
+.cover-h span{font-family:var(--serif); font-weight:400; color:var(--teal)}
+.cover-sub{font-size:1.5cqw; color:var(--muted); margin-top:1.6cqw; max-width:64%; line-height:1.6}
+.cover-meta{margin-top:3.2cqw; display:flex; gap:2.6cqw; font-family:var(--mono); font-size:1.02cqw; color:var(--faint); letter-spacing:.04em; flex-wrap:wrap}
+.cover-meta b{color:var(--ink-2); font-weight:500}
+
+/* notes */
+.notes{
+  border:1px solid var(--line); border-top:0; background:var(--surface-2);
+  border-radius:0 0 3px 3px; font-size:13px;
+}
+.notes summary{
+  cursor:pointer; padding:9px 16px; font-family:var(--mono); font-size:11px;
+  letter-spacing:.13em; text-transform:uppercase; color:var(--muted); list-style:none;
+}
+.notes summary::-webkit-details-marker{display:none}
+.notes summary::before{content:"▸ "; color:var(--teal)}
+.notes[open] summary::before{content:"▾ "}
+.notes summary:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
+.notes .nbody{padding:2px 20px 18px; color:var(--ink-2); line-height:1.72; max-width:74ch}
+.notes .nbody p{margin-bottom:9px}
+.notes .nbody p:last-child{margin-bottom:0}
+.notes .nbody b{color:var(--ink); font-weight:600}
+.notes .nbody .say{
+  border-left:2px solid var(--amber); padding-left:12px; font-family:var(--serif);
+  font-size:15px; color:var(--ink);
+}
+.notes .nbody .warnline{color:var(--risk); font-weight:500}
+
+.tag-row{display:flex; gap:5px; padding:7px 16px 0; flex-wrap:wrap}
+.tag{font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); border:1px solid var(--line); border-radius:99px; padding:2px 8px}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static; height:auto; padding:20px}
+  .tracks{flex-direction:row; flex-wrap:wrap}
+  .track-btn{width:auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important; animation:none !important}}
+
+/* ── print / PDF ──────────────────────────────────── */
+@page{size:1280px 720px; margin:0}
+@media print{
+  body{background:#fff}
+  .rail,.stage-head,.notes,.tag-row{display:none !important}
+  .stage{padding:0}
+  .deck{max-width:none; gap:0}
+  .slide-wrap[hidden]{display:none !important}
+  .slide{
+    width:1280px; height:720px; aspect-ratio:auto; border:0; border-radius:0;
+    box-shadow:none; break-after:page; page-break-after:always;
+  }
+  .slide::before{background:var(--teal) !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+}
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="트랙 선택">
+    <div class="rail-mark">CowTalk v5</div>
+    <div class="rail-title">축산 디지털<br>운영체제</div>
+    <div class="rail-sub">지자체 · 국가 · 전문가 · 해외정부<br>소개 · 교육 · 사업제안 통합덱</div>
+    <hr class="rail-hr">
+    <div class="rail-label">청중 트랙</div>
+    <div class="tracks" id="tracks"></div>
+    <hr class="rail-hr">
+    <div class="rail-label">발표 전 확인</div>
+    <p class="rail-note">
+      <b>①</b> 당일 수치는 <code>/api/public/stats</code>로 확인<br>
+      <b>②</b> 서버 pre-warm 15분 전<br>
+      <b>③</b> 시연 실패 대비 녹화본 준비
+    </p>
+  </nav>
+
+  <main class="stage">
+    <div class="stage-head">
+      <div>
+        <h1 id="trackName">전체 덱</h1>
+        <p id="trackDesc">모든 트랙의 슬라이드를 순서대로 표시합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="tool" id="notesBtn" type="button">노트 모두 펼치기</button>
+        <button class="tool" id="printBtn" type="button">인쇄 · PDF</button>
+      </div>
+    </div>
+    <div class="deck" id="deck"></div>
+  </main>
+</div>
+
+<script>
+const TRACKS = [
+  {id:'all',   name:'전체 덱',            desc:'모든 트랙의 슬라이드를 순서대로 표시합니다.'},
+  {id:'core',  name:'공통 · 코어',        desc:'어떤 청중에게도 먼저 말해야 하는 기본 9장.'},
+  {id:'local', name:'지역정부 (지자체)',  desc:'예산과 성과. 결재 문장 = "우리 도가 먼저 했다".'},
+  {id:'natl',  name:'국가 · 방역기관',    desc:'전국 표준과 데이터 주권. 결재 문장 = "이게 표준이 될 수 있다".'},
+  {id:'vet',   name:'전문가 · 거점병원',  desc:'수의사·수정사. 결재 문장 = "대체가 아니라 증폭이다".'},
+  {id:'biz',   name:'파트너 · 비즈니스',  desc:'4주체 구조와 수익 모델. 투자·파트너 협상용.'},
+  {id:'intl',  name:'Overseas (EN)',      desc:'해외 정부 관계자. 결재 문장 = "주권을 지키며 도입 가능하다".'},
+];
+
+const S = [];
+const add = (o) => S.push(o);
+
+/* ══ COVER ══ */
+add({t:['core'], cover:true, body:`
+  <div class="cover-mark">Livestock Digital Operating System</div>
+  <h2 class="cover-h">소가 말하지 못하는 것을<br><span>국가가 듣는다</span></h2>
+  <p class="cover-sub">위내센서 · 공공데이터 · AI 해석 · 역할별 액션플랜을 하나로 묶은
+  축산 디지털 운영체제. 한 마리의 소에서 시작해 전국 방역까지 하나의 데이터 척추로 잇습니다.</p>
+  <div class="cover-meta">
+    <span>CowTalk <b>v5.0</b></span>
+    <span>운영 규모 <b>약 200 농장 · 1.1만 두</b></span>
+    <span>파일럿 <b>경기도 · 송영신목장</b></span>
+    <span><b>D2O Corp</b></span>
+  </div>`,
+  n:`<p><b>첫 30초가 전부다.</b> 회사 소개로 시작하지 않는다. 문제로 시작한다.</p>
+     <p class="say">"오늘 기술 설명을 하러 온 게 아닙니다. 소가 아프다고 말하지 않는다는 것,
+     그리고 그걸 아무도 제때 알 수 없다는 것 — 이 문제를 어떻게 풀었는지 말씀드리러 왔습니다."</p>
+     <p class="warnline">규모 수치는 발표 당일 <code>/api/public/stats</code>로 확인하고 말한다. 반올림해서 말한다.</p>`});
+
+/* ══ CORE ══ */
+add({t:['core'], eyebrow:'제언', stage:'무엇을',
+  title:'축산의 위기는 데이터의 위기다. <em>보이지 않는 것은 관리할 수 없다.</em>',
+  lede:'사람이 줄고, 질병은 늦게 발견되고, 데이터는 있는데 연결되지 않는다. 세 문제는 하나의 뿌리를 갖는다.',
+  body:`<div class="cols c3">
+    <div class="card"><div class="kicker">벽 1 · 사람</div><h4>지키는 사람이 사라진다</h4>
+      <p>축산 현장 고령화, 대동물 수의사 감소. 왕진 한 건에 왕복 두 시간. <strong>사람이 주는 속도를 기술이 못 따라가면 축산은 관리 불능이 된다.</strong></p></div>
+    <div class="card"><div class="kicker">벽 2 · 질병</div><h4>항상 늦게 발견된다</h4>
+      <p>소는 아프다고 말하지 않는다. 눈에 보일 때는 늦다. <strong>첫 신고 시점에 확산은 이미 시작된 상태</strong>다. 방역은 사후 대응의 반복이 된다.</p></div>
+    <div class="card"><div class="kicker">벽 3 · 데이터</div><h4>있는데 닿지 않는다</h4>
+      <p>이력제·등급·DHI·KAHIS·기상이 전부 존재한다. 그런데 <strong>농가 한 사람이 그걸 자기 소 한 마리에 연결하는 일은 불가능</strong>하다.</p></div>
+  </div>`,
+  n:`<p>이 장은 <b>공감을 사는 장</b>이다. 우리 제품 얘기를 아직 하지 않는다.</p>
+     <p>청중이 지자체·국가면 벽 2(질병)에 무게를 싣고, 수의계면 벽 1(사람)에 싣는다. 농가면 벽 3(데이터)이다.</p>
+     <p class="say">"이 세 가지 중 여러분이 가장 아프신 게 뭡니까?" — 이렇게 물으면 나머지 발표의 방향이 잡힌다.</p>`});
+
+add({t:['core'], eyebrow:'해법', stage:'어떻게',
+  title:'세계 최고의 센서도 <em>"그래서 뭘 해야 하나"</em>에는 답하지 않는다',
+  lede:'위내센서는 이미 존재한다. 문제는 알람과 행동 사이에 다리가 없다는 것이다. CowTalk은 그 다리다.',
+  body:`<div class="flow">
+    <div class="step"><div class="sn">01 감지</div><div class="st">발정 감지</div><div class="sd">위내센서가 체온·활동량 변화를 포착</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">02 판단</div><div class="st">맥락 결합</div><div class="sd">이력·산차·최근 치료·목장 설정을 한 화면에</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">03 추천</div><div class="st">수정 적기 · 정액</div><div class="sd">내일 06시, 추천 정액과 그 근거</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">04 행동</div><div class="st">현장 실행</div><div class="sd">수정사에게 전달, 정액 공급</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">05 학습</div><div class="st">결과 피드백</div><div class="sd">임신감정 결과가 다음 추천을 정확하게</div></div>
+  </div>`,
+  foot:['핵심','알람 → 판단 → 추천 → 행동 → 기록이 <strong>한 화면에서 끝난다.</strong> 이것이 CowTalk이 존재하는 유일한 이유다.'],
+  n:`<p>이 장이 <b>전체 덱의 심장</b>이다. 다른 걸 다 잊어도 이 다섯 칸은 기억하게 만든다.</p>
+     <p class="say">"발정 알람이 왔습니다. 그래서요? 지금까지는 목장주가 혼자 판단했습니다.
+     언제 수정할지, 어떤 정액을 쓸지, 이 소가 지난달 유방염 치료했는데 괜찮은지 — 아무도 알려주지 않았습니다."</p>
+     <p>05(학습) 칸을 손가락으로 짚으면서 말한다: "그리고 결과가 돌아와야 다음이 정확해집니다. 이게 순환 구조입니다."</p>`});
+
+add({t:['core'], eyebrow:'구조', stage:'어떻게',
+  title:'센서 위에 <em>세 개의 레이어</em>를 얹는다',
+  lede:'smaXtec을 복제하지 않는다. 그 위에 공공데이터·AI·다중역할을 쌓아 계층을 다르게 한다.',
+  body:`<div class="stack-layers">
+    <div class="layer l4"><div class="lno">Layer 4</div><div><div class="lmain"><div class="lname">Intelligence Loop — 쓸수록 똑똑해진다</div><div class="lowner">피드백 · 정확도 추적</div></div><div class="ldesc">전문가 레이블 축적 · 프롬프트 자기보정 · 치료결과 자동 추적</div></div></div>
+    <div class="layer l3"><div class="lno">Layer 3</div><div><div class="lmain"><div class="lname">역할별 서빙 — 같은 데이터, 네 개의 관점</div><div class="lowner">농가 · 수의사 · 방역관 · 행정</div></div><div class="ldesc">권한 경계가 게이트웨이 수준에서 강제된다</div></div></div>
+    <div class="layer l2"><div class="lno">Layer 2</div><div><div class="lmain"><div class="lname">AI 해석 — 재판단하지 않고 맥락을 붙인다</div><div class="lowner">설명 · 근거 필수</div></div><div class="ldesc">모든 판단에 explanation + 기여요인 + 출처 기록. AI 불가 시 룰 엔진 대체</div></div></div>
+    <div class="layer l1"><div class="lno">Layer 1</div><div><div class="lmain"><div class="lname">데이터 통합 — 흩어진 것을 한 마리에 모은다</div><div class="lowner">센서 · 공공 · 기록 · 기상</div></div><div class="ldesc">위내센서 이벤트 + 이력제·등급·경락 + 농장기록 + 기상 THI</div></div></div>
+  </div>`,
+  n:`<p>아래에서 위로 설명한다. 1층부터. 위로 갈수록 가치가 커진다는 감각을 준다.</p>
+     <p><b>2층에서 반드시 짚을 것:</b> "센서 제조사가 검증한 이벤트는 재판단하지 않습니다.
+     우리가 다시 뒤집으면 정확도만 떨어집니다. 우리가 하는 건 <b>맥락을 붙이는 것</b>입니다."</p>
+     <p>4층이 나오면 대부분 "정말 학습됩니까?"를 묻는다. → 전문가 레이블 슬라이드로 넘길 준비를 해둔다.</p>`});
+
+add({t:['core','natl'], eyebrow:'데이터 통합', stage:'어떻게',
+  title:'소 한 마리에 번호가 넷. <em>지금까지 따로 살고 있었다.</em>',
+  lede:'이 네 개를 한 개체로 묶는 것이 CowTalk의 기술적 해자다. 센서만으로는 "열이 난다"까지밖에 못 간다.',
+  body:`<div class="cols c25">
+    <table class="t">
+      <thead><tr><th>번호</th><th>발급 주체</th><th>플랫폼에서의 역할</th></tr></thead>
+      <tbody>
+        <tr><td><strong>이력제 번호</strong> (12자리)</td><td>국가 · 출생 2주 내</td><td>공공데이터 조회 키</td></tr>
+        <tr><td><strong>목장 관리번호</strong></td><td>농장 자체</td><td>현장에서 부르는 이름</td></tr>
+        <tr><td><strong>혈통등록번호</strong></td><td>종축개량협회</td><td>근교계수 · 유전능력</td></tr>
+        <tr><td><strong>센서 시리얼</strong></td><td>smaXtec</td><td>실시간 생체신호</td></tr>
+      </tbody>
+    </table>
+    <div class="card accent"><div class="kicker">결합의 값</div>
+      <h4>"열이 난다"에서<br>"우선순위 1번, 예상손실 X원"으로</h4>
+      <p>이력·혈통·등급·시세가 붙어야 <strong>3산차 고능력우, 유방염 이력 있음, 지금 발열 → 우선 처치</strong>가 된다.
+      번호를 잇는 일이 곧 판단을 잇는 일이다.</p></div>
+  </div>`,
+  n:`<p>축산 관계자에게는 <b>설명이 필요 없는 장</b>이다. 네 개 번호가 따로 논다는 걸 그들이 더 잘 안다.</p>
+     <p>해외 발표에서는 이 장을 <b>"identifier fragmentation"</b>으로 일반화해서 말한다. 나라마다 번호 체계는 다르지만 파편화는 어디나 같다.</p>`});
+
+add({t:['core'], eyebrow:'역할', stage:'어떻게',
+  title:'같은 한 마리의 소가, <em>보는 사람에 따라 다른 의미</em>를 갖는다',
+  lede:'농가에겐 내일 수정할 소, 방역관에겐 3km 반경 접촉 개체, 행정관에겐 통계 1건. 하나의 데이터 척추 위에 네 관점을 세운다.',
+  body:`<div class="cols c4">
+    <div class="card"><div class="kicker">농장주</div><h4>내 소 한 마리</h4>
+      <p>오늘 할 일 · 발정 · 분만 알림 · 두당 마진</p></div>
+    <div class="card"><div class="kicker">수의사</div><h4>담당 목장 여러 개</h4>
+      <p>위험 개체 트리아지 · 감별진단 · 왕진 동선 · 처방과 휴약</p></div>
+    <div class="card"><div class="kicker">방역관</div><h4>지역 전체</h4>
+      <p>집단 발열 · 접촉망 · 확산 시뮬레이션 · 역학조사</p></div>
+    <div class="card"><div class="kicker">행정</div><h4>시도 · 전국</h4>
+      <p>수급 · 정책 브리핑 · 예산 근거 · 성과 지표</p></div>
+  </div>`,
+  foot:['권한','네 역할의 접근 권한은 <strong>게이트웨이 수준에서 강제</strong>된다. 권한 밖 데이터는 조회 자체가 차단되고, 모든 조회는 감사 로그에 남는다.'],
+  n:`<p>청중이 속한 역할 칸을 손으로 짚으면서 시작한다. "여러분은 여기 계십니다."</p>
+     <p><b>foot의 권한 문장이 이 장의 진짜 메시지다.</b> 특히 국가·해외 청중은 여기서 안심한다.
+     "역할을 나눴다"가 아니라 "구조적으로 못 넘어간다"고 말해야 한다.</p>`});
+
+add({t:['core','natl'], eyebrow:'검증', stage:'그래서',
+  title:'주장이 아니라 <em>코드 감사 결과</em>로 말한다',
+  lede:'마케팅 문구와 실제 코드를 1:1로 대조한 감사 기록이 저장소에 있다. 아래는 "현재 작동"으로 검증된 항목이다.',
+  body:`<div class="cols c2">
+    <table class="t">
+      <thead><tr><th>영역</th><th>검증된 기능</th></tr></thead>
+      <tbody>
+        <tr><td><strong>AI 어시스턴트</strong></td><td>MCP 도구 25종 · 역할별 접근제어 · 감사로그 · 음성 입출력 · 방역모드 자동전환</td></tr>
+        <tr><td><strong>방역 · 역학</strong></td><td>전국→시도→농장→개체 드릴다운 · <strong>SEIR 미분방정식 확산 시뮬</strong> · 접촉망 추적 · 역학조사 DB · KAHIS 보고</td></tr>
+        <tr><td><strong>번식 AI</strong></td><td>6단계 칸반 · 수정적기(AM-PM) · 발정동기화 4종 프로토콜 · 정액 추천</td></tr>
+      </tbody>
+    </table>
+    <table class="t">
+      <thead><tr><th>영역</th><th>검증된 기능</th></tr></thead>
+      <tbody>
+        <tr><td><strong>조기감지</strong></td><td>질병징후지수 DSI 0~100, 70 이상 자동 경보</td></tr>
+        <tr><td><strong>공공데이터</strong></td><td>이력제(EKAPE) 실연동 · 등급판정 · 경락가격</td></tr>
+        <tr><td><strong>수의 임상</strong></td><td>감별진단 확률·근거·확인검사 트리 · 처방전 PDF · <strong>휴약기간 자동계산</strong> · 치료결과 추적</td></tr>
+        <tr><td><strong>행정</strong></td><td>4역할 RBAC · CSV/XLSX 내보내기 · 월간 리포트 · 자동화 룰 엔진</td></tr>
+      </tbody>
+    </table>
+  </div>`,
+  n:`<p>이 장은 <b>빠르게 넘긴다</b>. 읽어주지 않는다. 한 문장만 말하고 다음 장으로 간다.</p>
+     <p class="say">"이건 제가 주장하는 게 아니라, 코드를 파일 단위로 감사한 기록입니다. 그 문서도 드릴 수 있습니다."</p>
+     <p>질문이 나오면 그때 해당 줄을 짚는다. 미리 다 설명하면 지루해지고 오히려 안 믿는다.</p>`});
+
+add({t:['core'], eyebrow:'정직성', stage:'그래서',
+  title:'그리고 <em>아직 안 되는 것</em>을 먼저 말씀드립니다',
+  lede:'심의도 계약도, "다 됩니다"보다 "이건 됐고 이건 로드맵입니다"를 더 신뢰합니다.',
+  body:`<div class="cols c3">
+    <div class="card warn"><div class="kicker">로드맵 1</div><h4>젖소 혈통·DHI 정밀 연동</h4>
+      <p>현재는 내부·등급 데이터 기반 추천이고 <strong>신뢰도를 화면에 표시</strong>합니다. 어댑터는 준비됐고 연동 시 자동 정밀화됩니다. <strong>기술 문제가 아니라 데이터 거버넌스 문제</strong>입니다.</p></div>
+    <div class="card warn"><div class="kicker">로드맵 2</div><h4>역학조사 기상 실연동</h4>
+      <p>일부 구간에 추정값이 섞여 있습니다. 실 기상 API 연동과 주간 추이 히스토리 적재가 남았습니다.</p></div>
+    <div class="card warn"><div class="kicker">로드맵 3</div><h4>해외 종모우 · 오프라인 내성</h4>
+      <p>해외 유전평가 데이터 연동과 통신 불안정 지역용 오프라인 큐잉은 수출 단계 과제입니다.</p></div>
+  </div>`,
+  foot:['원칙','이 장을 넣는 순간 <strong>앞 장 전부의 신뢰도가 올라간다.</strong> 빼면 앞 장 전부가 의심받는다.'],
+  n:`<p><b>이 슬라이드를 빼자는 제안이 반드시 나온다. 절대 빼지 마라.</b></p>
+     <p>실제 심의·계약에서 가장 자주 나오는 질문이 "안 되는 건 뭡니까?"다.
+     그때 준비된 답이 있으면 신뢰가 완성되고, 없으면 그때까지 말한 전부가 흔들린다.</p>
+     <p class="say">"저희가 이걸 먼저 말씀드리는 이유는, 파일럿에서 드러나면 그때는 회복이 안 되기 때문입니다."</p>`});
+
+/* ══ LOCAL GOV ══ */
+add({t:['local'], eyebrow:'지역정부', stage:'무엇을',
+  title:'지자체는 지금 <em>관내 축산을 실시간으로 볼 수 없다</em>',
+  lede:'사고가 나야만 정보가 행정에 도달한다. 그 사이의 며칠이 방역의 성패를 가른다.',
+  body:`<div class="cols c52">
+    <div class="card risk"><div class="kicker">지금</div><h4>사후 인지</h4>
+      <p>농가 신고 → 행정 확인 → 검사 → 대응.<br><strong>신고 시점에 확산은 이미 진행 중</strong>이다.</p></div>
+    <div>
+      <div class="metrics">
+        <div class="metric"><div class="fig">전국</div><div class="lab">시도별 위험등급과 발열률을 한 화면에</div></div>
+        <div class="metric"><div class="fig">시도</div><div class="lab">클릭 한 번으로 관내 농장 목록과 좌표</div></div>
+        <div class="metric"><div class="fig">농장</div><div class="lab">농장별 두수 · 알림 · 접촉 이력</div></div>
+        <div class="metric amber"><div class="fig">개체</div><div class="lab">그 소의 센서 추이와 AI 해석까지</div></div>
+      </div>
+      <div class="card" style="margin-top:1.5cqw"><div class="kicker">드릴다운</div>
+        <p><strong>전국 → 시도 → 농장 → 개체 → AI 판단이 한 화면에서 끊기지 않는다.</strong>
+        상황실에서 시작해 소 한 마리까지 내려가는 데 클릭 네 번이면 된다.</p></div>
+    </div>
+  </div>`,
+  n:`<p><b>여기서 실제 시연을 한다.</b> 슬라이드보다 화면이 강하다.</p>
+     <p>반드시 <b>참가 지자체의 실제 데이터</b>로 연다. 빈 화면이면 설득력이 0이 된다. D-7 체크리스트 항목이다.</p>
+     <p class="say">"지금 이 화면은 데모가 아닙니다. 실제 DB에서 방금 집계한 숫자입니다.
+     이 농장들이 지금 이 순간 소 몸속 센서로 연결되어 있습니다."</p>`});
+
+add({t:['local','natl'], eyebrow:'방역', stage:'그래서 · 결과 ①',
+  title:'집단 발열이 뜨면, <em>확산을 계산해서 보여준다</em>',
+  lede:'그림이 아니라 SEIR 미분방정식 계산 결과다. 이동제한을 걸었을 때와 안 걸었을 때의 차이를 정량으로 비교한다.',
+  body:`<div class="cols c4">
+    <div class="card"><div class="kicker">01 탐지</div><h4>집단 발열 감지</h4><p>농장 단위 이상 징후를 클러스터로 자동 포착</p></div>
+    <div class="card"><div class="kicker">02 추적</div><h4>접촉망 분석</h4><p>실제 이동이력 기반 접촉 개체·농장 추적. 이동데이터 없으면 지역 기반 폴백</p></div>
+    <div class="card accent"><div class="kicker">03 예측</div><h4>SEIR 확산 시뮬</h4><p>R0·잠복기·감염기간으로 확산 곡선 계산. <strong>이동제한 시나리오 비교</strong></p></div>
+    <div class="card"><div class="kicker">04 보고</div><h4>역학조사 · KAHIS</h4><p>6항목 자동수집 · 조사 기록 영속화 · 국가 보고 상태 관리</p></div>
+  </div>`,
+  foot:['옵션 가치','전염병을 <strong>한 번만 막으면</strong> 시스템 비용은 그 자체로 회수된다. 이건 투자가 아니라 보험이다.'],
+  n:`<p>03(SEIR) 카드에서 멈춘다. 여기가 이 장의 무게중심이다.</p>
+     <p class="say">"이건 그림이 아니라 미분방정식 계산 결과입니다. 이동제한을 걸었을 때와 안 걸었을 때
+     며칠 뒤에 몇 농가 차이가 나는지를 숫자로 냅니다. 행정 결정에 근거가 생기는 겁니다."</p>
+     <p><b>주의:</b> 시뮬레이션 파라미터(R0 등)는 질병별 문헌값이다. "우리가 예측한다"가 아니라 "표준 모형으로 계산한다"고 말한다.</p>`});
+
+add({t:['local'], eyebrow:'ROI', stage:'그래서 · 결과 ②',
+  title:'연 <em>180억</em>은 비용이 아니라 <em>보험료</em>다',
+  lede:'경기 젖소 10만두 · 1,500 농가 · 두당 월 15,000원 · 기지국 500만원/농가 전제.',
+  body:`<div class="cols c2">
+    <table class="t">
+      <thead><tr><th>비용</th><th class="num">금액</th></tr></thead>
+      <tbody>
+        <tr><td>1년차 (구축 포함)</td><td class="num"><strong>255억</strong></td></tr>
+        <tr><td>2년차 ~ 매년</td><td class="num"><strong>180억</strong></td></tr>
+        <tr><td>5년 누적</td><td class="num">975억</td></tr>
+      </tbody>
+    </table>
+    <table class="t">
+      <thead><tr><th>농가 편익 (두당 24만원/년)</th><th class="num">금액</th></tr></thead>
+      <tbody>
+        <tr><td>번식효율 개선 (공태일 단축)</td><td class="num">100,000원</td></tr>
+        <tr><td>질병 조기대응</td><td class="num">60,000원</td></tr>
+        <tr><td>산유량 향상</td><td class="num">50,000원</td></tr>
+        <tr><td>노동 절감</td><td class="num">30,000원</td></tr>
+        <tr class="sum"><td>10만두 환산</td><td class="num">연 240억</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="fig">1.5</div><div class="lab">기본 BCR (농가 생산성 편익만)</div></div>
+    <div class="metric amber"><div class="fig">5.0</div><div class="lab">통합 BCR (사회·환경 포함, 보수 3.7~5.5)</div></div>
+    <div class="metric"><div class="fig">2.8년</div><div class="lab">투자 회수 기간</div></div>
+    <div class="metric"><div class="fig">+195억</div><div class="lab">5년 순편익 (기본 시나리오)</div></div>
+  </div>`,
+  n:`<p><b>전제 네 가지를 반드시 먼저 말한다.</b> 전제 없는 숫자는 반드시 반격당한다.</p>
+     <p>"BCR 5.0이 너무 높은 것 아닙니까"는 거의 확실히 나온다. 준비된 답:</p>
+     <p class="say">"정확한 지적입니다. 5.0의 대부분은 사회·환경 편익이고 그건 추정치가 섞여 있습니다.
+     <b>보수적으로 1.5로 보시고, 나머지는 옵션가치로 보시면 됩니다.</b>"</p>
+     <p>이렇게 답하면 오히려 1.5의 신뢰도가 올라간다.</p>`});
+
+add({t:['local','natl'], eyebrow:'사회 · 환경', stage:'그래서 · 결과 ③',
+  title:'적게 키우고 더 잘 짠다 — <em>축산 정책이자 환경 정책</em>',
+  lede:'번식효율이 오르고 생애수명이 늘면 후보축(육성우)을 덜 키워도 된다. 사육두수는 줄고 우유 총생산량은 유지된다.',
+  body:`<div class="cols c52">
+    <div class="card accent"><div class="kicker">메커니즘</div><h4>두수 ↓ · 생산량 →</h4>
+      <p>공태일이 줄고 폐사가 줄면 대체 후보축 수요가 줄어든다. 경기 육성우 약 8만두 중
+      <strong>3.6만두 감축</strong>을 기본 시나리오로 본다.</p></div>
+    <table class="t">
+      <thead><tr><th>육성우 3.6만두 감축 기준</th><th class="num">연간 효과</th></tr></thead>
+      <tbody>
+        <tr><td>사료비 절감 (농가)</td><td class="num"><strong>432억</strong></td></tr>
+        <tr><td>분뇨 배출 28.8만톤 감소 → 처리비</td><td class="num">86억</td></tr>
+        <tr><td>탄소 10.8만톤 CO₂eq 저감 → 사회적 가치</td><td class="num">108억</td></tr>
+        <tr class="sum"><td>사회 · 환경 소계</td><td class="num">약 626억 / 년</td></tr>
+      </tbody>
+    </table>
+  </div>`,
+  foot:['보정 필요','육성우 감축률·탄소 사회적가치 단가·낙농 원단위는 <strong>문헌 기반 추정</strong>이다. 해당 지자체 실측으로 보정해야 한다 — 이것이 파일럿의 목적이다.'],
+  n:`<p><b>지자체 발표에서 가장 크게 먹히는 장이다.</b> 축산과 예산이 환경 성과로 연결되기 때문이다.</p>
+     <p class="say">"이건 축산 정책이면서 동시에 환경 정책입니다. 악취 민원, 탄소중립, 분뇨 처리 —
+     지금 지자체가 가장 아픈 세 가지가 한꺼번에 움직입니다."</p>
+     <p class="warnline">foot의 보정 고지를 반드시 소리 내어 말한다. 이 고지가 오히려 숫자 전체의 신뢰를 만든다.</p>`});
+
+add({t:['local'], eyebrow:'요청', stage:'그래서',
+  title:'저희 숫자가 아니라 <em>여러분 지역의 숫자</em>를 만드는 것',
+  lede:'파일럿의 목적은 시연이 아니라 그 지역의 실측 근거를 확보하는 것이다.',
+  body:`<div class="cols c3">
+    <div class="card"><div class="kicker">요청 1</div><h4>시범사업</h4>
+      <p>일부 시군 + 공수의사 대상 실증. 규모보다 <strong>지표 사전 합의</strong>가 중요하다.</p></div>
+    <div class="card"><div class="kicker">요청 2</div><h4>데이터 연계 협조</h4>
+      <p>KAHIS · 이력제 · 도 방역 데이터 연동을 위한 행정 협조.</p></div>
+    <div class="card"><div class="kicker">요청 3</div><h4>확산 로드맵 공동 수립</h4>
+      <p>도 전역 → 전국 표준화까지의 단계를 함께 설계.</p></div>
+  </div>
+  <div class="card accent"><div class="kicker">사전 합의할 성과지표</div>
+    <p><strong>조기감지 리드타임</strong> (증상 발현 대비 며칠 빨랐나) · <strong>조치 기록률</strong> (알림이 행동으로 이어진 비율) ·
+    공태일 · 수태율 · 두당 일 마진 · 방역 대응 시간</p></div>`,
+  n:`<p>마무리는 <b>요청 세 개로 짧게</b>. 여기서 새 정보를 넣지 않는다.</p>
+     <p><b>성과지표를 우리가 먼저 제안하는 것</b>이 핵심이다. 평가받을 기준을 스스로 내미는 벤더는 드물고, 그게 신뢰가 된다.</p>
+     <p class="say">"평가 기준을 저희가 먼저 제안드리겠습니다. 이 지표가 안 움직이면 확산하지 마십시오."</p>`});
+
+/* ══ NATIONAL ══ */
+add({t:['natl'], eyebrow:'국가', stage:'무엇을',
+  title:'국가 방역의 데이터는 <em>신고된 것</em>에서 시작한다',
+  lede:'그 이전의 며칠이 비어 있다. 그 공백이 확산 규모를 결정한다.',
+  body:`<div class="flow">
+    <div class="step" style="border-color:var(--risk)"><div class="sn" style="color:var(--risk)">공백 구간</div><div class="st">생체 이상 발생</div><div class="sd">센서는 알지만 아무도 보지 않음</div></div>
+    <div class="arrow">→</div>
+    <div class="step" style="border-color:var(--risk)"><div class="sn" style="color:var(--risk)">공백 구간</div><div class="st">임상 증상 출현</div><div class="sd">농가가 눈으로 확인</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">기존 시작점</div><div class="st">신고</div><div class="sd">여기서부터 국가 시스템이 작동</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">기존</div><div class="st">확인 · 검사</div><div class="sd">행정 절차</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">기존</div><div class="st">대응</div><div class="sd">이동제한 · 살처분</div></div>
+  </div>`,
+  foot:['포지셔닝','CowTalk은 KAHIS를 <strong>대체하지 않는다.</strong> 앞의 두 칸을 채워서 넘긴다 — 조기감시 레이어(Early Warning Layer)다.'],
+  n:`<p><b>중앙부처 발표에서 가장 중요한 한 장.</b> 여기서 "대체하러 왔다"로 읽히면 그 순간 끝난다.</p>
+     <p class="say">"KAHIS는 완결된 시스템입니다. 저희가 손댈 이유가 없습니다.
+     저희가 보는 건 <b>신고가 들어오기 전 며칠</b>입니다. 그 구간이 지금 비어 있습니다. 채워서 넘겨드리겠습니다."</p>
+     <p>빨간 테두리 두 칸을 손으로 짚으면서 말한다. 시각적으로 "빈칸"이 보이게.</p>`});
+
+add({t:['natl','intl'], eyebrow:'데이터 주권', stage:'어떻게',
+  title:'보안을 말로 하지 않고 <em>구조로</em> 증명한다',
+  lede:'심의에서 가장 먼저 나오는 질문이자, 해외 계약의 전제 조건이다. 네 가지 모두 구현되어 있다.',
+  body:`<div class="cols c2">
+    <div class="bul">
+      <li><strong>Data Spine 원칙</strong> — 모든 데이터는 DB를 거친다. AI가 파이프라인을 우회해 직접 판단하지 않는다.</li>
+      <li><strong>감사 로그 자동 기록</strong> — 모든 AI 도구 호출이 기록된다. 누가, 언제, 무엇을 근거로.</li>
+      <li><strong>게이트웨이 강제</strong> — 권한 밖 데이터는 조회 자체가 차단된다. 화면에서 숨기는 게 아니라 서버가 거부한다.</li>
+      <li><strong>기억의 권한 경계</strong> — AI 장기기억조차 그 계정 권한 안의 것만 회상한다. 권한 밖 맥락은 저장도 하지 않는다.</li>
+    </div>
+    <div class="boundary">
+      <div class="bt">Export Boundary · 반출 경계</div>
+      <div class="card" style="background:var(--surface);border-color:var(--line)"><div class="kicker" style="color:var(--risk)">나가지 않는 것</div>
+        <p>원시 센서 데이터 · 개체 식별정보 · 농가 식별정보 · 진료 및 처방 기록</p></div>
+      <div class="card" style="background:var(--surface);border-color:var(--line)"><div class="kicker">승인 시 나가는 것</div>
+        <p>익명화 · 집계된 통계만. 옵트인 + 익명화 + 집계 <strong>세 조건을 모두</strong> 만족할 때.</p></div>
+    </div>
+  </div>`,
+  n:`<p><b>이 장은 먼저 꺼낸다.</b> 질문받고 답하면 방어로 보이고, 먼저 말하면 설계로 보인다.</p>
+     <p>"민간 회사 서버에 국가 방역 데이터가 쌓이는 겁니까?"에 대한 답은 다음 장(4주체 구조)에 있다.
+     → "그래서 <b>데이터센터를 별도 주체로 분리</b>했습니다"로 이어간다.</p>`});
+
+add({t:['natl','vet'], eyebrow:'정책 연계', stage:'그래서',
+  title:'거점 대동물병원은 진료소이자 <em>방역 초소</em>가 된다',
+  lede:'임상 데이터와 방역 데이터가 처음으로 같은 화면에서 만난다. 지금까지 없던 구조다.',
+  body:`<div class="cols c52">
+    <div class="card accent"><div class="kicker">정책의 빈칸</div><h4>건물과 인력만으로는<br>총 진료 역량이 안 는다</h4>
+      <p>한 명이 볼 수 있는 농가 수가 그대로면 거점을 만들어도 커버리지는 그대로다.
+      <strong>거점이 성공하려면 원격 트리아지가 전제</strong>이고, 원격 트리아지는 소의 몸속 데이터가 있어야 가능하다.</p></div>
+    <div class="flow" style="flex-direction:column;gap:.6cqw">
+      <div class="step"><div class="sn">농가</div><div class="st">센서 이상징후</div><div class="sd">DSI 경보 → 거점병원 케이스 큐로 자동 유입</div></div>
+      <div class="step"><div class="sn">병원</div><div class="st">임상 판단 · 처치</div><div class="sd">감별진단 · 처방 · 휴약 관리 · 결과 추적</div></div>
+      <div class="step"><div class="sn">지역</div><div class="st">방역 상황판</div><div class="sd">집단 이상 시 접촉망 · 확산 시뮬 · 역학조사</div></div>
+      <div class="step"><div class="sn">국가</div><div class="st">KAHIS 보고</div><div class="sd">조사 결과가 국가 보고 체계로 연결</div></div>
+    </div>
+  </div>`,
+  n:`<p><b>거점병원 정책이 추진 중이라면 이 장이 발표의 승부처다.</b></p>
+     <p class="say">"건물과 장비만으로는 수의사가 늘지 않습니다. <b>한 분이 볼 수 있는 농가 수</b>가 늘어야 합니다.
+     그게 이 사업의 진짜 성과 지표가 되어야 하고, 저희가 그 지표를 움직이는 도구입니다."</p>
+     <p class="warnline">"원격 트리아지 ≠ 원격 진료"를 반드시 명시한다. 규제 리스크의 대부분이 이 한 줄로 정리된다.</p>`});
+
+add({t:['natl'], eyebrow:'로드맵', stage:'그래서',
+  title:'한 목장에서 시작해 <em>전국 표준</em>으로',
+  lede:'각 단계의 성공 기준을 미리 정해두고, 기준을 못 넘기면 다음 단계로 가지 않는다.',
+  body:`<table class="t">
+    <thead><tr><th>단계</th><th>목표</th><th>성공 기준</th></tr></thead>
+    <tbody>
+      <tr><td><strong>P0 · 파일럿</strong></td><td>송영신목장 + 경기 시군 실증</td><td>월간 리포트 3회, 두당 마진 추이 확보</td></tr>
+      <tr><td><strong>P1 · 지자체</strong></td><td>경기도 사업화</td><td>도 예산 편성, 100농가 이상 가동</td></tr>
+      <tr><td><strong>P2 · 거점병원</strong></td><td>지역거점 대동물병원 연계</td><td>병원 3곳 × 담당농가 30호, 커버리지 지표 개선</td></tr>
+      <tr><td><strong>P3 · 국가 표준</strong></td><td>방역 조기감시망 연계</td><td>KAHIS 연동, 타 시도 확산</td></tr>
+      <tr><td><strong>P4 · 수출 1호</strong></td><td>동남아 1개국 파일럿</td><td>G2G MOU + 소버린 인스턴스 구축</td></tr>
+      <tr><td><strong>P5 · 다국가</strong></td><td>3개국 이상</td><td>국가 라이선스 계약</td></tr>
+    </tbody>
+  </table>`,
+  n:`<p>P2(거점병원)가 P1과 <b>병행</b>이라는 점을 짚는다. 순차가 아니다.</p>
+     <p>P4를 말할 때 한 문장 덧붙인다: "대한민국 정부가 쓰는 시스템이라는 사실이 수출의 가장 강한 근거가 됩니다.
+     <b>국내 레퍼런스가 곧 수출 자산입니다.</b>"</p>`});
+
+/* ══ VET ══ */
+add({t:['vet'], eyebrow:'전문가', stage:'무엇을',
+  title:'대동물 임상이 <em>구조적으로</em> 무너지고 있다',
+  lede:'수의사들이 우리보다 더 잘 아는 문제다. 설명하지 말고 공감부터 한다.',
+  body:`<div class="cols c3">
+    <div class="card"><div class="kicker">인력</div><h4>신규 유입이 끊겼다</h4><p>신규 수의사 대부분이 반려동물로 간다. 대동물 임상은 고령화하고 공백이 커진다.</p></div>
+    <div class="card"><div class="kicker">시간</div><h4>이동이 진료보다 길다</h4><p>왕진 한 건에 왕복 1~2시간. 하루에 볼 수 있는 건수가 물리적으로 막혀 있다.</p></div>
+    <div class="card"><div class="kicker">정보</div><h4>도착해서야 안다</h4><p>출발 전에는 상태를 모른다. 재방문과 오판단의 위험이 여기서 생긴다.</p></div>
+    <div class="card"><div class="kicker">기록</div><h4>종이에 남는다</h4><p>진료부·처방전 수기. 이력이 끊기고 휴약 관리가 농가 기억에 의존한다.</p></div>
+    <div class="card"><div class="kicker">야간</div><h4>골든타임이 비어 있다</h4><p>야간·주말 응급 체계 부재. 아침에야 발견되는 경우가 많다.</p></div>
+    <div class="card"><div class="kicker">전승</div><h4>경험이 개인에 갇힌다</h4><p>은퇴하면 그 노하우가 사라진다. 다음 세대가 처음부터 다시 배운다.</p></div>
+  </div>`,
+  n:`<p><b>이 장은 빨리 넘긴다.</b> 수의사 청중에게 이 문제를 설명하면 무례하다. 공감만 표시하고 넘어간다.</p>
+     <p class="say">"제가 말씀드릴 내용이 아니라 선생님들이 매일 겪으시는 일입니다. 한 장만 확인하고 넘어가겠습니다."</p>
+     <p><b>단, "전승" 카드에서는 잠깐 멈춘다.</b> 나중에 전문가 레이블 슬라이드의 복선이 된다.</p>`});
+
+add({t:['vet'], eyebrow:'책임 경계', stage:'어떻게',
+  title:'AI는 진단하지 않는다. <em>감별을 돕는다.</em>',
+  lede:'수의사 대상 발표에서 이 15분이 전부다. 여기서 신뢰를 얻지 못하면 나머지는 의미가 없다.',
+  body:`<div class="cols c2">
+    <div class="card"><div class="kicker">시스템이 하는 것</div><h4>근거를 정리해서 보여준다</h4>
+      <ul class="bul dense" style="margin-top:.5cqw">
+        <li>6개 질병 감별 후보와 확률 순위</li>
+        <li><strong>근거를 항목별로 ✓ / ✗ / — 로 노출</strong> — 데이터가 없어 판단 못 한 항목은 '—'로 명시</li>
+        <li>무엇을 더 확인하면 확정되는지 검사 트리</li>
+        <li>근거가 약한 단일 후보가 100%로 부풀지 않도록 <strong>불확실성 보정</strong></li>
+      </ul></div>
+    <div class="card accent"><div class="kicker">시스템이 하지 않는 것</div><h4>진단하지 않는다. 처방하지 않는다.</h4>
+      <ul class="bul dense" style="margin-top:.5cqw">
+        <li><strong>최종 판단과 처방은 수의사의 권한</strong>이며 시스템이 대신하지 않는다</li>
+        <li>승인 없이 실행되는 처치는 <strong>구조적으로 없다</strong> — 자동화 룰조차 승인 게이트를 우회하지 못한다</li>
+        <li>수의사가 기각하면 <strong>그 기각도 기록</strong>된다</li>
+        <li>모든 판단은 감사 로그에 남아 사후 검증이 가능하다</li>
+      </ul></div>
+  </div>`,
+  foot:['표현 규칙','<strong>"AI가 진단합니다"라고 절대 말하지 않는다.</strong> "AI가 감별 후보와 근거를 정리합니다. 진단은 수의사가 합니다."'],
+  n:`<p><b>발표 순서를 지킨다: 오른쪽(하지 않는 것)을 먼저 말하고 왼쪽으로 간다.</b> 경계를 먼저 그어야 나머지를 듣는다.</p>
+     <p class="say">"이 세 가지에 동의하지 않으시면 나머지 시간은 의미가 없습니다. 질문 있으시면 지금 받겠습니다."</p>
+     <p>실제로 질문을 받고 답한 뒤 진행한다. 이 침묵을 견디는 게 이 발표의 기술이다.</p>
+     <p class="warnline">"정확도 95%"라고 말하지 않는다. 그건 센서 제조사 성능이지 우리가 측정한 값이 아니다.</p>`});
+
+add({t:['vet'], eyebrow:'하루의 변화', stage:'그래서',
+  title:'출발하기 전에 <em>이미 알고 있다</em>',
+  lede:'케이스 큐가 담당 농장 전체에서 위험 개체를 자동 정렬한다. 왕진은 위험도와 동선으로 재구성된다.',
+  body:`<div class="cols c2">
+    <div class="card risk"><div class="kicker">Before</div><h4>전화를 받고 출발한다</h4>
+      <p><strong>08:00</strong> "우리 소가 밥을 안 먹어요"<br>
+      <strong>09:30</strong> 출발 (편도 40분)<br>
+      <strong>10:10</strong> 도착 — 그제서야 상태 파악<br>
+      <strong>10:40</strong> 처치, 종이 진료부<br>
+      <strong>18:00</strong> 하루 4~5건. 기록은 사무실에서 정리<br>
+      휴약 관리는 농가 기억에 의존</p></div>
+    <div class="card accent"><div class="kicker">After</div><h4>큐를 보고 출발한다</h4>
+      <p><strong>07:30</strong> 담당 30농가 위험 개체 6두 자동 정렬<br>
+      <strong>07:40</strong> 왕진 경로 자동 구성 (위험도 × 동선)<br>
+      <strong>07:45</strong> 농가에 사전 지시 — 격리·보온·급수<br>
+      <strong>09:00</strong> 감별 후보와 근거를 검토한 상태로 진입<br>
+      <strong>09:20</strong> 처방 입력 → 처방전·휴약 종료일 자동 생성<br>
+      <strong>17:00</strong> 하루 7~8건. 기록은 이미 끝나 있음</p></div>
+  </div>
+  <div class="metrics">
+    <div class="metric wide"><div class="fig">4~5 → 7~8</div><div class="lab">일 진료 건수 (목표)</div></div>
+    <div class="metric amber wide"><div class="fig">15~20 → 30~40</div><div class="lab">담당 가능 농가 수 (목표)</div></div>
+    <div class="metric"><div class="fig">100%</div><div class="lab">현장 기록 완결률</div></div>
+    <div class="metric"><div class="fig">자동</div><div class="lab">휴약기간 계산 · 출하 안전 관리</div></div>
+  </div>`,
+  n:`<p class="warnline">숫자는 <b>설계 목표치</b>다. "시범사업으로 검증할 목표 지표"라고 반드시 말한다. 실측이라고 하면 안 된다.</p>
+     <p>휴약 자동계산은 <b>수의사보다 정부 청중에게 더 크게 먹힌다.</b> 항생제 잔류는 식품안전이자 통상 문제다.
+     정부 청중이 섞여 있으면 이 대목에서 한 문장 더 붙인다: "수출 축산물 안전성 입증에도 직결됩니다."</p>`});
+
+add({t:['vet'], eyebrow:'학습 루프', stage:'그래서',
+  title:'선생님의 판단이 <em>사라지지 않고 자산이 된다</em>',
+  lede:'은퇴하면 없어지던 노하우가 시스템에 남아 다음 세대가 쓴다. 이것이 수의계에 드리는 가장 큰 제안이다.',
+  body:`<div class="flow">
+    <div class="step"><div class="sn">01</div><div class="st">대화 중 판단</div><div class="sd">"이건 케토시스네"</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">02</div><div class="st">한 줄 확인</div><div class="sd">"레이블로 기록할까요?" — 동의 시에만</div></div>
+    <div class="arrow">→</div>
+    <div class="step accent"><div class="sn">03</div><div class="st">정답 레이블로 저장</div><div class="sd">매칭 알람 있으면 정답 레이블, 없으면 임상관찰로 보존</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">04</div><div class="st">통계 집계</div><div class="sd">오탐·확진률 추적, 표본 10건 미만이면 반영 금지</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="sn">05</div><div class="st">판단 개선</div><div class="sd">다음 달 이 시스템은 오늘보다 정확해진다</div></div>
+  </div>`,
+  foot:['데이터 위생','<strong>농장주와 행정관의 추측은 학습에서 제외된다.</strong> 전문가 판단만 정답 레이블로 쓴다 — 학습 데이터를 오염시키지 않기 위해서다.'],
+  n:`<p><b>수의계 대상 발표의 클로징 감정을 만드는 장이다.</b></p>
+     <p class="say">"선생님이 은퇴하시면 그 판단들이 어디로 갑니까? 지금은 사라집니다.
+     이 구조에서는 남습니다. 그리고 다음 세대가 그걸 쓰고 시작합니다."</p>
+     <p>foot의 '데이터 위생' 문장이 실무적으로 중요하다. 전문가는 "아무나의 입력이 섞이는가"를 가장 경계한다.</p>`});
+
+add({t:['vet'], eyebrow:'시범사업', stage:'그래서',
+  title:'거점병원 <em>3곳 × 농가 30호</em>, 12개월로 증명한다',
+  lede:'병원 부담 0. 시범사업 예산이 결제하고, 병원은 도구를 얻고, 정부는 정책 지표를 얻는다.',
+  body:`<div class="cols c2">
+    <table class="t">
+      <thead><tr><th>단계</th><th>기간</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td>준비</td><td>M1~M2</td><td>병원 선정, 농가 모집, 센서 설치, 교육</td></tr>
+        <tr><td><strong>기준선 측정</strong></td><td>M3</td><td>개입 전 지표 측정 — 이게 없으면 성과를 증명할 수 없다</td></tr>
+        <tr><td>운영</td><td>M4~M11</td><td>케이스 큐 기반 진료, 월간 리뷰</td></tr>
+        <tr><td>평가</td><td>M12</td><td>전후 비교, 확산 설계</td></tr>
+      </tbody>
+    </table>
+    <table class="t">
+      <thead><tr><th>예산 (3병원 12개월)</th><th class="num">금액</th></tr></thead>
+      <tbody>
+        <tr><td>센서·기지국 구축 (90농가)</td><td class="num">4.5억</td></tr>
+        <tr><td>플랫폼 이용료</td><td class="num">9.7억</td></tr>
+        <tr><td>병원 임상모듈</td><td class="num">0.11억</td></tr>
+        <tr><td>교육·운영 지원</td><td class="num">0.5억</td></tr>
+        <tr><td>평가·연구 위탁</td><td class="num">0.4억</td></tr>
+        <tr class="sum"><td>합계</td><td class="num">약 15.2억</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card accent"><div class="kicker">가장 강력한 단 하나의 지표</div>
+    <p><strong>증상 발현 대비 개입 리드타임</strong> — 며칠 빨리 발견했는가. 이 수치 하나가 시범사업의 성패를 설명한다.</p></div>`,
+  n:`<p><b>M3 기준선 측정</b>을 강조한다. 대부분의 시범사업이 여기를 건너뛰고 나중에 성과를 증명하지 못한다.</p>
+     <p class="say">"3개월째에 아무것도 안 하는 것처럼 보이는 구간이 있습니다. 기준선을 재는 시간입니다.
+     이걸 안 하면 12개월 뒤에 좋아졌다는 걸 증명할 방법이 없습니다."</p>
+     <p>규모는 협상 가능하다고 열어둔다. 중요한 건 <b>구조와 지표</b>지 규모가 아니다.</p>`});
+
+/* ══ BIZ ══ */
+add({t:['biz'], eyebrow:'파트너 구조', stage:'무엇을',
+  title:'네 주체가 <em>같은 층에서 경쟁하지 않게</em> 설계한다',
+  lede:'각자 다른 층을 소유하고 층과 층은 인터페이스로만 만난다. 한 주체가 빠져도 그 층만 교체하면 되는 것 — 국가 인프라의 조건이다.',
+  body:`<div class="stack-layers">
+    <div class="layer l4"><div class="lno">L4 · 거버넌스</div><div><div class="lmain"><div class="lname">데이터센터 — 주권 · 보관 · 감사</div><div class="lowner">국가 · 지자체 (또는 합작 SPC)</div></div><div class="ldesc">데이터 보관·연산·백업 · 접근통제 · 국가별 소버린 존 운영</div></div></div>
+    <div class="layer l3"><div class="lno">L3 · 플랫폼</div><div><div class="lmain"><div class="lname">D2O Corp — CowTalk 개발 · 운영</div><div class="lowner">SW IP 100% 보유</div></div><div class="ldesc">AI 해석 · 4역할 서비스 · 공공데이터 커넥터 · 현지화 어댑터</div></div></div>
+    <div class="layer l2"><div class="lno">L2 · 실행</div><div><div class="lmain"><div class="lname">코리아제네틱스 — 유전자원 · 시술</div><div class="lowner">유전자원 IP · 시술 네트워크</div></div><div class="ldesc">정액·수정란 공급 · 수정사 네트워크 · 번식 실행 · 수정 결과 데이터 생산</div></div></div>
+    <div class="layer l1"><div class="lno">L1 · 센싱</div><div><div class="lmain"><div class="lname">smaXtec — 위내센서 · 이벤트 엔진</div><div class="lowner">센서 IP · 알고리즘</div></div><div class="ldesc">위내 볼루스 · 농장 기지국 · 발정/분만/질병 이벤트</div></div></div>
+  </div>`,
+  foot:['설계 사상','아래층은 위층에 원천을 공급하고, 위층은 아래층에 수요를 만든다. <strong>플랫폼이 파트너의 영업사원이 되는 구조.</strong>'],
+  n:`<p>foot 문장이 이 구조의 핵심 세일즈 포인트다. 파트너 협상에서 이 말을 먼저 한다.</p>
+     <p class="say">"CowTalk이 '이 소에 이 정액'이라고 추천할 때마다 코리아제네틱스 매출이 생깁니다.
+     농가를 늘릴 때마다 smaXtec 센서가 팔립니다. <b>저희가 여러분의 영업 파이프라인이 됩니다.</b>"</p>
+     <p><b>L1 리스크를 먼저 인정한다:</b> 단일 공급자 종속. → 센서 추상화 계층·원시데이터 자체적재·자체 조기감지 엔진 3중 방어를 설명한다.</p>`});
+
+add({t:['biz'], eyebrow:'자금 흐름', stage:'어떻게',
+  title:'두당 <em>15,000원</em>이 어떻게 나뉘는가',
+  lede:'협상 전 기준선이다. 규모가 커질수록 하드웨어 단가는 내려가고 플랫폼 가치 비중은 올라간다 — 볼륨 구간별 단가 테이블을 반드시 계약에 넣는다.',
+  body:`<div class="cols c2">
+    <table class="t">
+      <thead><tr><th>배분 대상</th><th class="num">비율</th><th class="num">원 / 두 / 월</th></tr></thead>
+      <tbody>
+        <tr><td>smaXtec — 센서 구독 · HW 상각</td><td class="num">45%</td><td class="num">6,750</td></tr>
+        <tr><td>D2O — 플랫폼 · AI 운영</td><td class="num">33%</td><td class="num">4,950</td></tr>
+        <tr><td>데이터센터 — 인프라 · 거버넌스</td><td class="num">10%</td><td class="num">1,500</td></tr>
+        <tr><td>채널 · 현장 CS</td><td class="num">12%</td><td class="num">1,800</td></tr>
+        <tr class="sum"><td>합계</td><td class="num">100%</td><td class="num">15,000</td></tr>
+      </tbody>
+    </table>
+    <div>
+      <table class="t">
+        <thead><tr><th>두당 요금과 별도</th><th>귀속</th></tr></thead>
+        <tbody>
+          <tr><td>정액 · 수정란 판매</td><td>코리아제네틱스</td></tr>
+          <tr><td>초기 구축 (기지국 500만/농가)</td><td>smaXtec · 시공</td></tr>
+          <tr><td>지자체 · 국가 라이선스</td><td>D2O <strong>(두당 요금과 통합 정산 — 이중과금 금지)</strong></td></tr>
+          <tr><td>해외 국가 라이선스</td><td>D2O 로열티 (현지 파트너 배분 별도)</td></tr>
+        </tbody>
+      </table>
+      <div class="card risk" style="margin-top:1.2cqw"><div class="kicker">이해상충 봉인</div>
+        <p>정액 추천 알고리즘에 <strong>공급사 가중치는 존재하지 않는다.</strong> 근교계수·유전능력·목장 목표만으로 순위를 매기고, 대안을 항상 함께 제시한다. 이 조항은 파트너 계약에 명시된다.</p></div>
+    </div>
+  </div>`,
+  n:`<p class="warnline">"이중과금 금지"는 지자체 심의에서 반드시 걸리는 지점이다. 먼저 말해야 한다.</p>
+     <p>"이해상충 봉인" 카드는 <b>공공 사업 제안 시 가장 중요한 카드</b>다. "특정 회사 밀어주기 아니냐"는 질문을 한 문장으로 정리한다.</p>
+     <p>파트너 협상 자리에서는 45%를 <b>초기 기준</b>으로 못박고 볼륨 테이블 협상을 연다.</p>`});
+
+add({t:['biz'], eyebrow:'수익 모델', stage:'그래서',
+  title:'농가에 <em>구독</em>, 정부에 <em>인프라</em>, 해외에 <em>운영체제</em>',
+  lede:'①이 데이터를 만들고 ②③이 규모를 만들고 ⑤⑥이 마진을 만든다. 셋이 같이 가야 성립한다.',
+  body:`<table class="t">
+    <thead><tr><th>#</th><th>수익축</th><th>과금 대상</th><th>방식</th><th>성격</th></tr></thead>
+    <tbody>
+      <tr><td>①</td><td><strong>농가 SaaS</strong></td><td>목장주</td><td>월 구독 (Basic 5만 / Pro 10만) 또는 두당 과금</td><td>반복 · 소액 · 다수</td></tr>
+      <tr><td>②</td><td><strong>지자체 라이선스</strong></td><td>시 · 도 · 시군구</td><td>연간, 관내 두수 기반 (통합 정산)</td><td>반복 · 예산 연동</td></tr>
+      <tr><td>③</td><td><strong>국가 플랫폼</strong></td><td>중앙정부 · 검역기관</td><td>구축 + 연간 운영</td><td>대형 · 장기 · <strong>레퍼런스 자산</strong></td></tr>
+      <tr><td>④</td><td><strong>거점 대동물병원</strong></td><td>병원 (시범사업 예산 대납)</td><td>병원당 월 30만 + 담당농가 2만/호</td><td>반복 · 신규</td></tr>
+      <tr><td>⑤</td><td><strong>데이터 인텔리전스</strong></td><td>사료 · 유업 · 보험 · 제약</td><td>리포트 구독 / API</td><td>고마진 · <strong>옵트인 필수</strong></td></tr>
+      <tr><td>⑥</td><td><strong>해외 수출</strong></td><td>해외 정부 · 현지 파트너</td><td>국가 라이선스 + 두당 로열티</td><td>대형 · 고마진</td></tr>
+    </tbody>
+  </table>`,
+  foot:['손익 감각','두당 기여이익 약 <strong>4,150원(28%)</strong>. 흑자 전환점은 대략 <strong>3~5만두 구간</strong>이다. 그래서 지자체 사업이 생존 조건이다.'],
+  n:`<p>⑤(데이터 인텔리전스)는 <b>정부·농가 청중 앞에서는 조심스럽게</b> 다룬다. "데이터 팔아서 돈 버는구나"로 읽히면 위험하다.
+     반드시 3중 조건(옵트인 + 익명화 + 집계)을 같이 말한다.</p>
+     <p>투자자·파트너 앞에서는 반대로 ⑤⑥의 마진 구조를 강조한다. <b>청중에 따라 이 장의 무게중심을 바꾼다.</b></p>
+     <p>foot의 "흑자 전환점 3~5만두"가 이 사업의 전략을 결정한다. 농가 개별 영업만으로는 도달이 너무 느리다.</p>`});
+
+add({t:['biz','natl'], eyebrow:'데이터 소유권', stage:'어떻게',
+  title:'데이터는 층마다 <em>주인이 다르다</em>',
+  lede:'가장 먼저 합의해야 하고, 가장 크게 보여줘야 하는 조항. 이게 없으면 지자체 심의도 해외 계약도 통과하지 못한다.',
+  body:`<div class="cols c25">
+    <table class="t">
+      <thead><tr><th>데이터 계층</th><th>소유자</th><th class="num">반출</th></tr></thead>
+      <tbody>
+        <tr><td>원시 센서 측정치</td><td><strong>농가</strong></td><td class="num"><span class="no">✗</span></td></tr>
+        <tr><td>개체 마스터 (이력 · 혈통)</td><td>국가 공공데이터</td><td class="num"><span class="part">약관 범위</span></td></tr>
+        <tr><td>진료 · 처방 기록</td><td><strong>농가 + 수의사</strong></td><td class="num"><span class="no">✗</span></td></tr>
+        <tr><td>AI 해석 결과</td><td>플랫폼 (농가 열람권 보장)</td><td class="num"><span class="no">✗</span></td></tr>
+        <tr><td>전문가 레이블</td><td>플랫폼 (익명화 후)</td><td class="num"><span class="part">익명 집계</span></td></tr>
+        <tr><td>지역 · 전국 집계 통계</td><td><strong>공공</strong></td><td class="num"><span class="yes">○</span></td></tr>
+      </tbody>
+    </table>
+    <div class="card accent"><div class="kicker">합의문 4문장</div>
+      <ul class="bul dense">
+        <li>농가는 언제든 <strong>자기 데이터를 내보내고 삭제 요청</strong>할 수 있다</li>
+        <li>플랫폼은 원시 데이터를 <strong>서비스 제공 목적 외로 사용하지 않는다</strong></li>
+        <li>제3자 제공은 <strong>옵트인 · 익명화 · 집계 세 조건을 모두</strong> 만족할 때만</li>
+        <li>계약 종료 시 데이터는 <strong>반환되고 플랫폼 사본은 파기</strong>된다</li>
+      </ul></div>
+  </div>`,
+  n:`<p>오른쪽 4문장을 <b>소리 내어 하나씩 읽는다.</b> 이 장은 빨리 넘기지 않는다.</p>
+     <p>"회사가 없어지면 우리 데이터는요?"라는 질문에 대한 답이 여기 있다 —
+     <b>"데이터센터 주체를 분리한 이유가 이것이기도 합니다. 보관 주체가 공공이면 저희가 없어져도 데이터는 남습니다."</b></p>`});
+
+/* ══ INTL ══ */
+add({t:['intl'], eyebrow:'Overseas', stage:'What',
+  title:'Three walls every livestock nation is hitting',
+  lede:'The workforce is shrinking, disease is always found late, and the data exists but never reaches the decision.',
+  body:`<div class="cols c3">
+    <div class="card"><div class="kicker">Wall 1 · People</div><h4>The workforce is disappearing</h4>
+      <p>Large-animal veterinarians are aging out and few replace them. Two hours of driving for one farm visit. <strong>When people leave faster than technology arrives, livestock becomes unmanageable.</strong></p></div>
+    <div class="card"><div class="kicker">Wall 2 · Disease</div><h4>Always found too late</h4>
+      <p>Cattle do not report illness. By the time it is visible, it is late. <strong>At the moment of first notification, spread has already begun.</strong></p></div>
+    <div class="card"><div class="kicker">Wall 3 · Data</div><h4>Present but disconnected</h4>
+      <p>Traceability, grading, milk recording, disease reporting — all exist. <strong>No single farmer can connect them to one animal.</strong></p></div>
+  </div>`,
+  n:`<p>Open with the problem, never with the company. Officials have seen a hundred vendor decks.</p>
+     <p class="say">"We are not here to sell you a farm app. We are here to show you how a country can see an outbreak <b>before it is reported.</b>"</p>
+     <p>For <b>Southeast Asia</b>, weight Wall 2 (disease containment). For <b>the Gulf</b>, weight Wall 3 and reframe it as food security visibility.</p>`});
+
+add({t:['intl'], eyebrow:'Sovereignty', stage:'How',
+  title:'Code flows out. <em>Data never does.</em>',
+  lede:'A sovereign instance runs inside your national infrastructure. We export an operating system, not your data.',
+  body:`<div class="cols c52">
+    <div class="card accent"><div class="kicker">Deployment</div><h4>One codebase,<br>national instances</h4>
+      <p>Each country runs its own instance: local database, local computation, local audit trail.
+      Updates flow from the core; <strong>data never flows back.</strong></p></div>
+    <div class="boundary">
+      <div class="bt">Export Boundary</div>
+      <div class="card" style="background:var(--surface);border-color:var(--line)"><div class="kicker" style="color:var(--risk)">Never leaves your borders</div>
+        <p>Raw sensor data · animal identifiers · farm identifiers · clinical and prescription records</p></div>
+      <div class="card" style="background:var(--surface);border-color:var(--line)"><div class="kicker">Crosses only with your approval</div>
+        <p>Anonymized, aggregated statistics — and only when opt-in, anonymization and aggregation all hold.</p></div>
+    </div>
+  </div>`,
+  foot:['Say it first','Raise sovereignty <strong>before they ask.</strong> Answered on request it reads as defense; offered first it reads as design.'],
+  n:`<p>This is <b>the single most important slide for any overseas government audience.</b> Spend time here.</p>
+     <p class="say">"Your data stays inside your borders. What crosses the boundary is anonymized aggregate statistics, and only with your approval."</p>
+     <p>Geopolitics matters here but is never said out loud — <b>show it through the architecture</b>, do not claim it.</p>`});
+
+add({t:['intl'], eyebrow:'Localization', stage:'How',
+  title:'Not a Korean system with <em>translated menus</em>',
+  lede:'Four adapter layers let a country plug in. Water buffalo, zebu, desert heat index — these are parameters, not rewrites.',
+  body:`<table class="t">
+    <thead><tr><th>Adapter</th><th>What it changes</th><th>Readiness</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Public data connector</strong></td><td>Traceability, grading, disease reporting endpoints</td><td><span class="yes">Pattern in place</span></td></tr>
+      <tr><td><strong>Breed & physiology</strong></td><td>Gestation length, estrus cycle, heat-stress thresholds, breed catalog</td><td><span class="yes">Per-farm parameters exist</span></td></tr>
+      <tr><td><strong>Language & format</strong></td><td>Interface text, AI response language, date and currency</td><td><span class="part">i18n required — first work item</span></td></tr>
+      <tr><td><strong>Regulation & workflow</strong></td><td>Disease reporting forms, prescription rules, withdrawal standards</td><td><span class="part">Korean reporting is the reference implementation</span></td></tr>
+    </tbody>
+  </table>`,
+  foot:['Honesty','Right-to-left layout and full offline resilience are <strong>not done.</strong> We say so before the pilot, not during it.'],
+  n:`<p>Never overstate readiness here. Officials will test this in the pilot and a failure there is unrecoverable.</p>
+     <p class="say">"Full localization takes months, not weeks. We plan for that, and we will tell you which months."</p>
+     <p>RTL (Arabic) is genuinely expensive. Offer <b>English UI</b> for early Gulf deployments — their working officials use it.</p>`});
+
+add({t:['intl'], eyebrow:'Markets', stage:'So what',
+  title:'Two priority regions, <em>two different entry models</em>',
+  lede:'Southeast Asia enters through disease control and public financing. The Gulf enters through food security and direct national contracts.',
+  body:`<div class="cols c2">
+    <div class="card"><div class="kicker">Southeast Asia · VN · ID · TH</div><h4>Lead with disease containment</h4>
+      <p>FMD and LSD are endemic; governments prioritize outbreak control over productivity.
+      Smallholder structure means <strong>per-head pricing must be redesigned</strong> — cooperative and enterprise bundles, not per-animal fees.</p>
+      <p><strong>Entry:</strong> KSP policy advisory → ODA-funded pilot → national budget scale-up.</p></div>
+    <div class="card"><div class="kicker">Middle East · Central Asia · UAE · SA · UZ</div><h4>Lead with food security</h4>
+      <p>Dairy self-sufficiency is a national security agenda, not an agricultural one. Budget constraints are lower and
+      <strong>contracts are national in scale</strong>. Extreme heat stress and very large single farms drive the technical work.</p>
+      <p><strong>Entry:</strong> direct national license with sovereign instance build.</p></div>
+  </div>
+  <table class="t">
+    <thead><tr><th>Model</th><th>Structure</th><th>Best fit</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A · National license</strong></td><td>Annual fixed fee + sovereign instance build</td><td>Gulf states</td></tr>
+      <tr><td><strong>B · Per-head royalty</strong></td><td>Local partner operates, royalty per head</td><td>Southeast Asia, scale-up phase</td></tr>
+      <tr><td><strong>C · ODA / KSP linked</strong></td><td>Public funds build it, then transition to operations</td><td>Southeast Asia, entry phase</td></tr>
+      <tr><td><strong>D · White label</strong></td><td>Local brand, D2O core underneath</td><td>Where a large local incumbent exists</td></tr>
+    </tbody>
+  </table>`,
+  n:`<p><b>Never quote Korean pricing abroad.</b> It is too expensive for Southeast Asia and too cheap for the Gulf — both lose the deal.</p>
+     <p class="say">"I will not give you a number today, because the honest answer depends on your herd structure.
+     Let us design the pilot first and price from real data."</p>
+     <p>Financing is the real gate in Southeast Asia. <b>Design the funding route before the product pitch.</b></p>`});
+
+/* ══ CLOSING ══ */
+add({t:['core','local','natl','vet','biz','intl'], eyebrow:'클로징', stage:'그래서',
+  title:'시연이 아니라 <em>실제 목장에 도움이 되는 것</em>',
+  lede:'파일럿 목장은 개발자가 직접 운영하는 목장이다. 자기 소로 먼저 검증하지 않은 것을 남에게 권하지 않는다.',
+  body:`<div class="quote">
+    소가 아프다고 말하지 않는다는 것,<br>
+    그리고 그걸 아무도 제때 알 수 없다는 것.<br>
+    이 문제는 한 목장의 문제가 아니라 한 나라의 문제다.
+    <small>목장 경제성 · 질병 관리 · 공공성 — CowTalk의 세 가지 가치</small>
+  </div>
+  <div class="cols c3">
+    <div class="card"><div class="kicker">목장 경제성</div><p>번식성적 향상과 질병 조기대응으로 <strong>두당 마진이 오른다</strong></p></div>
+    <div class="card"><div class="kicker">질병 관리</div><p>위내센서와 AI 조기감지로 <strong>피해를 최소화한다</strong></p></div>
+    <div class="card"><div class="kicker">공공성</div><p>국가 방역 고도화, 확산 차단, <strong>축산 디지털 주권</strong></p></div>
+  </div>`,
+  n:`<p>마지막 장에서는 <b>새 정보를 넣지 않는다.</b> 감정을 정리하고 끝낸다.</p>
+     <p class="say">"제 목장 소로 먼저 검증하지 않은 걸 남에게 권하지 않습니다. 그래서 파일럿을 제안드립니다."</p>
+     <p>침묵을 3초 두고 질문을 받는다. 서둘러 다음 말을 하지 않는다.</p>`});
+
+/* ── render ─────────────────────────────────────── */
+const deck = document.getElementById('deck');
+const tracksEl = document.getElementById('tracks');
+const TNAME = Object.fromEntries(TRACKS.map(t=>[t.id,t.name]));
+
+S.forEach((s,i)=>{
+  const wrap = document.createElement('article');
+  wrap.className = 'slide-wrap';
+  wrap.dataset.tracks = s.t.join(' ');
+  const no = String(i+1).padStart(2,'0');
+
+  const head = s.cover ? '' : `
+    <div class="s-top">
+      <span class="eyebrow">${s.eyebrow||''}</span>
+      ${s.stage?`<span class="stage-chip">${s.stage}</span>`:''}
+    </div>
+    <h2 class="s-title">${s.title||''}</h2>
+    ${s.lede?`<p class="s-lede">${s.lede}</p>`:''}`;
+
+  const foot = s.foot ? `<div class="s-foot"><span class="k">${s.foot[0]}</span><span>${s.foot[1]}</span></div>` : '';
+
+  wrap.innerHTML = `
+    <section class="slide${s.cover?' is-cover':''}">
+      ${head}
+      ${s.cover ? s.body : `<div class="s-body">${s.body||''}</div>`}
+      ${foot}
+      <span class="pageno">${no}</span>
+    </section>
+    <div class="tag-row">${s.t.map(t=>`<span class="tag">${TNAME[t]||t}</span>`).join('')}</div>
+    ${s.n?`<details class="notes"><summary>발표자 노트 ${no}</summary><div class="nbody">${s.n}</div></details>`:''}`;
+  deck.appendChild(wrap);
+});
+
+let active = 'all';
+TRACKS.forEach(t=>{
+  const count = t.id==='all' ? S.length : S.filter(s=>s.t.includes(t.id)).length;
+  const b = document.createElement('button');
+  b.className='track-btn'; b.type='button'; b.dataset.track=t.id;
+  b.setAttribute('aria-pressed', String(t.id===active));
+  b.innerHTML = `<span class="dot"></span><span>${t.name}</span><span class="tcount">${count}</span>`;
+  b.addEventListener('click', ()=>setTrack(t.id));
+  tracksEl.appendChild(b);
+});
+
+function setTrack(id){
+  active = id;
+  const t = TRACKS.find(x=>x.id===id);
+  document.getElementById('trackName').textContent = t.name;
+  document.getElementById('trackDesc').textContent = t.desc;
+  tracksEl.querySelectorAll('.track-btn').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.track===id)));
+  deck.querySelectorAll('.slide-wrap').forEach(w=>{
+    w.hidden = !(id==='all' || w.dataset.tracks.split(' ').includes(id));
+  });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+const nb = document.getElementById('notesBtn');
+nb.addEventListener('click', ()=>{
+  const anyClosed = [...deck.querySelectorAll('.notes')].some(d=>!d.open);
+  deck.querySelectorAll('.notes').forEach(d=>{ d.open = anyClosed; });
+  nb.textContent = anyClosed ? '노트 모두 접기' : '노트 모두 펼치기';
+});
+document.getElementById('printBtn').addEventListener('click', ()=>window.print());
+</script>
