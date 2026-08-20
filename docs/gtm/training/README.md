@@ -7,8 +7,11 @@
 
 | 파일 | 내용 |
 |---|---|
-| `smaxtec_cowtalk_en_training_with_ai.pptx` | 통합본 63장 (전 슬라이드 발표자 노트 포함) |
-| `build_cowtalk_ai_slides.py` | 36~63장 생성 스크립트 — 원본 패키지에 직접 슬라이드를 써넣는다 |
+| `smaxtec_cowtalk_en_training_with_ai.pptx` | **영문판** 63장 (전 슬라이드 발표자 노트 포함) |
+| `smaxtec_cowtalk_kr_training_with_ai.pptx` | **국문판** 63장 — 원본 35장까지 전부 번역 |
+| `build_cowtalk_ai_slides.py` | 영문 36~63장 생성 |
+| `build_kr_deck.py` | 국문판 생성 — 원본 번역 + 국문 36~63장 |
+| `translation_map.py` | 원본 35장 번역 대응표 (`슬라이드.도형id.문단` 키) |
 
 ## 구조
 
@@ -44,17 +47,38 @@
 ## 재생성
 
 ```bash
+# 영문판
 python3 -c "import zipfile; zipfile.ZipFile('원본.pptx').extractall('un')"
-python3 build_cowtalk_ai_slides.py     # un/ 에 36~63장을 써넣고 pptx로 다시 압축
+python3 build_cowtalk_ai_slides.py
+
+# 국문판 (원본 번역 + 국문 슬라이드를 한 번에)
+python3 build_kr_deck.py 원본.pptx
 ```
 
-문구를 고칠 곳은 스크립트의 `SLIDES` 정의 한 곳이다.
+문구를 고칠 곳은 각 스크립트의 `SLIDES` 정의 한 곳이다.
+원본 35장의 번역은 `translation_map.py`의 `TR` 딕셔너리에서 고친다.
+
+## 국문판에서 한 일
+
+- 원본 35장 **362건** 번역 적용. 문단 단위로 첫 run에 번역문을 넣고 나머지 run을 비워
+  **원본 서식을 그대로 유지**한다.
+- 의도적으로 원문을 남긴 7건: `±0.01 °C`, smaxtec.com URL 3건, 학술 인용 3건.
+- 원본 테마 폰트(Calibri)에는 한글 글리프가 없으므로 모든 run에
+  **eastAsia 폰트를 `맑은 고딕`으로 강제**했다. 라틴 문자·숫자는 Calibri를 유지한다.
+- 푸터를 `smaXtec × CowTalk | 통합 교육자료`로, 표지를 `16:9 | 한국어 | 발표자 노트 포함`으로 교체.
+- 용어는 국내 축산 현장 용어를 따랐다 — reticulum→벌집위, rumination→반추,
+  DIM→착유일수, SARA→아급성 산독증, triage→분류, SOP→표준절차, worklist→작업목록.
 
 ## 검증 기록
 
-- `validate.py --original` 통과 (스키마·관계·콘텐츠타입)
-- 도형 화면 밖 이탈 0건 · 콜아웃 침범 0건 · 텍스트 넘침 0건
+**영문판**
+- `validate.py --original` 통과 · 도형 이탈 0건 · 콜아웃 침범 0건 · 텍스트 넘침 0건
 - 신규 28장 전부 발표자 노트 존재 · 플레이스홀더 잔여 0건
+
+**국문판**
+- `validate.py --original` 통과 · 63장 전체 도형 이탈 0건
+- **63장 전체** 텍스트 넘침 0건 (한글 폭 증가로 원본 35장까지 함께 검사)
+- 63장 전부 발표자 노트 존재 (신규 28장은 국문 노트)
 
 > ⚠️ 이 환경의 LibreOffice가 깨져 있어 PPTX 직접 렌더는 불가했다.
 > 대신 생성한 슬라이드 XML을 **동일 좌표로 HTML 재현 후 Chromium 렌더**해 시각 검증했고,
