@@ -1953,6 +1953,8 @@ export const reportSchedules = pgTable('report_schedules', {
   format:      varchar('format', { length: 8 }).notNull().default('xlsx'), // xlsx | none (본문만)
   sendHourKst: integer('send_hour_kst').notNull().default(7),    // KST 발송 시각 (0~23)
   enabled:     boolean('enabled').notNull().default(true),
+  /** 구독 종료일 — null 이면 무기한. 지나면 자동 발송에서 빠지되 행은 남는다 (연장·해지는 사용자 몫) */
+  endsAt:      timestamp('ends_at', { withTimezone: true }),
   /** 마지막으로 발송한 기간 키 — 빠른 중복 차단 (진짜 보증은 deliveries 유니크 인덱스) */
   lastPeriodKey: varchar('last_period_key', { length: 32 }),
   lastSentAt:  timestamp('last_sent_at', { withTimezone: true }),

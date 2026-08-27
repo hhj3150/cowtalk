@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchReportSchedules,
   fetchReportDeliveries,
+  fetchScheduleCalendar,
   saveReportSchedule,
   updateReportSchedule,
   deleteReportSchedule,
@@ -17,6 +18,7 @@ import {
   type ReportKind,
   type ReportSchedule,
   type RunNowResult,
+  type ScheduledOccurrence,
 } from '@web/api/report-schedule.api';
 import { useFarmStore } from '@web/stores/farm.store';
 import { TitleAccentBar } from '@web/components/unified-dashboard/WidgetTitle';
@@ -26,6 +28,14 @@ const KINDS: readonly { kind: ReportKind; label: string; detail: string }[] = [
   { kind: 'monthly', label: '월간 보고서', detail: '지난 달 전체 집계 + 직전 달 대비 증감 (매월 1일 발송)' },
   { kind: 'quarterly', label: '분기 보고서', detail: '지난 분기 집계 + 직전 분기 대비 (1·4·7·10월 1일 발송)' },
   { kind: 'performance', label: '성과 보고서', detail: '월간 지표 + 파일럿 누적 성과 (조치율·치료·두당 마진) — 지자체 제출 근거용' },
+  { kind: 'annual', label: '연간 보고서', detail: '지난 1년(1~12월) 종합 + 직전 해 대비 (매년 1월 1일 발송)' },
+];
+
+/** 구독 기간 선택지 — "향후 1년" 이 기본 */
+const TERMS: readonly { months: number | null; label: string }[] = [
+  { months: 12, label: '1년' },
+  { months: 24, label: '2년' },
+  { months: null, label: '무기한' },
 ];
 
 function fmtDateTime(value: string | null): string {
@@ -33,17 +43,46 @@ function fmtDateTime(value: string | null): string {
   return new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 }
 
+function fmtDate(value: string | null): string {
+  if (!value) return '무기한';
+  return new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
+}
+
+/** 예정 발송을 '2026년 9월' 단위로 묶는다 — 1년치를 한 줄씩 늘어놓으면 읽을 수 없다 */
+function groupByMonth(
+  occurrences: readonly (ScheduledOccurrence & { kindLabel: string })[],
+): { month: string; items: (ScheduledOccurrence & { kindLabel: string })[] }[] {
+  const map = new Map<string, (ScheduledOccurrence & { kindLabel: string })[]>();
+  for (const o of occurrences) {
+    const d = new Date(o.sendAt);
+    const month = d.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'long' });
+    const list = map.get(month) ?? [];
+    list.push(o);
+    map.set(month, list);
+  }
+  return [...map.entries()]
+    .map(([month, items]) => ({
+      month,
+      items: items.sort((a, b) => new Date(a.sendAt).getTime() - new Date(b.sendAt).getTime()),
+    }));
+}
+
 export function ReportSchedulePage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const { selectedFarmId } = useFarmStore();
   const [email, setEmail] = useState('');
   const [sendHour, setSendHour] = useState(7);
+  const [termMonths, setTermMonths] = useState<number | null>(12);
   const [error, setError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunNowResult | null>(null);
 
   const { data: schedules, isLoading } = useQuery({
     queryKey: ['report-schedules', selectedFarmId],
     queryFn: () => fetchReportSchedules(selectedFarmId ?? undefined),
+  });
+  const { data: calendar } = useQuery({
+    queryKey: ['report-calendar', selectedFarmId],
+    queryFn: () => fetchScheduleCalendar(selectedFarmId ?? undefined, 12),
   });
   const { data: deliveries } = useQuery({
     queryKey: ['report-deliveries', selectedFarmId],
@@ -54,6 +93,7 @@ export function ReportSchedulePage(): React.JSX.Element {
   const invalidate = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['report-schedules'] });
     void queryClient.invalidateQueries({ queryKey: ['report-deliveries'] });
+    void queryClient.invalidateQueries({ queryKey: ['report-calendar'] });
   };
 
   const onError = (fallback: string) => (e: unknown): void => {
@@ -104,6 +144,7 @@ export function ReportSchedulePage(): React.JSX.Element {
       sendHourKst: sendHour,
       format: 'xlsx',
       enabled: true,
+      ...(termMonths === null ? { endsAt: null } : { durationMonths: termMonths }),
     });
   }
 
@@ -148,8 +189,29 @@ export function ReportSchedulePage(): React.JSX.Element {
             ))}
           </select>
         </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 10 }}>
+          <span style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}>받는 기간</span>
+          {TERMS.map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              onClick={() => { setTermMonths(t.months); }}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+              style={{
+                cursor: 'pointer',
+                border: '1px solid',
+                borderColor: termMonths === t.months ? 'var(--ct-primary)' : 'var(--ct-border)',
+                background: termMonths === t.months ? 'rgba(16,185,129,0.08)' : 'transparent',
+                color: 'var(--ct-text)',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
         <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 8 }}>
-          비워 두면 기존 수신자가 유지됩니다. 목장: {selectedFarmId ? '선택됨' : '미선택 — 상단에서 목장을 골라 주세요'}
+          비워 두면 기존 수신자가 유지됩니다. 기간이 끝나면 발송이 멈추고 구독은 목록에 '기간 종료'로 남습니다(자동 해지 아님).
+          목장: {selectedFarmId ? '선택됨' : '미선택 — 상단에서 목장을 골라 주세요'}
         </div>
         {error && <div role="alert" style={{ marginTop: 8, fontSize: 12, color: '#ef4444' }}>{error}</div>}
       </div>
@@ -177,7 +239,8 @@ export function ReportSchedulePage(): React.JSX.Element {
                   <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>{detail}</div>
                   {s && (
                     <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 4 }}>
-                      수신 {s.recipients.join(', ')} · {String(s.sendHourKst).padStart(2, '0')}시 · 마지막 발송 {fmtDateTime(s.lastSentAt)}
+                      수신 {s.recipients.join(', ')} · {String(s.sendHourKst).padStart(2, '0')}시 · 기간 {fmtDate(s.endsAt)}까지 · 마지막 발송 {fmtDateTime(s.lastSentAt)}
+                      {s.expired && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · 기간 종료</span>}
                     </div>
                   )}
                 </div>
@@ -240,6 +303,49 @@ export function ReportSchedulePage(): React.JSX.Element {
               : `발송하지 못했습니다: ${runResult.reason ?? '알 수 없는 오류'}`}
           </div>
         )}
+      </div>
+
+      {/* 향후 12개월 발송 예정표 */}
+      <div className="ct-card" style={{ borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ct-text)' }}>향후 12개월 발송 예정</div>
+          <div style={{ fontSize: 11, color: 'var(--ct-text-muted)' }}>
+            {calendar ? `총 ${calendar.totalPlanned}회 예정` : ''}
+          </div>
+        </div>
+        {(calendar?.totalPlanned ?? 0) === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--ct-text-muted)' }}>
+            예정된 발송이 없습니다. 위에서 보고서를 구독하면 1년치 일정이 여기에 표시됩니다.
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {groupByMonth(
+            (calendar?.entries ?? []).flatMap((e) =>
+              e.occurrences.map((o) => ({ ...o, kindLabel: e.kindLabel })),
+            ),
+          ).map(({ month, items }) => (
+            <div key={month}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ct-text)', marginBottom: 4 }}>{month}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {items.map((o) => (
+                  <span
+                    key={`${o.periodKey}-${o.sendAt}`}
+                    title={`${o.kindLabel} 보고서 — 대상 기간 ${o.periodLabel}`}
+                    style={{
+                      fontSize: 11, padding: '4px 8px', borderRadius: 8,
+                      border: '1px solid var(--ct-border)', color: 'var(--ct-text-muted)', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {new Date(o.sendAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })}
+                    {' · '}
+                    <strong style={{ color: 'var(--ct-text)' }}>{o.kindLabel}</strong>
+                    {' · '}{o.periodTitle}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 발송 이력 */}

@@ -10,13 +10,14 @@
 // 4) 발송이 밀려도(서버 정지·SMTP 장애) 다음 깨어남에 그대로 나간다:
 //    "월요일 07시에만 발송"이 아니라 "기간이 닫혔고 아직 안 보냈으면 발송".
 
-export type ReportPeriodKind = 'weekly' | 'monthly' | 'quarterly' | 'performance';
+export type ReportPeriodKind = 'weekly' | 'monthly' | 'quarterly' | 'performance' | 'annual';
 
 export const REPORT_PERIOD_KINDS: readonly ReportPeriodKind[] = [
   'weekly',
   'monthly',
   'quarterly',
   'performance',
+  'annual',
 ] as const;
 
 export const PERIOD_KIND_LABELS: Readonly<Record<ReportPeriodKind, string>> = {
@@ -24,6 +25,7 @@ export const PERIOD_KIND_LABELS: Readonly<Record<ReportPeriodKind, string>> = {
   monthly: '월간',
   quarterly: '분기',
   performance: '성과',
+  annual: '연간',
 };
 
 export interface PeriodRange {
@@ -170,6 +172,25 @@ export function resolvePeriod(kind: ReportPeriodKind, now: Date): PeriodRange {
         previous: { start: kstDate(py, pm, 1), end: start, title: monthTitle(py, pm) },
       };
     }
+    case 'annual': {
+      const p = kstParts(now);
+      const year = p.year - 1;
+      const start = kstDate(year, 1, 1);
+      const end = kstDate(year + 1, 1, 1);
+      return {
+        kind,
+        start,
+        end,
+        periodKey: `annual:${String(year)}`,
+        label: rangeLabel(start, end),
+        title: `${String(year)}년`,
+        previous: {
+          start: kstDate(year - 1, 1, 1),
+          end: start,
+          title: `${String(year - 1)}년`,
+        },
+      };
+    }
     case 'quarterly': {
       const p = kstParts(now);
       const currentQuarterStartMonth = (quarterOf(p.month) - 1) * 3 + 1;
@@ -223,4 +244,102 @@ export function cumulativeStart(period: PeriodRange, pilotStart: Date | null): D
   if (pilotStart && pilotStart.getTime() < period.end.getTime()) return pilotStart;
   const p = kstParts(period.start);
   return kstDate(p.year - 1, p.month, 1);
+}
+
+
+// ======================================================================
+// 발송 예정표 — "앞으로 1년 동안 언제 무엇이 오는가"
+//
+// 자동 발송은 눈에 안 보이는 기능이라, 예정표가 없으면 목장주는 다음 보고서가
+// 언제 오는지 알 수 없고 안 온 것인지 아직 안 올 때인지도 구분하지 못한다.
+// 계산은 전부 순수 함수 — 실제 발송(isDue)과 같은 규칙을 쓰되 미래로 투영한다.
+// ======================================================================
+
+export interface ScheduledOccurrence {
+  readonly kind: ReportPeriodKind;
+  /** 발송 예정 시각 (KST sendHour 기준 UTC 인스턴트) */
+  readonly sendAt: Date;
+  readonly periodKey: string;
+  /** 그때 보고될 기간 — "2026-08-17 ~ 2026-08-23" */
+  readonly periodLabel: string;
+  /** 그때 보고될 기간 제목 — "8월 3주차" */
+  readonly periodTitle: string;
+}
+
+/** 그 날(KST)이 이 주기의 발송일인가 (순수) */
+export function isSendDay(kind: ReportPeriodKind, parts: KstParts): boolean {
+  switch (kind) {
+    case 'weekly':
+      return parts.weekday === 1; // 월요일
+    case 'annual':
+      return parts.month === 1 && parts.day === 1;
+    case 'quarterly':
+      return parts.day === 1 && (parts.month === 1 || parts.month === 4 || parts.month === 7 || parts.month === 10);
+    case 'monthly':
+    case 'performance':
+      return parts.day === 1;
+  }
+}
+
+/** 하루 단위 순회 상한 — 예정표 요청이 무한 루프가 되지 않게 (약 3년) */
+const MAX_CALENDAR_DAYS = 1200;
+
+/**
+ * from ~ until 사이의 발송 예정 목록 (순수).
+ * 각 예정일에 실제로 보고될 기간은 resolvePeriod 를 그 시각에 적용해 구한다 —
+ * 예정표와 실제 발송이 다른 규칙을 쓰면 예정표는 거짓말이 된다.
+ */
+export function upcomingOccurrences(
+  kind: ReportPeriodKind,
+  from: Date,
+  until: Date,
+  sendHourKst: number,
+): ScheduledOccurrence[] {
+  const out: ScheduledOccurrence[] = [];
+  if (until.getTime() <= from.getTime()) return out;
+
+  const fromParts = kstParts(from);
+  let cursor = kstDate(fromParts.year, fromParts.month, fromParts.day);
+
+  for (let i = 0; i < MAX_CALENDAR_DAYS && cursor.getTime() <= until.getTime(); i++) {
+    const parts = kstParts(cursor);
+    if (isSendDay(kind, parts)) {
+      const sendAt = kstDate(parts.year, parts.month, parts.day, sendHourKst);
+      if (sendAt.getTime() >= from.getTime() && sendAt.getTime() <= until.getTime()) {
+        const period = resolvePeriod(kind, sendAt);
+        out.push({
+          kind,
+          sendAt,
+          periodKey: period.periodKey,
+          periodLabel: period.label,
+          periodTitle: period.title,
+        });
+      }
+    }
+    cursor = new Date(cursor.getTime() + DAY_MS);
+  }
+
+  return out;
+}
+
+/**
+ * 구독 기간 안인가 (순수). endsAt 이 없으면 무기한.
+ * 기간이 끝난 구독은 자동 발송에서 제외되지만 행을 지우거나 enabled 를 몰래 바꾸지 않는다 —
+ * 사용자가 화면에서 "기간 종료"를 보고 직접 연장하거나 해지하게 한다.
+ */
+export function isWithinSubscription(now: Date, endsAt: Date | null): boolean {
+  if (!endsAt) return true;
+  return now.getTime() <= endsAt.getTime();
+}
+
+/** 구독 종료일 계산 — 시작 시각(KST 날짜) 기준 N개월 뒤 같은 날 23:59 (기본 12개월) */
+export function subscriptionEnd(from: Date, months = 12): Date {
+  const p = kstParts(from);
+  const totalMonths = p.month - 1 + months;
+  const year = p.year + Math.floor(totalMonths / 12);
+  const month = (totalMonths % 12) + 1;
+  // 말일 보정 (1/31 + 1개월 = 2/28)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const day = Math.min(p.day, lastDay);
+  return new Date(kstDate(year, month, day, 23).getTime() + 59 * 60 * 1000);
 }

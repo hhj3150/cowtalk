@@ -2,13 +2,14 @@
 
 import { apiGet, apiPost, apiPatch, apiDelete } from './client';
 
-export type ReportKind = 'weekly' | 'monthly' | 'quarterly' | 'performance';
+export type ReportKind = 'weekly' | 'monthly' | 'quarterly' | 'performance' | 'annual';
 
 export const REPORT_KIND_LABELS: Readonly<Record<ReportKind, string>> = {
   weekly: '주간',
   monthly: '월간',
   quarterly: '분기',
   performance: '성과',
+  annual: '연간',
 };
 
 export interface ReportSchedule {
@@ -19,6 +20,10 @@ export interface ReportSchedule {
   readonly format: 'xlsx' | 'none';
   readonly sendHourKst: number;
   readonly enabled: boolean;
+  /** 구독 종료일 (ISO). null = 무기한 */
+  readonly endsAt: string | null;
+  /** 구독 기간이 끝났는가 — 끝나도 행은 남는다 */
+  readonly expired: boolean;
   readonly lastPeriodKey: string | null;
   readonly lastSentAt: string | null;
   readonly kindLabel: string;
@@ -49,6 +54,9 @@ export interface CreateScheduleInput {
   readonly format?: 'xlsx' | 'none';
   readonly sendHourKst?: number;
   readonly enabled?: boolean;
+  /** 구독 기간 (개월). 12 = 1년 구독 */
+  readonly durationMonths?: number;
+  readonly endsAt?: string | null;
 }
 
 export interface RunNowResult {
@@ -69,7 +77,11 @@ export function saveReportSchedule(input: CreateScheduleInput): Promise<ReportSc
 
 export function updateReportSchedule(
   scheduleId: string,
-  patch: Partial<Pick<ReportSchedule, 'enabled' | 'format' | 'sendHourKst'>> & { recipients?: readonly string[] },
+  patch: Partial<Pick<ReportSchedule, 'enabled' | 'format' | 'sendHourKst'>> & {
+    recipients?: readonly string[];
+    durationMonths?: number;
+    endsAt?: string | null;
+  },
 ): Promise<ReportSchedule> {
   return apiPatch<ReportSchedule>(`/reports/schedules/${scheduleId}`, patch);
 }
@@ -84,4 +96,36 @@ export function runReportNow(scheduleId: string): Promise<RunNowResult> {
 
 export function fetchReportDeliveries(farmId?: string): Promise<readonly ReportDelivery[]> {
   return apiGet<readonly ReportDelivery[]>('/reports/deliveries', farmId ? { farmId } : undefined);
+}
+
+// ── 발송 예정표 ──
+
+export interface ScheduledOccurrence {
+  readonly kind: ReportKind;
+  readonly sendAt: string;
+  readonly periodKey: string;
+  readonly periodLabel: string;
+  readonly periodTitle: string;
+}
+
+export interface ScheduleCalendarEntry {
+  readonly scheduleId: string;
+  readonly kind: ReportKind;
+  readonly kindLabel: string;
+  readonly enabled: boolean;
+  readonly recipients: readonly string[];
+  readonly endsAt: string | null;
+  readonly expired: boolean;
+  readonly occurrences: readonly ScheduledOccurrence[];
+}
+
+export interface ScheduleCalendar {
+  readonly months: number;
+  readonly generatedAt: string;
+  readonly entries: readonly ScheduleCalendarEntry[];
+  readonly totalPlanned: number;
+}
+
+export function fetchScheduleCalendar(farmId?: string, months = 12): Promise<ScheduleCalendar> {
+  return apiGet<ScheduleCalendar>('/reports/schedules/calendar', { ...(farmId ? { farmId } : {}), months });
 }

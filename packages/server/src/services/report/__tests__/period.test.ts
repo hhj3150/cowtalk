@@ -8,6 +8,9 @@ import {
   resolvePeriod,
   isDue,
   cumulativeStart,
+  upcomingOccurrences,
+  isWithinSubscription,
+  subscriptionEnd,
 } from '../period.js';
 
 describe('KST 변환', () => {
@@ -132,5 +135,109 @@ describe('cumulativeStart', () => {
   it('파일럿 시작일이 기간 이후면 무시한다', () => {
     const future = new Date('2027-01-01T00:00:00Z');
     expect(cumulativeStart(period, future).toISOString()).toBe('2025-06-30T15:00:00.000Z');
+  });
+});
+
+describe('annual — 1년을 마무리하는 보고서', () => {
+  it('직전 캘린더 연도를 보고한다', () => {
+    const p = resolvePeriod('annual', new Date('2027-01-01T00:00:00Z')); // KST 2027-01-01 09:00
+    expect(p.periodKey).toBe('annual:2026');
+    expect(p.title).toBe('2026년');
+    expect(p.label).toBe('2026-01-01 ~ 2026-12-31');
+    expect(p.start.toISOString()).toBe('2025-12-31T15:00:00.000Z');
+    expect(p.end.toISOString()).toBe('2026-12-31T15:00:00.000Z');
+    expect(p.previous.title).toBe('2025년');
+  });
+
+  it('연중에는 아직 작년 보고서를 가리킨다 (진행 중인 해를 보고하지 않는다)', () => {
+    expect(resolvePeriod('annual', new Date('2026-08-27T00:00:00Z')).periodKey).toBe('annual:2025');
+  });
+});
+
+describe('upcomingOccurrences — 앞으로 1년 발송 예정표', () => {
+  // KST 2026-08-27(목) 09:00 ~ 1년 뒤
+  const from = new Date('2026-08-27T00:00:00Z');
+  const until = new Date('2027-08-27T00:00:00Z');
+
+  it('주간: 1년 동안 52회 (모두 월요일)', () => {
+    const list = upcomingOccurrences('weekly', from, until, 7);
+    expect(list).toHaveLength(52);
+    for (const o of list) expect(kstParts(o.sendAt).weekday).toBe(1);
+    expect(kstDateStr(list[0]!.sendAt)).toBe('2026-08-31');
+    expect(list[0]!.periodKey).toBe('weekly:2026-W35');
+  });
+
+  it('월간: 12회 (매월 1일 07시 KST)', () => {
+    const list = upcomingOccurrences('monthly', from, until, 7);
+    expect(list).toHaveLength(12);
+    expect(kstDateStr(list[0]!.sendAt)).toBe('2026-09-01');
+    expect(list[0]!.sendAt.toISOString()).toBe('2026-08-31T22:00:00.000Z'); // KST 09-01 07:00
+    expect(list[0]!.periodKey).toBe('monthly:2026-08');
+    expect(list[11]!.periodKey).toBe('monthly:2027-07');
+  });
+
+  it('분기: 4회 (1·4·7·10월 1일)', () => {
+    const list = upcomingOccurrences('quarterly', from, until, 7);
+    expect(list.map((o) => o.periodKey)).toEqual([
+      'quarterly:2026-Q3', 'quarterly:2026-Q4', 'quarterly:2027-Q1', 'quarterly:2027-Q2',
+    ]);
+    expect(kstDateStr(list[0]!.sendAt)).toBe('2026-10-01');
+  });
+
+  it('성과: 월간과 같은 날 오지만 기간 키가 달라 따로 발송된다', () => {
+    const perf = upcomingOccurrences('performance', from, until, 7);
+    const monthly = upcomingOccurrences('monthly', from, until, 7);
+    expect(perf).toHaveLength(12);
+    expect(perf[0]!.sendAt.toISOString()).toBe(monthly[0]!.sendAt.toISOString());
+    expect(perf[0]!.periodKey).not.toBe(monthly[0]!.periodKey);
+  });
+
+  it('연간: 1회 (1월 1일)', () => {
+    const list = upcomingOccurrences('annual', from, until, 7);
+    expect(list).toHaveLength(1);
+    expect(kstDateStr(list[0]!.sendAt)).toBe('2027-01-01');
+    expect(list[0]!.periodKey).toBe('annual:2026');
+  });
+
+  it('구독 종료일까지만 그린다 (오지 않을 보고서를 예정표에 넣지 않는다)', () => {
+    const shortEnd = new Date('2026-10-15T00:00:00Z');
+    const list = upcomingOccurrences('monthly', from, shortEnd, 7);
+    expect(list.map((o) => kstDateStr(o.sendAt))).toEqual(['2026-09-01', '2026-10-01']);
+  });
+
+  it('기간이 거꾸로면 빈 목록', () => {
+    expect(upcomingOccurrences('weekly', until, from, 7)).toEqual([]);
+  });
+
+  it('오늘이 발송일이어도 이미 시각이 지났으면 이번 건은 넣지 않는다', () => {
+    const mondayNoon = new Date('2026-08-31T03:00:00Z'); // KST 월요일 12:00 (07시 지남)
+    const list = upcomingOccurrences('weekly', mondayNoon, new Date('2026-09-30T00:00:00Z'), 7);
+    expect(kstDateStr(list[0]!.sendAt)).toBe('2026-09-07');
+  });
+});
+
+describe('구독 기간', () => {
+  it('종료일이 없으면 무기한', () => {
+    expect(isWithinSubscription(new Date('2030-01-01T00:00:00Z'), null)).toBe(true);
+  });
+
+  it('종료일이 지나면 발송 대상에서 빠진다', () => {
+    const ends = new Date('2027-08-27T14:59:00Z');
+    expect(isWithinSubscription(new Date('2027-08-27T00:00:00Z'), ends)).toBe(true);
+    expect(isWithinSubscription(new Date('2027-08-28T00:00:00Z'), ends)).toBe(false);
+  });
+
+  it('1년 구독 종료일은 KST 같은 날 23:59', () => {
+    const end = subscriptionEnd(new Date('2026-08-27T00:00:00Z'), 12);
+    expect(kstDateStr(end)).toBe('2027-08-27');
+    expect(kstParts(end).hour).toBe(23);
+  });
+
+  it('말일 보정 — 1/31 + 1개월은 2/28', () => {
+    expect(kstDateStr(subscriptionEnd(new Date('2027-01-31T03:00:00Z'), 1))).toBe('2027-02-28');
+  });
+
+  it('연 경계를 넘는다', () => {
+    expect(kstDateStr(subscriptionEnd(new Date('2026-12-15T03:00:00Z'), 12))).toBe('2027-12-15');
   });
 });

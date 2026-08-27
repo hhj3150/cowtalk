@@ -22,10 +22,16 @@ import { buildPeriodReport } from '../../services/report/period-report.service.j
 import {
   REPORT_PERIOD_KINDS,
   PERIOD_KIND_LABELS,
+  isWithinSubscription,
   resolvePeriod,
+  subscriptionEnd,
   type ReportPeriodKind,
 } from '../../services/report/period.js';
-import { deliverReport, buildReportBundle } from '../../services/report/scheduled-report.service.js';
+import {
+  deliverReport,
+  buildReportBundle,
+  buildScheduleCalendar,
+} from '../../services/report/scheduled-report.service.js';
 import { normalizeRecipients } from '../../lib/mailer.js';
 import { logger } from '../../lib/logger.js';
 
@@ -137,11 +143,15 @@ reportRouter.get(
 
 const scheduleCreateSchema = z.object({
   farmId: z.string().uuid(),
-  kind: z.enum(['weekly', 'monthly', 'quarterly', 'performance']),
+  kind: z.enum(['weekly', 'monthly', 'quarterly', 'performance', 'annual']),
   recipients: z.array(z.string().email()).min(1).max(5),
   format: z.enum(['xlsx', 'none']).optional(),
   sendHourKst: z.number().int().min(0).max(23).optional(),
   enabled: z.boolean().optional(),
+  /** 구독 종료일 (ISO). 생략 시 기존 값 유지, null 이면 무기한 */
+  endsAt: z.string().datetime().nullable().optional(),
+  /** 종료일 대신 개월 수로 지정 (예: 12 = 1년 구독). endsAt 이 있으면 무시 */
+  durationMonths: z.number().int().min(1).max(60).optional(),
 });
 
 const scheduleUpdateSchema = z.object({
@@ -149,7 +159,23 @@ const scheduleUpdateSchema = z.object({
   format: z.enum(['xlsx', 'none']).optional(),
   sendHourKst: z.number().int().min(0).max(23).optional(),
   enabled: z.boolean().optional(),
+  endsAt: z.string().datetime().nullable().optional(),
+  durationMonths: z.number().int().min(1).max(60).optional(),
 });
+
+/**
+ * 구독 종료일 결정 — 명시 endsAt 우선, 없으면 durationMonths 로 계산.
+ * 둘 다 없으면 undefined(= 기존 값 유지), null 이면 무기한으로 되돌린다.
+ */
+function resolveEndsAt(
+  endsAt: string | null | undefined,
+  durationMonths: number | undefined,
+): Date | null | undefined {
+  if (endsAt === null) return null;
+  if (typeof endsAt === 'string') return new Date(endsAt);
+  if (durationMonths != null) return subscriptionEnd(new Date(), durationMonths);
+  return undefined;
+}
 
 /** 목록 조회 스코프 조건 — 배정 농장만 (관리 역할은 전체) */
 function scheduleScopeCondition(req: Request): SQL | undefined {
@@ -180,7 +206,42 @@ reportRouter.get('/schedules', requirePermission('farm', 'read'), async (req, re
         ...r,
         kindLabel: PERIOD_KIND_LABELS[r.kind as ReportPeriodKind] ?? r.kind,
         nextPeriodKey: resolvePeriod(r.kind as ReportPeriodKind, new Date()).periodKey,
+        /** 구독 기간이 끝났는가 — 끝나도 행은 남는다 (연장·해지는 사용자가 결정) */
+        expired: !isWithinSubscription(new Date(), r.endsAt),
       })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /reports/schedules/calendar?farmId=&months=12 — 앞으로 1년 동안 무엇이 언제 오는지
+reportRouter.get('/schedules/calendar', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const farmId = req.query.farmId as string | undefined;
+    const months = Math.min(Math.max(Number(req.query.months ?? 12) || 12, 1), 24);
+    const scopeCond = scheduleScopeCondition(req);
+    const conditions = [scopeCond, farmId ? eq(reportSchedules.farmId, farmId) : undefined]
+      .filter((c): c is SQL => c !== undefined);
+
+    const rows = await db
+      .select()
+      .from(reportSchedules)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .limit(50);
+
+    const now = new Date();
+    const entries = buildScheduleCalendar(rows, now, months);
+
+    res.json({
+      success: true,
+      data: {
+        months,
+        generatedAt: now,
+        entries,
+        totalPlanned: entries.reduce((sum, e) => sum + e.occurrences.length, 0),
+      },
     });
   } catch (error) {
     next(error);
@@ -206,6 +267,8 @@ reportRouter.post('/schedules', requirePermission('farm', 'read'), async (req, r
       return;
     }
 
+    const endsAt = resolveEndsAt(input.endsAt, input.durationMonths);
+
     const db = getDb();
     const [row] = await db
       .insert(reportSchedules)
@@ -216,6 +279,7 @@ reportRouter.post('/schedules', requirePermission('farm', 'read'), async (req, r
         format: input.format ?? 'xlsx',
         sendHourKst: input.sendHourKst ?? 7,
         enabled: input.enabled ?? true,
+        ...(endsAt !== undefined ? { endsAt } : {}),
         createdBy: req.user?.userId ?? null,
       })
       .onConflictDoUpdate({
@@ -225,6 +289,7 @@ reportRouter.post('/schedules', requirePermission('farm', 'read'), async (req, r
           format: input.format ?? 'xlsx',
           sendHourKst: input.sendHourKst ?? 7,
           enabled: input.enabled ?? true,
+          ...(endsAt !== undefined ? { endsAt } : {}),
           updatedAt: new Date(),
         },
       })
@@ -267,6 +332,8 @@ reportRouter.patch('/schedules/:scheduleId', requirePermission('farm', 'read'), 
       return;
     }
 
+    const endsAt = resolveEndsAt(patch.endsAt, patch.durationMonths);
+
     const [row] = await db
       .update(reportSchedules)
       .set({
@@ -274,6 +341,7 @@ reportRouter.patch('/schedules/:scheduleId', requirePermission('farm', 'read'), 
         ...(patch.format ? { format: patch.format } : {}),
         ...(patch.sendHourKst != null ? { sendHourKst: patch.sendHourKst } : {}),
         ...(patch.enabled != null ? { enabled: patch.enabled } : {}),
+        ...(endsAt !== undefined ? { endsAt } : {}),
         updatedAt: new Date(),
       })
       .where(eq(reportSchedules.scheduleId, scheduleId))

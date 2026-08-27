@@ -20,11 +20,14 @@ import { buildPeriodReport, type PeriodReport } from './period-report.service.js
 import {
   cumulativeStart,
   isDue,
+  isWithinSubscription,
   kstDateStr,
   resolvePeriod,
+  upcomingOccurrences,
   PERIOD_KIND_LABELS,
   type PeriodRange,
   type ReportPeriodKind,
+  type ScheduledOccurrence,
 } from './period.js';
 import {
   buildAttachmentName,
@@ -352,7 +355,14 @@ export async function runScheduledReports(now: Date = new Date()): Promise<Sched
     .where(and(eq(reportSchedules.enabled, true), eq(farms.status, 'active'), isNull(farms.deletedAt)));
 
   const schedules = rows.map((r) => r.report_schedules);
-  const dueList = schedules.filter((s) =>
+  // 구독 기간이 끝난 것은 발송하지 않는다. 행은 그대로 두고 화면에서 "기간 종료"로 보이게 한다 —
+  // 배치가 사용자의 구독 상태를 몰래 바꾸지 않는다.
+  const active = schedules.filter((s) => isWithinSubscription(now, s.endsAt));
+  const expired = schedules.length - active.length;
+  if (expired > 0) {
+    logger.info({ expired }, '[Report] 구독 기간이 끝난 스케줄은 발송에서 제외 (연장·해지는 사용자 몫)');
+  }
+  const dueList = active.filter((s) =>
     isDue(resolvePeriod(s.kind as ReportPeriodKind, now), now, s.sendHourKst, s.lastPeriodKey),
   );
 
@@ -390,4 +400,49 @@ export async function runScheduledReports(now: Date = new Date()): Promise<Sched
   );
 
   return { considered: schedules.length, due: dueList.length, sent, failed, skipped, deferred };
+}
+
+
+// ======================================================================
+// 발송 예정표 — "앞으로 1년 동안 언제 무엇이 오는가"
+// ======================================================================
+
+export interface ScheduleCalendarEntry {
+  readonly scheduleId: string;
+  readonly kind: ReportPeriodKind;
+  readonly kindLabel: string;
+  readonly enabled: boolean;
+  readonly recipients: readonly string[];
+  readonly endsAt: Date | null;
+  /** 구독 기간이 이미 끝났는가 (지금 기준) */
+  readonly expired: boolean;
+  readonly occurrences: readonly ScheduledOccurrence[];
+}
+
+/**
+ * 구독별 발송 예정 목록. 구독 종료일이 있으면 그 전까지만 — 오지 않을 보고서를
+ * 예정표에 그려 넣지 않는다.
+ */
+export function buildScheduleCalendar(
+  schedules: readonly ReportSchedule[],
+  now: Date,
+  months: number,
+): ScheduleCalendarEntry[] {
+  const horizon = new Date(now.getTime() + months * 30.5 * 86_400_000);
+
+  return schedules.map((s) => {
+    const kind = s.kind as ReportPeriodKind;
+    const expired = !isWithinSubscription(now, s.endsAt);
+    const until = s.endsAt && s.endsAt.getTime() < horizon.getTime() ? s.endsAt : horizon;
+    return {
+      scheduleId: s.scheduleId,
+      kind,
+      kindLabel: PERIOD_KIND_LABELS[kind] ?? kind,
+      enabled: s.enabled,
+      recipients: (s.recipients as string[] | null) ?? [],
+      endsAt: s.endsAt,
+      expired,
+      occurrences: s.enabled && !expired ? upcomingOccurrences(kind, now, until, s.sendHourKst) : [],
+    };
+  });
 }

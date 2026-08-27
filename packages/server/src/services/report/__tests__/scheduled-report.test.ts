@@ -62,7 +62,7 @@ vi.mock('../period-report.service.js', () => ({
 
 vi.mock('../generators/xlsxGenerator.js', () => ({ generateXlsx: vi.fn(() => Promise.resolve()) }));
 
-import { deliverReport, type ReportSchedule } from '../scheduled-report.service.js';
+import { buildScheduleCalendar, deliverReport, type ReportSchedule } from '../scheduled-report.service.js';
 
 const REPORT = {
   farmId: 'farm-1',
@@ -96,6 +96,7 @@ function schedule(overrides: Partial<ReportSchedule> = {}): ReportSchedule {
     format: 'xlsx',
     sendHourKst: 7,
     enabled: true,
+    endsAt: null,
     lastPeriodKey: null,
     lastSentAt: null,
     createdBy: null,
@@ -243,5 +244,46 @@ describe('deliverReport', () => {
 
     expect(result.periodKey).toBe('performance:2026-07');
     expect(buildPeriodReport).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('buildScheduleCalendar — 앞으로 1년 예정표', () => {
+  it('구독별로 예정 발송을 그린다', () => {
+    const entries = buildScheduleCalendar(
+      [schedule({ kind: 'weekly' }), schedule({ scheduleId: 'sched-2', kind: 'monthly' })],
+      NOW,
+      12,
+    );
+    expect(entries).toHaveLength(2);
+    expect(entries[0]!.kindLabel).toBe('주간');
+    expect(entries[0]!.occurrences.length).toBeGreaterThanOrEqual(52);
+    expect(entries[1]!.occurrences).toHaveLength(12);
+  });
+
+  it('중지된 구독은 예정이 비어 있다 (안 올 것을 그리지 않는다)', () => {
+    const [entry] = buildScheduleCalendar([schedule({ enabled: false })], NOW, 12);
+    expect(entry!.occurrences).toHaveLength(0);
+    expect(entry!.enabled).toBe(false);
+  });
+
+  it('구독 종료일 이후는 그리지 않고 기간 종료로 표시한다', () => {
+    const endsAt = new Date('2026-10-31T14:59:00Z');
+    const [entry] = buildScheduleCalendar([schedule({ kind: 'monthly', endsAt })], NOW, 12);
+    expect(entry!.expired).toBe(false);
+    expect(entry!.occurrences.map((o) => o.periodKey)).toEqual(['monthly:2026-08', 'monthly:2026-09']);
+
+    const [past] = buildScheduleCalendar(
+      [schedule({ kind: 'monthly', endsAt: new Date('2026-01-01T00:00:00Z') })],
+      NOW,
+      12,
+    );
+    expect(past!.expired).toBe(true);
+    expect(past!.occurrences).toHaveLength(0);
+  });
+
+  it('연간 구독은 1년 안에 1회', () => {
+    const [entry] = buildScheduleCalendar([schedule({ kind: 'annual' })], NOW, 12);
+    expect(entry!.occurrences).toHaveLength(1);
+    expect(entry!.occurrences[0]!.periodKey).toBe('annual:2026');
   });
 });
