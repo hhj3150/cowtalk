@@ -35,6 +35,8 @@ GET /api/public/stats (실시간 DB 집계, 5분 갱신)를 사용한다.
   (축사 깔짚을 휴머스 기반으로 운용 → 분뇨 축사 내 발효 → 악취·환경부하 저감 →
    퇴비·토양 순환으로 경축순환 완성. 향후 환경 모듈·제안서 문구는 이 명칭을 따른다)
 - 파일럿 목장: **송영신목장** (소유자 직영, 목장주 계정 hhj3150)
+- **술탄목장: 2026-08 센서 45두 추가 삽입** — 정기 보고서의 '센서 장착' 행에 기간 내 증가분으로 표기된다
+  (주간/월간/분기/성과 보고서 4종을 hhj3150@hanmail.net 으로 자동 발송 중 — 아래 '정기 보고서 자동 발송' 참조)
 - 목표 지자체: **경기도** — 파일럿 실측 성과(월간 리포트)가 제안서 근거
 - 운영 루프: 아침 브리핑(알림톡) → 결정 카드 조치 → 유량·유성분·TMR 기록 → 조치 기록률 → 월간 성과 리포트(두당 일 마진)
 - 착유 설비: **Lely A3 로봇착유기 1대 + T4C v4.20** (온프레미스, 공개 API 없음 — A3는 Horizon 대상 아님)
@@ -499,6 +501,42 @@ DB 영속화:
   기억이 블랙박스면 잘못된 기억이 조용히 답변을 오염시킨다
 - API: GET/POST /memory, PATCH/DELETE /memory/:id, POST /memory/decay(관리자)
 - 테스트 66건 (게이트·명시지시·파싱·통합·감쇠·회상·망각·권한경계)
+
+## 정기 보고서 자동 발송 (2026-08-27)
+
+"기간이 끝나면 보고서가 알아서 메일로 온다". 목장주가 앱에 들어오지 않아도 성과가 손에 닿는다.
+
+| 주기 | 대상 기간 | 발송 시점 | periodKey |
+|---|---|---|---|
+| weekly | 직전 월~일 (KST) | 월요일 07시 (KST, 기본값) | `weekly:2026-W34` |
+| monthly | 직전 달 | 매월 1일 | `monthly:2026-07` |
+| quarterly | 직전 분기 | 1·4·7·10월 1일 | `quarterly:2026-Q2` |
+| performance | 직전 달 + **파일럿 누적** | 매월 1일 | `performance:2026-07` |
+
+- 구독: `report_schedules` (농장×주기 1건, 수신자 배열·발송시각·첨부형식) — 마이그레이션 0038
+- 원장: `report_deliveries` — 성공·실패·사유·핵심 수치 스냅샷까지 남는다.
+  멱등 축은 `(schedule_id, period_key)` 부분 유니크 인덱스(성공·정기 발송만) → 잡이 몇 번 깨어나도 메일은 한 통.
+  같은 기간 실패는 최대 3회까지만 재시도 (설정 오류로 15분마다 영원히 실패하지 않게)
+- 잡: `scheduled-reports` (15분 주기, orchestrator 등록). **"월요일 07시 정각"이 아니라
+  "기간이 닫혔고 아직 안 보냈으면 발송"** — 서버가 꺼져 있었어도 밀린 보고서가 다음 깨어남에 나간다
+- 집계: `services/report/period-report.service.ts` 하나로 통일.
+  기존 `/reports/farm/:farmId/monthly` 라우트 로직을 그대로 꺼낸 것이라 월간 화면 응답 계약은 유지된다
+  (주간·분기·누적은 기간만 다르고 계산은 같다)
+- 메일: `lib/mailer.ts` (nodemailer). **SMTP 미설정이면 발송하지 않고 `test_mode=true`로 기록**한다 —
+  "보냈다"고 화면에 적어놓고 실제로는 안 나가는 상태를 만들지 않기 위해.
+  운영 전환은 `.env`의 `SMTP_HOST/PORT/USER/PASSWORD/SMTP_FROM` 설정만으로 끝난다
+- 본문 원칙: 없는 값은 0이 아니라 "기록 없음", 증감은 직전 동일 길이 기간과만 비교,
+  추정치는 산식 동봉 (유대단가·두당 일 마진)
+- API: `GET/POST /reports/schedules`, `PATCH/DELETE /reports/schedules/:id`,
+  `POST /reports/schedules/:id/run-now`, `GET /reports/deliveries`, `GET /reports/farm/:farmId/period?kind=`
+- UI: `/settings/reports` — 주기별 구독·즉시 발송·발송 이력(테스트모드까지 그대로 노출)
+- 시드: 술탄목장 4종(주간/월간/분기/성과) 구독 + 수신자 hhj3150@hanmail.net (마이그레이션 0038, 멱등)
+
+⚠️ 센서 장착 두수 집계 수정: 월간 보고서가 `sensor_devices` 만 세고 있었는데 smaXtec 동기화는
+그 테이블을 채우지 않아 커버리지가 늘 0%로 나왔다(→ 매달 "센서 추가 설치 권장" 오코멘트).
+이제 `animals.current_device_id`(전 서비스 공통 기준)와 `sensor_devices` 중 **큰 값**을 쓴다.
+기간 내 센서 증가는 두 경로를 **합치지 않고 따로** 보고한다:
+`installedInPeriod`(삽입일 기록 기준) / `newSensorAnimalsInPeriod`(기간 내 신규 등록 개체 중 센서 보유).
 
 ## 보고 형식 (매 작업 후)
 

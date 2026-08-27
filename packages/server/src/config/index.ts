@@ -107,6 +107,16 @@ const envSchema = z.object({
   KAKAO_ALIMTALK_FROM: z.string().optional(),        // 발신번호 (Solapi 등록 번호)
   KAKAO_ALIMTALK_TEST_MODE: z.coerce.boolean().default(true), // true=로그만, false=실발송
 
+  // 이메일 (정기 보고서 발송) — SMTP
+  // 미설정이면 EMAIL_TEST_MODE 와 무관하게 실제 발송 없이 로그만 남는다 (조용한 실패 금지).
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_SECURE: z.coerce.boolean().default(false),          // true=465 SMTPS, false=587 STARTTLS
+  SMTP_FROM: z.string().default('CowTalk <no-reply@cowtalk.kr>'),
+  EMAIL_TEST_MODE: z.coerce.boolean().default(false),      // true=발송 없이 로그만
+
   // 토스페이먼츠 구독 결제
   // https://console.tosspayments.com 에서 발급
   TOSS_PAYMENTS_SECRET_KEY: z.string().optional(),   // sk_test_... 또는 sk_live_...

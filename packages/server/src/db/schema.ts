@@ -1936,3 +1936,55 @@ export const regionalInterpretations = pgTable('regional_interpretations', {
 }, (table) => [
   uniqueIndex('regional_interpretations_key_idx').on(table.regionId, table.role, table.model),
 ]);
+
+// ======================================================================
+// 정기 보고서 — 주간/월간/분기/성과 보고서 자동 생성·메일 발송
+//
+// 스케줄이 DB에 있는 이유: 코드 상수로 두면 수신자를 바꾸려 배포해야 하고,
+// 프로세스 메모리에 두면 재시작 때 "이미 보낸 주"를 잊어 같은 보고서를 두 번 보낸다.
+// report_deliveries 가 발송 원장이자 멱등 키다 — (schedule_id, period_key) 성공 1건.
+// ======================================================================
+
+export const reportSchedules = pgTable('report_schedules', {
+  scheduleId:  uuid('schedule_id').primaryKey().defaultRandom(),
+  farmId:      uuid('farm_id').notNull().references(() => farms.farmId),
+  kind:        varchar('kind', { length: 16 }).notNull(),        // weekly | monthly | quarterly | performance
+  recipients:  jsonb('recipients').notNull().default('[]'),      // 수신 이메일 배열
+  format:      varchar('format', { length: 8 }).notNull().default('xlsx'), // xlsx | none (본문만)
+  sendHourKst: integer('send_hour_kst').notNull().default(7),    // KST 발송 시각 (0~23)
+  enabled:     boolean('enabled').notNull().default(true),
+  /** 마지막으로 발송한 기간 키 — 빠른 중복 차단 (진짜 보증은 deliveries 유니크 인덱스) */
+  lastPeriodKey: varchar('last_period_key', { length: 32 }),
+  lastSentAt:  timestamp('last_sent_at', { withTimezone: true }),
+  createdBy:   uuid('created_by').references(() => users.userId),
+  createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('report_schedules_farm_kind_idx').on(table.farmId, table.kind),
+  index('report_schedules_enabled_idx').on(table.enabled),
+]);
+
+export const reportDeliveries = pgTable('report_deliveries', {
+  deliveryId:  uuid('delivery_id').primaryKey().defaultRandom(),
+  scheduleId:  uuid('schedule_id').references(() => reportSchedules.scheduleId, { onDelete: 'set null' }),
+  farmId:      uuid('farm_id').notNull().references(() => farms.farmId),
+  kind:        varchar('kind', { length: 16 }).notNull(),
+  periodKey:   varchar('period_key', { length: 32 }).notNull(),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd:   timestamp('period_end', { withTimezone: true }).notNull(),
+  recipients:  jsonb('recipients').notNull().default('[]'),
+  status:      varchar('status', { length: 12 }).notNull(),      // sent | failed
+  subject:     text('subject'),
+  /** 핵심 수치 스냅샷 — 다음 기간 비교·감사에 쓰이고, 메일이 지워져도 근거가 남는다 */
+  summary:     jsonb('summary'),
+  attachmentName: varchar('attachment_name', { length: 200 }),
+  /** true = SMTP 미설정으로 실제 발송되지 않고 로그만 남음 (발송했다고 착각하지 않게) */
+  testMode:    boolean('test_mode').notNull().default(false),
+  /** 수동 실행(run-now) 여부 — 정기 발송 이력과 구분 */
+  manual:      boolean('manual').notNull().default(false),
+  errorMessage: text('error_message'),
+  createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('report_deliveries_farm_idx').on(table.farmId, table.createdAt),
+  index('report_deliveries_schedule_idx').on(table.scheduleId, table.periodKey),
+]);
