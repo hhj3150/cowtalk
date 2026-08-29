@@ -517,6 +517,10 @@ DB 영속화:
 → 1년 구독 시 총 **81회** 발송 (술탄목장 5종 전부 구독 중, 종료일 = 시드 적용일 + 1년)
 
 - 구독: `report_schedules` (농장×주기 1건, 수신자 배열·발송시각·첨부형식·**구독 종료일**) — 마이그레이션 0038·0039
+- **권한 분리**: 조회는 배정 스코프(`farmInScope`)지만 **발송 설정 변경은 그 농장에 배정된 계정+마스터만**
+  (`canManageFarmReports`). 전국 조회 권한(행정관·방역관)이 남의 목장 수신자를 바꾸거나 구독을 해지할 수 없다
+- **시드 1회성**: 마이그레이션은 매 기동 재실행되므로 데이터 시드는 `migration_seed_marks` 표식으로 1회만 적용한다.
+  (표식이 없으면 사용자가 해지한 구독이 재부팅마다 되살아나고, 무기한으로 바꾼 기간이 다시 1년으로 덮인다)
 - **구독 기간**: `ends_at` (null = 무기한). 기간이 끝나면 자동 발송에서 빠지되 **행을 지우거나 enabled 를 몰래 바꾸지 않는다** —
   화면에 "기간 종료"로 보이고 연장·해지는 사용자가 결정한다 (배치가 사용자 설정을 바꾸지 않는 원칙)
 - **발송 예정표**: `GET /reports/schedules/calendar?months=12` — 앞으로 1년 동안 언제 무슨 보고서가 오는지.
@@ -526,14 +530,29 @@ DB 영속화:
   같은 기간 실패는 최대 3회까지만 재시도 (설정 오류로 15분마다 영원히 실패하지 않게)
 - 잡: `scheduled-reports` (15분 주기, orchestrator 등록). **"월요일 07시 정각"이 아니라
   "기간이 닫혔고 아직 안 보냈으면 발송"** — 서버가 꺼져 있었어도 밀린 보고서가 다음 깨어남에 나간다
+- ⚠️ **스케줄러 전체가 파이프라인에 얹혀 있다**: smaXtec 크레덴셜이 없으면 `index.ts`가 파이프라인을 시작하지 않고,
+  그 위의 모든 주기 잡(아침 브리핑·자동화 룰·지능 루프·**정기 보고서**)이 함께 멈춘다.
+  크레덴셜 회수·만료 시 보고서도 조용히 끊기므로 부팅 경고에 꺼진 잡 목록을 남긴다
 - 집계: `services/report/period-report.service.ts` 하나로 통일.
   기존 `/reports/farm/:farmId/monthly` 라우트 로직을 그대로 꺼낸 것이라 월간 화면 응답 계약은 유지된다
   (주간·분기·누적은 기간만 다르고 계산은 같다)
 - 메일: `lib/mailer.ts` (nodemailer). **SMTP 미설정이면 발송하지 않고 `test_mode=true`로 기록**한다 —
   "보냈다"고 화면에 적어놓고 실제로는 안 나가는 상태를 만들지 않기 위해.
   운영 전환은 `.env`의 `SMTP_HOST/PORT/USER/PASSWORD/SMTP_FROM` 설정만으로 끝난다
+- **테스트모드는 기간을 소진하지 않는다**: `test_mode=true` 기록은 `lastPeriodKey`를 올리지 않으므로,
+  나중에 SMTP를 붙이면 그 기간 보고서가 실제로 발송된다 (미발송분이 조용히 사라지지 않게).
+  단 기록이 이미 있고 SMTP가 여전히 없으면 원장 도배를 막기 위해 조용히 대기한다
+- **만료 예고**: 구독 종료 30일 이내면 메일 본문에 "N일 뒤 종료됩니다"가 붙는다 (1년 구독이 소리 없이 끊기지 않게)
+- ⚠️ **불리언 환경변수**: `z.coerce.boolean()` 금지 — `Boolean("false") === true` 라서 `EMAIL_TEST_MODE=false`가
+  테스트 모드 ON이 되고 `SMTP_SECURE=false`가 TLS 강제가 된다. `lib/env-bool.ts`의 `parseBoolEnv`를 쓴다
+  (config의 `boolEnv` 헬퍼 경유). 기존 `REDIS_ENABLED`·`KAKAO_ALIMTALK_TEST_MODE`도 같은 함정이라 함께 고쳤다
 - 본문 원칙: 없는 값은 0이 아니라 "기록 없음", 증감은 직전 동일 길이 기간과만 비교,
   추정치는 산식 동봉 (유대단가·두당 일 마진)
+- 🔒 **첨부 파일은 `uploads/reports`(공용)에 두지 않는다**: 그 디렉터리는
+  `GET /report-generate/download/:fileId` 가 서빙하는데, 예전 구현이 **접두 일치**로 파일을 찾아
+  `/download/0` 한 번이면 0으로 시작하는 아무 파일이나 내줬다(→ 남의 목장 보고서 열람).
+  스케줄 발송 첨부는 프로세스 전용 임시 디렉터리에 만들고 발송 직후 삭제하며,
+  다운로드 라우트는 UUID 형식 검증 + `id_` 정확 일치로 막았다
 - API: `GET/POST /reports/schedules`, `PATCH/DELETE /reports/schedules/:id`,
   `POST /reports/schedules/:id/run-now`, `GET /reports/deliveries`, `GET /reports/farm/:farmId/period?kind=`,
   `GET /reports/schedules/calendar?months=12`

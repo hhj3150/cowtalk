@@ -54,10 +54,24 @@ function parseMonthRange(month: string): MonthRange {
   return { start, end };
 }
 
-/** 요청자가 그 농장을 다룰 수 있는가 (관리 역할은 scope=null → 전체 허용) */
+/** 조회 가능 범위인가 (배정 농장, 관리 역할은 scope=null → 전체) */
 function farmInScope(req: Request, farmId: string): boolean {
   const scope = scopedFarmIds(req);
   return scope === null || scope.includes(farmId);
+}
+
+/**
+ * 그 농장의 보고서 **발송 설정을 바꿀 수 있는가**.
+ *
+ * 조회 권한과 분리하는 이유: 전국 조회 권한을 가진 역할(행정관·방역관)이
+ * 남의 목장 보고서 수신자를 임의 주소로 바꾸거나 구독을 해지할 수 있으면 안 된다.
+ * 발송 설정은 그 농장에 **배정된** 계정(목장주·담당 수의사)과 마스터만 만진다.
+ */
+function canManageFarmReports(req: Request, farmId: string): boolean {
+  if (!req.user) return false;
+  if (req.user.isMaster) return true;
+  const assigned = req.user.farmIds ?? [];
+  return assigned.includes(farmId);
 }
 
 // GET /reports/farm/:farmId/monthly?month=YYYY-MM
@@ -67,6 +81,10 @@ reportRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const farmId = req.params.farmId as string;
+      if (!farmInScope(req, farmId)) {
+        res.status(403).json({ success: false, error: '해당 농장에 접근 권한이 없습니다' });
+        return;
+      }
       const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
       const { start, end } = parseMonthRange(month);
 
@@ -75,6 +93,7 @@ reportRouter.get(
         start,
         end,
         periodTitle: `${month} 월간`,
+        periodNoun: '이번 달',
       });
 
       if (!report) {
@@ -257,8 +276,11 @@ reportRouter.post('/schedules', requirePermission('farm', 'read'), async (req, r
       return;
     }
     const input = parsed.data;
-    if (!farmInScope(req, input.farmId)) {
-      res.status(403).json({ success: false, error: '해당 농장에 접근 권한이 없습니다' });
+    if (!canManageFarmReports(req, input.farmId)) {
+      res.status(403).json({
+        success: false,
+        error: '이 농장의 보고서 발송 설정을 변경할 권한이 없습니다 (배정된 계정만 가능)',
+      });
       return;
     }
     const recipients = normalizeRecipients(input.recipients);
@@ -320,7 +342,7 @@ reportRouter.patch('/schedules/:scheduleId', requirePermission('farm', 'read'), 
       .from(reportSchedules)
       .where(eq(reportSchedules.scheduleId, scheduleId));
 
-    if (!existing || !farmInScope(req, existing.farmId)) {
+    if (!existing || !canManageFarmReports(req, existing.farmId)) {
       res.status(404).json({ success: false, error: '구독을 찾을 수 없습니다' });
       return;
     }
@@ -363,7 +385,7 @@ reportRouter.delete('/schedules/:scheduleId', requirePermission('farm', 'read'),
       .from(reportSchedules)
       .where(eq(reportSchedules.scheduleId, scheduleId));
 
-    if (!existing || !farmInScope(req, existing.farmId)) {
+    if (!existing || !canManageFarmReports(req, existing.farmId)) {
       res.status(404).json({ success: false, error: '구독을 찾을 수 없습니다' });
       return;
     }
@@ -385,7 +407,7 @@ reportRouter.post('/schedules/:scheduleId/run-now', requirePermission('farm', 'r
       .from(reportSchedules)
       .where(eq(reportSchedules.scheduleId, scheduleId));
 
-    if (!schedule || !farmInScope(req, schedule.farmId)) {
+    if (!schedule || !canManageFarmReports(req, schedule.farmId)) {
       res.status(404).json({ success: false, error: '구독을 찾을 수 없습니다' });
       return;
     }

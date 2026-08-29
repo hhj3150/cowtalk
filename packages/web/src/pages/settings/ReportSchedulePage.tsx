@@ -64,15 +64,19 @@ function groupByMonth(
     .map(([month, items]) => ({
       month,
       items: items.sort((a, b) => new Date(a.sendAt).getTime() - new Date(b.sendAt).getTime()),
-    }));
+    }))
+    // 구독 목록이 DB 행 순서로 오므로 월 묶음도 그대로면 2027년 1월이 2026년 9월 위에 올 수 있다
+    .sort((a, b) => new Date(a.items[0]!.sendAt).getTime() - new Date(b.items[0]!.sendAt).getTime());
 }
 
 export function ReportSchedulePage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const { selectedFarmId } = useFarmStore();
   const [email, setEmail] = useState('');
-  const [sendHour, setSendHour] = useState(7);
-  const [termMonths, setTermMonths] = useState<number | null>(12);
+  // null = "사용자가 손대지 않음". 기존 구독을 수정할 때 입력하지 않은 항목을 덮어쓰지 않기 위해
+  // (이메일만 바꾸려다 발송 시각·구독 기간·중지 상태가 초기화되던 문제)
+  const [sendHour, setSendHour] = useState<number | null>(null);
+  const [termMonths, setTermMonths] = useState<number | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunNowResult | null>(null);
 
@@ -106,6 +110,12 @@ export function ReportSchedulePage(): React.JSX.Element {
     onSuccess: () => { setError(null); invalidate(); },
     onError: onError('구독 저장에 실패했습니다.'),
   });
+  const updateMutation = useMutation({
+    mutationFn: ({ scheduleId, patch }: { scheduleId: string; patch: Parameters<typeof updateReportSchedule>[1] }) =>
+      updateReportSchedule(scheduleId, patch),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: onError('구독 수정에 실패했습니다.'),
+  });
   const toggleMutation = useMutation({
     mutationFn: ({ scheduleId, enabled }: { scheduleId: string; enabled: boolean }) =>
       updateReportSchedule(scheduleId, { enabled }),
@@ -126,25 +136,48 @@ export function ReportSchedulePage(): React.JSX.Element {
   const byKind = new Map<ReportKind, ReportSchedule>();
   for (const s of schedules ?? []) byKind.set(s.kind, s);
 
+  /** 기간 선택 → 저장 payload 조각 (undefined = 손대지 않음 → 서버가 기존 값 유지) */
+  function termPatch(): { endsAt?: null; durationMonths?: number } {
+    if (termMonths === undefined) return {};
+    return termMonths === null ? { endsAt: null } : { durationMonths: termMonths };
+  }
+
   function handleSubscribe(kind: ReportKind): void {
     if (!selectedFarmId) {
       setError('먼저 목장을 선택해 주세요.');
       return;
     }
     const existing = byKind.get(kind);
-    const recipients = email.trim() ? [email.trim()] : existing?.recipients;
-    if (!recipients || recipients.length === 0) {
+    const typed = email.trim();
+
+    // 기존 구독 수정: 입력한 항목만 보낸다. 발송 시각·기간·중지 상태는 손대지 않으면 그대로.
+    if (existing) {
+      const patch = {
+        ...(typed ? { recipients: [typed] } : {}),
+        ...(sendHour !== null ? { sendHourKst: sendHour } : {}),
+        ...termPatch(),
+      };
+      if (Object.keys(patch).length === 0) {
+        setError('바꿀 내용을 입력해 주세요 (이메일·발송 시각·기간 중 하나).');
+        return;
+      }
+      updateMutation.mutate({ scheduleId: existing.scheduleId, patch });
+      return;
+    }
+
+    // 신규 구독: 수신자는 필수, 나머지는 기본값(07시·1년)
+    if (!typed) {
       setError('받을 이메일 주소를 입력해 주세요.');
       return;
     }
     saveMutation.mutate({
       farmId: selectedFarmId,
       kind,
-      recipients,
-      sendHourKst: sendHour,
+      recipients: [typed],
+      sendHourKst: sendHour ?? 7,
       format: 'xlsx',
       enabled: true,
-      ...(termMonths === null ? { endsAt: null } : { durationMonths: termMonths }),
+      ...(termMonths === undefined ? { durationMonths: 12 } : termPatch()),
     });
   }
 
@@ -177,13 +210,14 @@ export function ReportSchedulePage(): React.JSX.Element {
           <label style={{ fontSize: 12, color: 'var(--ct-text-muted)' }} htmlFor="report-hour">발송 시각(KST)</label>
           <select
             id="report-hour"
-            value={sendHour}
-            onChange={(e) => { setSendHour(Number(e.target.value)); }}
+            value={sendHour ?? ''}
+            onChange={(e) => { setSendHour(e.target.value === '' ? null : Number(e.target.value)); }}
             style={{
               padding: '8px 10px', borderRadius: 8, border: '1px solid var(--ct-border)',
               background: 'transparent', color: 'var(--ct-text)', fontSize: 13,
             }}
           >
+            <option value="">그대로 두기</option>
             {Array.from({ length: 24 }, (_, h) => (
               <option key={h} value={h}>{String(h).padStart(2, '0')}시</option>
             ))}
@@ -210,7 +244,8 @@ export function ReportSchedulePage(): React.JSX.Element {
           ))}
         </div>
         <div style={{ fontSize: 11, color: 'var(--ct-text-muted)', marginTop: 8 }}>
-          비워 두면 기존 수신자가 유지됩니다. 기간이 끝나면 발송이 멈추고 구독은 목록에 '기간 종료'로 남습니다(자동 해지 아님).
+          기존 구독을 수정할 때는 <strong>입력한 항목만</strong> 바뀝니다(비워 두면 그대로).
+          기간이 끝나면 발송이 멈추고 구독은 목록에 '기간 종료'로 남습니다(자동 해지 아님).
           목장: {selectedFarmId ? '선택됨' : '미선택 — 상단에서 목장을 골라 주세요'}
         </div>
         {error && <div role="alert" style={{ marginTop: 8, fontSize: 12, color: '#ef4444' }}>{error}</div>}
@@ -248,7 +283,7 @@ export function ReportSchedulePage(): React.JSX.Element {
                   <button
                     type="button"
                     onClick={() => { handleSubscribe(kind); }}
-                    disabled={saveMutation.isPending}
+                    disabled={saveMutation.isPending || updateMutation.isPending}
                     className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                     style={{ background: 'var(--ct-primary)', border: 'none', cursor: 'pointer' }}
                   >

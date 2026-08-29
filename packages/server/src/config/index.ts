@@ -4,6 +4,7 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { parseBoolEnv } from '../lib/env-bool.js';
 
 // 모노레포 루트 .env 로드 (packages/server/src/config/ → 4단계 상위)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -11,6 +12,13 @@ const rootEnvPath = path.resolve(__dirname, '../../../../.env');
 
 // override: true → 환경에 빈 문자열로 존재해도 .env 값 우선
 dotenv.config({ path: rootEnvPath, override: true });
+
+/**
+ * 불리언 환경변수 스키마.
+ * z.coerce.boolean() 은 Boolean("false") === true 라 절대 쓰지 않는다 (env-bool.ts 참조).
+ */
+const boolEnv = (defaultValue: boolean) =>
+  z.preprocess((v) => parseBoolEnv(v, defaultValue), z.boolean());
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -22,7 +30,7 @@ const envSchema = z.object({
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
 
-  REDIS_ENABLED: z.coerce.boolean().default(true),
+  REDIS_ENABLED: boolEnv(true),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(''),
@@ -48,8 +56,8 @@ const envSchema = z.object({
 
   // 젖소 정액추천 외부 데이터 연동 플래그 (데이터 거버넌스 확정 시 true로 전환 — 코드 변경 불필요)
   // 켜지면 dairy-sire-provider의 해당 공급원이 live가 되어 추천 신뢰도가 자동 상승한다.
-  DAIRY_DHI_ENABLED: z.coerce.boolean().default(false),        // 젖소 검정데이터(DHI) 연동
-  DAIRY_PEDIGREE_ENABLED: z.coerce.boolean().default(false),    // 한국종축개량협회 혈통 연동
+  DAIRY_DHI_ENABLED: boolEnv(false),        // 젖소 검정데이터(DHI) 연동
+  DAIRY_PEDIGREE_ENABLED: boolEnv(false),    // 한국종축개량협회 혈통 연동
 
   // Anthropic Claude API — 이중 모델 구성
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -105,7 +113,7 @@ const envSchema = z.object({
   KAKAO_ALIMTALK_API_SECRET: z.string().optional(),
   KAKAO_ALIMTALK_PFID: z.string().optional(),       // 카카오 플러스친구 채널 ID
   KAKAO_ALIMTALK_FROM: z.string().optional(),        // 발신번호 (Solapi 등록 번호)
-  KAKAO_ALIMTALK_TEST_MODE: z.coerce.boolean().default(true), // true=로그만, false=실발송
+  KAKAO_ALIMTALK_TEST_MODE: boolEnv(true), // true=로그만, false=실발송
 
   // 이메일 (정기 보고서 발송) — SMTP
   // 미설정이면 EMAIL_TEST_MODE 와 무관하게 실제 발송 없이 로그만 남는다 (조용한 실패 금지).
@@ -113,9 +121,9 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  SMTP_SECURE: z.coerce.boolean().default(false),          // true=465 SMTPS, false=587 STARTTLS
+  SMTP_SECURE: boolEnv(false),          // true=465 SMTPS, false=587 STARTTLS
   SMTP_FROM: z.string().default('CowTalk <no-reply@cowtalk.kr>'),
-  EMAIL_TEST_MODE: z.coerce.boolean().default(false),      // true=발송 없이 로그만
+  EMAIL_TEST_MODE: boolEnv(false),      // true=발송 없이 로그만
 
   // 토스페이먼츠 구독 결제
   // https://console.tosspayments.com 에서 발급

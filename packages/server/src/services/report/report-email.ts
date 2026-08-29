@@ -93,7 +93,11 @@ export function fmtDelta(current: number | null, previous: number | null, unit =
   if (diff === 0) return '변화 없음';
   const arrow = diff > 0 ? '▲' : '▼';
   const abs = Math.abs(diff);
-  const pct = previous !== 0 ? ` (${diff > 0 ? '+' : '-'}${String(Math.round((abs / Math.abs(previous)) * 100))}%)` : '';
+  // 상대 증감률은 절대량 지표에만 붙인다:
+  // - %p 지표에 다시 %를 붙이면 "16%p (+229%)" 처럼 두 수치가 서로를 흐린다
+  // - 반올림해서 0%가 되는 변화에 "(-0%)"를 적으면 없는 정밀도를 꾸며내는 셈이다
+  const relative = previous !== 0 && unit !== '%p' ? Math.round((abs / Math.abs(previous)) * 100) : 0;
+  const pct = relative > 0 ? ` (${diff > 0 ? '+' : '-'}${String(relative)}%)` : '';
   return `${arrow} ${abs.toLocaleString('ko-KR')}${unit}${pct}`;
 }
 
@@ -179,7 +183,27 @@ export interface RenderReportInput {
   readonly previous: PeriodReport | null;
   /** 성과 보고서에서만 채워진다 — 파일럿 누적 구간 집계 */
   readonly cumulative: { readonly report: PeriodReport; readonly label: string } | null;
+  /** 구독 종료일 — 임박하면 본문에 예고한다 (구독이 조용히 끊기지 않게) */
+  readonly subscriptionEndsAt?: Date | null;
+  readonly now?: Date;
   readonly appUrl?: string;
+}
+
+/** 만료 예고를 띄우기 시작하는 시점 (일) */
+export const SUBSCRIPTION_NOTICE_DAYS = 30;
+
+/**
+ * 구독 만료 예고 (순수). 종료가 30일 이내로 다가와야 알린다.
+ * 1년 구독이 아무 예고 없이 끝나면 목장주는 "보고서가 왜 안 오지"를 겪고 나서야 알게 된다.
+ */
+export function subscriptionNotice(endsAt: Date | null | undefined, now: Date): string | undefined {
+  if (!endsAt) return undefined;
+  const days = Math.ceil((endsAt.getTime() - now.getTime()) / 86_400_000);
+  if (days > SUBSCRIPTION_NOTICE_DAYS) return undefined;
+  const dateStr = endsAt.toISOString().slice(0, 10);
+  if (days < 0) return `이 보고서 구독은 ${dateStr}에 종료되었습니다. 계속 받으시려면 CowTalk 설정 > 보고서 발송에서 연장해 주세요.`;
+  if (days === 0) return `이 보고서 구독은 오늘(${dateStr}) 종료됩니다. 계속 받으시려면 CowTalk 설정 > 보고서 발송에서 연장해 주세요.`;
+  return `이 보고서 구독은 ${String(days)}일 뒤(${dateStr}) 종료됩니다. 계속 받으시려면 CowTalk 설정 > 보고서 발송에서 연장해 주세요.`;
 }
 
 export interface RenderedReport {
@@ -207,6 +231,7 @@ export function renderReportEmail(input: RenderReportInput): RenderedReport {
   const rows = buildMetricRows(metrics, prevMetrics);
   const topAlerts = current.summary.alertsByType.slice(0, 5);
   const subject = buildReportSubject(farmName, period);
+  const notice = subscriptionNotice(input.subscriptionEndsAt, input.now ?? new Date());
 
   // ── HTML ──
   const rowsHtml = rows
@@ -245,12 +270,17 @@ export function renderReportEmail(input: RenderReportInput): RenderedReport {
       })()
     : '';
 
+  const noticeHtml = notice
+    ? `<div style="margin:12px 0;padding:10px 12px;border-radius:8px;background:#FFF8E1;color:#8D6E00;font-size:13px;">${esc(notice)}</div>`
+    : '';
+
   const html = `<div style="font-family:'Malgun Gothic','맑은 고딕',Apple SD Gothic Neo,sans-serif;color:#212121;max-width:680px;margin:0 auto;padding:16px;">
   <div style="border-left:4px solid #1B5E20;padding-left:12px;margin-bottom:16px;">
     <div style="font-size:12px;color:#757575;">CowTalk 자동 ${esc(kindLabel)} 보고서</div>
     <h2 style="margin:4px 0;font-size:20px;color:#1B5E20;">${esc(farmName)} · ${esc(period.title)}</h2>
     <div style="font-size:13px;color:#757575;">대상 기간 ${esc(period.label)}</div>
   </div>
+${noticeHtml}
 
   <h3 style="margin:20px 0 8px;color:#1B5E20;font-size:16px;">한눈에 보기</h3>
   <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">
@@ -300,6 +330,8 @@ ${cumulativeHtml}
       `- 누적 유량: ${c.milkTotalL > 0 ? fmtInt(c.milkTotalL, 'L') : '기록 없음'}`,
     );
   }
+
+  if (notice) textLines.push('', `※ ${notice}`);
 
   textLines.push(
     '',

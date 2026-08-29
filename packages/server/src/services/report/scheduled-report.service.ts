@@ -9,8 +9,8 @@
 // "지난주 메일이 왜 안 왔지"에 답할 수 없는 자동화는 없는 것만 못하다.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { v4 as uuidv4 } from 'uuid';
 import { and, count, eq, isNull, min } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { animals, farms, reportDeliveries, reportSchedules, sensorDevices } from '../../db/schema.js';
@@ -36,7 +36,6 @@ import {
   snapshotMetrics,
 } from './report-email.js';
 import { generateXlsx } from './generators/xlsxGenerator.js';
-import { REPORT_CONFIG } from './config.js';
 
 export type ReportSchedule = typeof reportSchedules.$inferSelect;
 
@@ -44,6 +43,15 @@ export type ReportSchedule = typeof reportSchedules.$inferSelect;
 export const MAX_FAILED_ATTEMPTS_PER_PERIOD = 3;
 /** 한 번의 잡 실행에서 처리할 최대 발송 건수 (잡이 무한정 길어지지 않게) */
 export const MAX_DELIVERIES_PER_RUN = 20;
+
+/** 코멘트에서 기간을 가리키는 말 — 주간 보고서에 "이번 달"이 찍히지 않게 */
+const PERIOD_NOUNS: Readonly<Record<ReportPeriodKind, string>> = {
+  weekly: '이번 주',
+  monthly: '이번 달',
+  quarterly: '이번 분기',
+  performance: '이번 달',
+  annual: '이번 연도',
+};
 
 export interface ReportBundle {
   readonly period: PeriodRange;
@@ -69,6 +77,7 @@ export async function buildReportBundle(
     start: period.start,
     end: period.end,
     periodTitle: `${period.title} ${PERIOD_KIND_LABELS[kind]}`,
+    periodNoun: PERIOD_NOUNS[kind],
   });
   if (!current) return null;
 
@@ -77,6 +86,7 @@ export async function buildReportBundle(
     start: period.previous.start,
     end: period.previous.end,
     periodTitle: `${period.previous.title} ${PERIOD_KIND_LABELS[kind]}`,
+    periodNoun: PERIOD_NOUNS[kind],
   });
 
   let cumulative: ReportBundle['cumulative'] = null;
@@ -88,6 +98,7 @@ export async function buildReportBundle(
       start: since,
       end: period.end,
       periodTitle: '파일럿 누적',
+      periodNoun: '누적 기간',
     });
     if (report) {
       cumulative = { report, label: `${kstDateStr(since)} ~ ${kstDateStr(new Date(period.end.getTime() - 1))}` };
@@ -134,11 +145,21 @@ export interface DeliverOptions {
   readonly manual?: boolean;
 }
 
-/** 이 스케줄·이 기간에 이미 보냈거나 재시도를 소진했는지 (정기 발송만 해당) */
-async function alreadyHandled(scheduleId: string, periodKey: string): Promise<'sent' | 'exhausted' | null> {
+/**
+ * 이 스케줄·이 기간을 이미 처리했는지 (정기 발송만 해당).
+ *
+ * 'test_logged' 를 따로 두는 이유: SMTP 미설정 상태의 '발송'은 메일이 나가지 않았다.
+ * 그것을 'sent' 로 취급해 기간 키를 소진해 버리면, 나중에 SMTP 를 붙였을 때
+ * 그 주의 보고서는 영영 오지 않는다 (기간은 지나갔고 이미 보냈다고 기록돼 있으므로).
+ * → 실제 발송(test_mode=false)만 기간을 소진하고, 테스트 기록은 중복 로그만 막는다.
+ */
+async function alreadyHandled(
+  scheduleId: string,
+  periodKey: string,
+): Promise<'sent' | 'exhausted' | 'test_logged' | null> {
   const db = getDb();
   const rows = await db
-    .select({ status: reportDeliveries.status, cnt: count() })
+    .select({ status: reportDeliveries.status, testMode: reportDeliveries.testMode, cnt: count() })
     .from(reportDeliveries)
     .where(
       and(
@@ -147,11 +168,16 @@ async function alreadyHandled(scheduleId: string, periodKey: string): Promise<'s
         eq(reportDeliveries.manual, false),
       ),
     )
-    .groupBy(reportDeliveries.status);
+    .groupBy(reportDeliveries.status, reportDeliveries.testMode);
 
-  if (rows.some((r) => r.status === 'sent')) return 'sent';
-  const failed = rows.find((r) => r.status === 'failed')?.cnt ?? 0;
-  return Number(failed) >= MAX_FAILED_ATTEMPTS_PER_PERIOD ? 'exhausted' : null;
+  if (rows.some((r) => r.status === 'sent' && r.testMode === false)) return 'sent';
+
+  const failed = rows
+    .filter((r) => r.status === 'failed')
+    .reduce((sum, r) => sum + Number(r.cnt), 0);
+  if (failed >= MAX_FAILED_ATTEMPTS_PER_PERIOD) return 'exhausted';
+
+  return rows.some((r) => r.status === 'sent' && r.testMode === true) ? 'test_logged' : null;
 }
 
 /** 보고서 1건 생성 + 발송 + 원장 기록 */
@@ -185,10 +211,16 @@ export async function deliverReport(
     if (handled === 'exhausted') {
       return { ...base, status: 'skipped', reason: '재시도 횟수 소진 (원장의 실패 사유 확인 필요)', testMode: false };
     }
+    // SMTP 가 아직 없으면 기록만 한 번 남기고 조용히 기다린다 —
+    // 설정되는 순간 이 기간 보고서가 실제로 발송된다 (기간 키를 소진하지 않았으므로)
+    if (handled === 'test_logged' && !isMailConfigured()) {
+      return { ...base, status: 'skipped', reason: 'SMTP 미설정 — 발송 대기 (설정되면 이 기간 보고서가 나갑니다)', testMode: true };
+    }
   }
 
   let attachmentPath: string | null = null;
   let attachmentName: string | null = null;
+  let tempDir: string | null = null;
 
   try {
     const bundle = await buildReportBundle(schedule.farmId, kind, now);
@@ -211,14 +243,18 @@ export async function deliverReport(
       current: bundle.current,
       previous: bundle.previous,
       cumulative: bundle.cumulative,
+      subscriptionEndsAt: schedule.endsAt,
+      now,
     });
 
     if (schedule.format === 'xlsx') {
       attachmentName = buildAttachmentName(bundle.current.farmName, kind, period.periodKey);
-      if (!fs.existsSync(REPORT_CONFIG.OUTPUT_DIR)) {
-        fs.mkdirSync(REPORT_CONFIG.OUTPUT_DIR, { recursive: true });
-      }
-      attachmentPath = path.join(REPORT_CONFIG.OUTPUT_DIR, `${uuidv4()}_${attachmentName}`);
+      // ⚠️ uploads/reports(= /report-generate/download 가 서빙하는 공용 디렉터리)에 두지 않는다.
+      // 그 라우트는 파일명 접두 일치로 파일을 찾아주므로, 그곳에 쌓인 남의 목장 보고서가
+      // 인증만 통과하면 누구에게나 열린다. 첨부는 프로세스 전용 임시 디렉터리에 만들고
+      // 발송 직후 지운다 (메일이 곧 전달 수단이지, 이 파일은 보관 대상이 아니다).
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowtalk-report-'));
+      attachmentPath = path.join(tempDir, attachmentName);
       const sheets = buildReportSheets({
         farmName: bundle.current.farmName,
         period: bundle.period,
@@ -253,7 +289,8 @@ export async function deliverReport(
       summary: snapshotMetrics(bundle.current) as unknown as Record<string, unknown>,
     });
 
-    if (mail.success && !manual) {
+    // 실제로 나간 메일만 기간을 소진한다 (테스트 모드는 lastPeriodKey 를 건드리지 않는다)
+    if (mail.success && !mail.testMode && !manual) {
       await db
         .update(reportSchedules)
         .set({ lastPeriodKey: period.periodKey, lastSentAt: new Date(), updatedAt: new Date() })
@@ -296,6 +333,15 @@ export async function deliverReport(
       logger.error({ err: recordErr }, '[Report] 실패 이력 기록마저 실패');
     });
     return { ...base, status: 'failed', reason: message, testMode: false };
+  } finally {
+    // 첨부 임시 파일은 발송 성공·실패와 무관하게 지운다 (디스크에 남겨 둘 이유가 없다)
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch (cleanupErr) {
+        logger.warn({ err: cleanupErr, tempDir }, '[Report] 첨부 임시 파일 정리 실패');
+      }
+    }
   }
 }
 

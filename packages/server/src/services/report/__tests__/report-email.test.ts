@@ -10,6 +10,7 @@ import {
   fmtPct,
   renderReportEmail,
   snapshotMetrics,
+  subscriptionNotice,
 } from '../report-email.js';
 import { resolvePeriod } from '../period.js';
 import type { PeriodReport } from '../period-report.service.js';
@@ -115,6 +116,15 @@ describe('fmtDelta — 방향만 말하고 좋다/나쁘다를 판정하지 않�
 
   it('직전이 0이면 백분율을 만들지 않는다 (0으로 나누기 금지)', () => {
     expect(fmtDelta(5, 0, '건')).toBe('▲ 5건');
+  });
+
+  it('%p 지표에는 상대 증감률을 붙이지 않는다 (16%p (+229%) 같은 이중 표기 금지)', () => {
+    expect(fmtDelta(23, 7, '%p')).toBe('▲ 16%p');
+    expect(fmtDelta(45.5, 50, '%p')).toBe('▼ 4.5%p');
+  });
+
+  it('반올림하면 0%가 되는 변화에는 백분율을 적지 않는다 (없는 정밀도 금지)', () => {
+    expect(fmtDelta(22_586, 22_601, 'L')).toBe('▼ 15L');
   });
 });
 
@@ -272,5 +282,55 @@ describe('buildReportSheets / 첨부 파일명', () => {
     expect(buildAttachmentName('술탄 목장/A', 'weekly', 'weekly:2026-W34')).toBe(
       'cowtalk_술탄_목장_A_weekly_weekly_2026-W34.xlsx',
     );
+  });
+});
+
+describe('구독 만료 예고 — 1년 구독이 조용히 끊기지 않게', () => {
+  const now = new Date('2026-08-27T00:00:00Z');
+
+  it('종료일이 없으면(무기한) 예고하지 않는다', () => {
+    expect(subscriptionNotice(null, now)).toBeUndefined();
+    expect(subscriptionNotice(undefined, now)).toBeUndefined();
+  });
+
+  it('30일보다 멀면 아직 알리지 않는다 (매주 잔소리 금지)', () => {
+    expect(subscriptionNotice(new Date('2027-08-27T00:00:00Z'), now)).toBeUndefined();
+    expect(subscriptionNotice(new Date('2026-10-27T00:00:00Z'), now)).toBeUndefined();
+  });
+
+  it('30일 이내면 남은 일수와 날짜를 알린다', () => {
+    expect(subscriptionNotice(new Date('2026-09-10T00:00:00Z'), now)).toContain('14일 뒤(2026-09-10)');
+  });
+
+  it('당일·경과 상태를 구분해서 말한다', () => {
+    expect(subscriptionNotice(new Date('2026-08-27T00:00:00Z'), now)).toContain('오늘');
+    expect(subscriptionNotice(new Date('2026-08-01T00:00:00Z'), now)).toContain('종료되었습니다');
+  });
+
+  it('메일 본문(HTML·텍스트) 양쪽에 실린다', () => {
+    const r = renderReportEmail({
+      farmName: '술탄목장',
+      period: resolvePeriod('weekly', now),
+      current: makeReport(),
+      previous: null,
+      cumulative: null,
+      subscriptionEndsAt: new Date('2026-09-10T00:00:00Z'),
+      now,
+    });
+    expect(r.text).toContain('14일 뒤(2026-09-10) 종료됩니다');
+    expect(r.html).toContain('14일 뒤(2026-09-10)');
+  });
+
+  it('예고 조건이 아니면 본문에 아무 것도 끼어들지 않는다', () => {
+    const r = renderReportEmail({
+      farmName: '술탄목장',
+      period: resolvePeriod('weekly', now),
+      current: makeReport(),
+      previous: null,
+      cumulative: null,
+      subscriptionEndsAt: new Date('2027-08-27T00:00:00Z'),
+      now,
+    });
+    expect(r.text).not.toContain('종료');
   });
 });

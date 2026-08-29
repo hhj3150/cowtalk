@@ -86,6 +86,11 @@ export interface BuildPeriodReportInput {
   readonly end: Date;
   /** 코멘트·제목에 쓰이는 기간 표기 ("2026-08 월간", "8월 3주차") */
   readonly periodTitle: string;
+  /**
+   * 코멘트 본문에서 기간을 가리키는 말 ("이번 주" / "이번 달" / "이번 분기").
+   * 주간 보고서에 "이번 달 총 103건"이 찍히던 것을 막는다.
+   */
+  readonly periodNoun?: string;
 }
 
 export interface PeriodReportSensor {
@@ -155,6 +160,7 @@ export interface PeriodReport {
 export async function buildPeriodReport(input: BuildPeriodReportInput): Promise<PeriodReport | null> {
   const db = getDb();
   const { farmId, start, end, periodTitle } = input;
+  const periodNoun = input.periodNoun ?? '이번 기간';
 
   const [farm] = await db
     .select({ farmId: farms.farmId, name: farms.name })
@@ -445,6 +451,7 @@ export async function buildPeriodReport(input: BuildPeriodReportInput): Promise<
   const aiComment = buildAiComment({
     farmName: farm.name,
     periodTitle,
+    periodNoun,
     totalAnimals,
     totalAlerts,
     sensorCoverage,
@@ -627,6 +634,7 @@ function computeHealthSummary(
 interface AiCommentInput {
   readonly farmName: string;
   readonly periodTitle: string;
+  readonly periodNoun: string;
   readonly totalAnimals: number;
   readonly totalAlerts: number;
   readonly sensorCoverage: number;
@@ -636,7 +644,7 @@ interface AiCommentInput {
 }
 
 function buildAiComment(input: AiCommentInput): string {
-  const { farmName, periodTitle, totalAnimals, totalAlerts, sensorCoverage, breedingData, healthData, alertsByType } = input;
+  const { farmName, periodTitle, periodNoun, totalAnimals, totalAlerts, sensorCoverage, breedingData, healthData, alertsByType } = input;
   const parts: string[] = [];
 
   parts.push(
@@ -647,9 +655,9 @@ function buildAiComment(input: AiCommentInput): string {
   // 알림 요약
   if (totalAlerts > 0) {
     const top3 = alertsByType.slice(0, 3).map((a) => `${a.label}(${String(a.count)}건)`).join(', ');
-    parts.push(`이번 달 총 ${String(totalAlerts)}건의 알림이 발생했으며, 주요 유형은 ${top3}입니다.`);
+    parts.push(`${periodNoun} 총 ${String(totalAlerts)}건의 알림이 발생했으며, 주요 유형은 ${top3}입니다.`);
   } else {
-    parts.push('이번 달 특이 알림이 발생하지 않았습니다.');
+    parts.push(`${periodNoun} 특이 알림이 발생하지 않았습니다.`);
   }
 
   // 번식 평가. D5: rate=null이면 코멘트 생략 (가짜 평가 금지).

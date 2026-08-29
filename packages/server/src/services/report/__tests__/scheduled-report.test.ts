@@ -2,6 +2,8 @@
 // DB·메일은 스텁 — 여기서 검증하는 것은 흐름 제어이지 SQL 이 아니다.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { existsSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 interface QueryStub {
   [key: string]: unknown;
@@ -60,7 +62,14 @@ vi.mock('../period-report.service.js', () => ({
   buildPeriodReport: (...args: unknown[]) => buildPeriodReport(...args) as unknown,
 }));
 
-vi.mock('../generators/xlsxGenerator.js', () => ({ generateXlsx: vi.fn(() => Promise.resolve()) }));
+const generateXlsx = vi.fn((_content: unknown, outputPath: string) => {
+  xlsxPaths.push(outputPath);
+  return Promise.resolve();
+});
+const xlsxPaths: string[] = [];
+vi.mock('../generators/xlsxGenerator.js', () => ({
+  generateXlsx: (content: unknown, outputPath: string) => generateXlsx(content, outputPath) as unknown,
+}));
 
 import { buildScheduleCalendar, deliverReport, type ReportSchedule } from '../scheduled-report.service.js';
 
@@ -113,6 +122,7 @@ beforeEach(() => {
   inserted.length = 0;
   updated.length = 0;
   sendMail.mockReset();
+  xlsxPaths.length = 0;
   buildPeriodReport.mockReset();
   buildPeriodReport.mockResolvedValue(REPORT);
 });
@@ -133,7 +143,7 @@ describe('deliverReport', () => {
   });
 
   it('같은 기간에 이미 성공했으면 다시 만들지 않는다 (멱등)', async () => {
-    selectResults.push([{ status: 'sent', cnt: 1 }]);
+    selectResults.push([{ status: 'sent', testMode: false, cnt: 1 }]);
     const result = await deliverReport(schedule(), NOW);
     expect(result.status).toBe('skipped');
     expect(result.reason).toBe('이미 발송됨');
@@ -141,14 +151,14 @@ describe('deliverReport', () => {
   });
 
   it('같은 기간 실패가 3회 쌓이면 멈춘다 (15분마다 영원히 실패하지 않게)', async () => {
-    selectResults.push([{ status: 'failed', cnt: 3 }]);
+    selectResults.push([{ status: 'failed', testMode: false, cnt: 3 }]);
     const result = await deliverReport(schedule(), NOW);
     expect(result.status).toBe('skipped');
     expect(result.reason).toContain('재시도 횟수 소진');
   });
 
   it('실패가 아직 3회 미만이면 재시도한다', async () => {
-    selectResults.push([{ status: 'failed', cnt: 2 }]);
+    selectResults.push([{ status: 'failed', testMode: false, cnt: 2 }]);
     sendMail.mockResolvedValue({ success: true, testMode: false, messageId: 'id-1' });
     const result = await deliverReport(schedule(), NOW);
     expect(result.status).toBe('sent');
@@ -192,6 +202,32 @@ describe('deliverReport', () => {
     expect(inserted[0]).toMatchObject({ testMode: true, status: 'sent' });
   });
 
+  it('테스트모드 발송은 기간을 소진하지 않는다 — SMTP 를 붙이면 그 기간 보고서가 실제로 나가야 한다', async () => {
+    selectResults.push([]);
+    sendMail.mockResolvedValue({ success: true, testMode: true });
+
+    await deliverReport(schedule(), NOW);
+
+    // lastPeriodKey 를 올리지 않는다 (올리면 그 주 보고서는 영영 오지 않는다)
+    expect(updated).toHaveLength(0);
+  });
+
+  it('테스트 기록만 있고 SMTP 가 여전히 없으면 조용히 대기한다 (원장 도배 방지)', async () => {
+    selectResults.push([{ status: 'sent', testMode: true, cnt: 1 }]);
+
+    const result = await deliverReport(schedule(), NOW);
+
+    expect(result.status).toBe('skipped');
+    expect(result.reason).toContain('발송 대기');
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('실제 발송(test_mode=false) 만 "이미 발송됨"으로 기간을 막는다', async () => {
+    selectResults.push([{ status: 'sent', testMode: false, cnt: 1 }]);
+    const result = await deliverReport(schedule(), NOW);
+    expect(result.reason).toBe('이미 발송됨');
+  });
+
   it('발송 실패는 사유와 함께 원장에 남고 스케줄은 갱신하지 않는다', async () => {
     selectResults.push([]);
     sendMail.mockResolvedValue({ success: false, testMode: false, error: 'SMTP 535' });
@@ -223,6 +259,23 @@ describe('deliverReport', () => {
     expect(inserted[0]).toMatchObject({ manual: true });
     // 수동 발송은 정기 발송의 '마지막 기간'을 덮어쓰지 않는다
     expect(updated).toHaveLength(0);
+  });
+
+  it('첨부는 공용 uploads 디렉터리가 아니라 임시 디렉터리에 만들고 발송 후 지운다', async () => {
+    selectResults.push([]);
+    sendMail.mockResolvedValue({ success: true, testMode: false, messageId: 'id-3' });
+
+    await deliverReport(schedule(), NOW);
+
+    expect(xlsxPaths).toHaveLength(1);
+    const written = xlsxPaths[0]!;
+    // uploads/reports 는 /report-generate/download 가 접두 일치로 서빙하는 공용 경로 —
+    // 스케줄 발송물이 그곳에 쌓이면 남의 목장 보고서가 인증만으로 열린다
+    expect(written).not.toContain('uploads');
+    expect(written).toContain('cowtalk-report-');
+    // 발송이 끝나면 파일도 디렉터리도 남지 않는다
+    expect(existsSync(written)).toBe(false);
+    expect(existsSync(dirname(written))).toBe(false);
   });
 
   it('첨부 없이(none) 구독하면 본문만 보낸다', async () => {

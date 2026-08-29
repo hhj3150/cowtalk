@@ -64,10 +64,25 @@ CREATE INDEX IF NOT EXISTS report_deliveries_farm_idx
 CREATE INDEX IF NOT EXISTS report_deliveries_schedule_idx
   ON report_deliveries(schedule_id, period_key);
 
+
+-- ──────────────────────────────────────────────────────────────────────
+-- 1회성 시드 표식
+--
+-- 이 프로젝트의 마이그레이션은 매 기동마다 전부 재실행된다. 스키마 DDL 은 IF NOT EXISTS 로
+-- 멱등하지만 **데이터 시드는 다르다**: 사용자가 지운 구독이 재부팅마다 되살아나고,
+-- 무기한으로 바꾼 구독 기간이 다시 1년으로 덮인다.
+-- → 시드는 "한 번 적용했다"는 표식을 남기고, 표식이 있으면 다시 손대지 않는다.
+--   (사용자가 바꾼 설정을 배포가 되돌리지 않는다 — 자동화가 사람의 결정을 덮으면 안 된다)
+-- ──────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS migration_seed_marks (
+  key        TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ──────────────────────────────────────────────────────────────────────
 -- 시드: 술탄목장 정기 보고서 구독 (목장주 요청 — 주간/월간/분기/성과)
 -- 농장명 표기가 환경마다 다를 수 있어(술탄목장/술탄팜/sultan) 넓게 매칭한다.
--- ON CONFLICT DO NOTHING — 마이그레이션은 매 기동마다 재실행되므로 반드시 멱등.
+-- migration_seed_marks 표식으로 1회만 적용 — 사용자가 해지한 구독이 재부팅마다 되살아나지 않게.
 -- ──────────────────────────────────────────────────────────────────────
 INSERT INTO report_schedules (farm_id, kind, recipients, format, send_hour_kst, enabled)
 SELECT f.farm_id, k.kind, '["hhj3150@hanmail.net"]'::jsonb, 'xlsx', 7, TRUE
@@ -75,4 +90,14 @@ FROM farms f
 CROSS JOIN (VALUES ('weekly'), ('monthly'), ('quarterly'), ('performance')) AS k(kind)
 WHERE (f.name ILIKE '%술탄%' OR f.name ILIKE '%sultan%')
   AND f.deleted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM migration_seed_marks WHERE key = '0038_sultan_report_schedules')
 ON CONFLICT (farm_id, kind) DO NOTHING;
+
+-- 농장이 실제로 있었을 때만 표식을 남긴다 (농장이 아직 없는 환경은 다음 기동에 다시 시도)
+INSERT INTO migration_seed_marks (key)
+SELECT '0038_sultan_report_schedules'
+WHERE EXISTS (
+  SELECT 1 FROM farms f
+  WHERE (f.name ILIKE '%술탄%' OR f.name ILIKE '%sultan%') AND f.deleted_at IS NULL
+)
+ON CONFLICT (key) DO NOTHING;

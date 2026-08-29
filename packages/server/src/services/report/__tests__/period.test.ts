@@ -40,6 +40,27 @@ describe('KST 변환', () => {
     // 2026-01-01(목)이 속한 주는 2026년 1주차
     expect(isoWeek(new Date('2026-01-01T03:00:00Z'))).toEqual({ year: 2026, week: 1 });
   });
+
+  it('1월 1일이 금·토·일인 해도 ISO 규칙(1월 4일이 속한 주 = 1주차)을 지킨다', () => {
+    // 2027-01-01 은 금요일 → 그 주는 2026-W53, 1주차는 2027-01-04(월)부터
+    expect(isoWeek(new Date('2026-12-30T03:00:00Z'))).toEqual({ year: 2026, week: 53 });
+    expect(isoWeek(new Date('2027-01-01T03:00:00Z'))).toEqual({ year: 2026, week: 53 });
+    expect(isoWeek(new Date('2027-01-04T03:00:00Z'))).toEqual({ year: 2027, week: 1 });
+    // 2022-01-01 은 토요일 → 2021-W52
+    expect(isoWeek(new Date('2022-01-01T03:00:00Z'))).toEqual({ year: 2021, week: 52 });
+    expect(isoWeek(new Date('2022-01-03T03:00:00Z'))).toEqual({ year: 2022, week: 1 });
+    // 2021-01-01 은 금요일 → 2020-W53
+    expect(isoWeek(new Date('2021-01-01T03:00:00Z'))).toEqual({ year: 2020, week: 53 });
+  });
+
+  it('연말연시 주간 보고서의 periodKey 가 연속한다 (같은 주가 두 번 발송되지 않게)', () => {
+    // 2027-01-04(월) 07시 KST 발송 → 직전 주(2026-12-28~2027-01-03) = 2026-W53
+    const jan4 = resolvePeriod('weekly', new Date('2027-01-04T00:00:00Z'));
+    expect(jan4.periodKey).toBe('weekly:2026-W53');
+    const jan11 = resolvePeriod('weekly', new Date('2027-01-11T00:00:00Z'));
+    expect(jan11.periodKey).toBe('weekly:2027-W01');
+    expect(jan4.periodKey).not.toBe(jan11.periodKey);
+  });
 });
 
 describe('resolvePeriod — 직전 완결 기간만 보고한다', () => {

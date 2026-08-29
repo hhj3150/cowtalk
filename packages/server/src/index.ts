@@ -48,7 +48,13 @@ const server = httpServer.listen(config.PORT, () => {
       logger.error({ err }, '[Pipeline] Failed to start on server boot');
     });
   } else {
-    logger.warn('[Pipeline] smaXtec credentials not configured — pipeline disabled (SMAXTEC_API_KEY 또는 SMAXTEC_EMAIL/PASSWORD 설정 필요)');
+    // 스케줄러 전체가 파이프라인에 얹혀 있다 — smaXtec 크레덴셜이 없으면 센서 수집뿐 아니라
+    // 아침 브리핑·자동화 룰·지능 루프·**정기 보고서 발송**까지 전부 멈춘다.
+    // 조용히 멈추면 "왜 주간 보고서가 안 오지"의 원인을 아무도 못 찾으므로 무엇이 꺼졌는지 적는다.
+    logger.warn(
+      { disabledJobs: ['realtime-smaxtec', 'batch-public-data', 'intelligence-loop', 'epidemic-scan', 'morning-briefing', 'automation-rules', 'scheduled-reports'] },
+      '[Pipeline] smaXtec credentials not configured — 파이프라인과 그 위의 모든 주기 잡이 비활성화됨 (정기 보고서 발송 포함). SMAXTEC_API_KEY 또는 SMAXTEC_EMAIL/PASSWORD 설정 필요',
+    );
   }
 });
 

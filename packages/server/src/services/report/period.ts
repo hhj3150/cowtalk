@@ -91,16 +91,21 @@ export function kstWeekStart(at: Date): Date {
   return new Date(midnight.getTime() - backDays * DAY_MS);
 }
 
-/** ISO 8601 주차 (월요일 시작, 목요일이 속한 해가 그 주의 해) */
+/**
+ * ISO 8601 주차 (월요일 시작).
+ *
+ * 규칙: 그 주의 **목요일이 속한 해**가 ISO 연도이고, 1주차는 **1월 4일이 속한 주**다.
+ * (1월 1일이 속한 주를 1주차로 잡으면 1월 1일이 금·토·일인 해마다 한 주씩 밀린다 —
+ *  2027-01-04 가 W02 로, 2026-12-28 주가 2027-W01 로 잘못 찍혔다)
+ */
 export function isoWeek(at: Date): { readonly year: number; readonly week: number } {
   const monday = kstWeekStart(at);
-  // 그 주의 목요일이 속한 연도가 ISO 연도
   const thursday = new Date(monday.getTime() + 3 * DAY_MS);
-  const tp = kstParts(thursday);
-  const jan1 = kstDate(tp.year, 1, 1);
-  const jan1Monday = kstWeekStart(jan1);
-  const week = Math.round((monday.getTime() - jan1Monday.getTime()) / (7 * DAY_MS)) + 1;
-  return { year: tp.year, week };
+  const isoYear = kstParts(thursday).year;
+  // 1주차의 월요일 = 그 해 1월 4일이 속한 주의 월요일
+  const week1Monday = kstWeekStart(kstDate(isoYear, 1, 4));
+  const week = Math.round((monday.getTime() - week1Monday.getTime()) / (7 * DAY_MS)) + 1;
+  return { year: isoYear, week };
 }
 
 /** 그 달의 몇 번째 주인가 (1~5) — 제목 표기용 */
