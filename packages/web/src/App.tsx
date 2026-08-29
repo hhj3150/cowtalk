@@ -50,6 +50,7 @@ const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage
 const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
 const EconomicParametersPage = lazy(() => import('@web/pages/settings/EconomicParametersPage'));
 const MemoryPage = lazy(() => import('@web/pages/settings/MemoryPage'));
+const ReportSchedulePage = lazy(() => import('@web/pages/settings/ReportSchedulePage'));
 const MilkEntryPage = lazy(() => import('@web/pages/milk/MilkEntryPage'));
 const FeedRationPage = lazy(() => import('@web/pages/feed/FeedRationPage'));
 const ApprovalHistoryPage = lazy(() => import('@web/pages/vet/ApprovalHistoryPage'));
@@ -123,6 +124,7 @@ export function App(): React.JSX.Element {
               <Route path="/automation" element={<AutomationRulesPage />} />
               <Route path="/settings/economics" element={<EconomicParametersPage />} />
               <Route path="/settings/memory" element={<MemoryPage />} />
+              <Route path="/settings/reports" element={<ReportSchedulePage />} />
               <Route path="/milk-entry" element={<MilkEntryPage />} />
               <Route path="/feed-ration" element={<FeedRationPage />} />
               <Route path="/epidemiology/radius" element={<RadiusAnalysisPage />} />

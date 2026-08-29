@@ -157,6 +157,19 @@ export class PipelineOrchestrator {
         },
       },
       {
+        // 정기 보고서 — 15분 주기로 깨어나 '기간이 닫혔고 아직 안 보낸' 구독만 발송.
+        // 발송 자체는 (schedule_id, period_key) 로 멱등이라 겹쳐 깨어나도 메일은 한 통.
+        name: 'scheduled-reports',
+        everyMs: 15 * 60 * 1000,
+        completionBased: true,
+        minGapMs: 60_000,
+        handler: async () => {
+          if (!this.state.isRunning) return;
+          const { runScheduledReports } = await import('../services/report/scheduled-report.service.js');
+          await runScheduledReports();
+        },
+      },
+      {
         // 자동화 룰 스윕 — 알람→조치 자동 연결. 멱등(rule+source 유니크)이라 겹쳐도 안전.
         name: 'automation-rules',
         everyMs: 10 * 60 * 1000,
@@ -177,7 +190,7 @@ export class PipelineOrchestrator {
 
     logger.info(
       { schedulerMode: this.scheduler.mode },
-      '[Pipeline] Started — realtime: 5min, batch: 24h, intelligence: 24h',
+      '[Pipeline] Started — realtime: 5min, batch: 24h, intelligence: 24h, reports: 15min',
     );
   }
 

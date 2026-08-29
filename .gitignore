@@ -71,3 +71,6 @@ sk-*.docx
 *\ [0-9].json
 *\ [0-9].sql
 *\ [0-9].md
+
+# 생성 산출물 — 보고서 파일(48시간 후 자동 삭제)은 저장소에 들어가지 않는다
+packages/server/uploads/

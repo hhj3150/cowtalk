@@ -1,81 +1,43 @@
-// 월간 보고서 라우트 — /reports/farm/:farmId/monthly
-// smaXtec 이벤트 + 번식 + 건강 데이터를 월별 집계
+// 보고서 라우트 — /reports
+//   GET  /farm/:farmId/monthly            월간 보고서 (기존 화면 계약 유지)
+//   GET  /farm/:farmId/period             임의 주기 미리보기 (주간/월간/분기/성과)
+//   GET  /schedules                       정기 발송 구독 목록
+//   POST /schedules                       구독 등록·수정 (농장×주기 1건)
+//   PATCH/DELETE /schedules/:scheduleId   구독 수정·해지
+//   POST /schedules/:scheduleId/run-now   즉시 발송 (기간 멱등 무시)
+//   GET  /deliveries                      발송 이력 (성공·실패·테스트모드까지 그대로)
+//
+// 집계 로직은 services/report/period-report.service.ts 하나로 모았다 —
+// 주간·월간·분기가 기간만 다르고 계산은 같기 때문. 이 파일은 얇게 유지한다.
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
+import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
+import { reportSchedules, reportDeliveries } from '../../db/schema.js';
+import { buildPeriodReport } from '../../services/report/period-report.service.js';
 import {
-  farms,
-  animals,
-  smaxtecEvents,
-  breedingEvents,
-  sensorDevices,
-  milkRecords,
-  treatments,
-  healthEvents,
-  decisionActions,
-  feedback,
-  feedPrograms,
-  farmMilkSummary,
-} from '../../db/schema.js';
-import { eq, and, count, gte, lt, sql, inArray } from 'drizzle-orm';
-import { getEconomicParamValues } from '../../services/economics/economic-params.service.js';
-import { computeMilkPricePerL, computeTieredRevenue } from '@cowtalk/shared';
-import { ratioPct } from '../../lib/metrics-clamp.js';
-import { computeCR, decisionsFromBreedingEventCounts } from '../../services/metrics/fertility-service.js';
+  REPORT_PERIOD_KINDS,
+  PERIOD_KIND_LABELS,
+  isWithinSubscription,
+  resolvePeriod,
+  subscriptionEnd,
+  type ReportPeriodKind,
+} from '../../services/report/period.js';
+import {
+  deliverReport,
+  buildReportBundle,
+  buildScheduleCalendar,
+} from '../../services/report/scheduled-report.service.js';
+import { normalizeRecipients } from '../../lib/mailer.js';
+import { logger } from '../../lib/logger.js';
 
 export const reportRouter = Router();
 
 reportRouter.use(authenticate);
-
-const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
-  estrus: '발정',
-  estrus_dnb: '발정(DNB)',
-  heat: '발정',
-  health_warning: '건강 경고',
-  health_general: '건강 주의',
-  temperature_warning: '체온 이상',
-  temperature_high: '고체온',
-  temperature_low: '저체온',
-  calving: '분만',
-  calving_detection: '분만 징후',
-  calving_confirmation: '분만 확인',
-  calving_waiting: '분만 대기',
-  rumination_warning: '반추 이상',
-  rumination_decrease: '반추 저하',
-  activity_warning: '활동 이상',
-  activity_decrease: '활동량 저하',
-  activity_increase: '활동량 증가',
-  drinking_warning: '음수 이상',
-  drinking_decrease: '음수 저하',
-  feeding_warning: '사양 이상',
-  insemination: '수정',
-  pregnancy_check: '임신 감정',
-  fertility_warning: '재발정',
-  no_insemination: '미수정',
-  dry_off: '건유 전환',
-  clinical_condition: '임상 이상',
-  abortion: '유산',
-  management: '관리',
-};
-
-// 건강 이벤트 카테고리 — 질병 유형별 집계용
-const HEALTH_EVENT_TYPES: Readonly<Record<string, string>> = {
-  temperature_high: '고체온',
-  temperature_low: '저체온',
-  temperature_warning: '체온이상',
-  rumination_warning: '반추이상',
-  rumination_decrease: '반추저하',
-  clinical_condition: '임상이상',
-  health_warning: '건강경고',
-  health_general: '건강주의',
-  drinking_warning: '음수이상',
-  drinking_decrease: '음수저하',
-  activity_decrease: '활동저하',
-};
-
 
 interface MonthRange {
   readonly start: Date;
@@ -92,322 +54,101 @@ function parseMonthRange(month: string): MonthRange {
   return { start, end };
 }
 
+/** 조회 가능 범위인가 (배정 농장, 관리 역할은 scope=null → 전체) */
+function farmInScope(req: Request, farmId: string): boolean {
+  const scope = scopedFarmIds(req);
+  return scope === null || scope.includes(farmId);
+}
+
+/**
+ * 그 농장의 보고서 **발송 설정을 바꿀 수 있는가**.
+ *
+ * 조회 권한과 분리하는 이유: 전국 조회 권한을 가진 역할(행정관·방역관)이
+ * 남의 목장 보고서 수신자를 임의 주소로 바꾸거나 구독을 해지할 수 있으면 안 된다.
+ * 발송 설정은 그 농장에 **배정된** 계정(목장주·담당 수의사)과 마스터만 만진다.
+ */
+function canManageFarmReports(req: Request, farmId: string): boolean {
+  if (!req.user) return false;
+  if (req.user.isMaster) return true;
+  const assigned = req.user.farmIds ?? [];
+  return assigned.includes(farmId);
+}
+
 // GET /reports/farm/:farmId/monthly?month=YYYY-MM
 reportRouter.get(
   '/farm/:farmId/monthly',
   requirePermission('farm', 'read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const db = getDb();
       const farmId = req.params.farmId as string;
+      if (!farmInScope(req, farmId)) {
+        res.status(403).json({ success: false, error: '해당 농장에 접근 권한이 없습니다' });
+        return;
+      }
       const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
-
       const { start, end } = parseMonthRange(month);
 
-      // ── 1. 농장 정보 ──
-      const [farm] = await db
-        .select({ farmId: farms.farmId, name: farms.name })
-        .from(farms)
-        .where(eq(farms.farmId, farmId));
+      const report = await buildPeriodReport({
+        farmId,
+        start,
+        end,
+        periodTitle: `${month} 월간`,
+        periodNoun: '이번 달',
+      });
 
-      if (!farm) {
+      if (!report) {
         res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
         return;
       }
 
-      // ── 2. 동물 수 + 센서 장착 수 (병렬) ──
-      const [animalCountResult, sensorCountResult, monthEvents] = await Promise.all([
-        db
-          .select({ total: count() })
-          .from(animals)
-          .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active'))),
+      // 기존 응답 계약 유지 — month 필드는 그대로 둔다 (웹 월간 보고서 화면이 사용)
+      res.json({ ...report, month });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-        db
-          .select({ total: count() })
-          .from(sensorDevices)
-          .innerJoin(animals, eq(sensorDevices.animalId, animals.animalId))
-          .where(
-            and(
-              eq(animals.farmId, farmId),
-              eq(animals.status, 'active'),
-              eq(sensorDevices.status, 'active'),
-            ),
-          ),
-
-        db
-          .select({
-            eventType: smaxtecEvents.eventType,
-            cnt: count(),
-          })
-          .from(smaxtecEvents)
-          .where(
-            and(
-              eq(smaxtecEvents.farmId, farmId),
-              gte(smaxtecEvents.detectedAt, start),
-              lt(smaxtecEvents.detectedAt, end),
-            ),
-          )
-          .groupBy(smaxtecEvents.eventType),
-      ]);
-
-      const totalAnimals = animalCountResult[0]?.total ?? 0;
-      const sensorAttached = sensorCountResult[0]?.total ?? 0;
-
-      // ── 3. 이벤트 유형별 집계 ──
-      const totalAlerts = monthEvents.reduce((sum, e) => sum + e.cnt, 0);
-
-      const alertsByType = monthEvents
-        .map((e) => ({
-          type: e.eventType,
-          label: EVENT_TYPE_LABELS[e.eventType] ?? e.eventType,
-          count: e.cnt,
-        }))
-        .sort((a, b) => b.count - a.count);
-
-      // ── 4. 번식 성적 ──
-      const breedingData = await computeBreedingMetrics(db, farmId, start, end, monthEvents);
-
-      // ── 5. 건강 요약 ──
-      const healthData = computeHealthSummary(monthEvents);
-
-      // ── 6. 센서 지표 ──
-      const sensorCoverage = totalAnimals > 0
-        ? Math.round((sensorAttached / totalAnimals) * 100)
-        : 0;
-
-      // 알람 정확도: 이 농장·이 달 이벤트에 붙은 실제 피드백 레이블만 사용.
-      // 표본 10건 미만이면 null(집계 불가) — 하드코딩 홍보 수치 금지 (정직성 원칙).
-      const [labelRows] = await db
-        .select({
-          tp: sql<number>`count(*) filter (where ${feedback.feedbackType} not in ('alert_false_positive','disease_excluded'))::int`,
-          fp: sql<number>`count(*) filter (where ${feedback.feedbackType} in ('alert_false_positive','disease_excluded'))::int`,
-        })
-        .from(feedback)
-        .innerJoin(smaxtecEvents, eq(feedback.alertId, smaxtecEvents.eventId))
-        .where(and(
-          eq(smaxtecEvents.farmId, farmId),
-          gte(smaxtecEvents.detectedAt, start),
-          lt(smaxtecEvents.detectedAt, end),
-        ));
-      const labeled = Number(labelRows?.tp ?? 0) + Number(labelRows?.fp ?? 0);
-      const alertAccuracy = labeled >= 10
-        ? Math.round((Number(labelRows?.tp ?? 0) / labeled) * 100)
-        : null;
-
-      // ── 6.5 파일럿 성과 집계 (전부 실측 — 표본 수 항상 동봉) ──
-      const healthTypeList = Object.keys(HEALTH_EVENT_TYPES);
-      const [ackedHealthRows, treatmentRows, decisionsRows, milkRows, econParams, feedRows] = await Promise.all([
-        db
-          .select({ cnt: count() })
-          .from(smaxtecEvents)
-          .where(and(
-            eq(smaxtecEvents.farmId, farmId),
-            gte(smaxtecEvents.detectedAt, start),
-            lt(smaxtecEvents.detectedAt, end),
-            inArray(smaxtecEvents.eventType, healthTypeList),
-            eq(smaxtecEvents.acknowledged, true),
-          )),
-        db
-          .select({ cnt: count() })
-          .from(treatments)
-          .innerJoin(healthEvents, eq(treatments.healthEventId, healthEvents.eventId))
-          .innerJoin(animals, eq(healthEvents.animalId, animals.animalId))
-          .where(and(
-            eq(animals.farmId, farmId),
-            gte(treatments.administeredAt, start),
-            lt(treatments.administeredAt, end),
-          )),
-        db
-          .select({ cnt: count() })
-          .from(decisionActions)
-          .where(and(
-            eq(decisionActions.farmId, farmId),
-            gte(decisionActions.actedAt, start),
-            lt(decisionActions.actedAt, end),
-          )),
-        db
-          .select({
-            totalYieldL: sql<number>`coalesce(sum(${milkRecords.yield}), 0)::float`,
-            recordCount: sql<number>`count(*)::int`,
-            recordedDays: sql<number>`count(distinct ${milkRecords.date})::int`,
-            animalsWithRecords: sql<number>`count(distinct ${milkRecords.animalId})::int`,
-            avgFat: sql<number | null>`avg(${milkRecords.fat})::float`,
-            avgProtein: sql<number | null>`avg(${milkRecords.protein})::float`,
-            avgScc: sql<number | null>`avg(${milkRecords.scc})::float`,
-          })
-          .from(milkRecords)
-          .innerJoin(animals, eq(milkRecords.animalId, animals.animalId))
-          .where(and(
-            eq(animals.farmId, farmId),
-            gte(milkRecords.date, start.toISOString().slice(0, 10)),
-            lt(milkRecords.date, end.toISOString().slice(0, 10)),
-          )),
-        getEconomicParamValues(farmId),
-        db
-          .select({ dailyCostPerHead: feedPrograms.dailyCostPerHead })
-          .from(feedPrograms)
-          .where(and(
-            eq(feedPrograms.farmId, farmId),
-            eq(feedPrograms.isActive, true),
-            eq(feedPrograms.targetGroup, 'lactating'),
-          ))
-          .limit(1),
-      ]);
-
-      // 우군(벌크탱크) 일별 기록 — 개체 기록이 없어도 월 집계 가능, 실기록 단가는 추정보다 우선
-      const summaryRows = await db
-        .select()
-        .from(farmMilkSummary)
-        .where(and(
-          eq(farmMilkSummary.farmId, farmId),
-          gte(farmMilkSummary.date, start.toISOString().slice(0, 10)),
-          lt(farmMilkSummary.date, end.toISOString().slice(0, 10)),
-        ));
-
-      const healthAlertCount = monthEvents
-        .filter((e) => e.eventType in HEALTH_EVENT_TYPES)
-        .reduce((s, e) => s + e.cnt, 0);
-      const milk = milkRows[0] ?? {
-        totalYieldL: 0, recordCount: 0, recordedDays: 0, animalsWithRecords: 0,
-        avgFat: null, avgProtein: null, avgScc: null,
-      };
-      // 개체 기록 집계
-      let totalYieldL = Number(milk.totalYieldL);
-      const recordCount = Number(milk.recordCount);
-      let avgFat = milk.avgFat != null ? Math.round(Number(milk.avgFat) * 100) / 100 : null;
-      let avgProtein = milk.avgProtein != null ? Math.round(Number(milk.avgProtein) * 100) / 100 : null;
-      let avgScc = milk.avgScc != null ? Math.round(Number(milk.avgScc)) : null;
-
-      // 우군 기록 집계 — 개체 기록이 없으면 우군 기록으로 월 총량·유성분을 채운다
-      const avgOf = (vals: (number | null)[]): number | null => {
-        const nums = vals.filter((v): v is number => v != null && Number.isFinite(v));
-        return nums.length > 0 ? Math.round((nums.reduce((s, v) => s + v, 0) / nums.length) * 100) / 100 : null;
-      };
-      const summaryTotalL = summaryRows.reduce((s, r) => {
-        if (r.totalYieldL != null) return s + r.totalYieldL;
-        if (r.avgYieldPerCowL != null && r.milkingCount != null) return s + r.avgYieldPerCowL * r.milkingCount;
-        return s;
-      }, 0);
-      let milkSource: 'individual' | 'herd_summary' = 'individual';
-      if (totalYieldL === 0 && summaryTotalL > 0) {
-        totalYieldL = summaryTotalL;
-        milkSource = 'herd_summary';
-        avgFat = avgFat ?? avgOf(summaryRows.map((r) => r.avgFat));
-        avgProtein = avgProtein ?? avgOf(summaryRows.map((r) => r.avgProtein));
-        avgScc = avgScc ?? (avgOf(summaryRows.map((r) => r.avgScc)) != null ? Math.round(avgOf(summaryRows.map((r) => r.avgScc))!) : null);
+// GET /reports/farm/:farmId/period?kind=weekly — 발송될 보고서를 메일 없이 미리 본다
+reportRouter.get(
+  '/farm/:farmId/period',
+  requirePermission('farm', 'read'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const farmId = req.params.farmId as string;
+      const kind = (req.query.kind as string | undefined) ?? 'weekly';
+      if (!REPORT_PERIOD_KINDS.includes(kind as ReportPeriodKind)) {
+        res.status(400).json({ success: false, error: `지원 주기: ${REPORT_PERIOD_KINDS.join(', ')}` });
+        return;
       }
-      const avgLactose = avgOf(summaryRows.map((r) => r.avgLactose));
-      // 실기록 유대단가 — 기록이 있으면 추정 대신 우선 적용 (목장별 단가: 납유/유기농/직접가공)
-      const recordedPrice = avgOf(summaryRows.map((r) => r.priceKrwPerL));
+      if (!farmInScope(req, farmId)) {
+        res.status(403).json({ success: false, error: '해당 농장에 접근 권한이 없습니다' });
+        return;
+      }
 
-      // 유대단가 — 실기록(우군 기록의 단가)이 있으면 그 값을, 없으면
-      // 파라미터 기반 추정 (기본가 + 유지방 가감 + 체세포 1등급 가산)
-      const estimatedPrice = computeMilkPricePerL({
-        basePriceKrwPerL: econParams.milk_price_krw_per_l,
-        fatAdjustKrwPer01Pct: econParams.milk_fat_adjust_krw_per_01pct,
-        sccGrade1BonusKrwPerL: econParams.scc_grade1_bonus_krw_per_l,
-        avgFatPct: avgFat,
-        avgSccThousand: avgScc,
-      });
-      // 3단 유대 (쿼터/초과/자체가공) — 우군 기록이 있고, 쿼터량이 설정됐거나
-      // 자체가공 물량이 기록된 경우 일별로 배분 계산. 단일 단가 기록이 최우선.
-      const tiered = summaryRows.length > 0 && recordedPrice == null &&
-        (econParams.daily_quota_l > 0 || summaryRows.some((r) => (r.selfProcessedYieldL ?? 0) > 0))
-        ? computeTieredRevenue({
-            days: summaryRows.map((r) => ({
-              totalL: r.totalYieldL ?? ((r.avgYieldPerCowL != null && r.milkingCount != null) ? r.avgYieldPerCowL * r.milkingCount : 0),
-              selfL: r.selfProcessedYieldL,
-            })),
-            dailyQuotaL: econParams.daily_quota_l,
-            quotaPriceKrwPerL: econParams.milk_quota_price_krw_per_l,
-            surplusPriceKrwPerL: econParams.milk_surplus_price_krw_per_l,
-            selfPriceKrwPerL: econParams.milk_self_price_krw_per_l,
-          })
-        : null;
-
-      const milkPrice = recordedPrice != null
-        ? { pricePerL: recordedPrice, formula: `실기록 단가 ${recordedPrice.toLocaleString()}원/L (우군 기록 ${summaryRows.filter((r) => r.priceKrwPerL != null).length}일 평균)` }
-        : tiered != null
-          ? { pricePerL: tiered.avgPricePerL, formula: tiered.formula }
-          : estimatedPrice;
-      const tieredRevenueKrw = tiered?.revenueKrw ?? null;
-
-      const performance = {
-        earlyDetection: {
-          healthAlertCount,
-          ackedCount: Number(ackedHealthRows[0]?.cnt ?? 0),
-          treatmentCount: Number(treatmentRows[0]?.cnt ?? 0),
-        },
-        decisionsCompleted: Number(decisionsRows[0]?.cnt ?? 0),
-        milk: {
-          recordedDays: milkSource === 'herd_summary' ? summaryRows.length : Number(milk.recordedDays),
-          animalsWithRecords: Number(milk.animalsWithRecords),
-          totalYieldL: Math.round(totalYieldL),
-          avgYieldPerRecordL: recordCount > 0 ? Math.round((Number(milk.totalYieldL) / recordCount) * 10) / 10 : null,
-          avgFatPct: avgFat,
-          avgProteinPct: avgProtein,
-          avgLactosePct: avgLactose,
-          avgSccThousand: avgScc,
-          /** individual = 개체 기록, herd_summary = 우군(벌크탱크) 기록 */
-          source: milkSource,
-        },
-        economics: totalYieldL > 0
-          ? (() => {
-              // 두당 평균 유량 — 개체 기록 우선, 없으면 우군 기록의 두당 평균
-              const avgYieldPerRecordL = recordCount > 0
-                ? Number(milk.totalYieldL) / recordCount
-                : avgOf(summaryRows.map((r) => r.avgYieldPerCowL));
-              const feedCostPerHeadDayKrw = feedRows[0]?.dailyCostPerHead ?? null;
-              // 두당 일 마진 = 두당 평균 유량 × 유대단가 − 착유우 배합 두당 일 사료비
-              // 유량 기록과 착유우 배합이 모두 있을 때만 계산 (없으면 null — 과장 금지)
-              const marginPerHeadDayKrw =
-                avgYieldPerRecordL != null && feedCostPerHeadDayKrw != null
-                  ? Math.round(avgYieldPerRecordL * milkPrice.pricePerL - feedCostPerHeadDayKrw)
-                  : null;
-              return {
-                // 3단 배분 수입(쿼터/초과/자체가공) 우선, 아니면 기록 유량 × 유대단가
-                milkRevenueEstimateKrw: tieredRevenueKrw ?? Math.round(totalYieldL * milkPrice.pricePerL),
-                priceKrwPerL: milkPrice.pricePerL,
-                priceFormula: milkPrice.formula,
-                feedCostPerHeadDayKrw,
-                marginPerHeadDayKrw,
-                estimated: true as const,
-              };
-            })()
-          : null,
-      };
-
-      // ── 7. AI 코멘트 ──
-      const aiComment = buildAiComment({
-        farmName: farm.name,
-        month,
-        totalAnimals,
-        totalAlerts,
-        sensorCoverage,
-        breedingData,
-        healthData,
-        alertsByType,
-      });
+      const bundle = await buildReportBundle(farmId, kind as ReportPeriodKind, new Date());
+      if (!bundle) {
+        res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+        return;
+      }
 
       res.json({
-        farmId: farm.farmId,
-        farmName: farm.name,
-        month,
-        summary: {
-          totalAnimals,
-          sensorAttached,
-          totalAlerts,
-          alertsByType,
+        success: true,
+        data: {
+          kind,
+          kindLabel: PERIOD_KIND_LABELS[kind as ReportPeriodKind],
+          period: {
+            periodKey: bundle.period.periodKey,
+            label: bundle.period.label,
+            title: bundle.period.title,
+            start: bundle.period.start,
+            end: bundle.period.end,
+          },
+          report: bundle.current,
+          previous: bundle.previous,
+          cumulative: bundle.cumulative,
+          subject: bundle.subject,
         },
-        breeding: breedingData,
-        health: healthData,
-        sensor: {
-          sensorCoverage,
-          alertAccuracy, // null = 레이블 10건 미만 (집계 불가)
-          alertAccuracyLabels: labeled,
-        },
-        performance,
-        aiComment,
       });
     } catch (error) {
       next(error);
@@ -415,188 +156,291 @@ reportRouter.get(
   },
 );
 
-// ── 번식 지표 계산 ──
+// ======================================================================
+// 정기 발송 구독
+// ======================================================================
 
-interface BreedingMetrics {
-  readonly conceptionRate: number | null;  // null = 데이터 부족 (D5)
-  readonly conceptionRateDisplay: string;  // "—" 또는 "83.0%"
-  readonly conceptionRateStatus: 'ok' | 'data_insufficient';
-  readonly avgDaysOpen: number;
-  readonly calvingInterval: number;
-  readonly estrusDetectionRate: number;
-  readonly inseminationCount: number;
-  readonly conceptionPerService: number;
+const scheduleCreateSchema = z.object({
+  farmId: z.string().uuid(),
+  kind: z.enum(['weekly', 'monthly', 'quarterly', 'performance', 'annual']),
+  recipients: z.array(z.string().email()).min(1).max(5),
+  format: z.enum(['xlsx', 'none']).optional(),
+  sendHourKst: z.number().int().min(0).max(23).optional(),
+  enabled: z.boolean().optional(),
+  /** 구독 종료일 (ISO). 생략 시 기존 값 유지, null 이면 무기한 */
+  endsAt: z.string().datetime().nullable().optional(),
+  /** 종료일 대신 개월 수로 지정 (예: 12 = 1년 구독). endsAt 이 있으면 무시 */
+  durationMonths: z.number().int().min(1).max(60).optional(),
+});
+
+const scheduleUpdateSchema = z.object({
+  recipients: z.array(z.string().email()).min(1).max(5).optional(),
+  format: z.enum(['xlsx', 'none']).optional(),
+  sendHourKst: z.number().int().min(0).max(23).optional(),
+  enabled: z.boolean().optional(),
+  endsAt: z.string().datetime().nullable().optional(),
+  durationMonths: z.number().int().min(1).max(60).optional(),
+});
+
+/**
+ * 구독 종료일 결정 — 명시 endsAt 우선, 없으면 durationMonths 로 계산.
+ * 둘 다 없으면 undefined(= 기존 값 유지), null 이면 무기한으로 되돌린다.
+ */
+function resolveEndsAt(
+  endsAt: string | null | undefined,
+  durationMonths: number | undefined,
+): Date | null | undefined {
+  if (endsAt === null) return null;
+  if (typeof endsAt === 'string') return new Date(endsAt);
+  if (durationMonths != null) return subscriptionEnd(new Date(), durationMonths);
+  return undefined;
 }
 
-async function computeBreedingMetrics(
-  db: ReturnType<typeof getDb>,
-  farmId: string,
-  start: Date,
-  end: Date,
-  monthEvents: readonly { eventType: string; cnt: number }[],
-): Promise<BreedingMetrics> {
-  // smaXtec 이벤트에서 발정/수정 카운트
-  const estrusCount = monthEvents
-    .filter((e) => e.eventType === 'estrus' || e.eventType === 'estrus_dnb' || e.eventType === 'heat')
-    .reduce((sum, e) => sum + e.cnt, 0);
+/** 목록 조회 스코프 조건 — 배정 농장만 (관리 역할은 전체) */
+function scheduleScopeCondition(req: Request): SQL | undefined {
+  const scope = scopedFarmIds(req);
+  if (scope === null) return undefined;
+  return inArray(reportSchedules.farmId, [...scope]);
+}
 
-  const inseminationFromEvents = monthEvents
-    .filter((e) => e.eventType === 'insemination')
-    .reduce((sum, e) => sum + e.cnt, 0);
+// GET /reports/schedules
+reportRouter.get('/schedules', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const farmId = req.query.farmId as string | undefined;
+    const scopeCond = scheduleScopeCondition(req);
+    const conditions = [scopeCond, farmId ? eq(reportSchedules.farmId, farmId) : undefined]
+      .filter((c): c is SQL => c !== undefined);
 
-  // breeding_events 테이블에서 수정/임검 데이터 보충
-  const breedingRows = await db
-    .select({
-      type: breedingEvents.type,
-      cnt: count(),
-    })
-    .from(breedingEvents)
-    .innerJoin(animals, eq(breedingEvents.animalId, animals.animalId))
-    .where(
-      and(
-        eq(animals.farmId, farmId),
-        gte(breedingEvents.eventDate, start),
-        lt(breedingEvents.eventDate, end),
-      ),
-    )
-    .groupBy(breedingEvents.type);
+    const rows = await db
+      .select()
+      .from(reportSchedules)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(reportSchedules.createdAt))
+      .limit(200);
 
-  const inseminationDB = breedingRows.find((r) => r.type === 'insemination')?.cnt ?? 0;
-  const inseminationCount = Math.max(inseminationFromEvents, inseminationDB);
+    res.json({
+      success: true,
+      data: rows.map((r) => ({
+        ...r,
+        kindLabel: PERIOD_KIND_LABELS[r.kind as ReportPeriodKind] ?? r.kind,
+        nextPeriodKey: resolvePeriod(r.kind as ReportPeriodKind, new Date()).periodKey,
+        /** 구독 기간이 끝났는가 — 끝나도 행은 남는다 (연장·해지는 사용자가 결정) */
+        expired: !isWithinSubscription(new Date(), r.endsAt),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
-  // 수태율: fertility-service 단일 소스 (D1, BUG-001). null = 데이터 부족 (D5).
-  const cr = computeCR(decisionsFromBreedingEventCounts(breedingRows));
+// GET /reports/schedules/calendar?farmId=&months=12 — 앞으로 1년 동안 무엇이 언제 오는지
+reportRouter.get('/schedules/calendar', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const farmId = req.query.farmId as string | undefined;
+    const months = Math.min(Math.max(Number(req.query.months ?? 12) || 12, 1), 24);
+    const scopeCond = scheduleScopeCondition(req);
+    const conditions = [scopeCond, farmId ? eq(reportSchedules.farmId, farmId) : undefined]
+      .filter((c): c is SQL => c !== undefined);
 
-  // 발정감지율: (발정 감지 / 발정 가능 두수) × 100
-  const totalCows = await db
-    .select({ cnt: count() })
-    .from(animals)
-    .where(
-      and(
-        eq(animals.farmId, farmId),
-        eq(animals.status, 'active'),
-        eq(animals.sex, 'female'),
-      ),
+    const rows = await db
+      .select()
+      .from(reportSchedules)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .limit(50);
+
+    const now = new Date();
+    const entries = buildScheduleCalendar(rows, now, months);
+
+    res.json({
+      success: true,
+      data: {
+        months,
+        generatedAt: now,
+        entries,
+        totalPlanned: entries.reduce((sum, e) => sum + e.occurrences.length, 0),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /reports/schedules — 농장×주기 1건 (있으면 갱신)
+reportRouter.post('/schedules', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const parsed = scheduleCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.issues[0]?.message ?? '입력값 오류' });
+      return;
+    }
+    const input = parsed.data;
+    if (!canManageFarmReports(req, input.farmId)) {
+      res.status(403).json({
+        success: false,
+        error: '이 농장의 보고서 발송 설정을 변경할 권한이 없습니다 (배정된 계정만 가능)',
+      });
+      return;
+    }
+    const recipients = normalizeRecipients(input.recipients);
+    if (recipients.length === 0) {
+      res.status(400).json({ success: false, error: '유효한 이메일 주소가 없습니다' });
+      return;
+    }
+
+    const endsAt = resolveEndsAt(input.endsAt, input.durationMonths);
+
+    const db = getDb();
+    const [row] = await db
+      .insert(reportSchedules)
+      .values({
+        farmId: input.farmId,
+        kind: input.kind,
+        recipients,
+        format: input.format ?? 'xlsx',
+        sendHourKst: input.sendHourKst ?? 7,
+        enabled: input.enabled ?? true,
+        ...(endsAt !== undefined ? { endsAt } : {}),
+        createdBy: req.user?.userId ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [reportSchedules.farmId, reportSchedules.kind],
+        set: {
+          recipients,
+          format: input.format ?? 'xlsx',
+          sendHourKst: input.sendHourKst ?? 7,
+          enabled: input.enabled ?? true,
+          ...(endsAt !== undefined ? { endsAt } : {}),
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    logger.info(
+      { farmId: input.farmId, kind: input.kind, recipients: recipients.length, by: req.user?.userId },
+      '[Report] 정기 보고서 구독 저장',
     );
-
-  const femaleCows = totalCows[0]?.cnt ?? 0;
-  // 한 사이클(21일) 기준 60% 발정 기대치. breeding-pipeline.service.ts와 동일.
-  const expectedEstrus = Math.max(1, femaleCows * 0.6);
-  const estrusDetectionRate = ratioPct(estrusCount, expectedEstrus);
-
-  // avgDaysOpen / calvingInterval / conceptionPerService 정밀 계산 미구현 — 가짜 수치 대신 0 반환.
-  // 프론트엔드는 0을 "데이터 없음"으로 표시해야 함. (Math.random() 기반 모킹 제거됨)
-  return {
-    conceptionRate: cr.rate,
-    conceptionRateDisplay: cr.displayValue,
-    conceptionRateStatus: cr.status,
-    avgDaysOpen: 0,
-    calvingInterval: 0,
-    estrusDetectionRate,
-    inseminationCount,
-    conceptionPerService: 0,
-  };
-}
-
-// ── 건강 요약 ──
-
-interface HealthSummary {
-  readonly diseaseByType: readonly { type: string; count: number }[];
-  readonly mortalityCount: number;
-  readonly cullingCount: number;
-}
-
-function computeHealthSummary(
-  monthEvents: readonly { eventType: string; cnt: number }[],
-): HealthSummary {
-  const diseaseByType = monthEvents
-    .filter((e) => e.eventType in HEALTH_EVENT_TYPES)
-    .map((e) => ({
-      type: HEALTH_EVENT_TYPES[e.eventType] ?? e.eventType,
-      count: e.cnt,
-    }))
-    .sort((a, b) => b.count - a.count);
-
-  // 폐사/도태는 별도 이벤트 또는 동물 상태 변경에서 집계
-  const mortalityCount = monthEvents
-    .filter((e) => e.eventType === 'mortality' || e.eventType === 'death')
-    .reduce((sum, e) => sum + e.cnt, 0);
-
-  const cullingCount = monthEvents
-    .filter((e) => e.eventType === 'culling' || e.eventType === 'cull')
-    .reduce((sum, e) => sum + e.cnt, 0);
-
-  return { diseaseByType, mortalityCount, cullingCount };
-}
-
-// ── AI 코멘트 생성 (룰 기반, Claude API 비용 절약) ──
-
-interface AiCommentInput {
-  readonly farmName: string;
-  readonly month: string;
-  readonly totalAnimals: number;
-  readonly totalAlerts: number;
-  readonly sensorCoverage: number;
-  readonly breedingData: BreedingMetrics;
-  readonly healthData: HealthSummary;
-  readonly alertsByType: readonly { type: string; label: string; count: number }[];
-}
-
-function buildAiComment(input: AiCommentInput): string {
-  const { farmName, month, totalAnimals, totalAlerts, sensorCoverage, breedingData, healthData, alertsByType } = input;
-  const parts: string[] = [];
-
-  parts.push(
-    `${farmName} ${month} 월간 보고서입니다. ` +
-    `총 ${String(totalAnimals)}두 중 센서 커버리지 ${String(sensorCoverage)}%로 운영되고 있습니다.`,
-  );
-
-  // 알림 요약
-  if (totalAlerts > 0) {
-    const top3 = alertsByType.slice(0, 3).map((a) => `${a.label}(${String(a.count)}건)`).join(', ');
-    parts.push(`이번 달 총 ${String(totalAlerts)}건의 알림이 발생했으며, 주요 유형은 ${top3}입니다.`);
-  } else {
-    parts.push('이번 달 특이 알림이 발생하지 않았습니다.');
+    res.status(201).json({ success: true, data: row });
+  } catch (error) {
+    next(error);
   }
+});
 
-  // 번식 평가. D5: rate=null이면 코멘트 생략 (가짜 평가 금지).
-  if (breedingData.conceptionRate === null) {
-    // 데이터 부족: 평가 코멘트 생성 안 함.
-  } else if (breedingData.conceptionRate >= 50) {
-    parts.push(`수태율 ${breedingData.conceptionRateDisplay}로 양호한 수준입니다.`);
-  } else if (breedingData.conceptionRate > 0) {
-    parts.push(
-      `수태율 ${breedingData.conceptionRateDisplay}로 목표(50%) 미달입니다. ` +
-      '수정 시기 정확도와 정액 품질을 점검해 주세요.',
-    );
+// PATCH /reports/schedules/:scheduleId
+reportRouter.patch('/schedules/:scheduleId', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const parsed = scheduleUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.issues[0]?.message ?? '입력값 오류' });
+      return;
+    }
+    const db = getDb();
+    const scheduleId = req.params.scheduleId as string;
+    const [existing] = await db
+      .select()
+      .from(reportSchedules)
+      .where(eq(reportSchedules.scheduleId, scheduleId));
+
+    if (!existing || !canManageFarmReports(req, existing.farmId)) {
+      res.status(404).json({ success: false, error: '구독을 찾을 수 없습니다' });
+      return;
+    }
+
+    const patch = parsed.data;
+    const recipients = patch.recipients ? normalizeRecipients(patch.recipients) : undefined;
+    if (patch.recipients && (!recipients || recipients.length === 0)) {
+      res.status(400).json({ success: false, error: '유효한 이메일 주소가 없습니다' });
+      return;
+    }
+
+    const endsAt = resolveEndsAt(patch.endsAt, patch.durationMonths);
+
+    const [row] = await db
+      .update(reportSchedules)
+      .set({
+        ...(recipients ? { recipients } : {}),
+        ...(patch.format ? { format: patch.format } : {}),
+        ...(patch.sendHourKst != null ? { sendHourKst: patch.sendHourKst } : {}),
+        ...(patch.enabled != null ? { enabled: patch.enabled } : {}),
+        ...(endsAt !== undefined ? { endsAt } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(reportSchedules.scheduleId, scheduleId))
+      .returning();
+
+    res.json({ success: true, data: row });
+  } catch (error) {
+    next(error);
   }
+});
 
-  if (breedingData.estrusDetectionRate >= 70) {
-    parts.push(`발정감지율 ${String(breedingData.estrusDetectionRate)}%로 smaXtec 센서가 효과적으로 작동하고 있습니다.`);
+// DELETE /reports/schedules/:scheduleId
+reportRouter.delete('/schedules/:scheduleId', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const scheduleId = req.params.scheduleId as string;
+    const [existing] = await db
+      .select()
+      .from(reportSchedules)
+      .where(eq(reportSchedules.scheduleId, scheduleId));
+
+    if (!existing || !canManageFarmReports(req, existing.farmId)) {
+      res.status(404).json({ success: false, error: '구독을 찾을 수 없습니다' });
+      return;
+    }
+
+    await db.delete(reportSchedules).where(eq(reportSchedules.scheduleId, scheduleId));
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
   }
+});
 
-  // 건강 경고
-  const totalHealthIssues = healthData.diseaseByType.reduce((sum, d) => sum + d.count, 0);
-  if (totalHealthIssues > totalAnimals * 0.3) {
-    parts.push(
-      `건강 관련 알림이 ${String(totalHealthIssues)}건으로 두수 대비 높은 수준입니다. ` +
-      '사양 환경 및 스트레스 요인을 점검하시기 바랍니다.',
-    );
+// POST /reports/schedules/:scheduleId/run-now — 지금 한 통 (기간 멱등 무시, 이력은 manual=true)
+reportRouter.post('/schedules/:scheduleId/run-now', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const scheduleId = req.params.scheduleId as string;
+    const [schedule] = await db
+      .select()
+      .from(reportSchedules)
+      .where(eq(reportSchedules.scheduleId, scheduleId));
+
+    if (!schedule || !canManageFarmReports(req, schedule.farmId)) {
+      res.status(404).json({ success: false, error: '구독을 찾을 수 없습니다' });
+      return;
+    }
+
+    const result = await deliverReport(schedule, new Date(), { manual: true });
+    res.json({ success: result.status === 'sent', data: result });
+  } catch (error) {
+    next(error);
   }
+});
 
-  if (healthData.mortalityCount > 0) {
-    parts.push(`폐사 ${String(healthData.mortalityCount)}건이 기록되었습니다. 원인 분석이 필요합니다.`);
+// GET /reports/deliveries?farmId=&limit=
+reportRouter.get('/deliveries', requirePermission('farm', 'read'), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const farmId = req.query.farmId as string | undefined;
+    const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+    const scope = scopedFarmIds(req);
+
+    const conditions = [
+      scope === null ? undefined : inArray(reportDeliveries.farmId, [...scope]),
+      farmId ? eq(reportDeliveries.farmId, farmId) : undefined,
+    ].filter((c): c is SQL => c !== undefined);
+
+    const rows = await db
+      .select()
+      .from(reportDeliveries)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(reportDeliveries.createdAt))
+      .limit(limit);
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
   }
-
-  // 센서 커버리지
-  if (sensorCoverage < 70) {
-    parts.push(
-      `센서 커버리지가 ${String(sensorCoverage)}%로 낮습니다. ` +
-      '미장착 개체에 대한 센서 추가 설치를 권장합니다.',
-    );
-  }
-
-  parts.push('※ 이 보고서는 smaXtec 센서 데이터 기반 자동 분석이며, 수의사의 임상적 판단을 대체하지 않습니다.');
-
-  return parts.join(' ');
-}
+});
