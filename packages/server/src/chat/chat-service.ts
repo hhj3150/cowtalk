@@ -34,6 +34,7 @@ import { generatePptx } from '../services/report/generators/pptxGenerator.js';
 import { generatePdf } from '../services/report/generators/pdfGenerator.js';
 import { REPORT_CONFIG } from '../services/report/config.js';
 import { v4 as uuidv4 } from 'uuid';
+import { VOICE_STYLE_ADDENDUM } from '../voice/style.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -72,6 +73,15 @@ export interface ChatMessageRequest {
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
   readonly images?: readonly ChatImage[]; // Vision: 첨부 이미지 (최대 5장)
   readonly documents?: readonly ChatDocument[]; // Files: 첨부 문서 (PDF/Excel/CSV, 최대 3개)
+  /**
+   * 음성 모드 — 답변을 귀로만 듣는 상황.
+   * 브레인은 그대로 두고 **말투 오버레이만** 덧붙인다 (roleTone/skill 애드덤과 같은 방식).
+   * 음성용 별도 어시스턴트를 만들지 않는 이유: 농장 컨텍스트·장기기억·학습 가이던스를
+   * 잃으면 음성이 타이핑보다 멍청해진다.
+   */
+  readonly voiceMode?: boolean;
+  /** 음성 단순 조회는 빠른 모델로 — 첫 토큰을 앞당긴다 */
+  readonly modelOverride?: string;
 }
 
 const UI_LANG_NAMES: Readonly<Record<string, string>> = {
@@ -486,7 +496,7 @@ export async function handleChatStream(
     logger.info({ skillId: activeSkill.id, title: activeSkill.title }, '[Chat] Skill 활성화');
   }
   // 환각 방지 가드는 SYSTEM_PROMPT 본문이 이미 강제 (스트리밍은 별도 추가 없음)
-  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}${buildUiLangDirective(uiLang)}${activeSkill?.systemAddendum ?? ''}`;
+  const systemPrompt = `${basePrompt}\n\n## 톤 설정\n${roleTone.systemAddendum}${buildUiLangDirective(uiLang)}${activeSkill?.systemAddendum ?? ''}${request.voiceMode ? VOICE_STYLE_ADDENDUM : ''}`;
 
   // 스트리밍 답변을 모아서 학습에 활용
   const wrappedCallbacks: StreamCallbacks = {
@@ -538,7 +548,7 @@ export async function handleChatStream(
       farmId: farmId ?? undefined,
       farmIds: request.farmIds && request.farmIds.length > 0 ? request.farmIds : undefined,
     },
-    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
+    { useDeepThinking, modelOverride: request.modelOverride, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );
 }
 

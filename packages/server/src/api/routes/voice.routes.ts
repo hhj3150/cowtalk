@@ -68,11 +68,9 @@ voiceRouter.post(
           audio,
           contentType: req.headers['content-type'] ?? 'audio/webm',
           language: (req.query.lang as string | undefined) ?? 'ko',
-          toolContext: {
-            ...(user?.userId ? { userId: user.userId } : {}),
-            role: (user?.role ?? 'farmer') as Role,
-            ...(farmId ? { farmId } : {}),
-          },
+          role: (user?.role ?? 'farmer') as Role,
+          ...(user?.userId ? { userId: user.userId } : {}),
+          ...(farmId ? { farmId } : {}),
         },
         {
           onTranscript: (text, confidence) => {

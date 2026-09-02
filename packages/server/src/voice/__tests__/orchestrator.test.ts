@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { splitSentences } from '../orchestrator.js';
-import { trimForVoice } from '../tools.js';
+import { stripForSpeech } from '../style.js';
 
 describe('splitSentences', () => {
   it('한국어 종결어미에서 자른다', () => {
@@ -29,19 +29,20 @@ describe('splitSentences', () => {
   });
 });
 
-describe('trimForVoice', () => {
-  it('짧으면 그대로 둔다', () => {
-    expect(trimForVoice('체온 39.8도입니다.')).toBe('체온 39.8도입니다.');
+describe('stripForSpeech', () => {
+  it('마크다운 기호를 걷어낸다 — 소리로 읽을 수 없다', () => {
+    expect(stripForSpeech('**1877번** 체온 `39.8`')).toBe('1877번 체온 39.8');
   });
 
-  it('길면 문장 경계에서 자른다', () => {
-    const long = '가'.repeat(200) + '입니다. ' + '나'.repeat(200);
-    const out = trimForVoice(long, 260);
-    expect(out.length).toBeLessThanOrEqual(260);
-    expect(out.endsWith('입니다.')).toBe(true);
+  it('단위를 말로 바꾼다', () => {
+    expect(stripForSpeech('체온 39.8°C, 반추 20% 감소')).toBe('체온 39.8도, 반추 20퍼센트 감소');
   });
 
-  it('공백을 정리한다 — 도구 결과에 줄바꿈이 섞여 온다', () => {
-    expect(trimForVoice('체온  39.8도\n\n반추 정상')).toBe('체온 39.8도 반추 정상');
+  it('글머리표를 없앤다 — "하이픈"이라고 읽히면 안 된다', () => {
+    expect(stripForSpeech('- 발정 2마리\n- 분만 임박 1마리')).toBe('발정 2마리 분만 임박 1마리');
+  });
+
+  it('링크는 라벨만 남긴다', () => {
+    expect(stripForSpeech('[개체 상세](https://x.com/a)')).toBe('개체 상세');
   });
 });

@@ -255,6 +255,11 @@ export function shouldUseDeepThinking(userMessage: string): boolean {
 
 export interface ChatToolOptions {
   readonly useDeepThinking?: boolean;
+  /**
+   * 모델 강제 지정 — 음성 경로가 단순 조회를 빠른 모델로 보낼 때만 쓴다.
+   * 미지정이면 기존 동작(config.ANTHROPIC_MODEL) 그대로다.
+   */
+  readonly modelOverride?: string;
   /** Vision: 첨부 이미지를 첫 user message의 content blocks 앞에 image 블록으로 삽입 */
   readonly images?: readonly { data: string; mimeType: ImageMediaType }[];
   /** Files: 첨부 PDF — Claude 네이티브 document block (base64) */
@@ -275,6 +280,9 @@ export async function callClaudeForChatWithTools(
   }
 
   let fullText = '';
+
+  // 음성 경로가 단순 조회를 빠른 모델로 보낼 수 있게 한다. 미지정이면 기존 동작 그대로.
+  const chatModel = options?.modelOverride ?? config.ANTHROPIC_MODEL;
 
   // Vision + Files: 이미지·PDF가 있으면 content blocks 형태로 첫 user message 구성.
   // 순서: [document(pdf), document(pdf), ..., image, image, ..., text] — Anthropic 권장
@@ -315,14 +323,14 @@ export async function callClaudeForChatWithTools(
   // 변수가 가려 { type: 'enabled', budget_tokens } 가 하드코딩됐고, 그 형태를 거부하는
   // 최신 모델(Opus 4.7+/Claude 5)로 바꾸는 순간 채팅 전 요청이 400 이 될 상태였다.
   const chatThinking = useThinking
-    ? thinkingParam(config.ANTHROPIC_MODEL, config.ANTHROPIC_THINKING_BUDGET)
+    ? thinkingParam(chatModel, config.ANTHROPIC_THINKING_BUDGET)
     : {};
 
   logger.info({
     role,
     toolCount: filteredTools.length,
     total: TINKERBELL_TOOLS.length,
-    model: config.ANTHROPIC_MODEL,
+    model: chatModel,
     thinking: useThinking ? config.ANTHROPIC_THINKING_BUDGET : 0,
   }, '[ToolUse] 역할별 도구 필터링');
 
@@ -351,7 +359,7 @@ export async function callClaudeForChatWithTools(
       const roundStart = Date.now();
 
       const stream = anthropic.messages.stream({
-        model: config.ANTHROPIC_MODEL,
+        model: chatModel,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
         // 구형: thinking 켜면 temperature=1 강제. 신형: temperature 자체를 안 받는다.
         ...thinkingSafeTemperature(config.ANTHROPIC_MODEL, useThinking, config.ANTHROPIC_TEMPERATURE_CHAT),
@@ -484,7 +492,7 @@ export async function callClaudeForChatWithTools(
       ];
       let finalRoundLen = 0;
       const finalStream = anthropic.messages.stream({
-        model: config.ANTHROPIC_MODEL,
+        model: chatModel,
         max_tokens: config.ANTHROPIC_MAX_TOKENS_CHAT,
         ...temperatureParam(config.ANTHROPIC_MODEL, config.ANTHROPIC_TEMPERATURE_CHAT_FINAL),
         system: buildCachedSystem(systemPrompt),
@@ -524,7 +532,7 @@ export async function callClaudeForChatWithTools(
       status: errObj.status,
       message: errObj.message,
       name: errObj.name,
-      model: config.ANTHROPIC_MODEL,
+      model: chatModel,
     }, '[ToolUse] 대화 실패');
     const detail = errObj.status
       ? `[Claude ${errObj.status}] ${errObj.message ?? 'unknown'} (model=${config.ANTHROPIC_MODEL})`

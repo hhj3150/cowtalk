@@ -1,4 +1,7 @@
-// 음성 콘솔 — 화면이 아니라 목소리가 주 인터페이스인 화면.
+// 팅커벨 음성 모드 — 화면이 아니라 목소리가 주 인터페이스인 화면.
+//
+// ⚠️ 별도의 어시스턴트가 아니다. 팅커벨과 같은 브레인·같은 도구·같은 기억을 쓰고,
+// 답변 형태만 "귀로 듣는 사람"에게 맞춘다. 서버가 voiceMode 오버레이를 얹는다.
 //
 // 현장 전제:
 //  - 장갑을 낀 손, 축사 소음, 한 손은 소를 붙잡고 있다
@@ -54,6 +57,7 @@ export default function VoiceConsole({ farmId }: VoiceConsoleProps): React.JSX.E
             }
           />
           <span className="text-sm font-semibold">{STATE_LABEL[state]}</span>
+          <span className="ml-1 text-[11px] text-slate-500">팅커벨 · 음성 모드</span>
         </div>
         {busy && (
           <button
