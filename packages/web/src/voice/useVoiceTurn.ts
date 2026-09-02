@@ -7,12 +7,23 @@
 //  4) 실패해도 자막은 남는다. TTS 가 죽어도 대화는 계속된다.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { attachMicActivity, type MicActivityHandle } from './useMicActivity';
 
 export type VoiceTurnState = 'idle' | 'recording' | 'thinking' | 'speaking';
 
 export interface VoiceTurnMessage {
   readonly role: 'user' | 'assistant';
   readonly text: string;
+}
+
+export interface UseVoiceTurnOptions {
+  /**
+   * 핸즈프리 — 답변이 끝나면 자동으로 다시 듣는다.
+   * 장갑 낀 손으로 버튼을 반복해 누를 수 없는 현장을 위한 모드.
+   */
+  readonly handsFree?: boolean;
+  /** 답변 재생 중 사용자가 말하면 즉시 멈추고 듣기로 전환 */
+  readonly bargeIn?: boolean;
 }
 
 export interface UseVoiceTurnReturn {
@@ -37,7 +48,9 @@ function pickMimeType(): string {
   return 'audio/webm';
 }
 
-export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
+export function useVoiceTurn(farmId?: string, opts: UseVoiceTurnOptions = {}): UseVoiceTurnReturn {
+  const handsFree = opts.handsFree ?? false;
+  const bargeIn = opts.bargeIn ?? true;
   const [state, setState] = useState<VoiceTurnState>('idle');
   const [transcript, setTranscript] = useState('');
   const [reply, setReply] = useState('');
@@ -53,6 +66,21 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
   const nextSeqRef = useRef(0);
   const playingRef = useRef(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const activityRef = useRef<MicActivityHandle | null>(null);
+  const monitorStreamRef = useRef<MediaStream | null>(null);
+  // 재생 루프는 오래 살아 있어 클로저가 굳는다. 최신 값을 ref 로 흘려준다.
+  // (렌더 중 ref 를 쓰지 않고 effect 로 동기화한다 — StrictMode 안전)
+  const handsFreeRef = useRef(handsFree);
+  const startRef = useRef<(() => Promise<void>) | null>(null);
+  const startBargeInMonitorRef = useRef<(() => Promise<void>) | null>(null);
+  useEffect(() => { handsFreeRef.current = handsFree; }, [handsFree]);
+
+  const stopMonitor = useCallback(() => {
+    activityRef.current?.stop();
+    activityRef.current = null;
+    monitorStreamRef.current?.getTracks().forEach((t) => t.stop());
+    monitorStreamRef.current = null;
+  }, []);
 
   const stopPlayback = useCallback(() => {
     queueRef.current = [];
@@ -84,13 +112,22 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
       URL.revokeObjectURL(url);
       playingRef.current = false;
       nextSeqRef.current += 1;
-      setState((s) => (s === 'speaking' && queueRef.current.length === 0 ? 'idle' : s));
+      if (queueRef.current.length === 0) {
+        // 마지막 청크까지 재생됐다. 핸즈프리면 사용자가 버튼을 누르지 않아도
+        // 곧바로 다시 듣는다 — 이게 "대화"와 "명령어 입력"을 가르는 지점이다.
+        if (handsFreeRef.current) {
+          setTimeout(() => { void startRef.current?.(); }, 180);
+        } else {
+          setState((s) => (s === 'speaking' ? 'idle' : s));
+        }
+      }
       pump();
     };
     el.onended = onEnd;
     el.onerror = onEnd; // 한 청크가 깨져도 다음으로 넘어간다
     el.src = url;
     setState('speaking');
+    void startBargeInMonitorRef.current?.();
     void el.play().catch(() => {
       // 자동재생 차단 — 사용자가 버튼을 눌러 시작했으므로 보통 걸리지 않는다
       onEnd();
@@ -106,6 +143,36 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
   }, [pump]);
 
   /** 서버로 오디오를 보내고 SSE 를 읽는다 */
+  /**
+   * 답변 재생 중 마이크를 열어 두고, 사용자가 말하기 시작하면 즉시 끊는다.
+   * 자비스가 자비스인 이유의 절반은 "말 끊을 수 있다"는 것이다.
+   *
+   * 에코 취소를 켜서 스피커로 나가는 자기 목소리에 반응하지 않게 한다.
+   * 그래도 되울림이 심한 축사가 있으므로 임계값을 조금 높게 잡는다.
+   */
+  const startBargeInMonitor = useCallback(async () => {
+    if (!bargeIn || activityRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      monitorStreamRef.current = stream;
+      activityRef.current = attachMicActivity(
+        stream,
+        {
+          onSpeech: () => {
+            stopMonitor();
+            stopPlayback();
+            void startRef.current?.();
+          },
+        },
+        { speechRatio: 3.4, calibrateMs: 450 },
+      );
+    } catch {
+      // 마이크를 못 얻어도 대화는 계속된다. 끼어들기만 안 될 뿐이다.
+    }
+  }, [bargeIn, stopMonitor, stopPlayback]);
+
   const send = useCallback(async (audio: Blob) => {
     setState('thinking');
     setReply('');
@@ -180,7 +247,8 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
   const start = useCallback(async () => {
     setError(null);
     setTranscript('');
-    stopPlayback(); // 말하는 중에 누르면 끊는다 (끼어들기)
+    stopMonitor();
+    stopPlayback(); // 말하는 중에 시작하면 끊는다 (끼어들기)
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -194,6 +262,8 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
       const parts: Blob[] = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) parts.push(e.data); };
       rec.onstop = () => {
+        activityRef.current?.stop();
+        activityRef.current = null;
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         if (parts.length > 0) void send(new Blob(parts, { type: mimeType }));
@@ -201,11 +271,23 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
       };
       rec.start();
       setState('recording');
+
+      // 말이 끝나면 알아서 끊는다. 버튼을 떼는 동작조차 없애는 것이 목표다.
+      // 발화가 한 번도 감지되지 않으면 울리지 않으므로, 말을 시작하기 전에
+      // 녹음이 끊기는 일은 없다.
+      activityRef.current = attachMicActivity(stream, {
+        onSilence: () => {
+          if (rec.state !== 'inactive') rec.stop();
+        },
+      });
     } catch {
       setError('마이크를 사용할 수 없습니다. 권한을 확인해 주세요.');
       setState('idle');
     }
-  }, [send, stopPlayback]);
+  }, [send, stopMonitor, stopPlayback]);
+
+  useEffect(() => { startRef.current = start; }, [start]);
+  useEffect(() => { startBargeInMonitorRef.current = startBargeInMonitor; }, [startBargeInMonitor]);
 
   const stop = useCallback(() => {
     const rec = recorderRef.current;
@@ -216,15 +298,17 @@ export function useVoiceTurn(farmId?: string): UseVoiceTurnReturn {
   const cancel = useCallback(() => {
     abortRef.current?.abort();
     stop();
+    stopMonitor();
     stopPlayback();
     setState('idle');
-  }, [stop, stopPlayback]);
+  }, [stop, stopMonitor, stopPlayback]);
 
   useEffect(() => () => {
     abortRef.current?.abort();
     streamRef.current?.getTracks().forEach((t) => t.stop());
+    stopMonitor();
     stopPlayback();
-  }, [stopPlayback]);
+  }, [stopMonitor, stopPlayback]);
 
   return { state, transcript, reply, messages, error, start, stop, cancel };
 }

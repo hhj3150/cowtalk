@@ -10,8 +10,9 @@
 //
 // 웹·스마트폰 동일 코드. 뷰포트에 따라 버튼 크기만 달라진다.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVoiceTurn } from './useVoiceTurn';
+import { useWakeWord } from '@web/hooks/useWakeWord';
 
 interface VoiceConsoleProps {
   readonly farmId?: string;
@@ -25,8 +26,26 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 export default function VoiceConsole({ farmId }: VoiceConsoleProps): React.JSX.Element {
-  const { state, transcript, reply, messages, error, start, stop, cancel } = useVoiceTurn(farmId);
+  // 핸즈프리 = 한 번 켜면 계속. 답변이 끝나면 자동으로 다시 듣는다.
+  // 장갑 낀 손으로 매 턴 버튼을 누를 수 없는 현장을 위한 기본 동작이다.
+  const [handsFree, setHandsFree] = useState(false);
+  const { state, transcript, reply, messages, error, start, stop, cancel } =
+    useVoiceTurn(farmId, { handsFree, bargeIn: true });
   const logRef = useRef<HTMLDivElement | null>(null);
+
+  // 호출어 — 핸즈프리가 꺼져 있을 때만 청취한다.
+  // 켜져 있으면 이미 대화 루프가 마이크를 잡고 있어 두 개가 다투면 안 된다.
+  const idle = state === 'idle';
+  const onWake = useCallback((_heard: string) => {
+    setHandsFree(true);
+    void start();
+  }, [start]);
+  const { supported: wakeSupported } = useWakeWord({
+    enabled: !handsFree && idle,
+    onWake,
+    // "그만", "조용히 해" — 말로 대화를 끊는다. 화면이 없으니 이 경로가 필요하다.
+    onInterrupt: () => { setHandsFree(false); cancel(); },
+  });
 
   // 새 대화가 붙으면 아래로 — 화면을 보고 있는 사용자를 위한 보조 동작
   useEffect(() => {
@@ -39,8 +58,10 @@ export default function VoiceConsole({ farmId }: VoiceConsoleProps): React.JSX.E
   // push-to-talk: 누르는 동안 녹음, 떼면 전송.
   // 터치와 마우스를 모두 받는다. 포인터 이벤트 하나로 처리하면
   // 일부 안드로이드 브라우저에서 취소가 안 잡혀 마이크가 계속 열린다.
-  const press = (): void => { if (!listening) void start(); };
-  const release = (): void => { if (listening) stop(); };
+  // 기본은 push-to-talk. 핸즈프리에서는 누르면 시작/중지만 하고,
+  // 종료 판단은 무음 감지가 맡는다 (손을 떼고 있어도 된다).
+  const press = (): void => { if (!listening && !busy) void start(); };
+  const release = (): void => { if (!handsFree && listening) stop(); };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950 text-slate-100">
@@ -59,15 +80,35 @@ export default function VoiceConsole({ farmId }: VoiceConsoleProps): React.JSX.E
           <span className="text-sm font-semibold">{STATE_LABEL[state]}</span>
           <span className="ml-1 text-[11px] text-slate-500">팅커벨 · 음성 모드</span>
         </div>
-        {busy && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={cancel}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+            onClick={() => {
+              const next = !handsFree;
+              setHandsFree(next);
+              if (!next) cancel();
+              else void start();
+            }}
+            aria-pressed={handsFree}
+            className={
+              'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ' +
+              (handsFree
+                ? 'bg-emerald-600 text-white'
+                : 'border border-slate-700 text-slate-300 hover:bg-slate-800')
+            }
           >
-            중지
+            {handsFree ? '핸즈프리 켜짐' : '핸즈프리'}
           </button>
-        )}
+          {busy && (
+            <button
+              type="button"
+              onClick={cancel}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+            >
+              중지
+            </button>
+          )}
+        </div>
       </header>
 
       {/* 대화 로그 — 보조. 크게, 두 줄만 눈에 들어와도 충분하게 */}
@@ -76,6 +117,10 @@ export default function VoiceConsole({ farmId }: VoiceConsoleProps): React.JSX.E
           <div className="mt-10 text-center text-slate-500">
             <p className="text-base">버튼을 누른 채로 말씀하세요.</p>
             <p className="mt-2 text-sm">“1877번 어때?” · “오늘 할 일 뭐야?” · “수정할 소 있어?”</p>
+            <p className="mt-4 text-sm text-slate-400">
+              핸즈프리를 켜면 버튼 없이 이어서 대화합니다.
+              {wakeSupported ? ' “팅커벨” 또는 “카우톡”이라고 부르셔도 됩니다.' : ''}
+            </p>
           </div>
         )}
 
@@ -140,7 +185,9 @@ export default function VoiceConsole({ farmId }: VoiceConsoleProps): React.JSX.E
           {listening ? '놓으면 전송' : busy ? STATE_LABEL[state] : '누른 채로 말하기'}
         </button>
         <p className="mt-3 text-center text-xs text-slate-500">
-          개체번호는 다시 확인해 드립니다. 기록은 확답을 받고 실행합니다.
+          {handsFree
+            ? '말이 끝나면 알아서 듣습니다. 답하는 중에 말씀하시면 멈춥니다.'
+            : '개체번호는 다시 확인해 드립니다. 기록은 확답을 받고 실행합니다.'}
         </p>
       </div>
     </div>

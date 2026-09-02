@@ -17,6 +17,8 @@ import { getSttProvider, getTtsProvider } from './providers/index.js';
 import { routeUtterance, buildAck, shouldAck } from './router.js';
 import { stripForSpeech } from './style.js';
 import { handleChatStream, type ChatMessageRequest } from '../chat/chat-service.js';
+import { loadSession, appendTurn, clearSession, isResetUtterance } from './session.js';
+import { extractAnimalNumber } from './router.js';
 import type { Role } from '@cowtalk/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -51,7 +53,10 @@ export interface VoiceTurnInput {
   readonly farmId?: string | null;
   readonly permittedFarmIds?: readonly string[] | null;
   readonly animalId?: string | null;
-  /** 직전 대화 — 짧게. 전체 히스토리를 넣으면 캐시가 깨지고 느려진다 */
+  /**
+   * 직전 대화. 보통 비워 둔다 — 서버가 세션(voice/session.ts)에서 이어붙인다.
+   * 클라이언트가 명시적으로 주면 그쪽이 우선한다(테스트·특수 경로용).
+   */
   readonly conversationHistory?: readonly { role: 'user' | 'assistant'; content: string }[];
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
 }
@@ -133,6 +138,17 @@ export async function runVoiceTurn(
     };
 
     if (!t.text.trim()) { await askAgain(); return; }
+
+    // "처음부터" — 대화를 끊는다. 화면이 없으니 말로 끊을 수 있어야 한다.
+    if (isResetUtterance(t.text)) {
+      await clearSession(input.userId);
+      const msg = '대화를 처음부터 시작하겠습니다.';
+      cb.onText(msg);
+      await speak(msg, false);
+      cb.onDone(msg);
+      timer.end('ok');
+      return;
+    }
     // 신뢰도가 낮으면 추측하지 않고 되묻는다. 공급자가 신뢰도를 안 주면 이 검사는 건너뛴다.
     if (t.confidence !== undefined && t.confidence < config.VOICE_STT_MIN_CONFIDENCE) {
       await askAgain(); return;
@@ -150,15 +166,21 @@ export async function runVoiceTurn(
     let full = '';
     let pending = '';
 
+    // 서버가 들고 있는 스레드를 이어붙인다 — "왜?", "그 소는?"이 통하게 하는 부분.
+    const session = input.conversationHistory
+      ? { turns: input.conversationHistory, lastAnimalId: undefined }
+      : await loadSession(input.userId);
+
+    // 이번 발화에 번호가 없으면 직전 개체를 이어받는다 (지시대명사 해소)
+    const spokenAnimal = extractAnimalNumber(t.text);
+    const carriedAnimal = spokenAnimal ?? session.lastAnimalId;
+
     const req: ChatMessageRequest = {
       question: t.text,
       role: input.role,
       farmId: input.farmId ?? null,
-      animalId: input.animalId ?? null,
-      conversationHistory: (input.conversationHistory ?? []).map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      animalId: input.animalId ?? carriedAnimal ?? null,
+      conversationHistory: session.turns.map((m) => ({ role: m.role, content: m.content })),
       voiceMode: true,
       ...(modelOverride ? { modelOverride } : {}),
       ...(input.userId ? { userId: input.userId } : {}),
@@ -187,6 +209,8 @@ export async function runVoiceTurn(
           pending = '';
         }
         await ackPromise;
+        // 스레드에 붙인다. 다음 턴의 "왜?"가 이 답변을 가리킨다.
+        await appendTurn(input.userId, t.text, full, carriedAnimal ?? undefined);
         cb.onDone(full);
         timer.end('ok');
       },
