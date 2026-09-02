@@ -64,6 +64,7 @@ import { paymentRouter } from './routes/payment.routes.js';
 import { treatmentsRouter } from './routes/treatments.routes.js';
 import { diagnosisRouter } from './routes/diagnosis.routes.js';
 import { audioRouter } from './routes/audio.routes.js';
+import { voiceRouter } from './routes/voice.routes.js';
 import { geoRouter } from './routes/geo.routes.js';
 
 export function createApiRouter(): Router {
@@ -134,6 +135,7 @@ export function createApiRouter(): Router {
   api.use('/treatments', treatmentsRouter);
   api.use('/diagnosis', diagnosisRouter);
   api.use('/audio', audioRouter);
+  api.use('/voice', voiceRouter);
   api.use('/geo', geoRouter);
 
   return api;

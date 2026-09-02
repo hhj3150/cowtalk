@@ -94,6 +94,32 @@ const envSchema = z.object({
   // TTS 속도: 1.0=기본, 0.85=차분, 1.1=빠름. 자연 대화에는 0.95~1.05 권장
   OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4.0).default(1.0),
 
+  // ── 음성 어시스턴트 (voice/) ──────────────────────────────
+  // 공급자는 환경변수로 갈아끼운다. 미설정이면 설정된 것으로 자동 폴백한다.
+  // ⚠️ CLOVA 경로는 키가 없어 실 호출 검증을 못 했다 — 키 확보 후 스모크 필수.
+  VOICE_STT_PROVIDER: z.enum(['whisper', 'clova']).default('whisper'),
+  VOICE_TTS_PROVIDER: z.enum(['openai', 'clova']).default('openai'),
+  CLOVA_CLIENT_ID: z.string().optional(),
+  CLOVA_CLIENT_SECRET: z.string().optional(),
+  CLOVA_TTS_SPEAKER: z.string().default('nara'),
+
+  // 음성 전용 모델 — 전역 ANTHROPIC_MODEL 은 건드리지 않는다.
+  // 단순 조회는 빠른 모델로 보내 TTFT 를 줄인다(비용도 1/5).
+  // 주력은 전역 기본값과 같은 세대를 쓰되, 환경변수로 먼저 올릴 수 있게 분리했다.
+  VOICE_MODEL_FAST: z.string().default('claude-haiku-4-5'),
+  VOICE_MODEL_MAIN: z.string().default('claude-sonnet-4-6'),
+  // 음성 답변은 1~2문장이다. 상한을 낮게 잡아 지연과 비용을 함께 누른다.
+  VOICE_MAX_TOKENS: z.coerce.number().int().min(128).max(4000).default(700),
+  VOICE_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.3),
+  // 음성은 추론 지연을 감당할 수 없다 — 기본 low.
+  VOICE_EFFORT: z.enum(['low', 'medium', 'high', 'max']).default('low'),
+  // TTS 절단 — 답변이 길어지면 앞부분만 말한다(자막은 전체가 나간다)
+  VOICE_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(2000).default(400),
+  VOICE_TTS_SPEED: z.coerce.number().min(0.5).max(2.0).default(1.0),
+  // STT 신뢰도가 이보다 낮으면 추측하지 않고 되묻는다.
+  // 공급자가 신뢰도를 주지 않으면(Whisper) 이 검사는 건너뛴다.
+  VOICE_STT_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.55),
+
   // Web Push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

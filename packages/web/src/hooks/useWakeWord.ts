@@ -12,6 +12,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 // 팅커벨 호명 변형 — 한국어 음성 인식이 다양한 표기로 들려줌
 const WAKE_PATTERNS: readonly RegExp[] = [
+  // 신규 브랜드 호출어 — 기존 "팅커벨"과 병행한다.
+  // 기존 사용자의 습관을 끊지 않으면서 새 이름을 들여보내는 방법이다.
+  /카우톡/,
+  /카우\s*톡/,
+  /cow\s*talk/i,
+  // 자주 잘못 듣는 변형
+  /가우톡/,
+  /카오톡/,
   /팅커벨/,
   /팅커/,
   /tinker\s*bell/i,
