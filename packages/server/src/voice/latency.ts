@@ -43,6 +43,9 @@ export interface TurnMeta {
   /** 전사 결과 길이 (내용은 남기지 않는다 — 개인정보·현장 발화) */
   readonly transcriptChars?: number;
   readonly sttConfidence?: number;
+  /** 로스터에 없던 번호 / 되물은 근접 후보 — 오인식 패턴을 실측하려면 필요하다 */
+  readonly rosterMiss?: string;
+  readonly rosterNear?: string;
 }
 
 /**

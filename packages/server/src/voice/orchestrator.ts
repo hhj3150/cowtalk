@@ -19,6 +19,8 @@ import { stripForSpeech } from './style.js';
 import { handleChatStream, type ChatMessageRequest } from '../chat/chat-service.js';
 import { loadSession, appendTurn, clearSession, isResetUtterance } from './session.js';
 import { extractAnimalNumber } from './router.js';
+import { getRoster, buildRosterHint, matchRoster } from './roster.js';
+import { extractSpokenAnimalNumbers } from './number-normalize.js';
 import type { Role } from '@cowtalk/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -115,12 +117,17 @@ export async function runVoiceTurn(
   };
 
   try {
+    // 0) 로스터 — 이 목장에 실제로 있는 개체번호.
+    // 정확도의 가장 큰 레버다. 소가 70마리면 번호 공간이 70개로 닫힌다.
+    // Redis 캐시라 보통 1ms 안쪽. 실패해도 빈 배열이라 대화는 계속된다.
+    const roster = config.VOICE_ROSTER_HINTS ? await getRoster(input.farmId) : [];
+
     // 1) 전사
     const t = await stt.transcribe({
       audio: input.audio,
       contentType: input.contentType,
       language: input.language ?? 'ko',
-      hints: STT_HINTS,
+      hints: [...STT_HINTS, ...buildRosterHint(roster)],
     });
     timer.mark('sttDoneMs');
     timer.setMeta({
@@ -154,6 +161,27 @@ export async function runVoiceTurn(
       await askAgain(); return;
     }
 
+    // 1-b) 개체번호 대조 — 조용히 고치지 않고 되묻는다.
+    //
+    // "1877"을 "1878"로 잘못 들으면 **다른 소의 데이터를 답하게 된다.**
+    // 로스터에 없는 번호가 나왔는데 한 글자 차이의 실제 번호가 있다면,
+    // 그건 오인식일 가능성이 높다. 하지만 확신할 수는 없으므로 확정하지 않고 묻는다.
+    const spoken = extractSpokenAnimalNumbers(t.text);
+    const rosterMatch = matchRoster(spoken, roster);
+    if (spoken.length > 0 && roster.length > 0 && !rosterMatch.exact && rosterMatch.near.length > 0) {
+      const msg = rosterMatch.near.length === 1
+        ? `${rosterMatch.near[0]}번 말씀이신가요?`
+        : `${rosterMatch.near.slice(0, 2).join('번, ')}번 중에 어느 쪽인가요?`;
+      cb.onText(msg);
+      await speak(msg, false);
+      // 되물은 번호를 스레드에 남긴다 — 다음 턴의 "응, 체온 알려줘"가 이어지도록.
+      await appendTurn(input.userId, t.text, msg, rosterMatch.near[0]);
+      cb.onDone(msg);
+      timer.setMeta({ rosterMiss: spoken.join(','), rosterNear: rosterMatch.near.join(',') });
+      timer.end('ok');
+      return;
+    }
+
     // 2) 라우팅 + 선행 응답
     const decision = routeUtterance(t.text);
     const modelOverride = decision.route === 'fast' ? config.VOICE_MODEL_FAST : undefined;
@@ -171,12 +199,18 @@ export async function runVoiceTurn(
       ? { turns: input.conversationHistory, lastAnimalId: undefined }
       : await loadSession(input.userId);
 
-    // 이번 발화에 번호가 없으면 직전 개체를 이어받는다 (지시대명사 해소)
-    const spokenAnimal = extractAnimalNumber(t.text);
+    // 이번 발화에 번호가 없으면 직전 개체를 이어받는다 (지시대명사 해소).
+    // 로스터에 정확히 있는 번호가 최우선 — 한글 낭독("일팔칠칠번")도 여기서 숫자가 된다.
+    const spokenAnimal = rosterMatch.exact ?? spoken[0] ?? extractAnimalNumber(t.text);
     const carriedAnimal = spokenAnimal ?? session.lastAnimalId;
 
+    // 한글로 부른 번호는 원문에 숫자가 없다 — 팅커벨이 읽을 수 있게 덧붙인다.
+    const question = spokenAnimal && !t.text.includes(spokenAnimal)
+      ? `${t.text} (개체번호 ${spokenAnimal})`
+      : t.text;
+
     const req: ChatMessageRequest = {
-      question: t.text,
+      question,
       role: input.role,
       farmId: input.farmId ?? null,
       animalId: input.animalId ?? carriedAnimal ?? null,

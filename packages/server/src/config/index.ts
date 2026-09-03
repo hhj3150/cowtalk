@@ -98,6 +98,11 @@ const envSchema = z.object({
   // 공급자는 환경변수로 갈아끼운다. 미설정이면 설정된 것으로 자동 폴백한다.
   // ⚠️ CLOVA 경로는 키가 없어 실 호출 검증을 못 했다 — 키 확보 후 스모크 필수.
   VOICE_STT_PROVIDER: z.enum(['whisper', 'clova']).default('whisper'),
+  // OpenAI 전사 모델. gpt-4o-transcribe 가 whisper-1 보다 오류율이 낮고
+  // 같은 키·같은 엔드포인트를 쓴다. 문제가 생기면 'whisper-1' 로 되돌린다.
+  OPENAI_STT_MODEL: z.string().default('gpt-4o-transcribe'),
+  // 농장 개체번호를 STT 힌트로 주입할지. 번호 공간이 닫혀 있어 효과가 크다.
+  VOICE_ROSTER_HINTS: z.coerce.boolean().default(true),
   VOICE_TTS_PROVIDER: z.enum(['openai', 'clova']).default('openai'),
   CLOVA_CLIENT_ID: z.string().optional(),
   CLOVA_CLIENT_SECRET: z.string().optional(),
