@@ -77,6 +77,19 @@ const STT_HINTS: readonly string[] = [
   '수정', '임신감정', '건유', '착유', '휴약', '한우', '젖소', '개체번호',
 ];
 
+/**
+ * 권한 안의 농장인가. `permittedFarmIds` 가 null/undefined 면 제한 없음(마스터·미배정 관리 역할).
+ * 권한 밖이면 null 을 돌려 로스터를 읽지 않는다 — 조용히 빈 로스터로 떨어지고 대화는 계속된다.
+ */
+export function permittedFarmId(
+  farmId: string | null | undefined,
+  permitted: readonly string[] | null | undefined,
+): string | null {
+  if (!farmId) return null;
+  if (permitted === null || permitted === undefined) return farmId;
+  return permitted.includes(farmId) ? farmId : null;
+}
+
 export async function runVoiceTurn(
   input: VoiceTurnInput,
   cb: VoiceTurnCallbacks,
@@ -120,7 +133,12 @@ export async function runVoiceTurn(
     // 0) 로스터 — 이 목장에 실제로 있는 개체번호.
     // 정확도의 가장 큰 레버다. 소가 70마리면 번호 공간이 70개로 닫힌다.
     // Redis 캐시라 보통 1ms 안쪽. 실패해도 빈 배열이라 대화는 계속된다.
-    const roster = config.VOICE_ROSTER_HINTS ? await getRoster(input.farmId) : [];
+    //
+    // ⚠️ 권한 경계: farmId 는 클라이언트가 보낸 값이라 검증되지 않았다.
+    // 로스터는 되묻기("1877번 말씀이신가요?")로 **실제 이표번호를 발화**하므로,
+    // 권한 밖 농장이면 남의 목장 개체번호를 읽어주게 된다. 교집합을 먼저 취한다.
+    const rosterFarmId = permittedFarmId(input.farmId, input.permittedFarmIds);
+    const roster = config.VOICE_ROSTER_HINTS ? await getRoster(rosterFarmId) : [];
 
     // 1) 전사
     const t = await stt.transcribe({

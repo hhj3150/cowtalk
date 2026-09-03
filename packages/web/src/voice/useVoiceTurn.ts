@@ -39,6 +39,13 @@ export interface UseVoiceTurnReturn {
 
 interface AudioChunk { seq: number; blob: Blob }
 
+// 무음 WAV 0.0초. iOS Safari 는 **사용자 제스처 안에서 한 번이라도 재생된 적 없는**
+// <audio> 요소의 play() 를 막는다. SSE 로 도착한 TTS 를 재생하려는 시점은 제스처가
+// 아니므로 그대로 두면 소리가 조용히 안 난다 (.catch 가 삼킨다).
+// 버튼을 누르는 순간 이걸 한 번 재생해 요소를 풀어둔다. 이후 src 를 바꿔도 재생된다.
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+
 /** MediaRecorder 가 지원하는 첫 포맷을 고른다 — 브라우저마다 다르다 */
 function pickMimeType(): string {
   const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
@@ -66,6 +73,7 @@ export function useVoiceTurn(farmId?: string, opts: UseVoiceTurnOptions = {}): U
   const nextSeqRef = useRef(0);
   const playingRef = useRef(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlockedRef = useRef(false);
   const activityRef = useRef<MicActivityHandle | null>(null);
   const monitorStreamRef = useRef<MediaStream | null>(null);
   // 재생 루프는 오래 살아 있어 클로저가 굳는다. 최신 값을 ref 로 흘려준다.
@@ -103,9 +111,12 @@ export function useVoiceTurn(farmId?: string, opts: UseVoiceTurnOptions = {}): U
 
     playingRef.current = true;
     const url = URL.createObjectURL(chunk.blob);
+    // 요소는 제스처 시점(unlockAudio)에 이미 만들어져 있다. 없으면 만들지만,
+    // 그 경우 iOS 에서는 재생이 막힐 수 있다.
     let el = audioElRef.current;
     if (!el) {
       el = new Audio();
+      el.setAttribute('playsinline', '');
       audioElRef.current = el;
     }
     const onEnd = (): void => {
@@ -129,7 +140,8 @@ export function useVoiceTurn(farmId?: string, opts: UseVoiceTurnOptions = {}): U
     setState('speaking');
     void startBargeInMonitorRef.current?.();
     void el.play().catch(() => {
-      // 자동재생 차단 — 사용자가 버튼을 눌러 시작했으므로 보통 걸리지 않는다
+      // 자동재생 차단. unlockAudio 로 대부분 막았지만, 뚫리면 자막은 이미 나갔으므로
+      // 다음 청크로 넘어간다 — 대화가 여기서 멈추면 안 된다.
       onEnd();
     });
   }, []);
@@ -244,7 +256,28 @@ export function useVoiceTurn(farmId?: string, opts: UseVoiceTurnOptions = {}): U
     }
   }, [farmId, enqueue, stopPlayback]);
 
+  /**
+   * iOS 오디오 언락. **반드시 사용자 제스처 안에서, await 앞에** 불러야 한다.
+   * 제스처가 끝난 뒤(프로미스 콜백)에는 효력이 없다.
+   */
+  const unlockAudio = useCallback(() => {
+    let el = audioElRef.current;
+    if (!el) {
+      el = new Audio();
+      el.setAttribute('playsinline', '');
+      audioElRef.current = el;
+    }
+    if (audioUnlockedRef.current) return;
+    audioUnlockedRef.current = true;
+    el.src = SILENT_WAV;
+    void el.play().then(() => el.pause()).catch(() => {
+      // 실패해도 다음 제스처에서 다시 시도할 수 있게 되돌린다
+      audioUnlockedRef.current = false;
+    });
+  }, []);
+
   const start = useCallback(async () => {
+    unlockAudio();
     setError(null);
     setTranscript('');
     stopMonitor();
@@ -284,7 +317,7 @@ export function useVoiceTurn(farmId?: string, opts: UseVoiceTurnOptions = {}): U
       setError('마이크를 사용할 수 없습니다. 권한을 확인해 주세요.');
       setState('idle');
     }
-  }, [send, stopMonitor, stopPlayback]);
+  }, [send, stopMonitor, stopPlayback, unlockAudio]);
 
   useEffect(() => { startRef.current = start; }, [start]);
   useEffect(() => { startBargeInMonitorRef.current = startBargeInMonitor; }, [startBargeInMonitor]);

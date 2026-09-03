@@ -12,6 +12,7 @@ import { authenticate } from '../middleware/auth.js';
 import { runVoiceTurn } from '../../voice/orchestrator.js';
 import { getSttProvider, getTtsProvider } from '../../voice/providers/index.js';
 import { config } from '../../config/index.js';
+import { scopedFarmIds } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import type { Role } from '@cowtalk/shared';
 
@@ -71,6 +72,9 @@ voiceRouter.post(
           role: (user?.role ?? 'farmer') as Role,
           ...(user?.userId ? { userId: user.userId } : {}),
           ...(farmId ? { farmId } : {}),
+          // 클라이언트가 보낸 farmId 는 검증되지 않았다 (기존 채팅 경로와 동일).
+          // 권한 스코프를 함께 넘겨 오케스트레이터가 교집합을 취하게 한다.
+          permittedFarmIds: scopedFarmIds(req),
         },
         {
           onTranscript: (text, confidence) => {

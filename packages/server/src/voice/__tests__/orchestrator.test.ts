@@ -2,7 +2,7 @@
 // 잘못 자르면 말이 끊기고, 못 자르면 답변이 다 끝난 뒤에야 소리가 난다.
 
 import { describe, it, expect } from 'vitest';
-import { splitSentences } from '../orchestrator.js';
+import { splitSentences, permittedFarmId } from '../orchestrator.js';
 import { stripForSpeech } from '../style.js';
 
 describe('splitSentences', () => {
@@ -44,5 +44,29 @@ describe('stripForSpeech', () => {
 
   it('링크는 라벨만 남긴다', () => {
     expect(stripForSpeech('[개체 상세](https://x.com/a)')).toBe('개체 상세');
+  });
+});
+
+describe('permittedFarmId — 로스터 권한 경계', () => {
+  it('권한 목록이 없으면(마스터·미배정 관리역할) 그대로 통과', () => {
+    expect(permittedFarmId('f1', null)).toBe('f1');
+    expect(permittedFarmId('f1', undefined)).toBe('f1');
+  });
+
+  it('권한 안의 농장이면 통과', () => {
+    expect(permittedFarmId('f1', ['f1', 'f2'])).toBe('f1');
+  });
+
+  it('권한 밖 농장이면 null — 남의 목장 이표번호를 읽어주면 안 된다', () => {
+    expect(permittedFarmId('f9', ['f1', 'f2'])).toBeNull();
+  });
+
+  it('빈 권한 목록이면 아무것도 통과하지 않는다', () => {
+    expect(permittedFarmId('f1', [])).toBeNull();
+  });
+
+  it('farmId 가 없으면 null', () => {
+    expect(permittedFarmId(null, null)).toBeNull();
+    expect(permittedFarmId(undefined, ['f1'])).toBeNull();
   });
 });

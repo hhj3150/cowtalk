@@ -42,6 +42,10 @@ export function attachMicActivity(
 
   const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const ctx = new AudioCtx();
+  // iOS Safari 는 제스처 밖에서 만든 AudioContext 를 suspended 로 둔다.
+  // 이 상태면 getFloatTimeDomainData 가 계속 0 을 주고, 무음 자동종료와
+  // 끼어들기가 **조용히** 동작하지 않는다 (에러도 안 난다).
+  if (ctx.state === 'suspended') void ctx.resume();
   const src = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
