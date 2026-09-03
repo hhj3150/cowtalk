@@ -1,0 +1,418 @@
+<title>우리 목장 사용 안내서</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --paper:#FFFFFF; --ground:#F4F6F6; --panel:#F7FAFA; --panel2:#EEF4F4;
+  --ink:#12242F; --ink2:#2E4653; --muted:#5F717C; --faint:#93A3AC;
+  --line:#DBE3E6; --line2:#BCCAD0;
+  --teal:#0E7C7B; --teal-d:#0A5E5D; --amber:#B26410; --amber-bg:#FBF1E4;
+  --green:#2C6E49; --green-bg:#E9F2EC; --red:#A8322F; --red-bg:#F9EAE9;
+  --sans:"IBM Plex Sans KR",-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0E1A21; --ground:#070F14; --panel:#132430; --panel2:#18303C;
+  --ink:#E9F1F4; --ink2:#C6D8DF; --muted:#9AACB6; --faint:#6F848F;
+  --line:#223B47; --line2:#33525F;
+  --teal:#37C3B8; --teal-d:#7FDCD3; --amber:#E2A459; --amber-bg:#2C2114;
+  --green:#63C08C; --green-bg:#152A1F; --red:#EE817C; --red-bg:#2E1615;
+}}
+:root[data-theme="dark"]{
+  --paper:#0E1A21; --ground:#070F14; --panel:#132430; --panel2:#18303C;
+  --ink:#E9F1F4; --ink2:#C6D8DF; --muted:#9AACB6; --faint:#6F848F;
+  --line:#223B47; --line2:#33525F;
+  --teal:#37C3B8; --teal-d:#7FDCD3; --amber:#E2A459; --amber-bg:#2C2114;
+  --green:#63C08C; --green-bg:#152A1F; --red:#EE817C; --red-bg:#2E1615;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:17px;line-height:1.72;font-weight:400;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,ul,ol,figure{margin:0}
+ul,ol{padding-left:0;list-style:none}
+
+.sheet{max-width:840px;margin:0 auto;background:var(--paper);
+  padding:0 clamp(20px,5vw,64px) 80px;box-shadow:0 0 0 1px var(--line)}
+
+/* cover */
+.cover{padding:64px 0 44px;border-bottom:3px solid var(--teal)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--teal);font-weight:500}
+.cover h1{font-size:clamp(34px,6vw,48px);font-weight:700;letter-spacing:-.03em;line-height:1.18;margin-top:14px;text-wrap:balance}
+.cover .sub{font-size:19px;color:var(--muted);margin-top:18px;line-height:1.62;max-width:34em}
+.cover .who{margin-top:28px;display:flex;flex-wrap:wrap;gap:10px}
+.chip{font-size:13.5px;color:var(--ink2);background:var(--panel);border:1px solid var(--line);
+  border-radius:99px;padding:6px 14px}
+
+section{padding-top:52px}
+.snum{font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--teal);font-weight:500}
+h2{font-size:clamp(24px,3.6vw,30px);font-weight:700;letter-spacing:-.02em;line-height:1.3;margin-top:8px;text-wrap:balance}
+h2 + .lead{font-size:17.5px;color:var(--muted);margin-top:12px;line-height:1.68}
+h3{font-size:19px;font-weight:600;margin-top:30px;letter-spacing:-.01em}
+p{margin-top:14px}
+p strong,li strong{font-weight:600;color:var(--ink)}
+
+/* 3-touch — the heart of the doc */
+.touch{margin-top:26px;display:flex;flex-direction:column;gap:14px}
+.step{display:grid;grid-template-columns:60px 1fr;gap:18px;align-items:start;
+  background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--teal);
+  border-radius:4px;padding:22px 24px}
+.step .n{font-family:var(--mono);font-size:32px;font-weight:600;color:var(--teal);line-height:1}
+.step h4{font-size:21px;font-weight:700;letter-spacing:-.01em}
+.step p{margin-top:8px;color:var(--ink2);font-size:16.5px}
+.step .ex{margin-top:12px;background:var(--paper);border:1px dashed var(--line2);border-radius:4px;
+  padding:12px 15px;font-size:15.5px;color:var(--muted)}
+.step .ex b{color:var(--ink);font-weight:600}
+.step.last{border-left-color:var(--amber)}
+.step.last .n{color:var(--amber)}
+
+.big-note{margin-top:24px;background:var(--amber-bg);border:1px solid var(--amber);
+  border-radius:4px;padding:22px 24px}
+.big-note .t{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:500}
+.big-note p{margin-top:8px;font-size:17.5px;color:var(--ink)}
+
+/* alert cards */
+.alerts{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.alert{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:20px 22px}
+.alert .k{font-size:13px;font-weight:600;letter-spacing:.02em;padding:3px 10px;border-radius:99px;display:inline-block}
+.alert.heat .k{background:var(--panel2);color:var(--teal)}
+.alert.calv .k{background:var(--green-bg);color:var(--green)}
+.alert.sick .k{background:var(--red-bg);color:var(--red)}
+.alert.heatstress .k{background:var(--amber-bg);color:var(--amber)}
+.alert h4{font-size:17.5px;font-weight:600;margin-top:12px}
+.alert p{margin-top:8px;font-size:15.5px;color:var(--muted);line-height:1.6}
+
+/* light table */
+table{width:100%;border-collapse:collapse;margin-top:20px;font-size:16px}
+th{text-align:left;font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--teal);font-weight:500;padding:0 12px 10px 0;border-bottom:1.5px solid var(--line2)}
+td{padding:14px 12px 14px 0;border-bottom:1px solid var(--line);color:var(--ink2);vertical-align:top;line-height:1.6}
+td:last-child,th:last-child{padding-right:0}
+tr:last-child td{border-bottom:0}
+
+/* signal colors */
+.signals{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+.sig{display:grid;grid-template-columns:18px 1fr;gap:16px;align-items:start;
+  border:1px solid var(--line);border-radius:4px;padding:16px 18px;background:var(--panel)}
+.dot{width:18px;height:18px;border-radius:50%;margin-top:5px}
+.dot.g{background:var(--green)} .dot.a{background:var(--amber)} .dot.r{background:var(--red)}
+.sig b{font-size:17px;font-weight:600}
+.sig span{display:block;font-size:15.5px;color:var(--muted);margin-top:4px;line-height:1.58}
+
+/* future */
+.future{margin-top:24px;display:flex;flex-direction:column;gap:0}
+.f-row{display:grid;grid-template-columns:120px 1fr;gap:20px;padding:20px 0;border-bottom:1px solid var(--line)}
+.f-row:last-child{border-bottom:0}
+.f-when{font-family:var(--mono);font-size:13px;color:var(--teal);letter-spacing:.06em;padding-top:3px}
+.f-row h4{font-size:17.5px;font-weight:600}
+.f-row p{margin-top:6px;font-size:16px;color:var(--muted)}
+
+/* faq */
+.faq{margin-top:22px;display:flex;flex-direction:column;gap:0}
+.qa{border-bottom:1px solid var(--line);padding:20px 0}
+.qa:last-child{border-bottom:0}
+.qa .q{font-size:17.5px;font-weight:600;color:var(--ink)}
+.qa .a{margin-top:8px;font-size:16.5px;color:var(--ink2);line-height:1.68}
+
+.callout{margin-top:26px;border-left:4px solid var(--teal);padding:4px 0 4px 22px}
+.callout p{font-size:19px;color:var(--ink);line-height:1.62;margin-top:0}
+
+.foot{margin-top:60px;padding-top:26px;border-top:1px solid var(--line);
+  font-size:15px;color:var(--muted);line-height:1.7}
+.foot b{color:var(--ink);font-weight:600}
+
+@media print{
+  body{background:#fff;font-size:11.5pt}
+  .sheet{box-shadow:none;max-width:none;padding:0}
+  section{page-break-inside:avoid;padding-top:26px}
+  .step,.alert,.qa,.f-row{page-break-inside:avoid}
+  @page{size:A4;margin:16mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="sheet">
+
+<header class="cover">
+  <div class="eyebrow">CowTalk · 목장주 안내서</div>
+  <h1>소가 말하지 못하는 것을<br>대신 알려드립니다</h1>
+  <p class="sub">소 몸속에 들어간 작은 센서가 체온과 움직임을 하루 종일 지켜봅니다.
+  이상이 있으면 휴대폰으로 알려드리고, <strong>그래서 뭘 하면 되는지까지</strong> 함께 알려드립니다.</p>
+  <div class="who">
+    <span class="chip">목장주 · 목장 직원용</span>
+    <span class="chip">처음 읽는 데 15분</span>
+    <span class="chip">기억할 것은 3가지뿐</span>
+  </div>
+</header>
+
+<section>
+  <div class="snum">01</div>
+  <h2>소 몸속에 무엇이 들어갔나</h2>
+  <p class="lead">캡슐처럼 생긴 센서를 입으로 넣으면 첫째 위에 가라앉아 그 자리에 계속 있습니다.
+  소는 불편해하지 않고, 되새김도 평소대로 합니다.</p>
+
+  <table>
+    <thead><tr><th>센서가 재는 것</th><th>그래서 알 수 있는 것</th></tr></thead>
+    <tbody>
+      <tr><td><strong>몸속 온도</strong></td><td>열이 나는지, 분만이 가까운지, 더위를 먹었는지</td></tr>
+      <tr><td><strong>움직임</strong></td><td>발정이 왔는지, 평소보다 안 움직이는지</td></tr>
+      <tr><td><strong>물 마신 때</strong></td><td>물을 잘 안 먹는지 (아프기 시작할 때 먼저 나타납니다)</td></tr>
+      <tr><td><strong>되새김</strong></td><td>배가 편한지, 사료가 맞는지</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <p>겉으로 보이기 며칠 전부터 몸속 온도가 먼저 올라갑니다.
+    <strong>그 며칠이 치료가 쉬운지 어려운지를 가릅니다.</strong></p>
+  </div>
+</section>
+
+<section>
+  <div class="snum">02</div>
+  <h2>아침에 이 세 가지만 하시면 됩니다</h2>
+  <p class="lead">다른 기능은 안 쓰셔도 됩니다. 이 세 가지만 몸에 붙으면 나머지는 저절로 따라옵니다.</p>
+
+  <div class="touch">
+    <div class="step">
+      <div class="n">1</div>
+      <div>
+        <h4>알림을 봅니다</h4>
+        <p>아침에 휴대폰을 열면 밤사이 있었던 일이 정리되어 있습니다.</p>
+        <div class="ex"><b>423번 발정 감지</b> · 어젯밤 11시 20분</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="n">2</div>
+      <div>
+        <h4>카드를 열어봅니다</h4>
+        <p>그 소에 대해 알아야 할 것이 한 화면에 다 나옵니다. 여기저기 찾아볼 필요가 없습니다.</p>
+        <div class="ex">수정 적기 <b>내일 아침 6시</b> · 추천 정액 <b>○○○</b> · 최근 치료 이력 없음 · 지난 수정 2회 실패</div>
+      </div>
+    </div>
+    <div class="step last">
+      <div class="n">3</div>
+      <div>
+        <h4>했는지 안 했는지 눌러줍니다</h4>
+        <p>수정하셨으면 <strong>[했음]</strong>, 안 하셨으면 <strong>[안 함]</strong>과 이유를 골라주세요. 1초 걸립니다.</p>
+        <div class="ex"><b>[수정함]</b> &nbsp;/&nbsp; <b>[안 함]</b> → 발정이 약해서 · 몸 상태가 안 좋아서 · 일정이 안 맞아서</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="big-note">
+    <div class="t">가장 중요한 부탁</div>
+    <p><strong>3번을 꼭 눌러주십시오.</strong> 하셨는지 안 하셨는지를 알아야
+    다음에 더 정확하게 알려드릴 수 있습니다. 이것만 해주시면 시스템이 목장에 맞게 똑똑해집니다.</p>
+  </div>
+</section>
+
+<section>
+  <div class="snum">03</div>
+  <h2>알림이 오면 무엇을 하나</h2>
+  <p class="lead">알림은 크게 네 가지입니다. 각각 해야 할 일이 정해져 있습니다.</p>
+
+  <div class="alerts">
+    <div class="alert heat">
+      <span class="k">발정</span>
+      <h4>수정 시간을 확인하세요</h4>
+      <p>언제 수정하면 좋은지 시간이 나옵니다. 추천 정액도 함께 나옵니다.
+      수정사에게 그대로 전달하시면 됩니다.</p>
+    </div>
+    <div class="alert calv">
+      <span class="k">분만 임박</span>
+      <h4>분만실을 준비하세요</h4>
+      <p>분만이 가까워지면 몸속 온도가 떨어집니다. 그걸 잡아서 미리 알려드립니다.
+      밤에 나가보지 않아도 됩니다.</p>
+    </div>
+    <div class="alert sick">
+      <span class="k">건강 이상</span>
+      <h4>그 소를 먼저 보세요</h4>
+      <p>열이 오르거나 활동이 줄면 알려드립니다. 무엇이 의심되는지, 무엇을 확인해야 하는지 함께 나옵니다.
+      필요하면 수의사에게 바로 연결됩니다.</p>
+    </div>
+    <div class="alert heatstress">
+      <span class="k">더위</span>
+      <h4>환기와 물을 확인하세요</h4>
+      <p>더위지수가 높아지면 미리 알려드립니다. 송풍기·안개분무·급수를 점검하실 시점입니다.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="snum">04</div>
+  <h2>화면 색깔만 보셔도 됩니다</h2>
+  <p class="lead">숫자를 다 읽으실 필요 없습니다. 색으로 먼저 보시고, 궁금하면 그때 눌러보세요.</p>
+
+  <div class="signals">
+    <div class="sig"><span class="dot g"></span><div><b>초록 — 괜찮습니다</b>
+      <span>평소와 같습니다. 넘어가셔도 됩니다.</span></div></div>
+    <div class="sig"><span class="dot a"></span><div><b>노랑 — 한 번 보세요</b>
+      <span>평소와 조금 다릅니다. 오늘 지나가면서 눈으로 확인해 주세요.</span></div></div>
+    <div class="sig"><span class="dot r"></span><div><b>빨강 — 오늘 조치하세요</b>
+      <span>바로 확인이 필요합니다. 수의사 연결이 필요하면 화면에서 바로 됩니다.</span></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="snum">05</div>
+  <h2>말로 물어보셔도 됩니다</h2>
+  <p class="lead">손이 바쁘시면 화면을 안 보고 말로 물어보실 수 있습니다.
+  타이핑이 불편하신 분들이 제일 많이 쓰시는 기능입니다.</p>
+
+  <table>
+    <thead><tr><th>이렇게 물어보시면</th><th>이렇게 답합니다</th></tr></thead>
+    <tbody>
+      <tr><td>"423번 어때?"</td><td>그 소의 지금 상태와 최근 며칠 흐름을 말로 알려드립니다</td></tr>
+      <tr><td>"오늘 할 일 뭐야?"</td><td>오늘 봐야 할 소와 해야 할 일을 순서대로 정리해 드립니다</td></tr>
+      <tr><td>"수정할 소 있어?"</td><td>수정 적기가 된 소를 알려드립니다</td></tr>
+      <tr><td>"이번 달 어때?"</td><td>수태율, 공태일 같은 성적을 지난달과 비교해 드립니다</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <div class="snum">06</div>
+  <h2>그래서 무엇이 좋아지나</h2>
+  <p class="lead">거창한 얘기 말고, 목장에서 실제로 달라지는 것만 적었습니다.</p>
+
+  <table>
+    <thead><tr><th>지금</th><th>앞으로</th></tr></thead>
+    <tbody>
+      <tr><td>발정을 놓쳐서 한 달이 밀린다</td><td><strong>놓치는 발정이 줄어 공태일이 짧아집니다</strong></td></tr>
+      <tr><td>아픈 걸 알았을 땐 이미 늦었다</td><td><strong>겉으로 보이기 며칠 전에 알려드립니다</strong></td></tr>
+      <tr><td>분만 때문에 밤에 몇 번씩 나간다</td><td><strong>가까워지면 알려드리니 그때만 나가시면 됩니다</strong></td></tr>
+      <tr><td>어느 소가 문제인지 다 돌아봐야 안다</td><td><strong>오늘 봐야 할 소만 골라서 알려드립니다</strong></td></tr>
+      <tr><td>기록이 머리에만 있다</td><td><strong>치료·수정·휴약이 자동으로 남습니다</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <p>결국 <strong>공태일 하루, 유방염 한 건, 폐사 한 마리</strong>가 그대로 돈입니다.
+    이걸 줄이는 게 전부입니다.</p>
+  </div>
+</section>
+
+<section>
+  <div class="snum">07</div>
+  <h2>비용은 어떻게 되나</h2>
+
+  <table>
+    <thead><tr><th>항목</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td><strong>매달</strong></td><td>소 한 마리당 월 이용료. <strong>센서 값은 따로 받지 않습니다</strong> — 이용료에 다 들어 있습니다.</td></tr>
+      <tr><td><strong>처음 한 번</strong></td><td>목장에 통신 장비를 설치하는 비용. 센서 넣는 시술과 개체 등록까지 포함입니다.</td></tr>
+      <tr><td><strong>소가 바뀌면</strong></td><td>새 소에 센서를 다시 넣어드립니다. <strong>센서 값은 추가로 안 드십니다.</strong></td></tr>
+      <tr><td><strong>지원</strong></td><td>지자체 사업으로 진행되는 경우 자부담이 줄어듭니다. 지역마다 다르니 담당자에게 확인해 주세요.</td></tr>
+    </tbody>
+  </table>
+
+  <p>정확한 금액은 목장 규모와 지원 여부에 따라 달라집니다. <strong>담당자가 계산해서 알려드립니다.</strong></p>
+</section>
+
+<section>
+  <div class="snum">08</div>
+  <h2>앞으로 이렇게 됩니다</h2>
+  <p class="lead">지금은 시작 단계입니다. 쓰시는 동안 이런 것들이 하나씩 붙습니다.</p>
+
+  <div class="future">
+    <div class="f-row">
+      <div class="f-when">가까운 시일</div>
+      <div>
+        <h4>착유기 유량이 자동으로 들어옵니다</h4>
+        <p>지금은 따로 입력하시는 유량이 착유기에서 바로 넘어옵니다.
+        그러면 <strong>소 한 마리가 하루에 얼마를 남기는지</strong>가 숫자로 나옵니다.</p>
+      </div>
+    </div>
+    <div class="f-row">
+      <div class="f-when">가까운 시일</div>
+      <div>
+        <h4>정액 추천이 더 정확해집니다</h4>
+        <p>혈통과 검정 성적이 연결되면 근친 걱정 없이,
+        <strong>우리 목장 소에 맞는 정액</strong>을 더 정확하게 골라드립니다.</p>
+      </div>
+    </div>
+    <div class="f-row">
+      <div class="f-when">1~2년</div>
+      <div>
+        <h4>수의사와 같은 화면을 봅니다</h4>
+        <p>담당 수의사가 오시기 전에 이미 그 소의 상태를 보고 오십니다.
+        왕진이 빨라지고, 처방과 휴약 기간이 자동으로 기록됩니다.</p>
+      </div>
+    </div>
+    <div class="f-row">
+      <div class="f-when">2~3년</div>
+      <div>
+        <h4>우리 목장 성적이 근거가 됩니다</h4>
+        <p>사료를 바꿨을 때, 관리를 바꿨을 때 <strong>정말 좋아졌는지 숫자로 확인</strong>됩니다.
+        감이 아니라 기록으로 판단하게 됩니다.</p>
+      </div>
+    </div>
+    <div class="f-row">
+      <div class="f-when">3년 이후</div>
+      <div>
+        <h4>덜 키우고 더 짜게 됩니다</h4>
+        <p>번식이 잘되고 소가 오래 살면 후보 소를 덜 키워도 됩니다.
+        <strong>사료비가 줄고, 분뇨가 줄고, 그게 그대로 목장 수익</strong>이 됩니다.
+        앞으로는 이 실적이 저탄소 인증이나 지원 사업의 근거가 될 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="snum">09</div>
+  <h2>자주 물어보시는 것</h2>
+
+  <div class="faq">
+    <div class="qa"><div class="q">센서가 소한테 해롭지 않나요?</div>
+      <div class="a">위 속에 들어가서 계속 있습니다. 여러 나라에서 오래 쓰고 있는 방식이고,
+      소가 불편해하지 않습니다. 되새김도 평소대로 합니다.</div></div>
+    <div class="qa"><div class="q">컴퓨터를 잘 못 하는데 쓸 수 있나요?</div>
+      <div class="a">세 가지만 하시면 됩니다 — <strong>알림 보기, 카드 열기, 했다/안 했다 누르기.</strong>
+      나머지는 안 쓰셔도 됩니다. 말로 물어보셔도 되고요.</div></div>
+    <div class="qa"><div class="q">정말 발정을 잡아냅니까?</div>
+      <div class="a">말로 설명드리는 것보다 선생님 목장 소로 한 달 보시는 게 빠릅니다.
+      그래서 처음에 시범으로 해보시길 권해드립니다.</div></div>
+    <div class="qa"><div class="q">알림이 너무 많이 오면 어떡하나요?</div>
+      <div class="a">받을 알림 종류와 시간을 목장에 맞게 조절하실 수 있습니다.
+      처음에는 중요한 것만 받으시다가 익숙해지면 늘리셔도 됩니다.</div></div>
+    <div class="qa"><div class="q">소를 팔면 센서는 어떻게 되나요?</div>
+      <div class="a">그 소의 기록은 남고, 새로 들어온 소에 센서를 다시 넣어드립니다.
+      센서 값은 추가로 안 드십니다.</div></div>
+    <div class="qa"><div class="q">내 목장 자료를 다른 데서 보나요?</div>
+      <div class="a">목장 자료는 목장 것입니다. 담당 수의사처럼 <strong>허락하신 분만</strong> 보실 수 있고,
+      누가 언제 무엇을 봤는지 다 기록에 남습니다. 언제든 자료를 내려받거나 삭제 요청하실 수 있습니다.</div></div>
+    <div class="qa"><div class="q">인터넷이 끊기면요?</div>
+      <div class="a">센서는 목장 장비에 자료를 모아두고 있다가 연결되면 보냅니다. 그동안 것도 안 없어집니다.</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="snum">10</div>
+  <h2>막히면 여기로</h2>
+  <table>
+    <thead><tr><th>이럴 때</th><th>이렇게 하세요</th></tr></thead>
+    <tbody>
+      <tr><td>앱이 안 열리거나 알림이 안 옴</td><td>기술지원 담당자에게 연락</td></tr>
+      <tr><td>센서가 신호를 안 보냄</td><td>기술지원 담당자에게 연락 — 방문 점검해 드립니다</td></tr>
+      <tr><td>소 상태가 걱정됨</td><td>화면에서 담당 수의사에게 바로 연결</td></tr>
+      <tr><td>쓰는 법을 다시 배우고 싶음</td><td>교육 다시 신청 가능 — 방문 교육도 해드립니다</td></tr>
+    </tbody>
+  </table>
+
+  <div class="big-note" style="margin-top:30px">
+    <div class="t">기억할 것은 이것 하나</div>
+    <p><strong>알림 보기 → 카드 열기 → 했다/안 했다 누르기.</strong><br>
+    이 세 가지만 하시면 됩니다.</p>
+  </div>
+</section>
+
+<div class="foot">
+  <b>CowTalk</b> · 농업회사법인 주식회사 디투오<br>
+  이 안내서는 목장에서 바로 쓰시라고 만든 것입니다. 인쇄해서 사무실에 두고 보셔도 됩니다.<br>
+  더 궁금하신 것은 담당자에게 편하게 물어봐 주십시오.
+</div>
+
+</div>
