@@ -2,14 +2,19 @@
 
 import { apiClient } from './client';
 
-export type TtsVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-export type TtsModel = 'tts-1' | 'tts-1-hd';
+export type TtsVoice =
+  | 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  | 'ash' | 'ballad' | 'coral' | 'sage' | 'verse';
+export type TtsModel = 'tts-1' | 'tts-1-hd' | 'gpt-4o-mini-tts';
+export type TtsLang = 'ko' | 'en' | 'uz' | 'ru' | 'mn';
 
 export interface SpeakRequest {
   readonly text: string;
   readonly voice?: TtsVoice;
   readonly model?: TtsModel;
   readonly maxChars?: number;
+  /** UI 언어 힌트 — 서버가 우즈벡어·몽골어를 현지 원어민 음성/어휘로 라우팅하는 핵심 신호 */
+  readonly lang?: TtsLang;
 }
 
 export interface SpeakResult {
@@ -18,6 +23,10 @@ export interface SpeakResult {
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly synthesizedLength: number;
+  /** 서버가 최종 판정한 답변 언어 / 공급자 / 모델 (진단용) */
+  readonly lang?: string;
+  readonly provider?: string;
+  readonly model?: string;
 }
 
 /**
@@ -38,6 +47,9 @@ export async function speak(request: SpeakRequest): Promise<SpeakResult> {
     truncated: response.headers['x-tts-truncated'] === 'true',
     originalLength: Number(response.headers['x-tts-original-length'] ?? 0),
     synthesizedLength: Number(response.headers['x-tts-synthesized-length'] ?? 0),
+    lang: response.headers['x-tts-lang'] as string | undefined,
+    provider: response.headers['x-tts-provider'] as string | undefined,
+    model: response.headers['x-tts-model'] as string | undefined,
   };
 }
 
@@ -90,6 +102,9 @@ export async function transcribeAudio(audioBlob: Blob, language?: string): Promi
 }
 
 export interface VoicesResponse {
+  readonly nativeLangs?: ReadonlyArray<TtsLang>;
+  readonly nativeProvider?: 'azure' | 'openai';
+  readonly routes?: ReadonlyArray<{ lang: TtsLang; provider: 'azure' | 'openai'; model: string; reason: string }>;
   readonly voices: ReadonlyArray<{ id: TtsVoice; label: string; recommended: boolean }>;
   readonly models: ReadonlyArray<{ id: TtsModel; label: string; costPer1MChars: number }>;
 }

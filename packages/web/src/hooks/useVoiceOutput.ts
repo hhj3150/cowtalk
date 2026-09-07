@@ -5,9 +5,11 @@
 // 2) 재생 중 다음 응답이 오면 이전 오디오 정리 (메모리 누수 방지)
 // 3) 503(서비스 미설정) → 조용히 실패. 사용자에게 부담 안 줌
 // 4) 모바일 자동재생 정책 회피: 첫 사용자 인터랙션 후에만 재생
+// 5) UI 언어(useLang)를 서버에 함께 보낸다 — 우즈벡어 답변이 우즈벡 원어민 음성으로 나가는 신호
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { speak, type TtsVoice } from '@web/api/audio.api';
+import { useLang } from '@web/i18n/useT';
 
 export type VoiceOutputErrorCode =
   | 'not-configured'  // 서버에 OPENAI_API_KEY 미설정
@@ -61,6 +63,7 @@ function saveVoiceMode(storageKey: string, value: boolean): void {
 
 export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOutputReturn {
   const storageKey = options.storageKey ?? DEFAULT_STORAGE_KEY;
+  const { lang: uiLang } = useLang();
   const [voiceMode, setVoiceMode] = useState(() =>
     loadVoiceMode(storageKey, options.initialVoiceMode ?? false),
   );
@@ -138,6 +141,7 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
             text: trimmed,
             voice: options.voice,
             maxChars: options.maxChars,
+            lang: uiLang,
           });
         } catch (err) {
           const status = (err as { response?: { status?: number }; status?: number })?.response?.status
@@ -187,7 +191,7 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
         setIsSynthesizing(false);
       }
     },
-    [options.voice, options.maxChars, cleanup],
+    [options.voice, options.maxChars, uiLang, cleanup],
   );
 
   return {

@@ -5,8 +5,11 @@
 import { Router, raw } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
-import { synthesize, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
+import { synthesize, resolveTtsRoute, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
 import { transcribe } from '../../services/audio/stt.service.js';
+import { isAzureTtsConfigured } from '../../services/audio/azure-tts.service.js';
+import { TTS_LANGS, parseLangList } from '../../services/audio/tts-language.js';
+import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 
 export const audioRouter = Router();
@@ -15,9 +18,11 @@ audioRouter.use(authenticate);
 
 const speakSchema = z.object({
   text: z.string().min(1).max(4000),
-  voice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).optional(),
-  model: z.enum(['tts-1', 'tts-1-hd']).optional(),
+  voice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'ballad', 'coral', 'sage', 'verse']).optional(),
+  model: z.enum(['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']).optional(),
   maxChars: z.number().int().min(50).max(4000).optional(),
+  // UI 언어 힌트 — 우즈벡어 답변을 우즈벡 원어민 음성·어휘로 읽게 하는 핵심 신호
+  lang: z.enum(['ko', 'en', 'uz', 'ru', 'mn']).optional(),
 });
 
 audioRouter.post('/speak', async (req, res) => {
@@ -28,12 +33,16 @@ audioRouter.post('/speak', async (req, res) => {
       voice: input.voice as TtsVoice | undefined,
       model: input.model as TtsModel | undefined,
       maxChars: input.maxChars,
+      lang: input.lang,
     });
 
     // 클라이언트 친화 메타데이터를 헤더로 노출 (CORS 화이트리스트 필요할 수 있음)
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Content-Length', String(result.audio.length));
     res.setHeader('X-TTS-Cached', String(result.cached));
+    res.setHeader('X-TTS-Lang', result.lang);
+    res.setHeader('X-TTS-Provider', result.provider);
+    res.setHeader('X-TTS-Model', result.model);
     res.setHeader('X-TTS-Truncated', String(result.truncated));
     res.setHeader('X-TTS-Original-Length', String(result.originalLength));
     res.setHeader('X-TTS-Synthesized-Length', String(result.synthesizedLength));
@@ -60,22 +69,27 @@ audioRouter.post('/speak', async (req, res) => {
       return;
     }
 
-    // OpenAI API 호출 실패는 502 (외부 의존)
-    // 진단 편의: OpenAI 상태코드 추출 (메시지 형식: "OpenAI TTS 실패 (HTTP 401)")
-    if (msg.includes('OpenAI TTS')) {
+    // 외부 TTS API 호출 실패는 502 (외부 의존)
+    // 진단 편의: 상태코드 추출 (메시지 형식: "OpenAI TTS 실패 (HTTP 401)" / "Azure TTS 실패 (HTTP 401)")
+    if (msg.includes('OpenAI TTS') || msg.includes('Azure TTS')) {
+      const isAzure = msg.includes('Azure TTS');
       const statusMatch = /HTTP (\d{3})/.exec(msg);
       const upstreamStatus = statusMatch?.[1];
-      const hint =
-        upstreamStatus === '401' ? 'API 키 인증 실패 — Railway OPENAI_API_KEY 값 확인'
-        : upstreamStatus === '403' ? 'API 키 권한 부족 — OpenAI 대시보드에서 Audio 권한 확인'
-        : upstreamStatus === '429' ? '요청 한도 초과 — credit 잔액 또는 rate limit 확인'
-        : upstreamStatus === '400' ? '요청 형식 오류 — 입력 텍스트 확인'
-        : '일시 장애 — 잠시 후 다시 시도';
+      const hint = isAzure
+        ? (upstreamStatus === '401' ? 'Azure 키 인증 실패 — AZURE_SPEECH_KEY/AZURE_SPEECH_REGION 확인'
+          : upstreamStatus === '400' ? 'SSML/음성 이름 오류 — AZURE_SPEECH_VOICE_UZ 값 확인'
+          : upstreamStatus === '429' ? 'Azure 요청 한도 초과'
+          : '일시 장애 — 잠시 후 다시 시도')
+        : (upstreamStatus === '401' ? 'API 키 인증 실패 — Railway OPENAI_API_KEY 값 확인'
+          : upstreamStatus === '403' ? 'API 키 권한 부족 — OpenAI 대시보드에서 Audio 권한 확인'
+          : upstreamStatus === '429' ? '요청 한도 초과 — credit 잔액 또는 rate limit 확인'
+          : upstreamStatus === '400' ? '요청 형식 오류 — 입력 텍스트 또는 모델 파라미터 확인'
+          : '일시 장애 — 잠시 후 다시 시도');
       res.status(502).json({
         success: false,
         error: {
           code: 'TTS_UPSTREAM_ERROR',
-          message: `음성 서비스 오류 (OpenAI HTTP ${upstreamStatus ?? '?'}): ${hint}`,
+          message: `음성 서비스 오류 (${isAzure ? 'Azure' : 'OpenAI'} HTTP ${upstreamStatus ?? '?'}): ${hint}`,
           upstreamStatus,
         },
       });
@@ -89,7 +103,7 @@ audioRouter.post('/speak', async (req, res) => {
   }
 });
 
-// POST /api/audio/transcribe — Whisper STT
+// POST /api/audio/transcribe — STT (whisper-1 / gpt-4o-transcribe, 언어별 라우팅)
 // Content-Type: audio/webm | audio/mp4 | audio/wav 등 (브라우저 MediaRecorder가 자동 결정)
 // Query: lang (ko|uz|en|ru|mn) — 정확도 향상용 힌트
 // Body: raw audio buffer (최대 25MB)
@@ -115,11 +129,11 @@ audioRouter.post(
       const allowed = new Set(['ko', 'uz', 'en', 'ru', 'mn']);
       const language = lang && allowed.has(lang) ? lang : undefined;
 
+      // 도메인 힌트·모델은 언어별로 stt.service 가 결정 (우즈벡 발화에 한국어 힌트를 주면 오인식)
       const result = await transcribe({
         audio,
         contentType: contentType as string,
         language,
-        prompt: '한우 젖소 발정 분만 임신 건강 술탄팜 CowTalk',
       });
 
       res.json({ success: true, data: result });
@@ -148,6 +162,10 @@ audioRouter.get('/voices', (_req, res) => {
   res.json({
     success: true,
     data: {
+      // 언어별 공급자 라우팅 현황 — 우즈벡어가 어떤 음성으로 나가는지 운영자가 즉시 확인
+      nativeLangs: [...parseLangList(config.NATIVE_VOICE_LANGS)],
+      nativeProvider: isAzureTtsConfigured() ? 'azure' : 'openai',
+      routes: TTS_LANGS.map((lang) => ({ lang, ...resolveTtsRoute(lang) })),
       voices: [
         { id: 'nova', label: 'Nova (여성, 따뜻)', recommended: true },
         { id: 'shimmer', label: 'Shimmer (여성, 차분)', recommended: false },
@@ -159,6 +177,7 @@ audioRouter.get('/voices', (_req, res) => {
       models: [
         { id: 'tts-1', label: '표준 (빠름)', costPer1MChars: 15 },
         { id: 'tts-1-hd', label: 'HD (자연성 높음, 2배 비용)', costPer1MChars: 30 },
+        { id: 'gpt-4o-mini-tts', label: '발음 지시 가능 (우즈벡어·몽골어 억양 교정)', costPer1MChars: 30 },
       ],
     },
   });
