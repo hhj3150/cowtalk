@@ -309,6 +309,38 @@ function unlockTts(): void {
   }
 }
 
+// 브라우저 음성 선택 — 여성 우선. 해당 언어 음성이 없을 때의 폴백 사슬:
+//   uz(라틴 표기) → tr(튀르크어족·라틴 표기, 모음 체계 유사) → en
+//   mn(키릴)      → ru(키릴 낭독 가능) → en
+// 우즈벡어 음성은 대부분의 기기에 없다. 이전에는 영어 음성이 우즈벡 문장을 읽어
+// 현지인이 전혀 알아듣지 못했다. 서버 TTS(네이티브 음성)가 1순위이고 이 함수는 마지막 안전망이다.
+const BROWSER_VOICE_FALLBACK: Readonly<Record<string, readonly string[]>> = {
+  uz: ['uz', 'tr', 'en'],
+  mn: ['mn', 'ru', 'en'],
+  ko: ['ko', 'en'],
+  ru: ['ru', 'en'],
+  en: ['en'],
+};
+const FEMALE_VOICE_RE = /female|woman|여|yuna|siri|samantha|karen|victoria|tessa|milena|anna|elena|yelda|filiz|google.*female/i;
+const MALE_VOICE_RE = /male|man|남|daniel|alex|thomas|jorge|ivan|dmitri|google.*male/i;
+
+export function pickBrowserVoice(
+  voices: readonly SpeechSynthesisVoice[],
+  lang: string,
+): { voice: SpeechSynthesisVoice; lang: string } | null {
+  const prefix = (lang.split('-')[0] ?? '').toLowerCase();
+  const chain = BROWSER_VOICE_FALLBACK[prefix] ?? [prefix, 'en'];
+  for (const candidate of chain) {
+    const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(candidate));
+    if (langVoices.length === 0) continue;
+    const voice = langVoices.find((v) => FEMALE_VOICE_RE.test(v.name) && !MALE_VOICE_RE.test(v.name))
+      ?? langVoices.find((v) => !MALE_VOICE_RE.test(v.name))
+      ?? langVoices[0]!;
+    return { voice, lang: candidate === prefix ? lang : voice.lang };
+  }
+  return null;
+}
+
 // 짧은 인사말 즉시 발화 — 외부 API 없이 브라우저 SpeechSynthesis로 0ms 시작.
 // Wake word 인식 직후 사용자에게 즉각 "듣고 있어요" 신호.
 function speakImmediate(text: string, lang: string, onEnd?: () => void): void {
@@ -321,17 +353,12 @@ function speakImmediate(text: string, lang: string, onEnd?: () => void): void {
   utt.pitch = 1.1;
   utt.volume = 1.0;
 
-  // 해당 언어 음성 선택 (여성 우선)
+  // 해당 언어 음성 선택 (여성 우선). 우즈벡어처럼 기기에 음성이 없으면 발음 체계가 가까운 언어로 폴백
   try {
-    const voices = window.speechSynthesis.getVoices();
-    const prefix = (lang.split('-')[0] ?? '').toLowerCase();
-    const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
-    if (langVoices.length > 0) {
-      const female = /female|woman|여|yuna|siri|samantha|karen|victoria|tessa|milena|anna|elena|google.*female/i;
-      const male = /male|man|남|daniel|alex|thomas|jorge|ivan|dmitri|google.*male/i;
-      utt.voice = langVoices.find((v) => female.test(v.name) && !male.test(v.name))
-        ?? langVoices.find((v) => !male.test(v.name))
-        ?? langVoices[0]!;
+    const picked = pickBrowserVoice(window.speechSynthesis.getVoices(), lang);
+    if (picked) {
+      utt.voice = picked.voice;
+      utt.lang = picked.lang;
     }
   } catch { /* ignore */ }
 
@@ -397,7 +424,8 @@ function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
-function speak(text: string, onEnd?: () => void): void {
+// langHint: UI 언어 (ko|en|uz|ru|mn). 본문 문자 체계가 명백히 다르면 본문을 따른다.
+function speak(text: string, onEnd?: () => void, langHint?: string): void {
   if (!('speechSynthesis' in window)) {
     onEnd?.();
     return;
@@ -423,15 +451,16 @@ function speak(text: string, onEnd?: () => void): void {
   const mnSpecific = (cleanText.match(/[ӨөҮү]/g) ?? []).length; // 몽골어 특유 모음
   const total = koCount + cyCount + enCount || 1;
 
-  // 우즈벡어 라틴 표기 시그널: 아포스트로피(o' g' 등) + 특유 어휘
-  const uzbekSignal = /(\bo'|\bg'|sigir|qoramol|veterinar|ferma|so'g'|bo'g')/i.test(cleanText);
+  // 우즈벡어 라틴 표기 시그널: 아포스트로피(o' g' ʻ ’ 등) + 특유 어휘
+  const uzbekSignal = /(\bo[ʻ'’]|\bg[ʻ'’]|sigir|qoramol|veterinar|ferma|so[ʻ'’]g[ʻ'’]|bo[ʻ'’]g[ʻ'’]|buzoq|kerak|uchun)/i.test(cleanText);
+  const hint = (langHint ?? '').toLowerCase();
 
   let detectedLang = 'en-US';
   if (koCount / total > 0.3) detectedLang = 'ko-KR';
   else if (cyCount / total > 0.3) {
-    // 키릴인데 Ө/Ү 포함이면 몽골어, 아니면 러시아어
-    detectedLang = mnSpecific > 0 ? 'mn-MN' : 'ru-RU';
-  } else if (uzbekSignal) {
+    // 키릴인데 Ө/Ү 포함이면 몽골어, 아니면 러시아어 (UI 힌트가 몽골어면 몽골어)
+    detectedLang = mnSpecific > 0 || hint === 'mn' ? 'mn-MN' : 'ru-RU';
+  } else if (uzbekSignal || hint === 'uz') {
     detectedLang = 'uz-UZ';
   }
 
@@ -440,30 +469,10 @@ function speak(text: string, onEnd?: () => void): void {
   utterance.rate = detectedLang === 'ko-KR' ? 0.95 : 0.9;
   utterance.pitch = 1.05;
 
-  // 여성 음성 우선 선택 (청량한 음성)
-  const voices = window.speechSynthesis.getVoices();
-  const langPrefix = detectedLang.split('-')[0]!;
-  const langVoices = voices.filter((v) => v.lang.startsWith(langPrefix));
-
-  // 1순위: 해당 언어 + 여성 음성 (이름에 female/woman/여 포함 또는 이름 패턴)
-  const femaleKeywords = /female|woman|여|yuna|siri|samantha|karen|victoria|tessa|milena|anna|elena|google.*female/i;
-  const maleKeywords = /male|man|남|daniel|alex|thomas|jorge|ivan|dmitri|google.*male/i;
-  const femaleVoice = langVoices.find((v) => femaleKeywords.test(v.name) && !maleKeywords.test(v.name));
-
-  // 2순위: 남성 키워드가 없는 음성 (대부분 기본 여성)
-  const nonMaleVoice = langVoices.find((v) => !maleKeywords.test(v.name));
-
-  // 3순위: 아무 해당 언어 음성
-  let selectedVoice = femaleVoice ?? nonMaleVoice ?? langVoices[0];
-
-  // 해당 언어 음성이 없으면 → 영어 여성 음성으로 fallback
-  if (!selectedVoice && langVoices.length === 0) {
-    const enVoices = voices.filter((v) => v.lang.startsWith('en'));
-    selectedVoice = enVoices.find((v) => femaleKeywords.test(v.name) && !maleKeywords.test(v.name))
-      ?? enVoices.find((v) => !maleKeywords.test(v.name))
-      ?? enVoices[0];
-    if (selectedVoice) utterance.lang = 'en-US';
-  }
+  // 여성 음성 우선 + 언어별 폴백 사슬 (uz → tr → en, mn → ru → en)
+  const picked = pickBrowserVoice(window.speechSynthesis.getVoices(), detectedLang);
+  const selectedVoice = picked?.voice;
+  if (picked) utterance.lang = picked.lang;
 
   // 문장 분할 재생 (Chrome TTS 15초 끊김 방지)
   const chunks = splitIntoChunks(cleanText);
@@ -475,7 +484,7 @@ function speak(text: string, onEnd?: () => void): void {
     }
     const chunk = chunks[index]!;
     const utt = new SpeechSynthesisUtterance(chunk);
-    utt.lang = detectedLang;
+    utt.lang = utterance.lang;
     utt.rate = utterance.rate;
     utt.pitch = utterance.pitch;
     if (selectedVoice) utt.voice = selectedVoice;
@@ -1047,8 +1056,8 @@ export function TinkerbellAssistant({
           .then(() => setState('idle'))
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
-            console.warn('[Tinkerbell TTS] OpenAI 실패, 브라우저 TTS로 대체:', msg);
-            speak(answer, () => setState('idle'));
+            console.warn('[Tinkerbell TTS] 서버 TTS 실패, 브라우저 TTS로 대체:', msg);
+            speak(answer, () => setState('idle'), uiLang);
           });
       } else {
         setState('idle');
