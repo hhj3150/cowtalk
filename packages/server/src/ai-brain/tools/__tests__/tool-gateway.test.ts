@@ -1,5 +1,5 @@
 // MCP 도구 권한 매트릭스 일관성 테스트.
-// 시연 안전성 핵심 — 4역할 × 25도구 매트릭스가 정의된 도구만 참조하는지,
+// 시연 안전성 핵심 — 4역할 × 26도구 매트릭스가 정의된 도구만 참조하는지,
 // 역할 경계가 의도대로 작동하는지를 코드 레벨에서 검증한다.
 
 import { describe, it, expect } from 'vitest';
@@ -79,9 +79,9 @@ describe('Tool Gateway — 권한 매트릭스 일관성', () => {
     });
   });
 
-  describe('도구 정의 — 25개 시연 도구 인벤토리', () => {
-    it('정확히 25개 도구가 정의되어 있다 (CLAUDE.md MCP 도구 체계와 일치)', () => {
-      expect(TINKERBELL_TOOLS.length).toBe(25);
+  describe('도구 정의 — 26개 시연 도구 인벤토리', () => {
+    it('정확히 26개 도구가 정의되어 있다 (CLAUDE.md MCP 도구 체계와 일치)', () => {
+      expect(TINKERBELL_TOOLS.length).toBe(26);
     });
 
     it('모든 도구는 name과 description을 갖는다', () => {

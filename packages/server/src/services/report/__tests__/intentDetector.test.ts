@@ -110,6 +110,12 @@ describe('detectReportIntent', () => {
       expect(result.reportType).toBe('animal_detail');
     });
 
+    it('"개요"/"기초"/"종합" 키워드 → herd_overview 유형 (다른 키워드보다 우선)', () => {
+      expect(detectReportIntent('목장 기초 보고서 만들어줘').reportType).toBe('herd_overview');
+      expect(detectReportIntent('군 건강 개요 보고서 작성해줘').reportType).toBe('herd_overview');
+      expect(detectReportIntent('컨설팅용 종합 리포트 pdf로').reportType).toBe('herd_overview');
+    });
+
     it('유형 명시 없으면 기본값 custom', () => {
       const result = detectReportIntent('보고서 만들어줘');
       expect(result.reportType).toBe('custom');

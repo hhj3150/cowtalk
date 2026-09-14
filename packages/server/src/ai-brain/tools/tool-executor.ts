@@ -25,6 +25,7 @@ import { WeatherConnector } from '../../pipeline/connectors/public-data/weather.
 import { getQuarantineDashboard } from '../../services/epidemiology/quarantine-dashboard.service.js';
 import { getNationalSituation, getProvinceDetail } from '../../services/epidemiology/national-situation.service.js';
 import { computeConceptionStats } from '../../services/breeding/breeding-feedback.service.js';
+import { getHerdSensorOverview } from '../../services/metrics/herd-sensor-overview.service.js';
 import { logger } from '../../lib/logger.js';
 import {
   computeComparisonStats,
@@ -81,6 +82,9 @@ export async function executeTool(
         break;
       case 'query_sensor_data':
         result = await querySensorData(input);
+        break;
+      case 'query_herd_sensor_overview':
+        result = await handleQueryHerdSensorOverview(input, context);
         break;
       case 'query_conception_stats':
         result = await handleQueryConceptionStats(input, context);
@@ -151,6 +155,40 @@ export async function executeTool(
     logger.error({ tool: name, error }, '[ToolExecutor] 도구 실행 실패');
     return JSON.stringify({ error: `도구 실행 실패: ${error instanceof Error ? error.message : String(error)}` });
   }
+}
+
+// ===========================
+// 0. 군 센서 개요 (목장 ↔ 품종 ↔ 지역 ↔ 전국 평균)
+// ===========================
+
+async function handleQueryHerdSensorOverview(
+  input: Record<string, unknown>,
+  context?: ExecutorContext,
+): Promise<unknown> {
+  const requested = typeof input.farmId === 'string' && input.farmId.trim() ? input.farmId.trim() : null;
+  const farmId = requested ?? context?.farmId ?? null;
+
+  // 데이터 레벨 스코프: 배정된 목장 밖의 "목장 열"은 만들지 않는다.
+  // (품종·지역·전국 기준은 농장명 없는 익명 집계라 그대로 허용)
+  // - 그룹 스코프(farmIds)가 있으면 그 안에서만
+  // - 농장 단위 역할(농장주·수의사)은 현재 대화 목장 + 그룹 스코프 밖을 요청할 수 없다
+  if (farmId) {
+    const allowed = new Set<string>(context?.farmIds ?? []);
+    if (context?.farmId) allowed.add(context.farmId);
+    const farmScopedRole = context?.role === 'farmer' || context?.role === 'veterinarian';
+    const groupScoped = (context?.farmIds?.length ?? 0) > 0;
+    if ((farmScopedRole || groupScoped) && allowed.size > 0 && !allowed.has(farmId)) {
+      return { error: '권한 밖 목장입니다. 배정된 목장의 farmId만 조회할 수 있습니다.' };
+    }
+  }
+
+  const overview = await getHerdSensorOverview({
+    farmId,
+    days: typeof input.days === 'number' ? input.days : undefined,
+    breed: typeof input.breed === 'string' ? input.breed : null,
+    province: typeof input.province === 'string' ? input.province : null,
+  });
+  return overview;
 }
 
 // ===========================

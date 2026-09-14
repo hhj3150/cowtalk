@@ -349,7 +349,11 @@ AnimalDetail "개체를 찾을 수 없습니다" 버그 수정 완료:
 센서 파이프라인 구조 (collectSensorBatch):
   - 5분 주기, 30마리 배치, offset 순환 (7000마리 전체 ~20시간)
   - smaXtec Data API: /api/v2/data/animals/{id}.json?metrics=temp&from_date=...&to_date=...
-  - 수집 메트릭: temperature, activity (rumination/water_intake/ph는 smaXtec API 미지원)
+  - 수집 메트릭: temperature, activity, rumination(rum_index, 초→분/일 변환), water_intake(L/10min 원시 저장)
+    - 음수량은 smaXtec 이 체온 딥으로 산출한 **추정치**(화면의 "음수량 l/24h"와 같은 원천). 일 환산 = 일별 avg × 144
+      (소버린 로더·군 개요 공통 규약). 유량계 실측이 아니므로 보고서에 "smaXtec 추정"을 명시한다.
+    - ⚠️ pH는 smaXtec **별도 볼루스**(거의 미장착)라 원시값이 올라오지 않는다 — 이벤트 알람만 존재.
+      군 개요·기준치 계산에 pH를 넣지 말 것.
   - unique index: (animal_id, timestamp, metric_type) — 중복 삽입 방지
 
 ## 방역 시스템 강화 (2026-03-29 오후)
@@ -387,14 +391,15 @@ DB 영속화:
 
 ## MCP 도구 체계 (2026-04-03 Phase 4 완료)
 
-팅커벨 AI가 사용하는 도구 25개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
+팅커벨 AI가 사용하는 도구 26개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
 
 | 도메인 | 도구명 | 유형 | 설명 |
 |--------|--------|------|------|
 | sensor | query_animal | 조회 | 개체 프로필 (earTag/traceId/animalId 검색) |
 | sensor | query_animal_events | 조회 | 개체 이벤트 이력 (발정/수정/임신/건강) |
 | sensor | query_animal_graph | 조회 | 개체/농장 온톨로지 그래프 (관계 전체 맥락: 이벤트·진단→처치·번식·AI판단·레이블·이동) |
-| sensor | query_sensor_data | 조회 | 체온/활동량 일별 집계 |
+| sensor | query_sensor_data | 조회 | 체온/활동량/반추 일별 집계 (개체 단위) |
+| sensor | query_herd_sensor_overview | 조회 | 군 센서 개요 — 체온·활동·반추의 목장 평균 ↔ 품종 ↔ 지역(시도) ↔ 전국 4단 비교 + 추세 + 커버리지 |
 | sensor | query_weather | 조회 | 기상/THI 조회 + 열스트레스 권고 |
 | farm | query_farm_summary | 조회 | 농장 요약 (두수/알림/KPI) |
 | farm | get_farm_kpis | 조회 | 농장 핵심 KPI (두수+번식+건강+알림) |
@@ -431,6 +436,27 @@ DB 영속화:
 
 치료 결과 추적 배치 (24h batch, runTreatmentOutcomeCheck):
 - 최근 7일 치료 건 센서 비교 → recovered/worsened/monitoring 자동 판정
+
+## 군 센서 개요 — 이상신호와 별개로 "전체 평균"을 본다 (2026-09-14)
+
+배경: 팅커벨이 군 단위 보고서에서 "원시 센서 수치가 컨텍스트에 없다"고 답했다. 데이터가 없어서가 아니라
+① 보고서 `custom` 수집기가 농장정보+두수만 넘기고 ② 농장 맥락이 이상치(발열·저반추)만 싣고
+③ 센서 도구가 개체 단위(animalId 필수)뿐이라 군 평균을 조회할 통로가 없었기 때문.
+
+- 서비스: `services/metrics/herd-sensor-overview.service.ts` — `getHerdSensorOverview({farmId, days, breed, province})`
+  - 원천: sensor_daily_agg. **개체 가중 평균**(개체별 기간 평균 → 그 평균) — 측정 횟수 많은 개체가 군 평균을 지배하지 않게
+  - 우군 구성 첫 줄: 총두수 · **센서 착용 두수** · 착유/건유/육성(herd-group 단일 기준) · 평균 산차 · 착유우 평균 DIM
+  - 메트릭 5종: 체온 · 활동량 · 반추 · **음수량 L/일**(`water_intake` 일별 avg×144, smaXtec 추정) ·
+    **음수 횟수/일**(DB metric_type `drinking_cycles` — 소버린 로더가 L/일로 읽는 `drinking`과 분리, 집계 배치가 체온 V자 딥에서 파생 — 일 평균 −0.5°C 이하 구간 시작 횟수, 표본 24개 미만인 날 제외)
+  - 4단 비교: 목장 ↔ 같은 품종 전국 ↔ 같은 시도(province-mapper 단일 권위) ↔ 전국. 기준 통계는 익명 집계, 10분 캐시
+  - 추세(뒤 절반 − 앞 절반, 4일 미만 null), 커버리지(센서 데이터 개체/전체), 품종군 문헌 참고범위(물소 별도)
+  - 정직성: 개체 0이면 null(0으로 위장 금지), 커버리지 50% 미만·집계 0건은 notes에 명시
+- 상시 참고 보고서 `herd_overview` (트리거: 개요/기초/종합/전체 현황/컨설팅): 1부 개요(4단 평균) → 2부 이상(체온 분포·이벤트·상위 개체·긴급) → 3부 조치.
+  관리자·컨설턴트는 "평균을 알고 이상을 안다" — 이 순서를 aiContentGenerator 유형 가이드가 고정한다
+- 주입 경로 3곳: 농장 맥락(`buildFarmProfile.herdSensorOverview` → 프롬프트 표), 보고서(`custom`·`herd_health` 수집기),
+  팅커벨 도구 `query_herd_sensor_overview`(4역할 모두, 배정 목장 밖 farmId는 거부)
+- API: GET /sensors/herd-overview?farmId&days&breed&province, GET /sensors/farm/:farmId/overview (하드코딩 평균 제거 → 실측)
+- 품종: smaXtec race → breed 매핑에 buffalo/carabao/murrah/물소 추가 (이전엔 전부 holstein으로 뭉개짐)
 
 ## 자동화 룰 엔진 (2026-07-09, P3 AIP Automate)
 

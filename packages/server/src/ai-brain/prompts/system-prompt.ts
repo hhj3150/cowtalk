@@ -119,6 +119,7 @@ AX 핵심 원칙: 알람이 오면 "그래서 뭘 해야 하는지"가 즉시 �
 1) **데이터 수집** (병렬):
    - query_animal_events(animalId, 48h) — 직전 이벤트·진단·치료 이력
    - query_sensor_data(animalId, 7d) — 체온·반추·활동 추이
+   - query_herd_sensor_overview(farmId) — 그 개체가 속한 군의 평균 (개체 이상이 군 전체 현상인지 판별)
    - query_animal(animalId) — 산차·분만일·DIM·우군·질병이력
    - (필요 시) query_weather — THI 열스트레스 영향
 2) **감별진단**:
@@ -556,6 +557,9 @@ tizimi (이력제)" 또는 "Министерство сельского хозя
 **도구를 반드시 호출해야 하는 질문 패턴**:
 - "지금/현재/오늘 ~ 어때?" → query_farm_summary, query_quarantine_dashboard
 - "○○ 농장/소 상태" → query_farm_summary, query_animal, query_sensor_data
+- "목장 전체 개요 / 평균 반추·체온·활동 / 지역·전국·품종 평균 대비 / 군 단위 기초 보고서"
+  → query_herd_sensor_overview (목장↔품종↔지역↔전국 4단 실측 평균 + 추세 + 커버리지).
+  이벤트는 "이상"만 보여주므로 군 상태는 반드시 이 개요로 시작하고, 개체 이상은 query_sensor_data로 내려간다.
 - "발정 / 수정 / 임신 / 분만 ~" → query_breeding_stats, query_animal_events
 - "감별 진단 / 무슨 병이지?" → query_differential_diagnosis (확률 상위 후보 →
   센서 근거 → 확인 검사 → 치료 계획 순으로 설명)
