@@ -118,7 +118,9 @@ describe('buildOverviewLines — 프롬프트 블록', () => {
     from: '2026-09-07',
     to: '2026-09-14',
     coverage: {
-      farmTotalAnimals: 60, farmAnimalsWithData: 58, breedLabel: 'jersey', breedGroup: 'dairy',
+      farmTotalAnimals: 60, farmAnimalsWithData: 58,
+      herd: { total: 60, withSensor: 59, milking: 44, dry: 8, heifer: 8, avgParity: 2.4, avgDaysInMilk: 172 },
+      breedLabel: 'jersey', breedGroup: 'dairy',
       province: '경기', regionFarms: 52, nationalFarms: 201,
     },
     metrics: [
@@ -143,13 +145,20 @@ describe('buildOverviewLines — 프롬프트 블록', () => {
     expect(text).toContain('군 센서 개요 — 최근 7일');
     expect(text).toContain('| 체온 | 38.7°C (58두, 범위 37.7°C~39.7°C) | 38.5°C (+0.2) · 300두 | 38.6°C (+0.1) · 52농장 | 38.55°C (+0.15) · 201농장 | +0.05°C |');
     expect(text).toContain('| 반추 | 데이터 없음 | 470분/일 · 10두 | — | 465분/일 · 190농장 | — |');
+    expect(text).toContain('- 우군 구성: 총 60두 · 센서 착용 59두 · 착유 44 / 건유 8 / 육성 8 · 평균 산차 2.4 · 착유우 평균 DIM 172일');
     expect(text).toContain('목장 센서 데이터 개체 58/60두');
     expect(text).toContain('품종 기준: jersey');
     expect(text).toContain('지역: 경기 52농장');
     expect(text).toContain('pH·음수량은 별도 볼루스');
   });
 
-  it('개요 메트릭은 체온·활동·반추 3종 (pH·음수량 제외)', () => {
-    expect([...OVERVIEW_METRICS]).toEqual(['temperature', 'activity', 'rumination']);
+  it('개요 메트릭은 체온·활동·반추·음수횟수 4종 (pH·음수량 L 제외)', () => {
+    expect([...OVERVIEW_METRICS]).toEqual(['temperature', 'activity', 'rumination', 'drinking']);
+  });
+
+  it('우군 구성이 없으면(전국 개요) 구성 줄을 만들지 않는다', () => {
+    const text = buildOverviewLines({ ...overview, farmId: null, farmName: null, coverage: { ...overview.coverage, herd: null } }).join('\n');
+    expect(text).not.toContain('우군 구성');
+    expect(text).toContain('경기)');
   });
 });

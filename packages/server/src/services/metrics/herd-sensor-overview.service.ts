@@ -4,7 +4,8 @@
 // 원천은 sensor_daily_agg(smaXtec 원시 측정의 일별 집계)이며, 평균은 개체 가중이다:
 //   개체별 기간 평균을 먼저 구하고 그 평균을 낸다 (측정 횟수가 많은 개체가 군 평균을 지배하지 않게).
 //
-// 대상 메트릭: 체온·활동량·반추. pH·음수량은 smaXtec 별도 볼루스(거의 미장착)라 원시값이
+// 대상 메트릭: 체온·활동량·반추·음수 횟수. 음수 횟수는 위내 온도 V자 딥에서 파생한 일별 값이고
+// 음수량(L)은 볼루스로 측정할 수 없다. pH는 smaXtec 별도 볼루스(거의 미장착)라 원시값이
 // 올라오지 않으므로 개요 대상에서 제외한다 — 이벤트 알람으로만 존재한다.
 //
 // 기준(품종/지역/전국) 통계는 농장명 없는 익명 집계이며 10분 캐시된다.
@@ -12,6 +13,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type {
   BreedGroup,
+  HerdComposition,
   HerdMetricComparison,
   HerdMetricStat,
   HerdOverviewMetric,
@@ -20,24 +22,43 @@ import type {
 import { resolveBreedType } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { resolveFarmProvince } from '../epidemiology/province-mapper.js';
+import { herdGroupSqlCase } from './herd-group.js';
 import { logger } from '../../lib/logger.js';
 
 // ===========================
 // 상수
 // ===========================
 
-export const OVERVIEW_METRICS: readonly HerdOverviewMetric[] = ['temperature', 'activity', 'rumination'];
+export const OVERVIEW_METRICS: readonly HerdOverviewMetric[] = ['temperature', 'activity', 'rumination', 'drinking'];
 
 export const METRIC_UNIT: Readonly<Record<HerdOverviewMetric, string>> = {
   temperature: '°C',
   activity: 'index',
   rumination: '분/일',
+  drinking: '회/일',
 };
 
 export const METRIC_LABEL: Readonly<Record<HerdOverviewMetric, string>> = {
   temperature: '체온',
   activity: '활동량',
   rumination: '반추',
+  drinking: '음수 횟수',
+};
+
+/** 개요 메트릭 → sensor_daily_agg.metric_type. 음수 횟수는 'drinking'(L/일 의미로 읽는 소비자 있음)과 분리 */
+const METRIC_DB_TYPE: Readonly<Record<HerdOverviewMetric, string>> = {
+  temperature: 'temperature',
+  activity: 'activity',
+  rumination: 'rumination',
+  drinking: 'drinking_cycles',
+};
+
+/** 메트릭별 반올림 자릿수 */
+const METRIC_DIGITS: Readonly<Record<HerdOverviewMetric, number>> = {
+  temperature: 2,
+  activity: 0,
+  rumination: 0,
+  drinking: 1,
 };
 
 export const DEFAULT_DAYS = 7;
@@ -160,6 +181,17 @@ export function buildOverviewLines(o: HerdSensorOverview): string[] {
   const lines: string[] = [];
   const scopeLabel = o.farmName ? `${o.farmName}` : (o.coverage.province ?? '전국');
   lines.push(`### 군 센서 개요 — 최근 ${String(o.days)}일 실측 평균 (${o.from} ~ ${o.to}, ${scopeLabel})`);
+  const h = o.coverage.herd;
+  if (h) {
+    const parts = [
+      `총 ${String(h.total)}두`,
+      `센서 착용 ${String(h.withSensor)}두`,
+      `착유 ${String(h.milking)} / 건유 ${String(h.dry)} / 육성 ${String(h.heifer)}`,
+    ];
+    if (h.avgParity !== null) parts.push(`평균 산차 ${String(h.avgParity)}`);
+    if (h.avgDaysInMilk !== null) parts.push(`착유우 평균 DIM ${String(h.avgDaysInMilk)}일`);
+    lines.push(`- 우군 구성: ${parts.join(' · ')}`);
+  }
   lines.push('| 지표 | 목장 평균 | 품종 평균 (차이) | 지역 평균 (차이) | 전국 평균 (차이) | 목장 추세 |');
   lines.push('|---|---|---|---|---|---|');
   for (const m of o.metrics) {
@@ -207,7 +239,7 @@ export function clearHerdOverviewCache(): void {
 
 function buildWhere(metric: HerdOverviewMetric, since: string, filter: ScopeFilter): SQL {
   const parts: SQL[] = [
-    sql`d.metric_type = ${metric}`,
+    sql`d.metric_type = ${METRIC_DB_TYPE[metric]}`,
     sql`d.date >= ${since}::date`,
     sql`a.deleted_at IS NULL`,
     sql`a.status = 'active'`,
@@ -245,7 +277,7 @@ async function aggregateScope(
       GROUP BY a.animal_id, a.farm_id
     ) t
   `);
-  return toStat(rows[0] as RawStatRow | undefined, metric === 'temperature' ? 2 : 0);
+  return toStat(rows[0] as RawStatRow | undefined, METRIC_DIGITS[metric]);
 }
 
 async function aggregateScopeCached(
@@ -327,6 +359,39 @@ async function loadFarmBreedCounts(farmId: string): Promise<{ counts: BreedCount
   return { counts, total: counts.reduce((s, c) => s + c.count, 0) };
 }
 
+/** 우군 구성 — 두수·센서 착용·착유/건유/육성·평균 산차·평균 DIM. herd-group 단일 분류 기준 사용 */
+async function loadHerdComposition(farmId: string): Promise<HerdComposition> {
+  const db = getDb();
+  const rows = await db.execute(sql`
+    SELECT
+      count(*)::int                                                   AS total,
+      count(*) FILTER (WHERE a.external_id IS NOT NULL)::int           AS with_sensor,
+      count(*) FILTER (WHERE g.grp = 'milking')::int                   AS milking,
+      count(*) FILTER (WHERE g.grp = 'dry')::int                       AS dry,
+      count(*) FILTER (WHERE g.grp = 'heifer')::int                    AS heifer,
+      avg(a.parity) FILTER (WHERE coalesce(a.parity, 0) >= 1)          AS avg_parity,
+      avg(a.days_in_milk) FILTER (WHERE g.grp = 'milking' AND a.days_in_milk IS NOT NULL) AS avg_dim
+    FROM animals a
+    CROSS JOIN LATERAL (SELECT ${sql.raw(herdGroupSqlCase('a'))} AS grp) g
+    WHERE a.farm_id = ${farmId}::uuid AND a.deleted_at IS NULL AND a.status = 'active'
+  `);
+  const r = rows[0] as {
+    total?: number | string; with_sensor?: number | string; milking?: number | string; dry?: number | string;
+    heifer?: number | string; avg_parity?: number | string | null; avg_dim?: number | string | null;
+  } | undefined;
+  const num = (v: number | string | null | undefined, digits: number): number | null =>
+    v === null || v === undefined ? null : round(Number(v), digits);
+  return {
+    total: Number(r?.total ?? 0),
+    withSensor: Number(r?.with_sensor ?? 0),
+    milking: Number(r?.milking ?? 0),
+    dry: Number(r?.dry ?? 0),
+    heifer: Number(r?.heifer ?? 0),
+    avgParity: num(r?.avg_parity, 1),
+    avgDaysInMilk: num(r?.avg_dim, 0),
+  };
+}
+
 async function countFarmAnimalsWithData(farmId: string, since: string): Promise<number> {
   const db = getDb();
   const rows = await db.execute(sql`
@@ -376,6 +441,7 @@ export async function getHerdSensorOverview(opts: HerdOverviewOptions = {}): Pro
   let breedLabel: string | null = opts.breed ? opts.breed.toLowerCase() : null;
   let farmTotalAnimals = 0;
   let farmAnimalsWithData = 0;
+  let herd: HerdComposition | null = null;
 
   const farmId = opts.farmId ?? null;
   if (farmId) {
@@ -385,12 +451,17 @@ export async function getHerdSensorOverview(opts: HerdOverviewOptions = {}): Pro
     } else {
       farmName = geo.name;
       province = geo.province;
-      const [{ counts, total }, withData] = await Promise.all([
+      const [{ counts, total }, withData, composition] = await Promise.all([
         loadFarmBreedCounts(farmId),
         countFarmAnimalsWithData(farmId, since),
+        loadHerdComposition(farmId),
       ]);
       farmTotalAnimals = total;
       farmAnimalsWithData = withData;
+      herd = composition;
+      if (composition.withSensor < total) {
+        notes.push(`센서 미착용 ${String(total - composition.withSensor)}두는 평균에 들어가지 않는다 (착용 ${String(composition.withSensor)}/${String(total)}두).`);
+      }
       breedLabel = breedLabel ?? pickDominantBreed(counts);
       if (total > 0 && withData < total * 0.5) {
         notes.push(`센서 데이터가 있는 개체가 ${String(withData)}/${String(total)}두(50% 미만) — 목장 평균이 군 전체를 대표하지 않을 수 있다.`);
@@ -446,7 +517,8 @@ export async function getHerdSensorOverview(opts: HerdOverviewOptions = {}): Pro
       notes.push('물소는 소 기준 임계값(38.0~39.5°C)으로 해석하면 저체온 오판이 난다 — 물소 실측 평균과 비교할 것.');
     }
   }
-  notes.push('pH·음수량은 별도 볼루스(거의 미장착)라 원시값이 수집되지 않는다 — 개요 대상 아님, 이벤트 알람만 존재.');
+  notes.push('음수 횟수는 위내 온도 V자 딥(일 평균 −0.5°C 이하 구간 시작)에서 파생한 값이다. 음수량(L)은 볼루스로 측정 불가 — 유량계·음수 볼루스 연동 전까지 횟수로 본다.');
+  notes.push('pH는 별도 볼루스(거의 미장착)라 원시값이 수집되지 않는다 — 개요 대상 아님, 이벤트 알람만 존재.');
   notes.push('이 표는 평균이다. 개체 단위 이상은 이벤트 타임라인과 query_sensor_data(개체)로 확인할 것.');
 
   return {
@@ -458,6 +530,7 @@ export async function getHerdSensorOverview(opts: HerdOverviewOptions = {}): Pro
     coverage: {
       farmTotalAnimals,
       farmAnimalsWithData,
+      herd,
       breedLabel,
       breedGroup,
       province,

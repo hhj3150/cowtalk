@@ -516,8 +516,51 @@ export class PipelineOrchestrator {
         count = EXCLUDED.count
     `);
 
+    // 3. 파생 일별 메트릭 — 음수 횟수/일 ('drinking_cycles')
+    // metric_type 을 'drinking'(소버린 알람 로더가 L/일로 읽는 이름)과 분리해 오해석을 막는다.
+    // smaXtec 볼루스는 물을 마실 때 위내 온도가 V자로 떨어진다. 그 딥의 시작 횟수를 세면
+    // 하루 음수 횟수가 된다 (음수량 L 은 볼루스로 측정 불가 — 횟수로 대체).
+    // 판정: 개체·일 평균 대비 0.5°C 이상 하락한 연속 구간의 시작점 (unified-dashboard 와 같은 기준).
+    // 표본 24개 미만인 날은 횟수가 무의미하므로 만들지 않는다 (10분 샘플 기준 하루 144개).
+    const drinkingResult = await db.execute(sql`
+      INSERT INTO sensor_daily_agg (animal_id, date, metric_type, avg, min, max, stddev, count)
+      SELECT animal_id, date, 'drinking_cycles', dips, dips, dips, 0, samples
+      FROM (
+        SELECT
+          animal_id,
+          date,
+          count(*) FILTER (WHERE is_dip AND NOT coalesce(prev_dip, false))::int AS dips,
+          count(*)::int AS samples
+        FROM (
+          SELECT
+            animal_id,
+            date,
+            is_dip,
+            lag(is_dip) OVER (PARTITION BY animal_id, date ORDER BY timestamp) AS prev_dip
+          FROM (
+            SELECT
+              animal_id,
+              timestamp,
+              date_trunc('day', timestamp)::date AS date,
+              value < avg(value) OVER (PARTITION BY animal_id, date_trunc('day', timestamp)::date) - 0.5 AS is_dip
+            FROM sensor_measurements
+            WHERE metric_type = 'temperature' AND timestamp >= ${sinceDate}::timestamptz
+          ) x
+        ) y
+        GROUP BY animal_id, date
+      ) z
+      WHERE samples >= 24
+      ON CONFLICT (animal_id, date, metric_type)
+      DO UPDATE SET
+        avg = EXCLUDED.avg,
+        min = EXCLUDED.min,
+        max = EXCLUDED.max,
+        stddev = EXCLUDED.stddev,
+        count = EXCLUDED.count
+    `);
+
     logger.info(
-      { hourlyRows: hourlyResult.length, dailyRows: dailyResult.length },
+      { hourlyRows: hourlyResult.length, dailyRows: dailyResult.length, drinkingRows: drinkingResult.length },
       '[Pipeline] Sensor aggregation complete',
     );
   }

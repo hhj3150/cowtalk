@@ -161,7 +161,8 @@ export interface FarmProfile {
 // 이벤트(이상신호)가 아니라 실측 일별 집계의 "평균"이 대상이다.
 // ===========================
 
-export type HerdOverviewMetric = 'temperature' | 'activity' | 'rumination';
+/** drinking = 음수 횟수/일 (체온 딥 기반 파생). 음수량(L)은 볼루스로 측정 불가 */
+export type HerdOverviewMetric = 'temperature' | 'activity' | 'rumination' | 'drinking';
 
 export type HerdOverviewScope = 'farm' | 'breed' | 'region' | 'national';
 
@@ -198,10 +199,25 @@ export interface HerdMetricComparison {
   readonly farmTrend: number | null;
 }
 
+/** 우군 구성 — 기초 보고서의 첫 줄. 센서 착용 두수가 평균의 모수를 말해준다 */
+export interface HerdComposition {
+  readonly total: number;
+  /** 센서 시리얼(externalId)이 있는 두수 */
+  readonly withSensor: number;
+  readonly milking: number;
+  readonly dry: number;
+  readonly heifer: number;
+  readonly avgParity: number | null;
+  /** 착유우 평균 착유일수 */
+  readonly avgDaysInMilk: number | null;
+}
+
 export interface HerdOverviewCoverage {
   readonly farmTotalAnimals: number;
   /** 기간 내 일별 집계가 1건이라도 있는 목장 개체 수 */
   readonly farmAnimalsWithData: number;
+  /** 우군 구성 (farmId 있을 때만) */
+  readonly herd: HerdComposition | null;
   readonly breedLabel: string | null;
   readonly breedGroup: BreedGroup | null;
   readonly province: string | null;
