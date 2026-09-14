@@ -3,12 +3,13 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { sensorQuerySchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { sensorMeasurements, sensorDevices, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
+import { getHerdSensorOverview, safeHerdSensorOverview } from '../../services/metrics/herd-sensor-overview.service.js';
 
 export const sensorRouter = Router();
 
@@ -242,16 +243,45 @@ sensorRouter.get('/farm/:farmId/overview', requirePermission('sensor', 'read'), 
       ))
       .groupBy(smaxtecEvents.eventType);
 
+    // 군 평균은 실측 개요에서 — 하드코딩 금지 (규모·수치의 유일한 진실은 DB)
+    const overview = await safeHerdSensorOverview({ farmId, days: 7 });
+    const metricAvg = (metric: string): number | null =>
+      overview?.metrics.find((m) => m.metric === metric)?.farm?.avg ?? null;
+
     res.json({
       success: true,
       data: {
-        avgTemperature: 38.6,
-        avgRumination: 450,
-        avgActivity: 65,
+        avgTemperature: metricAvg('temperature'),
+        avgRumination: metricAvg('rumination'),
+        avgActivity: metricAvg('activity'),
         chartData: [],
         eventStats,
+        overview,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /sensors/herd-overview — 군 센서 개요 (목장 ↔ 품종 ↔ 지역 ↔ 전국 4단 평균 비교)
+// farmId 생략 시 목장 열 없이 품종/지역/전국 기준만 (행정관·방역관 전국 개요 용도)
+sensorRouter.get('/herd-overview', requirePermission('sensor', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = typeof req.query.farmId === 'string' && req.query.farmId ? req.query.farmId : null;
+    const scoped = scopedFarmIds(req);
+    if (farmId && scoped && !scoped.includes(farmId)) {
+      res.status(403).json({ success: false, error: '배정된 목장 밖의 farmId입니다.' });
+      return;
+    }
+    const days = req.query.days ? Number(req.query.days) : undefined;
+    const overview = await getHerdSensorOverview({
+      farmId,
+      days,
+      breed: typeof req.query.breed === 'string' ? req.query.breed : null,
+      province: typeof req.query.province === 'string' ? req.query.province : null,
+    });
+    res.json({ success: true, data: overview });
   } catch (error) {
     next(error);
   }

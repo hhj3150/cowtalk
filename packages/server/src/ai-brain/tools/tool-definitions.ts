@@ -104,6 +104,20 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     },
   },
 
+  {
+    name: 'query_herd_sensor_overview',
+    description: '군 단위 센서 개요 — 이상신호(이벤트)가 아니라 전체 데이터의 "평균"을 본다. 체온·활동량·반추의 목장 평균을 같은 품종 전국 평균, 같은 시도(지역) 평균, 전국 평균과 4단 비교하고 목장 추세·센서 커버리지·품종 참고범위를 함께 반환한다. "목장 전체 상태 개요", "평균 반추 시간", "우리 목장이 지역/전국/품종 평균 대비 어떤가", 군 단위 기초 보고서에 사용한다. 개체 단위 이상은 query_sensor_data. pH·음수량은 별도 볼루스라 대상 아님.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        farmId: { type: 'string', description: '기준 목장 ID. 생략 시 현재 대화의 목장. 행정관·방역관은 생략하면 목장 열 없이 지역/전국/품종만 반환' },
+        days: { type: 'number', description: '집계 기간 일수 (기본 7, 최대 30)' },
+        breed: { type: 'string', description: '품종 평균 기준 품종 (예: "holstein", "jersey", "hanwoo", "buffalo"). 생략 시 목장의 다수 품종' },
+        province: { type: 'string', description: '지역 평균 기준 시도 (예: "경기", "충남"). 생략 시 목장 소재 시도' },
+      },
+    },
+  },
+
   // ===========================
   // 번식 피드백 도메인
   // ===========================

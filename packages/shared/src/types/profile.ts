@@ -152,6 +152,74 @@ export interface FarmProfile {
   readonly eventTimeline?: readonly FarmEventTimelineEntry[];
   // animalId → earTag 룩업 (프롬프트에서 UUID 대신 #번호 표시용)
   readonly animalIdToEarTag?: Readonly<Record<string, string>>;
+  // 군 센서 개요 — 이상신호와 별개로 "전체 데이터의 평균"을 목장/품종/지역/전국 4단으로 비교
+  readonly herdSensorOverview?: HerdSensorOverview | null;
+}
+
+// ===========================
+// HerdSensorOverview — 군 단위 센서 개요 (목장 ↔ 품종 ↔ 지역 ↔ 전국)
+// 이벤트(이상신호)가 아니라 실측 일별 집계의 "평균"이 대상이다.
+// ===========================
+
+export type HerdOverviewMetric = 'temperature' | 'activity' | 'rumination';
+
+export type HerdOverviewScope = 'farm' | 'breed' | 'region' | 'national';
+
+/** 품종군 — 기준치 참고용 분류 (실측 품종 평균이 우선, 참고 범위는 보조) */
+export type BreedGroup = 'dairy' | 'beef' | 'buffalo' | 'other';
+
+export interface HerdMetricStat {
+  /** 개체별 기간 평균의 평균 (개체 가중 — 측정 횟수가 많은 개체가 지배하지 않게) */
+  readonly avg: number;
+  readonly min: number;
+  readonly max: number;
+  /** 개체 간 표준편차 */
+  readonly stddev: number;
+  /** 기여한 개체 수 */
+  readonly animals: number;
+  /** 기여한 농장 수 (farm 스코프는 1) */
+  readonly farms: number;
+  /** 기여한 일별 집계 행 수 */
+  readonly rows: number;
+}
+
+export interface HerdMetricComparison {
+  readonly metric: HerdOverviewMetric;
+  readonly unit: string;
+  readonly farm: HerdMetricStat | null;
+  readonly breed: HerdMetricStat | null;
+  readonly region: HerdMetricStat | null;
+  readonly national: HerdMetricStat | null;
+  /** 목장 평균 − 기준 평균 (기준이 없으면 null) */
+  readonly deltaVsBreed: number | null;
+  readonly deltaVsRegion: number | null;
+  readonly deltaVsNational: number | null;
+  /** 목장 최근 절반 기간 평균 − 앞 절반 기간 평균 (추세). 데이터 부족 시 null */
+  readonly farmTrend: number | null;
+}
+
+export interface HerdOverviewCoverage {
+  readonly farmTotalAnimals: number;
+  /** 기간 내 일별 집계가 1건이라도 있는 목장 개체 수 */
+  readonly farmAnimalsWithData: number;
+  readonly breedLabel: string | null;
+  readonly breedGroup: BreedGroup | null;
+  readonly province: string | null;
+  readonly regionFarms: number;
+  readonly nationalFarms: number;
+}
+
+export interface HerdSensorOverview {
+  readonly farmId: string | null;
+  readonly farmName: string | null;
+  readonly days: number;
+  readonly from: string; // YYYY-MM-DD
+  readonly to: string;   // YYYY-MM-DD
+  readonly coverage: HerdOverviewCoverage;
+  readonly metrics: readonly HerdMetricComparison[];
+  /** 데이터 신뢰도·범위에 대한 정직한 주석 (예: "pH는 별도 볼루스 — 수집 대상 아님") */
+  readonly notes: readonly string[];
+  readonly computedAt: string;
 }
 
 export interface FarmEventTimelineEntry {

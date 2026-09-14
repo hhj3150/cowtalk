@@ -16,6 +16,7 @@ import {
 import { eq, and, gte, lt, lte, count, sql, desc, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import type { ReportType } from './config.js';
+import { safeHerdSensorOverview } from '../metrics/herd-sensor-overview.service.js';
 
 export interface ReportParams {
   readonly farmId?: string;
@@ -42,6 +43,7 @@ const collectors: Readonly<Record<string, Collector>> = {
   farm_daily: collectFarmDaily,
   farm_monthly: collectFarmMonthly,
   herd_health: collectHerdHealth,
+  herd_overview: collectHerdOverview,
   animal_detail: collectAnimalDetail,
   sensor_alert: collectSensorAlerts,
   breeding: collectBreeding,
@@ -234,11 +236,118 @@ async function collectHerdHealth({ farmId, days = 30 }: ReportParams): Promise<R
       .limit(50),
   ]);
 
+  // 군 평균 4단 비교 (목장↔품종↔지역↔전국) — 이상 분포와 별개로 전체 개요
+  const herdSensorOverview = await safeHerdSensorOverview({ farmId, days });
+
   return {
     reportMeta: { type: 'herd_health', farmId, days },
     tempDistribution: tempDist,
     activityTrend,
     healthAlarms,
+    herdSensorOverview,
+  };
+}
+
+// ── 군 개요 (관리자·컨설턴트 상시 참고) ──
+// 원칙: "평균(개요)을 알고 이상을 안다". 앞부분은 4단 평균 비교, 뒷부분은 이상 분포·이벤트·상위 개체.
+async function collectHerdOverview({ farmId, days = 30 }: ReportParams): Promise<ReportData> {
+  const db = getDb();
+  const period = Math.max(7, Math.min(days, 90));
+  const since = new Date(Date.now() - period * 86_400_000);
+  const sinceDate = since.toISOString().split('T')[0]!;
+
+  const farmAnimalIds = db.select({ id: animals.animalId })
+    .from(animals)
+    .where(and(eq(animals.farmId, farmId!), isNull(animals.deletedAt)));
+
+  const [farmRows, herdRows, breedRows, overview, tempDist, eventsByType, topAlertAnimals, criticalEvents] = await Promise.all([
+    db.select({ farmId: farms.farmId, name: farms.name, address: farms.address }).from(farms).where(eq(farms.farmId, farmId!)),
+
+    db.select({
+      total: count(),
+      active: sql<number>`count(*) filter (where ${animals.status} = 'active')`,
+      withSensor: sql<number>`count(*) filter (where ${animals.externalId} is not null)`,
+    }).from(animals).where(and(eq(animals.farmId, farmId!), isNull(animals.deletedAt))),
+
+    db.select({ breed: animals.breed, cnt: count() })
+      .from(animals)
+      .where(and(eq(animals.farmId, farmId!), isNull(animals.deletedAt)))
+      .groupBy(animals.breed),
+
+    // 개요의 핵심 — 목장 ↔ 품종 ↔ 지역 ↔ 전국 4단 평균 (최대 30일)
+    safeHerdSensorOverview({ farmId, days: Math.min(period, 30) }),
+
+    // 이상 ①: 체온 분포 (일별 개체 평균 기준)
+    db.select({
+      range: sql<string>`case
+        when ${sensorDailyAgg.avg} < 38.0 then '저체온 (<38.0°C)'
+        when ${sensorDailyAgg.avg} between 38.0 and 39.5 then '정상 (38.0-39.5°C)'
+        else '고체온 (>39.5°C)'
+      end`,
+      cnt: count(),
+    }).from(sensorDailyAgg).where(
+      and(
+        sql`${sensorDailyAgg.animalId} in (${farmAnimalIds})`,
+        eq(sensorDailyAgg.metricType, 'temperature'),
+        sql`${sensorDailyAgg.date} >= ${sinceDate}`,
+      ),
+    ).groupBy(sql`case
+      when ${sensorDailyAgg.avg} < 38.0 then '저체온 (<38.0°C)'
+      when ${sensorDailyAgg.avg} between 38.0 and 39.5 then '정상 (38.0-39.5°C)'
+      else '고체온 (>39.5°C)'
+    end`),
+
+    // 이상 ②: 이벤트 유형별 건수
+    db.select({ eventType: smaxtecEvents.eventType, cnt: count() })
+      .from(smaxtecEvents)
+      .where(and(eq(smaxtecEvents.farmId, farmId!), gte(smaxtecEvents.detectedAt, since)))
+      .groupBy(smaxtecEvents.eventType)
+      .orderBy(desc(count())),
+
+    // 이상 ③: 알람 상위 개체
+    db.select({ earTag: animals.earTag, name: animals.name, breed: animals.breed, alertCount: count() })
+      .from(smaxtecEvents)
+      .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
+      .where(and(eq(smaxtecEvents.farmId, farmId!), gte(smaxtecEvents.detectedAt, since)))
+      .groupBy(animals.earTag, animals.name, animals.breed)
+      .orderBy(desc(count()))
+      .limit(10),
+
+    // 이상 ④: 긴급·높음 이벤트 최근 20건
+    db.select({
+      earTag: animals.earTag,
+      eventType: smaxtecEvents.eventType,
+      severity: smaxtecEvents.severity,
+      detectedAt: smaxtecEvents.detectedAt,
+    }).from(smaxtecEvents)
+      .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
+      .where(and(
+        eq(smaxtecEvents.farmId, farmId!),
+        gte(smaxtecEvents.detectedAt, since),
+        sql`${smaxtecEvents.severity} in ('critical', 'high')`,
+      ))
+      .orderBy(desc(smaxtecEvents.detectedAt))
+      .limit(20),
+  ]);
+
+  return {
+    reportMeta: {
+      type: 'herd_overview',
+      farmId,
+      farmName: farmRows[0]?.name ?? farmId,
+      days: period,
+      structure: '1부 개요(목장·품종·지역·전국 평균 비교, 추세, 커버리지) → 2부 이상(체온 분포, 이벤트 유형, 상위 개체, 긴급 이벤트) → 3부 조치 제안',
+    },
+    farmInfo: farmRows[0] ?? {},
+    herd: herdRows[0] ?? { total: 0, active: 0, withSensor: 0 },
+    breedComposition: breedRows,
+    overview,
+    anomalies: {
+      tempDistribution: tempDist,
+      eventsByType,
+      topAlertAnimals,
+      criticalEvents,
+    },
   };
 }
 
@@ -431,6 +540,26 @@ async function collectCustom(params: ReportParams): Promise<ReportData> {
         .from(animals)
         .where(and(eq(animals.farmId, params.farmId), isNull(animals.deletedAt)));
       data['animalCount'] = animalCount[0]?.total ?? 0;
+
+      // 자유 형식 보고서도 "이벤트 요약 + 전체 평균 개요"는 기본으로 싣는다.
+      // 그래야 Claude가 "원시 수치가 없다"가 아니라 실측 평균을 근거로 쓴다.
+      const days = Math.max(1, Math.min(params.days ?? 30, 90));
+      const since = new Date(Date.now() - days * 86_400_000);
+      const [breedRows, eventsByType, herdSensorOverview] = await Promise.all([
+        db.select({ breed: animals.breed, cnt: count() })
+          .from(animals)
+          .where(and(eq(animals.farmId, params.farmId), isNull(animals.deletedAt)))
+          .groupBy(animals.breed),
+        db.select({ eventType: smaxtecEvents.eventType, cnt: count() })
+          .from(smaxtecEvents)
+          .where(and(eq(smaxtecEvents.farmId, params.farmId), gte(smaxtecEvents.detectedAt, since)))
+          .groupBy(smaxtecEvents.eventType)
+          .orderBy(desc(count())),
+        safeHerdSensorOverview({ farmId: params.farmId, days: Math.min(days, 30) }),
+      ]);
+      data['breedComposition'] = breedRows;
+      data['eventsSummary'] = { days, byType: eventsByType };
+      data['herdSensorOverview'] = herdSensorOverview;
     }
     if (params.traceNo) {
       const animalRows = await db.select().from(animals).where(eq(animals.traceId, params.traceNo));

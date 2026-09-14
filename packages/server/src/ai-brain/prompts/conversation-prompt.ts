@@ -7,6 +7,7 @@ import type { GlobalContext } from '../../pipeline/profile-builder.js';
 import type { FarmBreedingSettings } from '../../db/schema.js';
 import { ROLE_CONTEXT } from './system-prompt.js';
 import { buildFarmBreedingContext } from './farm-settings-context.js';
+import { buildOverviewLines } from '../../services/metrics/herd-sensor-overview.service.js';
 import {
   computeComparisonStats,
   computePersonalBaseline,
@@ -732,6 +733,13 @@ function buildFarmContext(profile: FarmProfile): string {
     }
 
     lines.push(`\n→ 이 타임라인을 분석하여 질병 발생 시점, 패턴 변화, 확산 추이를 답변에 포함하세요.`);
+  }
+
+  // 군 센서 개요 — 이벤트는 "이상"만 보여주므로, 전체 평균(목장↔품종↔지역↔전국)을 별도 블록으로
+  if (profile.herdSensorOverview) {
+    lines.push('');
+    lines.push(...buildOverviewLines(profile.herdSensorOverview));
+    lines.push(`→ 군 상태를 말할 때는 위 실측 평균을 근거로 하고, 기준(품종·지역·전국) 대비 차이를 함께 언급하세요. 원시 수치가 없다고 말하지 마세요 — 이 표가 원시 측정의 일별 집계입니다.`);
   }
 
   lines.push(`\n→ 이 농장의 현재 상황에 대해 구체적으로 답변하세요.`);
