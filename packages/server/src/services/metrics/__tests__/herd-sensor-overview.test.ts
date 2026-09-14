@@ -12,6 +12,7 @@ import {
   buildOverviewLines,
   BREED_REFERENCE_RANGES,
   OVERVIEW_METRICS,
+  METRIC_DAILY_SCALE,
 } from '../herd-sensor-overview.service.js';
 
 const stat = (avg: number, extra: Partial<HerdMetricStat> = {}): HerdMetricStat => ({
@@ -136,7 +137,7 @@ describe('buildOverviewLines — 프롬프트 블록', () => {
         deltaVsBreed: null, deltaVsRegion: null, deltaVsNational: null, farmTrend: null,
       },
     ],
-    notes: ['pH·음수량은 별도 볼루스 — 개요 대상 아님'],
+    notes: ['pH는 별도 볼루스 — 개요 대상 아님'],
     computedAt: '2026-09-14T00:00:00.000Z',
   };
 
@@ -149,11 +150,18 @@ describe('buildOverviewLines — 프롬프트 블록', () => {
     expect(text).toContain('목장 센서 데이터 개체 58/60두');
     expect(text).toContain('품종 기준: jersey');
     expect(text).toContain('지역: 경기 52농장');
-    expect(text).toContain('pH·음수량은 별도 볼루스');
+    expect(text).toContain('pH는 별도 볼루스');
   });
 
-  it('개요 메트릭은 체온·활동·반추·음수횟수 4종 (pH·음수량 L 제외)', () => {
-    expect([...OVERVIEW_METRICS]).toEqual(['temperature', 'activity', 'rumination', 'drinking']);
+  it('개요 메트릭은 체온·활동·반추·음수량·음수횟수 5종 (pH 제외)', () => {
+    expect([...OVERVIEW_METRICS]).toEqual(['temperature', 'activity', 'rumination', 'water_intake', 'drinking']);
+  });
+
+  it('음수량만 일 환산 계수 144 (smaXtec L/10min → L/일), 나머지는 1', () => {
+    expect(METRIC_DAILY_SCALE.water_intake).toBe(144);
+    expect(METRIC_DAILY_SCALE.temperature).toBe(1);
+    expect(METRIC_DAILY_SCALE.rumination).toBe(1);
+    expect(METRIC_DAILY_SCALE.drinking).toBe(1);
   });
 
   it('우군 구성이 없으면(전국 개요) 구성 줄을 만들지 않는다', () => {

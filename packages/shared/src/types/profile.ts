@@ -161,8 +161,11 @@ export interface FarmProfile {
 // 이벤트(이상신호)가 아니라 실측 일별 집계의 "평균"이 대상이다.
 // ===========================
 
-/** drinking = 음수 횟수/일 (체온 딥 기반 파생). 음수량(L)은 볼루스로 측정 불가 */
-export type HerdOverviewMetric = 'temperature' | 'activity' | 'rumination' | 'drinking';
+/**
+ * water_intake = 음수량 L/일 (smaXtec 이 체온 딥으로 산출한 추정치, 화면의 "음수량 l/24h"와 동일 원천)
+ * drinking = 음수 횟수/일 (CowTalk 이 원시 체온 V자 딥에서 파생)
+ */
+export type HerdOverviewMetric = 'temperature' | 'activity' | 'rumination' | 'water_intake' | 'drinking';
 
 export type HerdOverviewScope = 'farm' | 'breed' | 'region' | 'national';
 

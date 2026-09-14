@@ -321,17 +321,20 @@ export class PipelineOrchestrator {
 
     let totalStored = 0;
 
+    // smaXtec Data API 실제 메트릭명. water_intake 는 smaXtec 이 체온 딥으로 산출한 추정 음수량(10분당 L) —
+    // 하루 합산(×144 샘플)이 smaXtec 화면의 "음수량 (l/24h)" 계단 곡선과 같다. 원시값은 L/10min 그대로 저장한다.
     const metricTypeMap: Readonly<Record<string, string>> = {
       temp: 'temperature',
       act: 'activity',
       rum_index: 'rumination',
+      water_intake: 'water_intake',
     };
 
     for (const animal of activeAnimals) {
       if (!animal.externalId) continue;
 
       try {
-        for (const metric of ['temp', 'act', 'rum_index']) {
+        for (const metric of ['temp', 'act', 'rum_index', 'water_intake']) {
           const data = await this.smaxtec.fetchSensorData(
             animal.externalId, metric, fromStr, toStr,
           );

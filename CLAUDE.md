@@ -349,8 +349,10 @@ AnimalDetail "개체를 찾을 수 없습니다" 버그 수정 완료:
 센서 파이프라인 구조 (collectSensorBatch):
   - 5분 주기, 30마리 배치, offset 순환 (7000마리 전체 ~20시간)
   - smaXtec Data API: /api/v2/data/animals/{id}.json?metrics=temp&from_date=...&to_date=...
-  - 수집 메트릭: temperature, activity, rumination(rum_index, 초→분/일 변환)
-    - ⚠️ pH·음수량은 smaXtec **별도 볼루스**(거의 미장착)라 원시값이 올라오지 않는다 — 이벤트 알람만 존재.
+  - 수집 메트릭: temperature, activity, rumination(rum_index, 초→분/일 변환), water_intake(L/10min 원시 저장)
+    - 음수량은 smaXtec 이 체온 딥으로 산출한 **추정치**(화면의 "음수량 l/24h"와 같은 원천). 일 환산 = 일별 avg × 144
+      (소버린 로더·군 개요 공통 규약). 유량계 실측이 아니므로 보고서에 "smaXtec 추정"을 명시한다.
+    - ⚠️ pH는 smaXtec **별도 볼루스**(거의 미장착)라 원시값이 올라오지 않는다 — 이벤트 알람만 존재.
       군 개요·기준치 계산에 pH를 넣지 말 것.
   - unique index: (animal_id, timestamp, metric_type) — 중복 삽입 방지
 
@@ -444,8 +446,8 @@ DB 영속화:
 - 서비스: `services/metrics/herd-sensor-overview.service.ts` — `getHerdSensorOverview({farmId, days, breed, province})`
   - 원천: sensor_daily_agg. **개체 가중 평균**(개체별 기간 평균 → 그 평균) — 측정 횟수 많은 개체가 군 평균을 지배하지 않게
   - 우군 구성 첫 줄: 총두수 · **센서 착용 두수** · 착유/건유/육성(herd-group 단일 기준) · 평균 산차 · 착유우 평균 DIM
-  - 메트릭 4종: 체온 · 활동량 · 반추 · **음수 횟수/일**(DB metric_type `drinking_cycles` — 소버린 로더가 L/일로 읽는 `drinking`과 분리, 집계 배치가 체온 V자 딥에서 파생 — 일 평균 −0.5°C 이하 구간 시작 횟수, 표본 24개 미만인 날 제외).
-    음수량(L)은 볼루스로 측정 불가 — 횟수로 대체하고 notes에 명시
+  - 메트릭 5종: 체온 · 활동량 · 반추 · **음수량 L/일**(`water_intake` 일별 avg×144, smaXtec 추정) ·
+    **음수 횟수/일**(DB metric_type `drinking_cycles` — 소버린 로더가 L/일로 읽는 `drinking`과 분리, 집계 배치가 체온 V자 딥에서 파생 — 일 평균 −0.5°C 이하 구간 시작 횟수, 표본 24개 미만인 날 제외)
   - 4단 비교: 목장 ↔ 같은 품종 전국 ↔ 같은 시도(province-mapper 단일 권위) ↔ 전국. 기준 통계는 익명 집계, 10분 캐시
   - 추세(뒤 절반 − 앞 절반, 4일 미만 null), 커버리지(센서 데이터 개체/전체), 품종군 문헌 참고범위(물소 별도)
   - 정직성: 개체 0이면 null(0으로 위장 금지), 커버리지 50% 미만·집계 0건은 notes에 명시

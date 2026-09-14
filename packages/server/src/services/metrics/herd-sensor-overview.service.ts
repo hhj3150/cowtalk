@@ -4,9 +4,10 @@
 // 원천은 sensor_daily_agg(smaXtec 원시 측정의 일별 집계)이며, 평균은 개체 가중이다:
 //   개체별 기간 평균을 먼저 구하고 그 평균을 낸다 (측정 횟수가 많은 개체가 군 평균을 지배하지 않게).
 //
-// 대상 메트릭: 체온·활동량·반추·음수 횟수. 음수 횟수는 위내 온도 V자 딥에서 파생한 일별 값이고
-// 음수량(L)은 볼루스로 측정할 수 없다. pH는 smaXtec 별도 볼루스(거의 미장착)라 원시값이
-// 올라오지 않으므로 개요 대상에서 제외한다 — 이벤트 알람으로만 존재한다.
+// 대상 메트릭: 체온·활동량·반추·음수량·음수 횟수.
+//   음수량(L/일)은 smaXtec 이 체온 딥으로 산출한 추정치(water_intake, L/10min → ×144 일 환산)로
+//   smaXtec 화면의 "음수량 (l/24h)"와 같은 원천이다. 음수 횟수는 CowTalk 이 원시 체온 V자 딥에서 파생한다.
+//   pH는 smaXtec 별도 볼루스(거의 미장착)라 원시값이 올라오지 않으므로 개요 대상에서 제외한다.
 //
 // 기준(품종/지역/전국) 통계는 농장명 없는 익명 집계이며 10분 캐시된다.
 
@@ -29,12 +30,13 @@ import { logger } from '../../lib/logger.js';
 // 상수
 // ===========================
 
-export const OVERVIEW_METRICS: readonly HerdOverviewMetric[] = ['temperature', 'activity', 'rumination', 'drinking'];
+export const OVERVIEW_METRICS: readonly HerdOverviewMetric[] = ['temperature', 'activity', 'rumination', 'water_intake', 'drinking'];
 
 export const METRIC_UNIT: Readonly<Record<HerdOverviewMetric, string>> = {
   temperature: '°C',
   activity: 'index',
   rumination: '분/일',
+  water_intake: 'L/일',
   drinking: '회/일',
 };
 
@@ -42,6 +44,7 @@ export const METRIC_LABEL: Readonly<Record<HerdOverviewMetric, string>> = {
   temperature: '체온',
   activity: '활동량',
   rumination: '반추',
+  water_intake: '음수량',
   drinking: '음수 횟수',
 };
 
@@ -50,7 +53,20 @@ const METRIC_DB_TYPE: Readonly<Record<HerdOverviewMetric, string>> = {
   temperature: 'temperature',
   activity: 'activity',
   rumination: 'rumination',
+  water_intake: 'water_intake',
   drinking: 'drinking_cycles',
+};
+
+/**
+ * 일별 집계값 → 개요 단위 환산 계수.
+ * water_intake 원시값은 smaXtec L/10min 이라 일별 avg × 144 샘플 = L/일 (소버린 로더와 같은 규약).
+ */
+export const METRIC_DAILY_SCALE: Readonly<Record<HerdOverviewMetric, number>> = {
+  temperature: 1,
+  activity: 1,
+  rumination: 1,
+  water_intake: 144,
+  drinking: 1,
 };
 
 /** 메트릭별 반올림 자릿수 */
@@ -58,6 +74,7 @@ const METRIC_DIGITS: Readonly<Record<HerdOverviewMetric, number>> = {
   temperature: 2,
   activity: 0,
   rumination: 0,
+  water_intake: 1,
   drinking: 1,
 };
 
@@ -260,6 +277,7 @@ async function aggregateScope(
   filter: ScopeFilter,
 ): Promise<HerdMetricStat | null> {
   const db = getDb();
+  const scale = METRIC_DAILY_SCALE[metric];
   const rows = await db.execute(sql`
     SELECT
       count(*)::int                       AS animals,
@@ -270,7 +288,13 @@ async function aggregateScope(
       coalesce(stddev_pop(t.a), 0)        AS stddev,
       coalesce(sum(t.n), 0)::int          AS rows
     FROM (
-      SELECT a.animal_id, a.farm_id, avg(d.avg) AS a, min(d.min) AS mn, max(d.max) AS mx, count(*) AS n
+      SELECT
+        a.animal_id,
+        a.farm_id,
+        avg(d.avg) * ${scale} AS a,
+        min(d.min) * ${scale} AS mn,
+        max(d.max) * ${scale} AS mx,
+        count(*) AS n
       FROM sensor_daily_agg d
       JOIN animals a ON a.animal_id = d.animal_id
       WHERE ${buildWhere(metric, since, filter)}
@@ -297,7 +321,7 @@ async function aggregateScopeCached(
 async function farmDailySeries(metric: HerdOverviewMetric, since: string, farmId: string): Promise<DailyPoint[]> {
   const db = getDb();
   const rows = await db.execute(sql`
-    SELECT d.date::text AS date, avg(d.avg) AS avg
+    SELECT d.date::text AS date, avg(d.avg) * ${METRIC_DAILY_SCALE[metric]} AS avg
     FROM sensor_daily_agg d
     JOIN animals a ON a.animal_id = d.animal_id
     WHERE ${buildWhere(metric, since, { farmIds: [farmId] })}
@@ -517,7 +541,7 @@ export async function getHerdSensorOverview(opts: HerdOverviewOptions = {}): Pro
       notes.push('물소는 소 기준 임계값(38.0~39.5°C)으로 해석하면 저체온 오판이 난다 — 물소 실측 평균과 비교할 것.');
     }
   }
-  notes.push('음수 횟수는 위내 온도 V자 딥(일 평균 −0.5°C 이하 구간 시작)에서 파생한 값이다. 음수량(L)은 볼루스로 측정 불가 — 유량계·음수 볼루스 연동 전까지 횟수로 본다.');
+  notes.push('음수량(L/일)은 smaXtec 이 체온 딥으로 산출한 추정치(water_intake, 일 환산)로 smaXtec 화면의 "음수량 l/24h"와 같은 원천이다 — 유량계 실측이 아니다. 음수 횟수는 CowTalk 이 원시 체온 V자 딥(일 평균 −0.5°C 이하 구간 시작)에서 센 값이다.');
   notes.push('pH는 별도 볼루스(거의 미장착)라 원시값이 수집되지 않는다 — 개요 대상 아님, 이벤트 알람만 존재.');
   notes.push('이 표는 평균이다. 개체 단위 이상은 이벤트 타임라인과 query_sensor_data(개체)로 확인할 것.');
 
