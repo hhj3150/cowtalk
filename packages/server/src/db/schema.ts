@@ -1936,3 +1936,102 @@ export const regionalInterpretations = pgTable('regional_interpretations', {
 }, (table) => [
   uniqueIndex('regional_interpretations_key_idx').on(table.regionId, table.role, table.model),
 ]);
+
+// ======================================================================
+// AB. 관리 케이스 (Case) — "알림"이 아니라 "사건" 단위
+//
+// decision_actions 는 카드당 1행 `status='done'` — 즉 체크박스 한 번이다.
+// "읽었다"와 "해결됐다"가 같은 버튼이면 조치 결과가 축적되지 않는다.
+// 여기서는 감지→배정→현장확인→조치→재확인→종료를 한 건(case)으로 묶고,
+// 각 단계를 case_events 에 남긴다. decision_actions 는 그대로 두고(비파괴)
+// 케이스의 입구(source_ref)로만 참조한다 — 기존 조치율 지표가 깨지지 않게.
+// ======================================================================
+
+export const cases = pgTable('cases', {
+  caseId:           uuid('case_id').primaryKey().defaultRandom(),
+  farmId:           uuid('farm_id').notNull().references(() => farms.farmId),
+  animalId:         uuid('animal_id').references(() => animals.animalId),
+  source:           varchar('source', { length: 20 }).notNull(),
+  // 원래 알림 출처 (결정 카드 ID·알람 ID) — 어디서 왔는지 추적 가능해야 한다
+  sourceRef:        varchar('source_ref', { length: 200 }),
+  severity:         varchar('severity', { length: 20 }).notNull(),
+  status:           varchar('status', { length: 20 }).notNull().default('detected'),
+  title:            varchar('title', { length: 300 }).notNull(),
+  detectedSignals:  jsonb('detected_signals').notNull().$type<string[]>().default([]),
+  detectedAt:       timestamp('detected_at', { withTimezone: true }).notNull().defaultNow(),
+  // 최종 책임자 — 위임해도 남는다 (책임 소재가 사라지지 않게)
+  ownerId:          uuid('owner_id').references(() => users.userId),
+  // 현재 담당자·기한 — case_assignments 의 유효 행을 비정규화한 읽기 경로
+  currentAssigneeId: uuid('current_assignee_id').references(() => users.userId),
+  dueAt:            timestamp('due_at', { withTimezone: true }),
+  lastFieldCheckAt: timestamp('last_field_check_at', { withTimezone: true }),
+  lastTreatmentAt:  timestamp('last_treatment_at', { withTimezone: true }),
+  lastRecheckAt:    timestamp('last_recheck_at', { withTimezone: true }),
+  worsenedObserved: boolean('worsened_observed').notNull().default(false),
+  closedAt:         timestamp('closed_at', { withTimezone: true }),
+  outcome:          varchar('outcome', { length: 20 }),
+  outcomeNotes:     text('outcome_notes').notNull().default(''),
+  // 종료 시점 센서 추세 스냅샷 — 나중에 AI 개선의 근거 자료
+  outcomeSnapshot:  jsonb('outcome_snapshot'),
+  createdBy:        uuid('created_by').references(() => users.userId),
+  createdAt:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('cases_farm_idx').on(table.farmId),
+  index('cases_animal_idx').on(table.animalId),
+  index('cases_status_idx').on(table.status),
+  index('cases_assignee_idx').on(table.currentAssigneeId),
+  index('cases_detected_at_idx').on(table.detectedAt),
+  // 같은 출처로 케이스를 두 번 열지 않는다 (결정 카드 중복 승격 방지).
+  // 실제 DB에는 `WHERE source_ref IS NOT NULL` 부분 유니크로 생성된다 (마이그레이션 0040) —
+  // 수동 케이스(source_ref NULL)는 여러 건 열 수 있어야 하기 때문.
+  uniqueIndex('cases_source_ref_idx').on(table.sourceRef),
+]);
+
+export const caseAssignments = pgTable('case_assignments', {
+  assignmentId: uuid('assignment_id').primaryKey().defaultRandom(),
+  caseId:       uuid('case_id').notNull().references(() => cases.caseId),
+  assigneeId:   uuid('assignee_id').notNull().references(() => users.userId),
+  supportIds:   jsonb('support_ids').notNull().$type<string[]>().default([]),
+  dueAt:        timestamp('due_at', { withTimezone: true }),
+  assignedBy:   uuid('assigned_by').references(() => users.userId),
+  assignedAt:   timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
+  // 위임으로 대체된 시각 — null 이면 현재 유효한 배정 (이력은 지우지 않는다)
+  supersededAt: timestamp('superseded_at', { withTimezone: true }),
+}, (table) => [
+  index('case_assignments_case_idx').on(table.caseId),
+  index('case_assignments_assignee_idx').on(table.assigneeId),
+]);
+
+export const caseEvents = pgTable('case_events', {
+  eventId:        uuid('event_id').primaryKey().defaultRandom(),
+  caseId:         uuid('case_id').notNull().references(() => cases.caseId),
+  eventType:      varchar('event_type', { length: 20 }).notNull(),
+  occurredAt:     timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  recordedBy:     uuid('recorded_by').references(() => users.userId),
+  recordedByName: varchar('recorded_by_name', { length: 100 }),
+  notes:          text('notes').notNull().default(''),
+  details:        jsonb('details').notNull().default('{}').$type<Record<string, unknown>>(),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('case_events_case_idx').on(table.caseId),
+  index('case_events_type_idx').on(table.eventType),
+  index('case_events_occurred_at_idx').on(table.occurredAt),
+]);
+
+export const casesRelations = relations(cases, ({ one, many }) => ({
+  farm: one(farms, { fields: [cases.farmId], references: [farms.farmId] }),
+  animal: one(animals, { fields: [cases.animalId], references: [animals.animalId] }),
+  owner: one(users, { fields: [cases.ownerId], references: [users.userId] }),
+  assignments: many(caseAssignments),
+  events: many(caseEvents),
+}));
+
+export const caseAssignmentsRelations = relations(caseAssignments, ({ one }) => ({
+  case: one(cases, { fields: [caseAssignments.caseId], references: [cases.caseId] }),
+  assignee: one(users, { fields: [caseAssignments.assigneeId], references: [users.userId] }),
+}));
+
+export const caseEventsRelations = relations(caseEvents, ({ one }) => ({
+  case: one(cases, { fields: [caseEvents.caseId], references: [cases.caseId] }),
+}));

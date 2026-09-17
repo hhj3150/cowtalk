@@ -31,3 +31,4 @@ export * from './quarantine.js';
 export * from './economics.js';
 export * from './diagnosis.js';
 export * from './memory.js';
+export * from './case.js';
