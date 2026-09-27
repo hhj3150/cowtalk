@@ -74,3 +74,6 @@ sk-*.docx
 
 # 생성 산출물 — 보고서 파일(48시간 후 자동 삭제)은 저장소에 들어가지 않는다
 packages/server/uploads/
+
+# 저작권 등록용 소스 복제물 (scripts/ip/build-copyright-submission.mjs 산출물)
+docs/ip-registration/out/
