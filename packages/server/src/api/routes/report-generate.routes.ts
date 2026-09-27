@@ -123,14 +123,20 @@ reportGenerateRouter.post('/generate', async (req: Request, res: Response, next:
  */
 reportGenerateRouter.get('/download/:fileId', (req: Request, res: Response) => {
   const fileId = req.params['fileId'] as string | undefined;
-  if (!fileId) {
-    res.status(400).json({ success: false, error: 'fileId가 필요합니다.' });
+  // 파일 id 는 생성 시 발급한 UUID 여야 한다.
+  // 예전에는 임의 문자열의 **접두 일치**로 파일을 찾아줬다 — `/download/0` 한 번이면
+  // 0 으로 시작하는 아무 파일이나 돌려주므로, UUID 가 사실상 보호막이 되지 못했다
+  // (접두를 0~f, 00~ff … 로 훑으면 디렉터리 전체를 가져갈 수 있었다).
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!fileId || !UUID_RE.test(fileId)) {
+    res.status(400).json({ success: false, error: '유효한 fileId가 필요합니다.' });
     return;
   }
 
   let files: string[];
   try {
-    files = fs.readdirSync(REPORT_CONFIG.OUTPUT_DIR).filter((f) => f.startsWith(fileId));
+    // 접두 일치가 아니라 "이 id 로 만들어진 파일" 정확히 하나만 (id_파일명 규칙)
+    files = fs.readdirSync(REPORT_CONFIG.OUTPUT_DIR).filter((f) => f.startsWith(`${fileId}_`));
   } catch {
     files = [];
   }

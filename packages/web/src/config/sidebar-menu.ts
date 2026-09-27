@@ -29,6 +29,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'ai-memory',    label: '팅커벨 기억',   href: '/settings/memory',        icon: 'Brain',           roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 83,  group: 'core' },
   { id: 'milk-entry',   label: '유량 입력',     href: '/milk-entry',             icon: 'Milk',            roles: ['master','farmer'],                                                          order: 32,  group: 'core' },
   { id: 'feed-ration',  label: 'TMR 배합비',    href: '/feed-ration',            icon: 'Wheat',           roles: ['master','farmer'],                                                          order: 33,  group: 'core' },
+  { id: 'report-sched', label: '보고서 발송',   href: '/settings/reports',       icon: 'Mail',            roles: ['master','farmer','veterinarian','government_admin'],                       order: 84,  group: 'core' },
   { id: 'subscription', label: '구독 관리',     href: '/subscription',           icon: 'CreditCard',      roles: ['master','farmer'],                                                          order: 85,  group: 'core' },
   { id: 'admin-farms',  label: '목장 관리',     href: '/admin/farms',            icon: 'Building2',       roles: ['master'],                                                                    order: 90,  group: 'admin' },
   { id: 'admin-users',  label: '사용자 관리',   href: '/admin/users',            icon: 'Users',           roles: ['master'],                                                                    order: 95,  group: 'admin' },

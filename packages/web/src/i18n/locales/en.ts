@@ -12,6 +12,7 @@ export const en: Readonly<Record<string, string>> = {
   'nav.epi-dash': 'Biosecurity Dashboard',
   'nav.automation': 'Automation Rules',
   'nav.alerts': 'Notifications',
+  'nav.report-sched': 'Report Delivery',
   'nav.subscription': 'Subscription',
   'nav.admin-farms': 'Farm Management',
   'nav.admin-users': 'User Management',
