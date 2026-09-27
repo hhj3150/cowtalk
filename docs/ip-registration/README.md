@@ -1,0 +1,57 @@
+# CowTalk 저작권(컴퓨터프로그램) 등록 준비 자료
+
+한국저작권위원회 저작권등록시스템(www.cros.or.kr) 신청용 초안 묶음. 법률 자문이 아니므로 신청 전 변리사·위원회 등록 상담(1800-5455)으로 확인한다.
+
+| # | 파일 | 용도 |
+|---|---|---|
+| 1 | `01_프로그램명세서_초안.docx` | 등록 신청서의 저작물 정보·프로그램 개요·창작 내용 입력 원고 |
+| 2 | `out/` (git 제외) | 제출용 소스 복제물 — `node scripts/ip/build-copyright-submission.mjs` 로 생성 |
+| 3 | `03_저작재산권양도계약서_초안.docx` | 하현제 → D2O 권리 이전 계약 + 기여자 확인서·의사록 양식 |
+
+## 문서 재생성 (docx를 직접 고치지 말고 스크립트를 고친다)
+
+```bash
+npm i --no-save docx
+node scripts/ip/docs/build.cjs   # spec.cjs / contract.cjs → docx
+```
+
+목차 쪽번호는 `scripts/ip/docs/pages-*.json`. 내용이 늘어 쪽이 밀리면 PDF로 확인 후 수정한다.
+
+## 소스 복제물 생성
+
+```bash
+node scripts/ip/build-copyright-submission.mjs                 # 테스트 제외 (기본)
+node scripts/ip/build-copyright-submission.mjs --include-tests # 테스트 포함
+node scripts/ip/build-copyright-submission.mjs --excerpt-pages 25
+```
+
+- `cowtalk-source-full.txt` 전체본 / `cowtalk-source-excerpt.txt` 앞·뒤 N쪽 발췌본
+- `manifest.csv` 파일별 SHA-256, `summary.json` 전체 해시·기준 커밋
+- 키·토큰 패턴이 발견되면 산출물을 만들지 않고 중단한다. 데모 시드 비밀번호는 제출본에서 가린다.
+- PDF가 필요하면: `soffice --headless --convert-to pdf cowtalk-source-excerpt.txt`
+
+## 결정·조사 사항 (2026-09-27)
+
+- 저작자: **하현제** (개인) / 저작재산권자: **농업회사법인 디투오 주식회사(D2O Corp.)** — 양도계약 후 양도 등록
+- 커밋 작성자 "James Ha"·"하현제" 모두 본인 계정
+- 개발 방식: 기획·설계·도메인 규칙은 하현제가 직접 창작, AI 코딩 도구와 바이브코딩으로 구현
+
+- 모든 기획·설계는 하현제 본인 (v4.0 포함, 제3자 기여 없음)
+- v4.0 = ECO-BIT (비공개 hhj3150/Eco-Bit) — 창작 2026-03-11 이전, 미공표
+- v5.0 공표일 기재안 2026-03-19 (공개 저장소 생성일)
+
+## 남은 확인 사항
+
+1. ⚠️ cowtalk 저장소가 **public** — 비공개 전환 여부 (영업비밀·특허 신규성)
+2. D2O 법인등기부상 정확한 상호·법인등록번호
+3. 양도 대가 방식 (유상 / 무상 / 현물출자) — 세무사 검토
+4. **등록 권고 기한 2027-03-16** — 창작 후 1년이 지나면 창작일 추정 효력 없음 (저작권법 제53조 제3항)
+
+## 변경 이력
+
+| 버전 | 날짜 | 내용 |
+|---|---|---|
+| v1 | 2026-09-27 | 명세서·양도계약서 초안, 소스 복제물 생성기 |
+| v2 | 2026-09-27 | 권리자 D2O 확정, "James Ha" 본인 계정 확인, 바이브코딩 개발 방식 명시 |
+| v2.1 | 2026-09-27 | 문서 생성 스크립트를 저장소로 이전(scripts/ip/docs), CLAUDE.md에 지식재산권 트랙 기록 |
+| v3 | 2026-09-27 | v4.0(ECO-BIT) 창작 시기·공표일 조사 반영, 전부 본인 설계 확인, 공개 저장소 리스크 추가 |
