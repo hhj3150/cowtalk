@@ -500,6 +500,25 @@ DB 영속화:
 - API: GET/POST /memory, PATCH/DELETE /memory/:id, POST /memory/decay(관리자)
 - 테스트 66건 (게이트·명시지시·파싱·통합·감쇠·회상·망각·권한경계)
 
+## 지식재산권 트랙 — 저작권 등록 (2026-09-27 시작, 지속 업그레이드)
+
+하원장님 지시: "기억하고 저장하고, 요구하면 파일로 주고, 계속 업그레이드".
+→ 요청 시 최신본을 **재생성해 파일로 전달**(SendUserFile)하고, 새 정보가 오면 문서·이 섹션·README 변경 이력을 함께 갱신한다.
+
+- 자료 위치: `docs/ip-registration/` (README.md에 결정 사항·남은 확인·변경 이력)
+  - `01_프로그램명세서_초안.docx` ← `scripts/ip/docs/spec.cjs`
+  - `03_저작재산권양도계약서_초안.docx` ← `scripts/ip/docs/contract.cjs`
+  - 재생성: `npm i --no-save docx && node scripts/ip/docs/build.cjs` (docx 직접 수정 금지 — 스크립트가 원본)
+  - 소스 복제물: `node scripts/ip/build-copyright-submission.mjs` → `docs/ip-registration/out/` (git 제외)
+  - 목차는 수동(Paragraph + Tab Stop), 쪽번호는 `scripts/ip/docs/pages-*.json` — 쪽이 밀리면 PDF 변환 후 수정
+- 확정 사항 (하원장님 확인):
+  - 저작자 **하현제(개인)** → 저작재산권자 **농업회사법인 디투오 주식회사(D2O Corp.)** (양도계약 + 양도 등록)
+  - 커밋 작성자 "James Ha"·"하현제"는 모두 본인 계정
+  - 개발 방식: 기획·설계·도메인 규칙은 하현제가 직접 창작, AI 코딩 도구와 **바이브코딩**으로 구현 — AI 활용 사실은 등록 시 정직하게 기재
+- 남은 확인: v4.0 창작일·개발 방식(외주 참여 여부), 공표일(기재안 2026-03-22), D2O 등기부상 상호·법인등록번호
+- 기한: **2027-03-16까지 등록 권고** (최초 커밋 2026-03-17, 저작권법 제53조 제3항 창작일 추정)
+- 다음 확장 후보: 상표 출원(CowTalk/카우톡/팅커벨), 특허 검토(번식 AI 루프·데이터 융합), 기술자료 임치
+
 ## 보고 형식 (매 작업 후)
 
 1. 분석한 것
