@@ -71,3 +71,6 @@ sk-*.docx
 *\ [0-9].json
 *\ [0-9].sql
 *\ [0-9].md
+
+# 저작권 등록용 소스 복제물 (scripts/ip/build-copyright-submission.mjs 산출물)
+docs/ip-registration/out/
