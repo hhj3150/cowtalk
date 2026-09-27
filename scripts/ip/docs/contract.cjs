@@ -20,10 +20,10 @@ const sign = (role, lines) => table([[role, ''], ...lines.map((l) => [l, ''])], 
 const children = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1800, after: 200 }, children: [run('CowTalk v5.0 (카우톡)', { size: 26, color: '595959' })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [run('저작재산권 양도계약서', { size: 48, bold: true, color: '1F3864' })] }),
-  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 1200 }, children: [run('하현제 → 농업회사법인 디투오 주식회사(D2O Corp.)  |  초안 v2', { size: 26 })] }),
+  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 1200 }, children: [run('하현제 → 농업회사법인 디투오 주식회사(D2O Corp.)  |  초안 v3', { size: 26 })] }),
   table([
     ['구분', '내용'],
-    ['문서 상태', '초안 — 【 】 표시 항목 선택·기입 필요'],
+    ['문서 상태', '초안 v3 — 남은 【 】 항목(대가 방식·법인 정보) 선택·기입 필요'],
     ['작성일', '2026-09-27'],
     ['양도 대상', 'CowTalk v5.0 소스코드 및 관련 저작물 일체 (별지 1)'],
     ['후속 절차', '한국저작권위원회 저작재산권 양도 등록 (저작권법 제54조)'],
@@ -49,6 +49,7 @@ const children = [
     ['7', '기여자 권리 — **확인 완료**', '커밋 작성자 "James Ha"(406건)는 하현제 본인 계정. 제3자 기여 없음', '제8조 제2항에 본인 계정 확인 서명. 외주·협력사 기여가 생기면 별지 2 확인서 사용'],
     ['8', '대항력', '계약만으로 당사자 사이에서는 효력이 있지만, 등록해야 제3자(이중 양수인 등)에게 대항할 수 있음(저작권법 제54조)', '계약 후 곧바로 양도 등록'],
     ['9', '업무상저작물 경로와의 관계', '처음부터 법인 명의 업무상저작물로 등록할 수 있다면 양도계약이 필요 없을 수 있음. 다만 대표이사 본인이 개발한 경우 "법인의 기획·업무상 작성" 요건 입증이 쟁점', '어느 경로든 권리 귀속을 명확히 하려면 본 계약을 함께 체결하는 편이 안전 (확인적 양도)'],
+    ['10', '⚠️ 공개 저장소', 'CowTalk 저장소(GitHub)가 공개 상태라 소스코드를 누구나 볼 수 있음. 제11조 비밀유지 의무의 실효성이 떨어짐', '저장소를 비공개로 전환한 뒤 계약 체결 권장'],
   ], [450, 1700, 3900, 2976]),
   pageBreak(),
 
@@ -62,7 +63,7 @@ const children = [
   ...art('제2조 (대상 저작물)',
     '① 이 계약의 대상 저작물(이하 "본 프로그램")은 다음 각 호를 말하며, 구체적 범위는 별지 1과 같다.',
     sub('1. 컴퓨터프로그램 "CowTalk v5.0(카우톡) — 축산 디지털 운영체제"의 원시코드 및 목적코드 (기준 커밋 0b3c481, 2026-08-10) 및 그 이전의 모든 개정본'),
-    sub('2. 선행 버전 "CowTalk v4.0" 중 갑이 권리를 보유한 부분 【포함 여부 선택】'),
+    sub('2. 선행 버전 "CowTalk v4.0(ECO-BIT 축산 통합 플랫폼, 저장소 hhj3150/Eco-Bit)" 및 그 개정본 일체'),
     sub('3. 본 프로그램의 설계 문서, 데이터베이스 스키마, AI 프롬프트, 사용자 화면 디자인, 기술 문서 및 매뉴얼'),
     '② 이 계약 체결일부터 효력 발생일까지 갑이 본 프로그램을 개작한 부분도 대상 저작물에 포함한다.'),
 
@@ -144,7 +145,7 @@ const children = [
     ['구성', 'packages/shared (48개 파일, 5,233줄)\npackages/server (295개 파일, 71,630줄)\npackages/web (279개 파일, 61,850줄)\n합계 622개 파일, 138,091줄 (테스트 코드 제외) + 테스트 코드 88개 파일'],
     ['동일성 식별', '전체 SHA-256: fc1d36a6398da7a81c3c9b67fe5d3a940108ceed631205c193143ce4e66e1f45\n(파일별 해시: manifest.csv — scripts/ip/build-copyright-submission.mjs로 재생성 가능)'],
     ['관련 문서', 'CLAUDE.md, CowTalk_v5_Renewal_Blueprint.md, CowTalk_Master_Plan.docx, docs/ 폴더 기술 문서 일체'],
-    ['선행 버전', 'CowTalk v4.0 【포함 여부 및 범위 기재】'],
+    ['선행 버전', 'CowTalk v4.0 = ECO-BIT 축산 통합 플랫폼 (비공개 저장소 hhj3150/Eco-Bit, 기준 커밋 83dc9eb, JavaScript 약 5.6만 줄, 창작 2026-03-11 이전, 저작자 하현제 단독)'],
     ['제외', 'node_modules 등 제3자 오픈소스, smaXtec API·알고리즘, 공공데이터, 생성형 AI 모델'],
   ], [2200, 6826], { firstColHead: true }),
   pageBreak(),
