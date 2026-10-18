@@ -1,17 +1,20 @@
-// OpenAI Whisper — 오디오 바이너리 → 텍스트 전사
+// OpenAI STT (Whisper / gpt-4o-transcribe) — 오디오 바이너리 → 텍스트 전사
 // 사용처: /api/audio/transcribe (audio.routes.ts)
 //
-// iOS Safari Web Speech API 한계 우회용. MediaRecorder로 녹음 → 서버로 업로드 → Whisper 전사.
-// Whisper는 우즈벡어·한국어·러시아어·몽골어·영어 모두 지원.
+// iOS Safari Web Speech API 한계 우회용. MediaRecorder로 녹음 → 서버로 업로드 → 전사.
+// 모델 라우팅: 기본 OPENAI_STT_MODEL(whisper-1). NATIVE_VOICE_LANGS(우즈벡어·몽골어)는
+// OPENAI_STT_MODEL_NATIVE(gpt-4o-transcribe) — whisper-1 의 우즈벡어 인식률이 낮아 현장에서 오인식 빈발.
+// 힌트 프롬프트도 언어별로 — 한국어 단어 힌트를 우즈벡 발화에 주면 한국어 쪽으로 편향된다.
 
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
+import { isTtsLang, parseLangList, type TtsLang } from './tts-language.js';
 
 export interface TranscribeOptions {
   readonly audio: Buffer;
   readonly contentType: string;          // 예: 'audio/webm' / 'audio/mp4' / 'audio/m4a'
   readonly language?: string;            // ISO-639-1 ('ko', 'uz', 'ru', 'en', 'mn') — 정확도 향상
-  readonly prompt?: string;              // 도메인 단어 힌트 (예: '한우 술탄팜 발정 분만')
+  readonly prompt?: string;              // 도메인 단어 힌트. 미지정 시 언어별 기본 힌트(STT_DOMAIN_PROMPTS)
 }
 
 export interface TranscribeResult {
@@ -20,8 +23,30 @@ export interface TranscribeResult {
   readonly duration?: number;
 }
 
-const WHISPER_MODEL = 'whisper-1';
-const MAX_BYTES = 25 * 1024 * 1024; // OpenAI Whisper 한도 25MB
+const MAX_BYTES = 25 * 1024 * 1024; // OpenAI 오디오 업로드 한도 25MB
+
+// 언어별 도메인 단어 힌트 — 전사 모델이 축산 용어를 해당 언어 철자로 적도록 유도
+// (system-prompt.ts 의 우즈벡어·몽골어 축산 용어 기준과 일치)
+export const STT_DOMAIN_PROMPTS: Readonly<Record<TtsLang, string>> = {
+  ko: '한우 젖소 발정 분만 임신 건강 술탄팜 CowTalk',
+  en: 'Hanwoo dairy cow heat calving pregnancy health Sultan Farm CowTalk',
+  uz: "sigir, qoramol, buzoq, qizishish, tug'ish, bo'g'ozlik, sun'iy urug'lantirish, mastit, tana harorati, veterinar, ferma, Sulton ferma, CowTalk",
+  ru: 'корова, тёлка, телёнок, охота, отёл, стельность, осеменение, мастит, температура, ветеринар, ферма, Султан ферма, CowTalk',
+  mn: 'үхэр, үнээ, тугал, хөөцөлдөх, төллөх, хээлтэй, зохиомол хээлтүүлэг, дэлэнгийн үрэвсэл, халуун, мал эмнэлэг, ферм, CowTalk',
+};
+
+/** 언어별 STT 모델 선택 — 네이티브 음성 언어는 인식률이 높은 세대로 */
+export function resolveSttModel(language: string | undefined): string {
+  if (isTtsLang(language) && parseLangList(config.NATIVE_VOICE_LANGS).has(language)) {
+    return config.OPENAI_STT_MODEL_NATIVE;
+  }
+  return config.OPENAI_STT_MODEL;
+}
+
+/** 언어별 도메인 힌트 (언어 미지정 시 한국어 힌트 — 기존 동작) */
+export function resolveSttPrompt(language: string | undefined): string {
+  return STT_DOMAIN_PROMPTS[isTtsLang(language) ? language : 'ko'];
+}
 
 export async function transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
   const apiKey = config.OPENAI_API_KEY;
@@ -38,12 +63,14 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
 
   // FormData 구성 — Node 18+ 글로벌 FormData/Blob 사용
   const ext = inferExt(opts.contentType);
+  const model = resolveSttModel(opts.language);
+  const prompt = opts.prompt ?? resolveSttPrompt(opts.language);
   const blob = new Blob([new Uint8Array(opts.audio)], { type: opts.contentType });
   const form = new FormData();
   form.append('file', blob, `recording.${ext}`);
-  form.append('model', WHISPER_MODEL);
+  form.append('model', model);
   if (opts.language) form.append('language', opts.language);
-  if (opts.prompt) form.append('prompt', opts.prompt);
+  if (prompt) form.append('prompt', prompt);
   form.append('response_format', 'json');
 
   const startedAt = Date.now();
@@ -63,7 +90,9 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
       audioBytes: opts.audio.length,
       contentType: opts.contentType,
       ext,
-    }, '[stt.service] Whisper 호출 실패');
+      model,
+      language: opts.language,
+    }, '[stt.service] STT 호출 실패');
     // OpenAI 에러 본문에서 메시지 추출 시도 (JSON 또는 raw)
     let upstreamDetail = '';
     try {
@@ -85,7 +114,7 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
 
   const data = await response.json() as { text?: string; language?: string; duration?: number };
   const elapsed = Date.now() - startedAt;
-  logger.info({ elapsed, lang: data.language, textLen: (data.text ?? '').length, audioBytes: opts.audio.length }, '[stt.service] Whisper 전사 완료');
+  logger.info({ elapsed, model, requestedLang: opts.language, lang: data.language, textLen: (data.text ?? '').length, audioBytes: opts.audio.length }, '[stt.service] STT 전사 완료');
 
   return {
     text: (data.text ?? '').trim(),

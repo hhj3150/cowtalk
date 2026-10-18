@@ -86,13 +86,32 @@ const envSchema = z.object({
   // OpenAI TTS (음성 합성) — 팅커벨 음성 답변
   // 키 발급: platform.openai.com → API keys (Audio 권한만 부여 권장)
   OPENAI_API_KEY: z.string().optional(),
-  // tts-1-hd가 자연성·발음 명료도 모두 우월 (비용 2배지만 시연·현장 가치 ↑)
-  OPENAI_TTS_MODEL: z.enum(['tts-1', 'tts-1-hd']).default('tts-1-hd'),
-  OPENAI_TTS_VOICE: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).default('nova'),
+  // tts-1-hd가 자연성·발음 명료도 모두 우월 (비용 2배지만 시연·현장 가치 ↑) — ko/en/ru 기본 경로
+  OPENAI_TTS_MODEL: z.enum(['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']).default('tts-1-hd'),
+  // 네이티브 음성 언어(NATIVE_VOICE_LANGS)에 Azure 키가 없을 때 쓰는 OpenAI 모델.
+  // gpt-4o-mini-tts 만 instructions(발음·억양 지시)를 받는다 — 우즈벡어를 러시아어 억양으로 읽는 문제 완화.
+  OPENAI_TTS_MODEL_NATIVE: z.enum(['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']).default('gpt-4o-mini-tts'),
+  OPENAI_TTS_VOICE: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'ballad', 'coral', 'sage', 'verse']).default('nova'),
   OPENAI_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(4000).default(800),
   OPENAI_TTS_FORMAT: z.enum(['mp3', 'opus', 'aac', 'flac']).default('mp3'),
   // TTS 속도: 1.0=기본, 0.85=차분, 1.1=빠름. 자연 대화에는 0.95~1.05 권장
   OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4.0).default(1.0),
+  // 현지 원어민 음성이 필요한 언어 (쉼표 구분: ko|en|uz|ru|mn). 이 언어들은
+  //   Azure 키 있음 → Azure Neural 네이티브 음성 / 없음 → OPENAI_TTS_MODEL_NATIVE + 발음 지시
+  //   STT 도 OPENAI_STT_MODEL_NATIVE 를 쓴다 (whisper-1 의 우즈벡어 인식률이 낮음)
+  NATIVE_VOICE_LANGS: z.string().default('uz,mn'),
+
+  // OpenAI STT (음성 인식) — iOS Safari MediaRecorder 경로
+  OPENAI_STT_MODEL: z.enum(['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe']).default('whisper-1'),
+  OPENAI_STT_MODEL_NATIVE: z.enum(['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe']).default('gpt-4o-transcribe'),
+
+  // Azure AI Speech — 우즈벡어·몽골어 네이티브 신경망 음성 (선택. 미설정 시 OpenAI 경로)
+  // 키 발급: Azure Portal → Speech 리소스 → Keys and Endpoint (리전 예: koreacentral, eastasia)
+  AZURE_SPEECH_KEY: z.string().optional(),
+  AZURE_SPEECH_REGION: z.string().optional(),
+  // 음성 교체: uz-UZ-MadinaNeural(여) / uz-UZ-SardorNeural(남), mn-MN-YesuiNeural(여) / mn-MN-BataaNeural(남)
+  AZURE_SPEECH_VOICE_UZ: z.string().optional(),
+  AZURE_SPEECH_VOICE_MN: z.string().optional(),
 
   // Web Push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),

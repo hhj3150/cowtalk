@@ -1,22 +1,39 @@
-// OpenAI TTS — 텍스트 → MP3 음성 변환
+// TTS — 텍스트 → MP3 음성 변환 (언어별 공급자 라우팅)
 // 사용처: /api/audio/speak (audio.routes.ts)
 //
-// 비용 모델: tts-1 = $15 / 1M 문자
-// - 평균 답변 800자 → 1회 $0.012 (≈₩17)
-// - 절감 레버: OPENAI_TTS_MAX_CHARS로 앞 N자만 합성 (기본 500자)
-// - 캐시: 동일 텍스트 동일 voice는 in-memory LRU로 24시간 재사용
+// 공급자 라우팅 (언어 = 답변 본문 문자 체계 + UI 언어 힌트로 판정):
+//   1) NATIVE_VOICE_LANGS(기본 uz,mn) + Azure 키 설정  → Azure Neural 네이티브 음성 (현지 원어민 발음)
+//   2) NATIVE_VOICE_LANGS + Azure 미설정              → OpenAI gpt-4o-mini-tts + 언어별 발음 지시(instructions)
+//   3) 그 외(ko/en/ru)                                → OPENAI_TTS_MODEL (기본 tts-1-hd, 기존 동작 유지)
+// 전처리(단위·약어 풀이)는 답변 언어의 어휘로만 한다 — tts-language.ts
 //
-// 보안: API 키는 절대 응답에 포함시키지 않음. 에러 시 OpenAI 원문 메시지 마스킹.
+// 비용 모델: tts-1 = $15 / 1M 문자, tts-1-hd·gpt-4o-mini-tts ≈ $30 / 1M 문자 상당
+// - 절감 레버: OPENAI_TTS_MAX_CHARS로 앞 N자만 합성
+// - 캐시: 동일 텍스트·언어·공급자·voice는 in-memory LRU로 24시간 재사용
+//
+// 보안: API 키는 절대 응답에 포함시키지 않음. 에러 시 원문 메시지 마스킹.
 
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 import { createHash } from 'node:crypto';
+import {
+  AZURE_NEURAL_VOICES,
+  OPENAI_TTS_INSTRUCTIONS,
+  detectTtsLang,
+  naturalizeForTts,
+  parseLangList,
+  type TtsLang,
+} from './tts-language.js';
+import { isAzureTtsConfigured, synthesizeWithAzure } from './azure-tts.service.js';
 
 // === 타입 ===
 
-export type TtsVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-export type TtsModel = 'tts-1' | 'tts-1-hd';
+export type TtsVoice =
+  | 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  | 'ash' | 'ballad' | 'coral' | 'sage' | 'verse';
+export type TtsModel = 'tts-1' | 'tts-1-hd' | 'gpt-4o-mini-tts';
 export type TtsFormat = 'mp3' | 'opus' | 'aac' | 'flac';
+export type TtsProvider = 'openai' | 'azure';
 
 export interface SynthesizeOptions {
   readonly text: string;
@@ -24,6 +41,7 @@ export interface SynthesizeOptions {
   readonly model?: TtsModel;
   readonly format?: TtsFormat;
   readonly maxChars?: number; // 응답 앞 N자만 합성 (비용 절감)
+  readonly lang?: string;     // UI 언어 힌트 (ko|en|uz|ru|mn). 본문 문자 체계와 함께 최종 판정
 }
 
 export interface SynthesizeResult {
@@ -33,6 +51,56 @@ export interface SynthesizeResult {
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly synthesizedLength: number;
+  readonly lang: TtsLang;
+  readonly provider: TtsProvider;
+  readonly model: string;      // 'tts-1-hd' | 'gpt-4o-mini-tts' | 'uz-UZ-MadinaNeural' 등
+}
+
+// === 모델별 파라미터 분기 (claude-model-params.ts 와 같은 원칙: 분기는 한 곳에만) ===
+// - instructions: gpt-4o-mini-tts 만 받는다 (tts-1 계열에 보내면 400)
+// - speed: tts-1 계열만 받는다 (gpt-4o-mini-tts 는 거부)
+export function buildOpenAiTtsBody(params: {
+  readonly model: TtsModel;
+  readonly voice: TtsVoice;
+  readonly input: string;
+  readonly format: TtsFormat;
+  readonly speed: number;
+  readonly lang: TtsLang;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: params.model,
+    input: params.input,
+    voice: params.voice,
+    response_format: params.format,
+  };
+  if (params.model === 'gpt-4o-mini-tts') {
+    body.instructions = OPENAI_TTS_INSTRUCTIONS[params.lang];
+  } else {
+    body.speed = params.speed;
+  }
+  return body;
+}
+
+// === 공급자 라우팅 ===
+
+export interface TtsRoute {
+  readonly provider: TtsProvider;
+  readonly model: string;   // OpenAI 모델명 또는 Azure voice 이름
+  readonly reason: string;  // 로그·진단용
+}
+
+export function resolveTtsRoute(lang: TtsLang, requestedModel?: TtsModel): TtsRoute {
+  const nativeLangs = parseLangList(config.NATIVE_VOICE_LANGS);
+  if (nativeLangs.has(lang)) {
+    if (isAzureTtsConfigured()) {
+      const override = lang === 'uz' ? config.AZURE_SPEECH_VOICE_UZ
+        : lang === 'mn' ? config.AZURE_SPEECH_VOICE_MN
+        : undefined;
+      return { provider: 'azure', model: override ?? AZURE_NEURAL_VOICES[lang].female, reason: 'native-lang azure' };
+    }
+    return { provider: 'openai', model: config.OPENAI_TTS_MODEL_NATIVE, reason: 'native-lang openai-instructed' };
+  }
+  return { provider: 'openai', model: requestedModel ?? config.OPENAI_TTS_MODEL, reason: 'default' };
 }
 
 // === 캐시 (in-memory LRU, 최대 200건, 24시간 TTL) ===
@@ -47,10 +115,10 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const audioCache = new Map<string, CacheEntry>();
 
-function makeCacheKey(text: string, voice: TtsVoice, model: TtsModel, format: TtsFormat): string {
+function makeCacheKey(text: string, lang: TtsLang, provider: TtsProvider, voice: string, model: string, format: TtsFormat): string {
   // 텍스트 해시 + 옵션으로 키 생성 (긴 텍스트도 짧은 키로)
   const hash = createHash('sha1').update(text).digest('hex').slice(0, 16);
-  return `${hash}:${voice}:${model}:${format}`;
+  return `${hash}:${lang}:${provider}:${voice}:${model}:${format}`;
 }
 
 function getFromCache(key: string): CacheEntry | null {
@@ -102,127 +170,29 @@ function truncateToSentence(text: string, maxChars: number): string {
   return text.slice(0, maxChars).trim() + '...';
 }
 
-// === TTS 자연어 전처리 — 마크다운 제거 + 자연 발화로 변환 ===
-// 원칙: 사람이 친구에게 말하듯 흘러가는 음성을 만든다.
-// 기호·단위·약어를 한글 발음으로 풀고, 줄바꿈을 자연스러운 호흡으로 바꾼다.
-
-// 영어 축산 약어 → 한글 발음 (자주 쓰이는 것만)
-// 원칙: "검사"·"점수" 등 한국어 단어가 뒤따르기 쉬운 약어는 음역(씨엠티)이
-// 풀이(캘리포니아 유방염 검사)보다 자연스러움 — "CMT 검사" → "씨엠티 검사".
-const ABBREV_MAP: ReadonlyArray<[RegExp, string]> = [
-  [/\bTMR\b/g, '티엠알'],
-  [/\bDIM\b/g, '착유 일수'],
-  [/\bBCS\b/g, '체형 점수'],
-  [/\bSCC\b/g, '체세포수'],
-  [/\bMUN\b/g, '유중 요소태 질소'],
-  [/\bDHI\b/g, '디에이치아이'],
-  [/\bTHI\b/g, '티에이치아이'],
-  [/\bSARA\b/g, '아급성 반추위 산증'],
-  [/\bBHB\b/g, '비에이치비'],
-  [/\bNEB\b/g, '에너지 음성 균형'],
-  [/\bHPAI\b/g, '고병원성 조류 인플루엔자'],
-  [/\bCMT\b/g, '씨엠티'],
-  [/\bIM\b/g, '근육 주사'],
-  [/\bIV\b/g, '정맥 주사'],
-  [/\bAI\b/g, '인공 수정'],
-  [/\bPCR\b/g, '피시알'],
-  [/\bKAHIS\b/g, '카이스'],
-  [/\bWOAH\b/g, '세계 동물 보건 기구'],
-  [/\bR0\b/g, '기초 감염 재생산 지수'],
-  [/\bNDF\b/g, '엔디에프'],
-  [/\bDCAD\b/g, '디캐드'],
-  [/\bFCR\b/g, '사료 효율'],
-];
-
-// 단위·기호 자연 발음
-function naturalizeUnitsAndSymbols(text: string): string {
-  return text
-    // 온도: 38.5°C, 38.5℃ → "38.5도"
-    .replace(/(\d+(?:\.\d+)?)\s*[°℃]C?/g, '$1도')
-    // "단위/일" 형태는 "매일 단위" 식으로 자연화
-    .replace(/(\d+)\s*kg\s*\/\s*일/g, '하루 $1킬로그램')
-    .replace(/(\d+)\s*L\s*\/\s*일/g, '하루 $1리터')
-    .replace(/(\d+)\s*분\s*\/\s*일/g, '하루 $1분')
-    .replace(/(\d+)\s*회\s*\/\s*일/g, '하루 $1회')
-    // 일반 슬래시 — "A / B / C" 같은 단순 구분은 쉼표
-    // (분수 1/2 같은 건 거의 등장하지 않으므로 쉼표가 안전)
-    .replace(/\s+\/\s+/g, ', ')
-    // 화살표 → 자연 호흡(쉼표)
-    .replace(/\s*→\s*/g, ', ')
-    .replace(/\s*=>\s*/g, ', ')
-    // 대시·하이픈을 자연 호흡으로
-    .replace(/—/g, ', ')
-    .replace(/\s--\s/g, ', ')
-    // 괄호 안 짧은 부연은 쉼표로 (2~25자 한글/숫자 위주)
-    .replace(/\s*\(([가-힣A-Za-z0-9\s.,]{2,25})\)/g, ', $1')
-    // 단순 단위
-    .replace(/(\d+)\s*L\b/g, '$1리터')
-    .replace(/(\d+)\s*mL\b/g, '$1밀리리터')
-    .replace(/(\d+)\s*mg\b/g, '$1밀리그램')
-    .replace(/(\d+)\s*kg\b/g, '$1킬로그램')
-    .replace(/(\d+)\s*cm\b/g, '$1센티미터')
-    .replace(/(\d+)\s*km\b/g, '$1킬로미터');
-}
-
-function expandAbbreviations(text: string): string {
-  let out = text;
-  for (const [re, replacement] of ABBREV_MAP) {
-    out = out.replace(re, replacement);
-  }
-  return out;
-}
-
-// 줄바꿈을 자연스러운 호흡으로
-function naturalizeBreaks(text: string): string {
-  return text
-    .replace(/\n{2,}/g, '. ')   // 빈 줄 = 문장 종료
-    .replace(/\n/g, ', ')        // 단일 줄바꿈 = 짧은 호흡
-    .replace(/,\s*\./g, '.')     // ", ." 정리
-    .replace(/\.\s*\./g, '.')    // ".." 정리
-    .replace(/,\s*,/g, ',')      // ",," 정리
-    .replace(/\s+/g, ' ')        // 다중 공백 정리
-    .trim();
-}
-
-function stripMarkdownForTts(text: string): string {
-  let out = text
-    .replace(/```[\s\S]*?```/g, '') // 코드 블록 제거
-    .replace(/`([^`]+)`/g, '$1')     // 인라인 코드
-    .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
-    .replace(/\*([^*]+)\*/g, '$1')     // italic
-    .replace(/^#{1,6}\s+/gm, '')        // 헤더 #
-    .replace(/^[-*]\s+/gm, '')          // 리스트 - *
-    .replace(/^\d+\.\s+/gm, '')         // 번호 리스트
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 링크
-    // 이모지·픽토그램 광범위 제거 (TTS에서 부자연)
-    .replace(/[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}]|[\u{2300}-\u{23FF}]|[\u{1F000}-\u{1F2FF}]/gu, '')
-    .replace(/✓|×|✔|✗/g, '');
-
-  // 단위·기호 자연 발음
-  out = naturalizeUnitsAndSymbols(out);
-  // 영어 약어 → 한글 발음
-  out = expandAbbreviations(out);
-  // 줄바꿈을 자연 호흡으로
-  out = naturalizeBreaks(out);
-
-  return out;
+// === TTS 자연어 전처리 ===
+// 언어별 사전(tts-language.ts)로 위임. 한국어 발음을 타 언어 답변에 주입하던 옛 동작 제거.
+function stripMarkdownForTts(text: string, lang: TtsLang = 'ko'): string {
+  return naturalizeForTts(text, lang);
 }
 
 // === 메인: synthesize ===
 
 export async function synthesize(options: SynthesizeOptions): Promise<SynthesizeResult> {
-  const apiKey = config.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY 미설정 — Railway/.env에 키를 등록하세요');
-  }
-
   const voice = options.voice ?? config.OPENAI_TTS_VOICE;
-  const model = options.model ?? config.OPENAI_TTS_MODEL;
   const format = options.format ?? config.OPENAI_TTS_FORMAT;
   const maxChars = options.maxChars ?? config.OPENAI_TTS_MAX_CHARS;
 
-  // 1) 마크다운 제거
-  const stripped = stripMarkdownForTts(options.text);
+  // 0) 답변 언어 판정 — UI 힌트 + 본문 문자 체계
+  const lang = detectTtsLang(options.text, options.lang);
+  const route = resolveTtsRoute(lang, options.model);
+
+  if (route.provider === 'openai' && !config.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY 미설정 — Railway/.env에 키를 등록하세요');
+  }
+
+  // 1) 마크다운 제거 + 언어별 단위·약어 자연화
+  const stripped = stripMarkdownForTts(options.text, lang);
   if (!stripped) {
     throw new Error('합성할 텍스트가 비어있습니다');
   }
@@ -232,11 +202,12 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   const finalText = truncateToSentence(stripped, maxChars);
   const truncated = finalText.length < originalLength;
 
-  // 3) 캐시 조회
-  const cacheKey = makeCacheKey(finalText, voice, model, format);
+  // 3) 캐시 조회 (언어·공급자·모델 포함 — 같은 텍스트라도 공급자가 다르면 다른 음성)
+  const cacheVoice = route.provider === 'azure' ? route.model : voice;
+  const cacheKey = makeCacheKey(finalText, lang, route.provider, cacheVoice, route.model, format);
   const cached = getFromCache(cacheKey);
   if (cached) {
-    logger.debug({ voice, model, length: finalText.length }, '[tts] cache hit');
+    logger.debug({ lang, provider: route.provider, model: route.model, length: finalText.length }, '[tts] cache hit');
     return {
       audio: cached.audio,
       contentType: cached.contentType,
@@ -244,49 +215,70 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
       truncated,
       originalLength,
       synthesizedLength: finalText.length,
+      lang,
+      provider: route.provider,
+      model: route.model,
     };
   }
 
-  // 4) OpenAI API 호출
   const startedAt = Date.now();
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      input: finalText,
-      voice,
-      response_format: format,
-      speed: config.OPENAI_TTS_SPEED,
-    }),
-  });
+  let audio: Buffer;
+  let contentType: string;
 
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    // 보안: 키나 민감 정보가 포함될 수 있으니 마스킹
-    const safeMsg = errBody.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***');
-    logger.error(
-      { status: response.status, body: safeMsg.slice(0, 500), voice, model },
-      '[tts] OpenAI API error',
-    );
-    throw new Error(`OpenAI TTS 실패 (HTTP ${String(response.status)})`);
+  if (route.provider === 'azure') {
+    // 4-a) Azure Neural 네이티브 음성 (우즈벡어·몽골어)
+    const result = await synthesizeWithAzure({
+      text: finalText,
+      lang,
+      voiceName: route.model,
+      speed: config.OPENAI_TTS_SPEED,
+    });
+    audio = result.audio;
+    contentType = result.contentType;
+  } else {
+    // 4-b) OpenAI API 호출
+    const model = route.model as TtsModel;
+    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.OPENAI_API_KEY ?? ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(buildOpenAiTtsBody({
+        model,
+        voice,
+        input: finalText,
+        format,
+        speed: config.OPENAI_TTS_SPEED,
+        lang,
+      })),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      // 보안: 키나 민감 정보가 포함될 수 있으니 마스킹
+      const safeMsg = errBody.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***');
+      logger.error(
+        { status: response.status, body: safeMsg.slice(0, 500), voice, model, lang },
+        '[tts] OpenAI API error',
+      );
+      throw new Error(`OpenAI TTS 실패 (HTTP ${String(response.status)})`);
+    }
+
+    audio = Buffer.from(await response.arrayBuffer());
+    contentType = response.headers.get('content-type') ?? `audio/${format === 'mp3' ? 'mpeg' : format}`;
   }
 
-  const arrayBuf = await response.arrayBuffer();
-  const audio = Buffer.from(arrayBuf);
-  const contentType = response.headers.get('content-type') ?? `audio/${format === 'mp3' ? 'mpeg' : format}`;
-
-  const elapsedMs = Date.now() - startedAt;
   logger.info(
     {
-      voice,
-      model,
+      lang,
+      provider: route.provider,
+      model: route.model,
+      routeReason: route.reason,
+      voice: cacheVoice,
       chars: finalText.length,
       audioBytes: audio.length,
-      elapsedMs,
+      elapsedMs: Date.now() - startedAt,
       truncated,
     },
     '[tts] synthesized',
@@ -302,6 +294,9 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
     truncated,
     originalLength,
     synthesizedLength: finalText.length,
+    lang,
+    provider: route.provider,
+    model: route.model,
   };
 }
 
