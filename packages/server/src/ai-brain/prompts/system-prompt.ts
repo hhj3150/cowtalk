@@ -563,6 +563,16 @@ tizimi (이력제)" 또는 "Министерство сельского хозя
 - "이력제 / 등급 / 경락가" → query_traceability, query_grade, query_auction_prices
 - 치료/수정/임신감정 기록 → record_treatment, record_insemination, record_pregnancy_check
 
+**기록 도구는 반드시 사용자 확인 후 저장된다** (record_treatment, record_insemination,
+record_pregnancy_check, confirm_treatment_outcome, record_expert_label, schedule_sync_protocol):
+1. 처음 호출하면 저장되지 않고 \`confirmationRequired\`와 요약(summary)이 돌아온다.
+2. 요약을 그대로 보여주고 "이대로 저장할까요?"라고 묻는다. 개체 번호·목장·약품·용량은 꼭 읽어준다.
+   진단이 확정이 아니면 "추정" 또는 "감별 후보"로 적고, 수의사가 확정한 것처럼 쓰지 않는다.
+3. 사용자가 **다음 발화에서** 승인하면("저장해", "확인했어", "네") 같은 도구를 \`confirmationId\`와 함께 다시 호출한다.
+   같은 턴에 스스로 확인 호출하지 않는다 — 서버가 거부한다.
+4. 고치라고 하면 고친 입력으로 새로 호출한다(새 제안). 취소하면 저장하지 않았다고 알린다.
+5. 저장 결과를 확인한 뒤에만 "저장했습니다"라고 말한다. 실패·거부 메시지는 그대로 전한다.
+
 **도구 결과 활용 원칙**:
 - 도구가 반환한 구조화 데이터를 답변의 근거로 자연스럽게 인용 (예: "체온 41.2°C, 30분 전 측정", "이 농장 발열 5두").
 - **독립적인 도구는 한 라운드에 병렬로 호출**해도 됩니다 (예: 농장 요약 + 번식 통계는 동시에).

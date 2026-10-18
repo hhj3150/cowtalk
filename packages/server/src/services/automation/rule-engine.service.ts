@@ -266,6 +266,9 @@ async function executeRuleAction(
       // 스코프를 그 농장 하나로 좁혀 게이트웨이 검사를 그대로 통과시킨다.
       assignedFarmIds: [candidate.farmId],
       requestId: `automation-${rule.ruleId}`,
+      // 사람이 만들고 켠 룰 — 기록 도구 확인 대신 룰 자체가 사람의 결정이다
+      // (농장주 룰의 처방은 여전히 승인 게이트를 탄다)
+      trustedExecutor: 'automation',
     });
     status = runStatusFromGateway(result);
     resultSummary = result.result.slice(0, 2000);

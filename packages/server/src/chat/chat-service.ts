@@ -557,6 +557,8 @@ export async function handleChatStream(
       // 권한 근거를 그대로 넘긴다 — 게이트웨이가 도구 파라미터를 이 기준으로 검증한다
       assignedFarmIds: request.assignedFarmIds,
       isMaster: request.isMaster,
+      // 사용자 발화 하나 = 턴 하나. 기록 도구는 제안 턴과 다른 턴의 명시적 승인으로만 실행된다
+      confirmationTurn: { turnId: uuidv4(), userUtterance: question },
     },
     { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );

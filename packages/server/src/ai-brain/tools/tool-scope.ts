@@ -17,7 +17,7 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
-import { animals, farms } from '../../db/schema.js';
+import { animals, farms, treatments, healthEvents } from '../../db/schema.js';
 
 /** 사용자가 실제로 접근 가능한 농장. null = 무제한(마스터·미배정 관리역할) */
 export type AllowedFarms = readonly string[] | null;
@@ -91,6 +91,18 @@ async function farmIdOfAnimal(animalId: string): Promise<string | null> {
   return rows[0]?.farmId ?? null;
 }
 
+/** 치료 기록 → 개체 → 농장 (treatments는 health_events를 거쳐 개체에 닿는다) */
+async function farmIdOfTreatment(treatmentId: string): Promise<string | null> {
+  const rows = await getDb()
+    .select({ farmId: animals.farmId })
+    .from(treatments)
+    .innerJoin(healthEvents, eq(treatments.healthEventId, healthEvents.eventId))
+    .innerJoin(animals, eq(healthEvents.animalId, animals.animalId))
+    .where(eq(treatments.treatmentId, treatmentId))
+    .limit(1);
+  return rows[0]?.farmId ?? null;
+}
+
 async function farmExists(farmId: string): Promise<boolean> {
   const rows = await getDb()
     .select({ farmId: farms.farmId })
@@ -143,6 +155,14 @@ export async function findScopeViolations(
   for (const key of ANIMAL_KEYS) {
     const v = input[key];
     if (typeof v === 'string' && v) await checkAnimal(key, v);
+  }
+
+  // 치료 기록 id (confirm_treatment_outcome) — 남의 목장 치료결과를 바꾸지 못하게
+  const treatmentId = input.treatmentId;
+  if (typeof treatmentId === 'string' && treatmentId && UUID_RE.test(treatmentId)) {
+    const farmId = await farmIdOfTreatment(treatmentId);
+    if (farmId === null) violations.push({ key: 'treatmentId', value: treatmentId, reason: 'not-found' });
+    else if (!isFarmAllowed(farmId, allowed)) violations.push({ key: 'treatmentId', value: treatmentId, reason: 'out-of-scope' });
   }
 
   // 온톨로지 그래프 — anchorType에 따라 농장 또는 개체

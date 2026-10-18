@@ -17,24 +17,34 @@ const ANIMAL_FARM: Readonly<Record<string, string>> = {
 };
 const FARMS = new Set([FARM_A, FARM_B]);
 
-vi.mock('../../../config/database.js', () => ({
-  getDb: () => ({
-    select: (cols: Record<string, unknown>) => ({
-      from: () => ({
-        where: (cond: { __id?: string }) => ({
-          limit: () => {
-            const id = cond.__id ?? '';
-            // animals 조회인지 farms 조회인지는 select 컬럼으로 구분
-            const isAnimalLookup = 'farmId' in cols && ANIMAL_FARM[id] !== undefined;
-            if (isAnimalLookup) return Promise.resolve([{ farmId: ANIMAL_FARM[id] }]);
-            if (FARMS.has(id)) return Promise.resolve([{ farmId: id }]);
-            return Promise.resolve([]);
-          },
-        }),
+const TREATMENT_IN_B = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+
+vi.mock('../../../config/database.js', () => {
+  const whereFor = (cols: Record<string, unknown>, joined: boolean) => (cond: { __id?: string }) => ({
+    limit: () => {
+      const id = cond.__id ?? '';
+      // 치료 기록 → 개체 → 농장 조인 (confirm_treatment_outcome)
+      if (joined) return Promise.resolve(id === TREATMENT_IN_B ? [{ farmId: FARM_B }] : []);
+      const isAnimalLookup = 'farmId' in cols && ANIMAL_FARM[id] !== undefined;
+      if (isAnimalLookup) return Promise.resolve([{ farmId: ANIMAL_FARM[id] }]);
+      if (FARMS.has(id)) return Promise.resolve([{ farmId: id }]);
+      return Promise.resolve([]);
+    },
+  });
+  return {
+    getDb: () => ({
+      select: (cols: Record<string, unknown>) => ({
+        from: () => {
+          const joinable = {
+            innerJoin: () => ({ innerJoin: () => ({ where: whereFor(cols, true) }) }),
+            where: whereFor(cols, false),
+          };
+          return joinable;
+        },
       }),
     }),
-  }),
-}));
+  };
+});
 
 vi.mock('drizzle-orm', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('drizzle-orm');
@@ -147,5 +157,16 @@ describe('isFarmAllowed', () => {
   });
   it('목록에 없으면 거부', () => {
     expect(isFarmAllowed(FARM_B, [FARM_A])).toBe(false);
+  });
+});
+
+describe('findScopeViolations — 치료 기록 id', () => {
+  it('남의 목장 치료결과를 바꾸려는 treatmentId는 거부', async () => {
+    const v = await findScopeViolations({ treatmentId: TREATMENT_IN_B, outcome: 'recovered' }, [FARM_A]);
+    expect(v).toEqual([{ key: 'treatmentId', value: TREATMENT_IN_B, reason: 'out-of-scope' }]);
+  });
+  it('담당 목장 치료 기록은 통과', async () => {
+    const v = await findScopeViolations({ treatmentId: TREATMENT_IN_B }, [FARM_B]);
+    expect(v).toEqual([]);
   });
 });
