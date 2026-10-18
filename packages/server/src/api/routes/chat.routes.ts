@@ -60,6 +60,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
   try {
     const body = req.body as {
       question: string;
+      rawQuestion?: string;
       farmId?: string;
       animalId?: string;
       conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -71,6 +72,8 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
 
     const result = await handleChatMessage({
       question: sanitizeQuestion(body.question),
+      // 의도 판정용 사용자 원문 — 없으면 서버가 question으로 폴백
+      rawQuestion: body.rawQuestion ? sanitizeQuestion(body.rawQuestion) : undefined,
       role: req.user?.role as Role,
       farmId: body.farmId ?? null,
       animalId: body.animalId ?? null,
@@ -94,6 +97,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
 chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Request, res: Response) => {
   const body = req.body as {
     question: string;
+    rawQuestion?: string;
     farmId?: string;
     farmIds?: string[];
     animalId?: string;
@@ -121,6 +125,8 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
 
   const chatRequest = {
     question: sanitizeQuestion(body.question),
+    // 의도 판정용 사용자 원문 — 없으면 서버가 question으로 폴백
+    rawQuestion: body.rawQuestion ? sanitizeQuestion(body.rawQuestion) : undefined,
     role: req.user?.role as Role,
     farmId: body.farmId ?? null,
     farmIds: Array.isArray(body.farmIds) && body.farmIds.length > 0 ? body.farmIds : undefined,

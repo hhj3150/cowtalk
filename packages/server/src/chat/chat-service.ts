@@ -56,6 +56,12 @@ export interface ChatDocument {
 
 export interface ChatMessageRequest {
   readonly question: string;
+  /**
+   * 사용자 원문 (프런트가 조립한 헤더·개체 컨텍스트 제외).
+   * 의도 판정 — Extended Thinking·Skill 활성화·정정 감지 — 는 이 값으로 한다.
+   * 미제공 시 question으로 폴백 (구버전 클라이언트 호환).
+   */
+  readonly rawQuestion?: string;
   readonly role: Role;
   readonly farmId: string | null;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
@@ -290,8 +296,13 @@ export async function handleChatStream(
 ): Promise<void> {
   const { question, role, farmId, animalId, conversationHistory, dashboardContext, uiLang } = request;
 
+  // 의도 판정의 단일 기준 — 사용자가 실제로 말한 것.
+  // question은 프런트가 모드 헤더·개체 컨텍스트·범위 지시문을 덧붙인 조립 프롬프트라
+  // 그것으로 의도를 재면 "무엇을 물었나"가 아니라 "어느 화면에서 물었나"로 동작이 갈린다.
+  const userQuestion = request.rawQuestion?.trim() || question;
+
   // ── 보고서 인텐트 감지 — 파일 생성 후 다운로드 링크 반환 ──
-  const reportIntent = detectReportIntent(question);
+  const reportIntent = detectReportIntent(userQuestion);
   if (reportIntent.isReport) {
     try {
       const reportParams: Record<string, string | number | undefined> = {};
@@ -465,7 +476,7 @@ export async function handleChatStream(
   // 응답 후 학습 루프 — 직전 답변을 정정·반박하면 즉시 보정해 다시 답하도록 지시.
   const hasPriorAnswer = conversationHistory.some((m) => m.role === 'assistant');
   const isCorrection = hasPriorAnswer
-    && /(그건?\s*아니|그게\s*아니|아니야|아니에요|아닌데|틀렸|틀린|잘못|다시\s*봐|정정|오답|네\s*말이?\s*맞|wrong|not\s*right|incorrect)/i.test(question);
+    && /(그건?\s*아니|그게\s*아니|아니야|아니에요|아닌데|틀렸|틀린|잘못|다시\s*봐|정정|오답|네\s*말이?\s*맞|wrong|not\s*right|incorrect)/i.test(userQuestion);
   const correctionDirective = isCorrection
     ? '\n\n[정정 감지] 사용자가 직전 답변을 정정·반박했습니다. 변명하지 말고 무엇을 잘못 봤는지 한 줄로 인정한 뒤, 정정을 반영해 다시 정확히 답하세요. 같은 실수를 반복하지 마세요. 사용자가 수의사·방역관이고 진단·방역 판단을 정정했다면 그 판단을 정답으로 받아들이고 record_expert_label 기록을 한 줄로 제안하세요.'
     : '';
@@ -481,7 +492,7 @@ export async function handleChatStream(
     '6. **자연어 응답**: 사용자가 "몽골어로 답해줘", "answer in English" 같이 특정 언어로 답변을 요청하면 입력 언어와 무관하게 그 언어로만 응답하세요 (이전 턴에서 지정된 언어가 있으면 유지). 명시 요청이 없으면 사용자가 쓴 언어로 답변하세요 — 한국어면 한국어, 영어면 영어, 몽골어(키릴에 Өө/Үү 포함)면 몽골어, 우즈벡어면 우즈벡어, 러시아어면 러시아어. JSON 형식으로 응답하지 마세요.',
   );
   // Skills: 사용자 질문이 정형 워크플로 트리거에 매치되면 해당 SOP를 시스템 프롬프트에 추가
-  const activeSkill = detectSkill(question);
+  const activeSkill = detectSkill(userQuestion);
   if (activeSkill) {
     logger.info({ skillId: activeSkill.id, title: activeSkill.title }, '[Chat] Skill 활성화');
   }
@@ -515,9 +526,13 @@ export async function handleChatStream(
 
   // Extended Thinking — 감별진단·번식 추천·복잡 추론 케이스에 자동 활성화
   // 휴리스틱으로 5~10% 케이스만 (시연 안정성 우선)
-  const useDeepThinking = shouldUseDeepThinking(question);
+  // 판정 기준은 조립 프롬프트가 아니라 사용자 원문 (userQuestion) — 위 주석 참조.
+  const useDeepThinking = shouldUseDeepThinking(userQuestion);
   if (useDeepThinking) {
-    logger.info({ questionLen: question.length }, '[Chat] Extended Thinking 활성화');
+    logger.info(
+      { userQuestionLen: userQuestion.length, promptLen: question.length },
+      '[Chat] Extended Thinking 활성화',
+    );
   }
 
   // Tool Use 활성화 — 팅커벨이 필요할 때 DB를 직접 조회
