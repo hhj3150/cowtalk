@@ -21,6 +21,7 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   query_farm_summary: 'farm',
   query_breeding_stats: 'repro',
   query_sensor_data: 'sensor',
+  query_herd_sensor_overview: 'sensor',
   query_conception_stats: 'repro',
   query_traceability: 'public_data',
   query_grade: 'public_data',
@@ -49,7 +50,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   farmer: [
     'query_animal', 'query_animal_events', 'query_animal_graph', 'query_farm_summary',
     'record_milk_yield',
-    'query_breeding_stats', 'query_sensor_data', 'query_traceability',
+    'query_breeding_stats', 'query_sensor_data', 'query_herd_sensor_overview', 'query_traceability',
     'query_conception_stats', 'recommend_insemination_window', 'get_farm_kpis',
     'record_treatment', 'record_insemination', 'record_pregnancy_check',
     'query_grade', 'query_auction_prices', 'query_weather', 'query_sire_info',
@@ -59,7 +60,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   veterinarian: [
     'query_animal', 'query_animal_events', 'query_animal_graph', 'query_farm_summary',
     'record_milk_yield',
-    'query_breeding_stats', 'query_sensor_data', 'query_traceability',
+    'query_breeding_stats', 'query_sensor_data', 'query_herd_sensor_overview', 'query_traceability',
     'query_conception_stats', 'record_treatment', 'get_farm_kpis',
     'recommend_insemination_window', 'record_insemination', 'record_pregnancy_check',
     'query_grade', 'query_weather', 'query_sire_info',
@@ -69,13 +70,13 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
   ],
   government_admin: [
     'query_animal', 'query_animal_graph', 'query_farm_summary', 'query_breeding_stats',
-    'query_traceability', 'get_farm_kpis',
+    'query_traceability', 'get_farm_kpis', 'query_herd_sensor_overview',
     'query_grade', 'query_auction_prices',
     'query_quarantine_dashboard', 'query_national_situation',
   ],
   quarantine_officer: [
     'query_animal', 'query_animal_events', 'query_animal_graph', 'query_farm_summary',
-    'query_sensor_data', 'query_traceability', 'get_farm_kpis',
+    'query_sensor_data', 'query_herd_sensor_overview', 'query_traceability', 'get_farm_kpis',
     'query_weather',
     'query_quarantine_dashboard', 'query_national_situation',
     'record_expert_label',

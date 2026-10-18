@@ -12,6 +12,8 @@ export const REPORT_CONFIG = {
     FARM_DAILY: 'farm_daily',
     FARM_MONTHLY: 'farm_monthly',
     HERD_HEALTH: 'herd_health',
+    // 관리자·컨설턴트 상시 참고용 — 개요(평균 4단 비교)와 이상(이벤트·분포)을 한 문서에
+    HERD_OVERVIEW: 'herd_overview',
     ANIMAL_DETAIL: 'animal_detail',
     SENSOR_ALERT: 'sensor_alert',
     BREEDING: 'breeding',

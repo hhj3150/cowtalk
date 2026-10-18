@@ -20,6 +20,7 @@ import type {
 import { getBreedingFeedback } from '../services/breeding/breeding-advisor.service.js';
 import type { ClusterSignal } from '@cowtalk/shared';
 import { logger } from '../lib/logger.js';
+import { safeHerdSensorOverview } from '../services/metrics/herd-sensor-overview.service.js';
 
 // ===========================
 // buildAnimalProfile
@@ -209,6 +210,9 @@ export async function buildFarmProfile(farmId: string): Promise<FarmProfile | nu
     details: (r.details as Record<string, unknown>)?.message as string ?? r.eventType,
   }));
 
+  // 군 센서 개요 — 이상신호와 별개로 "전체 평균"을 항상 맥락에 싣는다 (실패 시 null, 비치명)
+  const herdSensorOverview = await safeHerdSensorOverview({ farmId });
+
   return {
     farmId: farm.farmId,
     name: farm.name,
@@ -225,6 +229,7 @@ export async function buildFarmProfile(farmId: string): Promise<FarmProfile | nu
     todayActions: [],
     eventTimeline,
     animalIdToEarTag,
+    herdSensorOverview,
   };
 }
 

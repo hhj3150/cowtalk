@@ -30,6 +30,19 @@ export interface GenerateContentOptions {
   readonly language?: string;
 }
 
+// 유형별 구조 가이드 — 관리자·컨설턴트가 상시 참고할 문서는 "개요 → 이상 → 조치" 순서가 고정돼야 한다.
+const REPORT_TYPE_GUIDES: Readonly<Partial<Record<ReportType, string>>> = {
+  herd_overview: `
+## 구조 지침 (herd_overview — 관리자·컨설턴트 상시 참고 보고서)
+1부 **개요**: dbData.overview.metrics 의 체온·활동·반추를 목장 평균 ↔ 품종 평균 ↔ 지역 평균 ↔ 전국 평균 4단으로 표로 비교하고,
+  차이(delta)와 추세(farmTrend)를 해석한다. dbData.overview.notes 의 커버리지·품종 참고범위 주석을 반드시 반영한다.
+  평균이 null 이면 "데이터 없음"으로 쓰고 추정치로 채우지 않는다.
+2부 **이상**: dbData.anomalies (체온 분포, 이벤트 유형별 건수, 알람 상위 개체, 긴급 이벤트)를 개요와 연결해 해석한다
+  — "평균은 정상인데 특정 개체가 튄다" 또는 "군 전체가 기준보다 낮다" 식으로 개요와 이상을 함께 읽는다.
+3부 **조치 제안**: 군 단위(사양·환경·기준 재설정)와 개체 단위(검사·격리·치료) 조치를 나눠 우선순위로 제시한다.
+pH·음수량은 별도 볼루스라 원시값이 없다 — 이벤트 알람만 근거로 쓰고 평균은 언급하지 않는다.`,
+};
+
 export async function generateReportContent(options: GenerateContentOptions): Promise<Record<string, unknown>> {
   const { reportType, outputFormat, userPrompt, dbData, language = 'ko' } = options;
 
@@ -50,10 +63,13 @@ ${getSchema(outputFormat)}`;
   // 비식별화: Claude API 전송 전 DB 데이터의 개체·농장 식별자를 해시 토큰으로 치환
   const safeDbData = deidentifyRecord(dbData);
 
+  const typeGuide = REPORT_TYPE_GUIDES[reportType] ?? '';
+
   const userMessage = `## 보고서 요청
 - 유형: ${reportType}
 - 포맷: ${outputFormat}
 - 사용자 요청: ${userPrompt}
+${typeGuide}
 
 ## 실제 DB 데이터 (개인정보 비식별화 처리됨)
 ${JSON.stringify(safeDbData, null, 2)}

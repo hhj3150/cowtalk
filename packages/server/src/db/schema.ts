@@ -202,6 +202,8 @@ export const sensorDailyAgg = pgTable('sensor_daily_agg', {
 }, (table) => [
   index('sensor_daily_agg_animal_id_idx').on(table.animalId),
   uniqueIndex('sensor_daily_agg_unique_idx').on(table.animalId, table.date, table.metricType),
+  // 군 개요(품종·지역·전국 기준 집계)는 metric_type+date 로 훑는다 — 마이그레이션 0038
+  index('sensor_daily_agg_metric_date_idx').on(table.metricType, table.date),
 ]);
 
 // ======================================================================

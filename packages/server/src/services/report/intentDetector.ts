@@ -27,6 +27,8 @@ interface TypeRule {
 }
 
 const TYPE_DETECT: readonly TypeRule[] = [
+  // 개요 보고서가 가장 먼저 — "군 건강 개요"처럼 다른 키워드와 겹쳐도 개요(평균+이상)로 간다.
+  { type: 'herd_overview', patterns: ['개요', '기초', '종합', '전체 현황', '전체현황', 'overview', '컨설팅', '군 상태', '목장 상태'] },
   { type: 'sensor_alert', patterns: ['알람', '알럼', 'alert', '센서'] },
   { type: 'herd_health', patterns: ['건강', '체온', '반추', 'health'] },
   { type: 'breeding', patterns: ['번식', '수정', '임검', '수태'] },

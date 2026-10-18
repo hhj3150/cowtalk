@@ -504,8 +504,19 @@ function mapRace(race: string | null): string {
     한우: 'hanwoo',
     Hanwoo: 'hanwoo',
     Brown_Swiss: 'brown_swiss',
+    // 물소(해외 목장 — 필리핀 물소센터 등). holstein으로 뭉개지면 품종 평균·기준치가 전부 어긋난다.
+    Buffalo: 'buffalo',
+    buffalo: 'buffalo',
+    Carabao: 'buffalo',
+    carabao: 'buffalo',
+    Murrah: 'buffalo',
+    murrah: 'buffalo',
+    물소: 'buffalo',
   };
-  return raceMap[race] ?? 'holstein';
+  if (raceMap[race]) return raceMap[race]!;
+  const lower = race.toLowerCase();
+  if (['buffalo', 'carabao', 'bubalus', 'murrah', '물소'].some((k) => lower.includes(k))) return 'buffalo';
+  return 'holstein';
 }
 
 function findFarmForAnimal(

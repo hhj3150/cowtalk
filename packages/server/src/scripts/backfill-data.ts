@@ -109,9 +109,10 @@ async function backfillSensorData(): Promise<number> {
 
   let totalStored = 0;
   const CONCURRENCY = 3;
-  // smaXtec API: temp, act만 지원 (rum/intake/cycle은 400 에러)
-  // 각 메트릭을 개별 호출해야 안정적
-  const availableMetrics = ['temp', 'act'];
+  // smaXtec Data API 실제 메트릭명: temp, act, rum_index(초, rolling 24h), water_intake(L/10min).
+  // 옛 주석의 "rum/intake 400" 은 잘못된 이름(rum, intake)을 써서 난 오류였다.
+  // 각 메트릭을 개별 호출해야 안정적 (복수 호출 시 하나라도 실패하면 전체 실패)
+  const availableMetrics = ['temp', 'act', 'rum_index', 'water_intake'];
 
   // 배치 처리
   for (let i = 0; i < targetAnimals.length; i += CONCURRENCY) {
@@ -137,10 +138,12 @@ async function backfillSensorData(): Promise<number> {
           if (rawData.length === 0) return 0;
 
           // 메트릭별 변환
+          // 파이프라인(collectSensorBatch)과 같은 이름·단위 규약
           const metricTypeMap: Readonly<Record<string, string>> = {
             temp: 'temperature',
             act: 'activity',
-            rum: 'rumination',
+            rum_index: 'rumination',
+            water_intake: 'water_intake',
           };
 
           const measurements: Array<{
@@ -159,7 +162,8 @@ async function backfillSensorData(): Promise<number> {
                 animalId: animal.animalId,
                 timestamp: new Date(tsStr),
                 metricType,
-                value,
+                // rum_index: smaXtec 초 단위 → DB 분/일 (파이프라인과 동일 변환)
+                value: item.metric === 'rum_index' ? Math.round(value / 60) : value,
                 qualityFlag: 'good',
               });
             }
