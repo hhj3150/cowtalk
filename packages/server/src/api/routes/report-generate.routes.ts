@@ -9,6 +9,9 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate } from '../middleware/auth.js';
+import { scopedFarmIds } from '../middleware/rbac.js';
+import { scopeReportParams } from '../../services/report/report-scope.js';
+import { dbReportScopeResolvers } from '../../services/report/report-scope.db.js';
 import { collectReportData } from '../../services/report/dataCollector.js';
 import { generateReportContent } from '../../services/report/aiContentGenerator.js';
 import { generateDocx } from '../../services/report/generators/docxGenerator.js';
@@ -69,11 +72,21 @@ reportGenerateRouter.post('/generate', async (req: Request, res: Response, next:
       return;
     }
 
+    // 0단계: 목장·개체·이력번호가 권한 범위 안인지 (식별자가 없으면 배정 목장으로 한정)
+    const scopedReport = await scopeReportParams(
+      params as Record<string, string | number | undefined>, scopedFarmIds(req), dbReportScopeResolvers,
+    );
+    if (!scopedReport.ok) {
+      const status = scopedReport.reason === 'not_found' ? 404 : scopedReport.reason === 'farm_required' ? 400 : 403;
+      res.status(status).json({ success: false, error: scopedReport.message });
+      return;
+    }
+
     // 1단계: DB에서 실제 데이터 수집
-    logger.info({ reportType, params }, '[Report] Collecting data');
+    logger.info({ reportType, params: scopedReport.params }, '[Report] Collecting data');
     let dbData: Record<string, unknown>;
     try {
-      dbData = await collectReportData(reportType, params as Record<string, string | number | undefined>);
+      dbData = await collectReportData(reportType, scopedReport.params);
     } catch (dbErr) {
       logger.warn({ err: dbErr }, '[Report] Data collection warning');
       dbData = { reportMeta: { type: reportType, error: '데이터 수집 일부 실패' } };
@@ -123,14 +136,15 @@ reportGenerateRouter.post('/generate', async (req: Request, res: Response, next:
  */
 reportGenerateRouter.get('/download/:fileId', (req: Request, res: Response) => {
   const fileId = req.params['fileId'] as string | undefined;
-  if (!fileId) {
-    res.status(400).json({ success: false, error: 'fileId가 필요합니다.' });
+  // 정확한 UUID만 받는다 — 접두어 매칭이라 'a' 한 글자로도 남의 보고서가 내려받아졌다
+  if (!fileId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
+    res.status(400).json({ success: false, error: 'fileId가 올바르지 않습니다.' });
     return;
   }
 
   let files: string[];
   try {
-    files = fs.readdirSync(REPORT_CONFIG.OUTPUT_DIR).filter((f) => f.startsWith(fileId));
+    files = fs.readdirSync(REPORT_CONFIG.OUTPUT_DIR).filter((f) => f.startsWith(`${fileId}_`));
   } catch {
     files = [];
   }

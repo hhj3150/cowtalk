@@ -27,6 +27,8 @@ import { buildMemoryContext } from './memory/memory.service.js';
 import { getActivePromptGuidances, formatPromptGuidances, type PromptGuidanceRow } from '../intelligence-loop/prompt-improver.service.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
+import { scopeReportParams } from '../services/report/report-scope.js';
+import { dbReportScopeResolvers } from '../services/report/report-scope.db.js';
 import { generateReportContent } from '../services/report/aiContentGenerator.js';
 import { generateDocx } from '../services/report/generators/docxGenerator.js';
 import { generateXlsx } from '../services/report/generators/xlsxGenerator.js';
@@ -123,7 +125,7 @@ export async function handleChatMessage(
   let detectedType: DetectedType = 'general';
   try {
     const resolved = await resolveContext(
-      question, farmId, animalId, role, dashboardContext,
+      question, farmId, animalId, role, dashboardContext, request.permittedFarmIds ?? null,
     );
     context = resolved.context;
     detectedType = resolved.detectedType;
@@ -300,15 +302,24 @@ export async function handleChatStream(
   const reportIntent = detectReportIntent(question);
   if (reportIntent.isReport) {
     try {
-      const reportParams: Record<string, string | number | undefined> = {};
-      if (reportIntent.traceNo) reportParams['traceNo'] = reportIntent.traceNo;
-      if (farmId) reportParams['farmId'] = farmId;
+      const requestedParams: Record<string, string | number | undefined> = {};
+      if (reportIntent.traceNo) requestedParams['traceNo'] = reportIntent.traceNo;
+      if (farmId) requestedParams['farmId'] = farmId;
+
+      // 이력번호·목장이 권한 범위 안인지 — 귀표 번호만으로 남의 소 보고서가 나오면 안 된다
+      const scopedReport = await scopeReportParams(
+        requestedParams, request.permittedFarmIds ?? null, dbReportScopeResolvers,
+      );
+      if (!scopedReport.ok) {
+        callbacks.onDone(`📄 보고서를 만들 수 없습니다 — ${scopedReport.message}`);
+        return;
+      }
 
       callbacks.onText('📄 보고서를 생성하고 있습니다...\n\n');
 
       const dbData = await collectReportData(
         reportIntent.reportType ?? 'custom',
-        reportParams,
+        scopedReport.params,
       );
 
       const reportContent = await generateReportContent({
@@ -373,7 +384,7 @@ export async function handleChatStream(
   const farmPulsePromise = !overviewPromise && farmId ? buildFarmPulseBlock(farmId) : null;
   try {
     const resolved = await resolveContext(
-      question, farmId, animalId, role, dashboardContext,
+      question, farmId, animalId, role, dashboardContext, request.permittedFarmIds ?? null,
     );
     context = resolved.context;
   } catch (err) {

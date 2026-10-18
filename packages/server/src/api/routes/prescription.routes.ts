@@ -7,7 +7,7 @@ import { requireRole } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { prescriptions, prescriptionItems, drugDatabase, users } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds } from '../middleware/animal-access.js';
 import { requirePrescriptionAccess } from '../middleware/resource-access.js';
 
 export const prescriptionRouter = Router();
@@ -35,6 +35,7 @@ prescriptionRouter.get('/drugs', async (_req: Request, res: Response, next: Next
 prescriptionRouter.post(
   '/',
   requireRole('veterinarian'),
+  requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal', required: true }, { source: 'body', field: 'farmId', kind: 'farm', required: true }]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const db = getDb();

@@ -10,6 +10,9 @@ import type { Role } from '@cowtalk/shared';
 import { handleChatMessage, handleChatStream, buildStreamFallback } from '../../chat/chat-service.js';
 import { isClaudeAvailable } from '../../ai-brain/claude-client.js';
 import { resolveContext } from '../../chat/context-builder.js';
+import { sanitizeChatScope } from '../../chat/chat-scope.js';
+import { getAnimalFarmId } from '../middleware/animal-access.js';
+import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { chatConversations } from '../../db/schema.js';
 import { and, eq, desc } from 'drizzle-orm';
@@ -69,12 +72,22 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       documents?: Array<{ data: string; mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv'; filename?: string }>;
     };
 
+    // 클라이언트의 farmId/animalId는 "요청"일 뿐 권한이 아니다 — 맥락 구성 전에 권한과 대조
+    const permitted = scopedFarmIds(req);
+    const scoped = await sanitizeChatScope(
+      { farmId: body.farmId ?? null, animalId: body.animalId ?? null }, permitted, getAnimalFarmId,
+    );
+    if (scoped.narrowed) {
+      logger.warn({ userId: req.user?.userId, requested: { farmId: body.farmId, animalId: body.animalId } }, '[chat] 권한 밖 스코프 요청 정화');
+    }
     const result = await handleChatMessage({
       question: sanitizeQuestion(body.question),
       role: req.user?.role as Role,
-      farmId: body.farmId ?? null,
-      animalId: body.animalId ?? null,
+      farmId: scoped.farmId,
+      animalId: scoped.animalId,
       userId: req.user?.userId,
+      assignedFarmIds: req.user?.farmIds,
+      isMaster: req.user?.isMaster,
       // 계정의 실제 권한 범위 — 장기기억 회상이 클라이언트가 보낸 farmId를 그대로 믿지 않게 한다
       permittedFarmIds: scopedFarmIds(req),
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
@@ -119,14 +132,33 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   const keepAlive = setInterval(() => { res.write(':\n\n'); }, 5000);
   req.on('close', () => { clearInterval(keepAlive); });
 
-  const chatRequest = {
-    question: sanitizeQuestion(body.question),
-    role: req.user?.role as Role,
+  // 클라이언트의 farmId/farmIds/animalId는 "요청"일 뿐 권한이 아니다.
+  // 맥락(개체·농장 프로필, 농장 펄스, 보고서 데이터)을 만들기 전에 권한과 대조한다.
+  // 대조 자체가 실패하면(DB 오류) 제한 사용자는 아무 스코프도 넘기지 않는다 — 실패 시 닫힘.
+  const permitted = scopedFarmIds(req);
+  const requestedScope = {
     farmId: body.farmId ?? null,
     farmIds: Array.isArray(body.farmIds) && body.farmIds.length > 0 ? body.farmIds : undefined,
     animalId: body.animalId ?? null,
+  };
+  const scoped = await sanitizeChatScope(requestedScope, permitted, getAnimalFarmId).catch((err: unknown) => {
+    logger.error({ err }, '[chat] 스코프 대조 실패 — 제한 사용자는 스코프 없이 진행');
+    return permitted === null
+      ? { ...requestedScope, narrowed: false }
+      : { farmId: null, farmIds: undefined, animalId: null, narrowed: true };
+  });
+  if (scoped.narrowed) {
+    logger.warn({ userId: req.user?.userId, requested: requestedScope }, '[chat] 권한 밖 스코프 요청 정화');
+  }
+
+  const chatRequest = {
+    question: sanitizeQuestion(body.question),
+    role: req.user?.role as Role,
+    farmId: scoped.farmId,
+    farmIds: scoped.farmIds,
+    animalId: scoped.animalId,
     userId: req.user?.userId,
-    permittedFarmIds: scopedFarmIds(req),
+    permittedFarmIds: permitted,
     // 권한은 JWT에서만 온다. body.farmId는 "요청"일 뿐 권한이 아니다 —
     // 예전에는 이 구분이 없어 남의 farmId를 넣으면 그 농장 데이터가 나왔다.
     assignedFarmIds: req.user?.farmIds,
@@ -145,6 +177,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
       try {
         const { context } = await resolveContext(
           chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
+          chatRequest.permittedFarmIds,
         );
         fallbackText = buildStreamFallback(chatRequest.question, chatRequest.role, context);
       } catch {

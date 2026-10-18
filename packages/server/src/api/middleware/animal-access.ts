@@ -18,7 +18,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
-import { animals } from '../../db/schema.js';
+import { animals, smaxtecEvents, eventLabels } from '../../db/schema.js';
 import { ForbiddenError, NotFoundError, UnauthorizedError } from '../../lib/errors.js';
 import { scopedFarmIds, NO_FARM_SENTINEL } from './rbac.js';
 
@@ -186,6 +186,104 @@ export function requireResourceAccess(options: ResourceAccessOptions) {
         throw new ForbiddenError(`다른 목장의 ${label}입니다 — 접근 권한이 없습니다`);
       }
 
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// ── 본문·쿼리로 들어오는 식별자 ──
+//
+// requireAnimalAccess/requireResourceAccess는 URL 경로 값만 본다.
+// 그런데 레이블·관찰·처방 생성처럼 개체·농장·이벤트 id를 **본문(body)이나 쿼리**로 받는 경로가 있다.
+// 예: POST /label-chat/label { animalId, farmId } — 남의 animalId에 내 farmId를 붙이면 통과하던 구조.
+// 들어온 식별자 **각각을** 실제 소속 농장으로 해석해 스코프와 대조한다. 하나라도 밖이면 거부.
+
+export type ScopedIdKind = 'animal' | 'farm' | 'event' | 'label';
+
+export interface ScopedIdSpec {
+  readonly source: 'params' | 'body' | 'query';
+  readonly field: string;
+  readonly kind: ScopedIdKind;
+  /** 값이 없을 때 거부할지 (기본 false — 없으면 그 항목만 건너뛴다) */
+  readonly required?: boolean;
+}
+
+async function resolveEventFarmId(eventId: string): Promise<string | null> {
+  const rows = await getDb()
+    .select({ farmId: smaxtecEvents.farmId })
+    .from(smaxtecEvents)
+    .where(eq(smaxtecEvents.eventId, eventId))
+    .limit(1);
+  return rows[0]?.farmId ?? null;
+}
+
+async function resolveLabelFarmId(labelId: string): Promise<string | null> {
+  const rows = await getDb()
+    .select({ farmId: eventLabels.farmId })
+    .from(eventLabels)
+    .where(eq(eventLabels.labelId, labelId))
+    .limit(1);
+  return rows[0]?.farmId ?? null;
+}
+
+const KIND_LABEL: Readonly<Record<ScopedIdKind, string>> = {
+  animal: '개체', farm: '목장', event: '이벤트', label: '레이블',
+};
+
+/** 식별자 → 소속 농장. 농장 id는 그 자체가 소속이다 (존재 여부는 핸들러가 판단). */
+export async function resolveScopedFarmId(kind: ScopedIdKind, id: string): Promise<string | null> {
+  switch (kind) {
+    case 'animal': return getAnimalFarmId(id);
+    case 'farm': return id;
+    case 'event': return resolveEventFarmId(id);
+    case 'label': return resolveLabelFarmId(id);
+  }
+}
+
+function readField(req: Request, spec: ScopedIdSpec): string {
+  const bag: unknown =
+    spec.source === 'params' ? req.params
+    : spec.source === 'query' ? req.query
+    : req.body;
+  if (!bag || typeof bag !== 'object') return '';
+  const raw: unknown = (bag as Record<string, unknown>)[spec.field];
+  return typeof raw === 'string' ? raw : '';
+}
+
+/**
+ * 요청에 담긴 식별자들이 모두 사용자 스코프 안인지 강제한다.
+ * 판정 규칙은 requireAnimalAccess와 같다 — 배정 우선, 마스터/미배정 관리역할은 전체.
+ * 성공 시 개체가 있으면 `req.animalFarmId`를 채운다.
+ */
+export function requireScopedIds(specs: readonly ScopedIdSpec[]) {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const scope = scopedFarmIds(req);
+
+      for (const spec of specs) {
+        const id = readField(req, spec);
+        const label = KIND_LABEL[spec.kind];
+        if (!id) {
+          if (spec.required) throw new NotFoundError(`${label} ID가 필요합니다`);
+          continue;
+        }
+        if (!UUID_RE.test(id)) throw new NotFoundError(`${label}을(를) 찾을 수 없습니다`);
+
+        const farmId = await resolveScopedFarmId(spec.kind, id);
+        if (!farmId) throw new NotFoundError(`${label}을(를) 찾을 수 없습니다`);
+        if (spec.kind === 'animal') req.animalFarmId = farmId;
+
+        if (scope === null) continue;
+        if (scope.length === 1 && scope[0] === NO_FARM_SENTINEL) {
+          throw new ForbiddenError('배정된 목장이 없습니다 — 관리자에게 목장 배정을 요청하세요');
+        }
+        if (!scope.includes(farmId)) {
+          throw new ForbiddenError(`다른 목장의 ${label}입니다 — 접근 권한이 없습니다`);
+        }
+      }
       next();
     } catch (err) {
       next(err);
