@@ -1,0 +1,608 @@
+<title>축산 디지털 전환 설명자료</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Gowun+Batang:wght@400;700&display=swap">
+
+<style>
+:root{
+  --paper:#FFFFFF; --ground:#EEF2F3; --panel:#F5F8F9; --panel2:#E9F1F1;
+  --ink:#0B2239; --ink2:#243B53; --muted:#566976; --faint:#8A9BA5;
+  --line:#D5DFE3; --line2:#B4C4CC;
+  --teal:#0E7C7B; --teal-d:#08514F; --amber:#A85F0E; --amber-bg:#FAF0E1;
+  --ok:#2C6E49; --ok-bg:#E8F1EB; --warn:#A85F0E; --no:#9C2F2C; --no-bg:#F8E9E8;
+  --sans:"IBM Plex Sans KR",-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --serif:"Gowun Batang",Batang,serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0C1922; --ground:#060E13; --panel:#112430; --panel2:#16303B;
+  --ink:#E5EFF2; --ink2:#C2D5DD; --muted:#93A7B1; --faint:#6B818C;
+  --line:#203945; --line2:#2F4E5B;
+  --teal:#31BFB5; --teal-d:#7FDCD3; --amber:#DE9F52; --amber-bg:#2A2013;
+  --ok:#5DBB88; --ok-bg:#142719; --warn:#DE9F52; --no:#EC7C77; --no-bg:#2C1514;
+}}
+:root[data-theme="dark"]{
+  --paper:#0C1922; --ground:#060E13; --panel:#112430; --panel2:#16303B;
+  --ink:#E5EFF2; --ink2:#C2D5DD; --muted:#93A7B1; --faint:#6B818C;
+  --line:#203945; --line2:#2F4E5B;
+  --teal:#31BFB5; --teal-d:#7FDCD3; --amber:#DE9F52; --amber-bg:#2A2013;
+  --ok:#5DBB88; --ok-bg:#142719; --warn:#DE9F52; --no:#EC7C77; --no-bg:#2C1514;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:15.5px;line-height:1.72;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p,ul,ol{margin:0}
+ul,ol{padding-left:0;list-style:none}
+a{color:var(--teal)}
+
+.wrap{display:grid;grid-template-columns:238px minmax(0,1fr);max-width:1180px;margin:0 auto;
+  background:var(--paper);box-shadow:0 0 0 1px var(--line)}
+nav{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line);
+  padding:34px 22px 40px;background:var(--panel)}
+nav .brand{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);font-weight:500}
+nav .doc{font-size:16px;font-weight:600;margin-top:8px;line-height:1.35;letter-spacing:-.01em}
+nav .meta{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.55}
+nav hr{border:0;height:1px;background:var(--line);margin:20px 0 14px}
+nav ol{display:flex;flex-direction:column;gap:2px;counter-reset:s}
+nav a{display:block;font-size:13px;color:var(--ink2);text-decoration:none;padding:6px 8px;border-radius:4px;line-height:1.4}
+nav a:hover{background:var(--panel2);color:var(--ink)}
+nav a::before{counter-increment:s;content:counter(s,decimal-leading-zero) " ";font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-right:6px}
+nav a:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+
+main{padding:44px clamp(22px,4vw,64px) 90px;min-width:0}
+header.top{padding-bottom:30px;border-bottom:3px solid var(--teal)}
+.kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--teal);font-weight:500}
+h1{font-size:clamp(28px,4.4vw,40px);font-weight:700;letter-spacing:-.028em;line-height:1.2;margin-top:12px;text-wrap:balance}
+.dek{font-size:17px;color:var(--muted);margin-top:16px;line-height:1.66;max-width:44em}
+.tags{margin-top:22px;display:flex;flex-wrap:wrap;gap:8px}
+.tag{font-size:12.5px;color:var(--ink2);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:5px 12px}
+
+section{padding-top:46px;scroll-margin-top:20px}
+.sn{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--teal);font-weight:500}
+h2{font-size:clamp(21px,3vw,27px);font-weight:700;letter-spacing:-.02em;line-height:1.32;margin-top:8px;text-wrap:balance}
+.lead{font-size:16.5px;color:var(--muted);margin-top:12px;line-height:1.68;max-width:46em}
+h3{font-size:17.5px;font-weight:600;margin-top:28px;letter-spacing:-.01em}
+p{margin-top:13px;max-width:48em}
+p strong,li strong,td strong{font-weight:600;color:var(--ink)}
+
+table{width:100%;border-collapse:collapse;margin-top:18px;font-size:14.5px}
+th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--teal);font-weight:500;padding:0 12px 9px 0;border-bottom:1.5px solid var(--line2);vertical-align:bottom}
+td{padding:12px 12px 12px 0;border-bottom:1px solid var(--line);color:var(--ink2);vertical-align:top;line-height:1.6}
+td:last-child,th:last-child{padding-right:0}
+tr:last-child td{border-bottom:0}
+tr.sum td{border-top:1.5px solid var(--line2);border-bottom:0;font-weight:600;color:var(--ink);background:var(--panel)}
+.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl-scroll{overflow-x:auto}
+
+.grade{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;
+  width:19px;height:19px;line-height:19px;text-align:center;border-radius:3px}
+.gA{background:var(--ok-bg);color:var(--ok)} .gB{background:var(--amber-bg);color:var(--amber)}
+.gC{background:var(--no-bg);color:var(--no)}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:13px;margin-top:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:18px 20px}
+.card.hi{background:var(--panel2);border-color:var(--line2)}
+.card .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:500}
+.card h4{font-size:16px;font-weight:600;margin-top:9px;line-height:1.38}
+.card p{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.6;max-width:none}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px;margin-top:22px}
+.stat{border-top:2px solid var(--teal);padding-top:12px}
+.stat.am{border-color:var(--amber)}
+.stat .v{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat.am .v{color:var(--amber)}
+.stat .l{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.45}
+
+.note{margin-top:20px;border-left:3px solid var(--teal);background:var(--panel);padding:16px 20px;border-radius:0 4px 4px 0}
+.note.warn{border-left-color:var(--amber);background:var(--amber-bg)}
+.note p{margin-top:0}
+.note p + p{margin-top:9px}
+.note .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:500;display:block;margin-bottom:6px}
+.note.warn .lbl{color:var(--amber)}
+
+.quote{font-family:var(--serif);font-size:20px;line-height:1.58;color:var(--ink);
+  border-left:3px solid var(--amber);padding-left:22px;margin-top:24px;max-width:34em}
+
+.bul{margin-top:16px;display:flex;flex-direction:column;gap:9px}
+.bul li{font-size:15.5px;line-height:1.66;color:var(--ink2);padding-left:19px;position:relative;max-width:48em}
+.bul li::before{content:"";position:absolute;left:0;top:.68em;width:6px;height:6px;border-radius:50%;background:var(--teal)}
+
+.flow{display:flex;gap:9px;margin-top:20px;flex-wrap:wrap}
+.fstep{flex:1 1 150px;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:15px 16px}
+.fstep .fn{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--teal)}
+.fstep b{display:block;font-size:15px;margin-top:6px;font-weight:600}
+.fstep span{display:block;font-size:13.5px;color:var(--muted);margin-top:5px;line-height:1.55}
+
+.tl{margin-top:20px}
+.tl-row{display:grid;grid-template-columns:132px 1fr;gap:20px;padding:18px 0;border-bottom:1px solid var(--line)}
+.tl-row:last-child{border-bottom:0}
+.tl-when{font-family:var(--mono);font-size:12.5px;color:var(--teal);letter-spacing:.05em;padding-top:2px}
+.tl-row h4{font-size:16.5px;font-weight:600}
+.tl-row p{font-size:14.8px;color:var(--muted);margin-top:6px;max-width:none}
+
+.qa{border-bottom:1px solid var(--line);padding:17px 0}
+.qa:last-child{border-bottom:0}
+.qa .q{font-size:16px;font-weight:600}
+.qa .a{margin-top:7px;font-size:15px;color:var(--ink2);line-height:1.68;max-width:48em}
+
+.foot{margin-top:56px;padding-top:24px;border-top:1px solid var(--line);font-size:13.5px;color:var(--muted);line-height:1.72}
+.foot b{color:var(--ink);font-weight:600}
+
+@media (max-width:880px){
+  .wrap{grid-template-columns:1fr}
+  nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:22px}
+  nav ol{flex-direction:row;flex-wrap:wrap}
+}
+@media print{
+  body{background:#fff;font-size:10.5pt}
+  .wrap{grid-template-columns:1fr;box-shadow:none;max-width:none}
+  nav{display:none}
+  main{padding:0}
+  section{page-break-inside:avoid;padding-top:24px}
+  .card,.qa,.tl-row,table{page-break-inside:avoid}
+  @page{size:A4;margin:15mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+<nav>
+  <div class="brand">CowTalk</div>
+  <div class="doc">축산 디지털 전환<br>설명자료</div>
+  <div class="meta">지자체 · 중앙정부 · 방역기관<br>정책결정권자 및 실무자용</div>
+  <hr>
+  <ol>
+    <li><a href="#s1">왜 지금인가</a></li>
+    <li><a href="#s2">무엇을 하는가</a></li>
+    <li><a href="#s3">지금 되는 것 / 안 되는 것</a></li>
+    <li><a href="#s4">성과 ① 농가 소득</a></li>
+    <li><a href="#s5">성과 ② 방역</a></li>
+    <li><a href="#s6">성과 ③ 탄소 · 환경</a></li>
+    <li><a href="#s7">성과 ④ 수의 인력</a></li>
+    <li><a href="#s8">예산과 근거</a></li>
+    <li><a href="#s9">데이터 주권</a></li>
+    <li><a href="#s10">시범사업 설계</a></li>
+    <li><a href="#s11">미래상 — 어디로 가는가</a></li>
+    <li><a href="#s12">요청사항</a></li>
+    <li><a href="#s13">예상 질문</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="top">
+  <div class="kicker">정책결정권자 설명자료</div>
+  <h1>보이지 않는 것은<br>관리할 수 없습니다</h1>
+  <p class="dek">2026년 1월, 미국산 쇠고기 관세가 0%가 됐습니다. 같은 해 낙농은 생산비가 원유가를 넘어
+  역마진에 들어갔고, 축산은 2030년까지 온실가스 30% 감축 목표를 받았습니다.
+  <strong>가격으로 경쟁할 수 없게 된 산업에 남은 길은 증명·효율·환경 세 가지뿐이고, 셋 다 데이터가 전제입니다.</strong></p>
+  <div class="tags">
+    <span class="tag">읽는 데 20분</span>
+    <span class="tag">모든 수치에 근거 등급 표기</span>
+    <span class="tag"><span class="grade gA">A</span> 공표통계 · <span class="grade gB">B</span> 문헌하한 · <span class="grade gC">C</span> 가정</span>
+  </div>
+</header>
+
+<section id="s1">
+  <div class="sn">01</div>
+  <h2>왜 지금인가 — 네 가지 사실</h2>
+  <p class="lead">전부 공표된 통계입니다. 해석이 아니라 사실부터 놓고 시작합니다.</p>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th style="width:26px"></th><th>사실</th><th class="num">등급</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1</strong></td><td><strong>관세 장벽이 사라졌습니다.</strong> 2026년 1월 1일 미국산 쇠고기 관세 <strong>0%</strong>(FTA 이전 37.3%). 우유 포함 45개 품목 동시 무관세. 호주 2028년, 뉴질랜드 2029년.</td><td class="num"><span class="grade gA">A</span></td></tr>
+      <tr><td><strong>2</strong></td><td><strong>낙농이 역마진에 들어갔습니다.</strong> 생산비 <strong>1,252원/L</strong> &gt; 음용유 원유가 <strong>1,249원/L</strong>. 원유가는 3년 연속 동결. 1인당 흰우유 소비 <strong>22.9kg</strong>(40년 만 최저), 멸균우유 수입 8년 새 40배.</td><td class="num"><span class="grade gA">A</span></td></tr>
+      <tr><td><strong>3</strong></td><td><strong>지킬 사람이 없습니다.</strong> 농장동물 임상수의사 <strong>897명</strong>(전체 임상수의사의 11.2%). 한우 농가 1년 새 <strong>3,689호</strong> 감소. 농가인구 65세 이상 <strong>56.6%</strong>.</td><td class="num"><span class="grade gA">A</span></td></tr>
+      <tr><td><strong>4</strong></td><td><strong>감축 수단이 없는데 감축해야 합니다.</strong> 2030 NDC — 국가 40%, 농축수산 25.9%, <strong>축산 30%</strong>. 그러나 축산의 배출은 생물의 대사입니다.</td><td class="num"><span class="grade gA">A</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note">
+    <span class="lbl">공통 뿌리</span>
+    <p>네 가지 모두 <strong>보이지 않아서</strong> 생기는 문제입니다.
+    소가 아픈 것도, 번식이 밀리는 것도, 배출이 얼마인지도 지금은 측정되지 않습니다.
+    <strong>측정되지 않는 것은 개선할 수도, 증명할 수도 없습니다.</strong></p>
+  </div>
+
+  <div class="quote">가격으로 경쟁할 수 없게 된 산업에<br>남은 자리는 증명 · 효율 · 환경 셋뿐이고,<br>셋 다 데이터가 전제입니다.</div>
+</section>
+
+<section id="s2">
+  <div class="sn">02</div>
+  <h2>무엇을 하는가 — 알람과 행동 사이에 다리를 놓습니다</h2>
+  <p class="lead">위내센서는 이미 세계적으로 검증된 기술입니다. 문제는 <strong>알람 다음이 비어 있다</strong>는 것입니다.
+  "발정입니다"라는 알림 뒤에 언제 수정하고 어떤 정액을 쓰고 그 소의 치료 이력은 괜찮은지는 아무도 알려주지 않습니다.</p>
+
+  <div class="flow">
+    <div class="fstep"><div class="fn">01 감지</div><b>몸속 신호</b><span>체온·활동량·음수를 10분 단위로</span></div>
+    <div class="fstep"><div class="fn">02 결합</div><b>맥락 붙이기</b><span>이력제·혈통·등급·시세·기상</span></div>
+    <div class="fstep"><div class="fn">03 해석</div><b>AI 판단</b><span>근거와 함께 무엇이 의심되는지</span></div>
+    <div class="fstep"><div class="fn">04 배분</div><b>역할별 행동</b><span>농가·수의사·방역관·행정</span></div>
+    <div class="fstep"><div class="fn">05 학습</div><b>결과 피드백</b><span>다음 판단이 정확해짐</span></div>
+  </div>
+
+  <h3>같은 데이터를 네 역할이 각자의 관점으로</h3>
+  <div class="cards">
+    <div class="card"><div class="k">농장주</div><h4>내 소 한 마리</h4><p>오늘 할 일 · 발정 · 분만 · 두당 마진</p></div>
+    <div class="card"><div class="k">수의사</div><h4>담당 목장 여러 개</h4><p>위험 개체 우선순위 · 감별 근거 · 왕진 동선 · 처방과 휴약</p></div>
+    <div class="card"><div class="k">방역관</div><h4>지역 전체</h4><p>집단 이상 · 접촉망 · 확산 시뮬레이션 · 역학조사</p></div>
+    <div class="card"><div class="k">행정</div><h4>시도 · 전국</h4><p>현황 · 정책 브리핑 · 예산 근거 · 성과 지표</p></div>
+  </div>
+
+  <div class="note">
+    <span class="lbl">권한</span>
+    <p>네 역할의 접근 권한은 <strong>서버 게이트웨이에서 강제</strong>됩니다.
+    화면에서 숨기는 것이 아니라 <strong>권한 밖 데이터는 조회 자체가 거부</strong>되고, 모든 조회는 감사 로그에 남습니다.</p>
+  </div>
+</section>
+
+<section id="s3">
+  <div class="sn">03</div>
+  <h2>지금 되는 것과 아직 안 되는 것</h2>
+  <p class="lead">주장이 아니라 코드 감사 결과입니다. 마케팅 문구와 실제 코드를 대조한 기록이 있습니다.</p>
+
+  <h3>현재 작동 — 시연 가능</h3>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>영역</th><th>기능</th></tr></thead>
+    <tbody>
+      <tr><td><strong>방역 · 역학</strong></td><td>전국 → 시도 → 농장 → 개체 드릴다운 · <strong>SEIR 미분방정식 기반 확산 시뮬레이션</strong> · 접촉망 추적 · 역학조사 기록 · KAHIS 보고 워크플로</td></tr>
+      <tr><td><strong>조기감지</strong></td><td>질병징후지수(DSI) 0~100, 70 이상 자동 경보</td></tr>
+      <tr><td><strong>번식</strong></td><td>6단계 파이프라인 · 수정적기 추천 · 발정동기화 4종 프로토콜 자동 일정 · 정액 추천</td></tr>
+      <tr><td><strong>수의 임상</strong></td><td>감별진단 확률·근거·확인검사 트리 · 처방전 · <strong>휴약기간 자동 계산</strong> · 치료결과 자동 추적</td></tr>
+      <tr><td><strong>공공데이터</strong></td><td>이력제(EKAPE) 실연동 · 등급판정 · 경락가격</td></tr>
+      <tr><td><strong>행정</strong></td><td>4역할 권한체계 · 데이터 내보내기 · 월간 리포트 · 자동화 룰 · 감사 로그</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>아직 안 되는 것 — 로드맵</h3>
+  <div class="cards">
+    <div class="card"><div class="k">로드맵 1</div><h4>젖소 혈통 · 검정 정밀 연동</h4><p>현재는 내부·등급 데이터 기반이고 <strong>신뢰도를 화면에 표시</strong>합니다. 기술이 아니라 <strong>데이터 거버넌스 과제</strong>입니다.</p></div>
+    <div class="card"><div class="k">로드맵 2</div><h4>역학조사 기상 실연동</h4><p>일부 구간에 추정값이 섞여 있습니다. 실 기상 API 연동과 주간 추이 적재가 남았습니다.</p></div>
+    <div class="card"><div class="k">로드맵 3</div><h4>오프라인 내성 · 해외 데이터</h4><p>통신 불안정 지역용 큐잉과 해외 종모우 연동은 수출 단계 과제입니다.</p></div>
+  </div>
+
+  <div class="note warn">
+    <span class="lbl">원칙</span>
+    <p>이 항목을 먼저 말씀드리는 이유는 <strong>시범사업에서 드러나면 그때는 회복이 불가능</strong>하기 때문입니다.
+    "다 됩니다"보다 "이건 됐고 이건 로드맵입니다"가 정확합니다.</p>
+  </div>
+</section>
+
+<section id="s4">
+  <div class="sn">04</div>
+  <h2>성과 ① 농가 소득 — 두당 연 8만~20만원</h2>
+  <p class="lead">단가는 제품이 매일 경제 계산에 실제로 쓰는 파라미터이고, 효과 계수는 문헌 범위의 <strong>하한</strong>을 채택했습니다.</p>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>항목</th><th>산식</th><th class="num">보수</th><th class="num">기준</th><th class="num">등급</th></tr></thead>
+    <tbody>
+      <tr><td>유방염 조기발견</td><td>0.25건/두/년 × 30% 절감 × 300,000원</td><td class="num">22,500</td><td class="num">22,500</td><td class="num"><span class="grade gB">B</span></td></tr>
+      <tr><td>케토시스 조기발견</td><td>0.15건/두/년 × 30% 절감 × 200,000원</td><td class="num">9,000</td><td class="num">9,000</td><td class="num"><span class="grade gB">B</span></td></tr>
+      <tr><td>공태일 단축</td><td>문헌 5~15일 중 하한/중간값 × 8,000원</td><td class="num">40,000</td><td class="num">80,000</td><td class="num"><span class="grade gB">B</span></td></tr>
+      <tr><td>폐사 감소</td><td>0.3%p × 3,000,000원</td><td class="num">9,000</td><td class="num">9,000</td><td class="num"><span class="grade gB">B</span></td></tr>
+      <tr><td>산유량 향상 · 노동 절감</td><td>+50L × 1,084원 · 2.5시간 × 12,000원</td><td class="num">—</td><td class="num">84,200</td><td class="num"><span class="grade gC">C</span></td></tr>
+      <tr class="sum"><td>두당 / 년</td><td></td><td class="num">80,500</td><td class="num">204,700</td><td class="num"></td></tr>
+    </tbody>
+  </table></div>
+
+  <p>원유 기본가격 <strong>1,084원/L</strong>은 낙농진흥회 고시값이며 제품 기본값과 일치합니다(<span class="grade gA">A</span>).</p>
+</section>
+
+<section id="s5">
+  <div class="sn">05</div>
+  <h2>성과 ② 방역 — "막습니다"가 아니라 "빨라집니다"</h2>
+  <p class="lead">국가 방역은 <strong>신고된 것</strong>에서 시작합니다. 그 이전 며칠이 비어 있고, 그 며칠이 확산 규모를 결정합니다.</p>
+
+  <div class="flow">
+    <div class="fstep" style="border-color:var(--no)"><div class="fn" style="color:var(--no)">공백</div><b>생체 이상</b><span>센서는 알지만 아무도 보지 않음</span></div>
+    <div class="fstep" style="border-color:var(--no)"><div class="fn" style="color:var(--no)">공백</div><b>임상 증상</b><span>눈으로 확인</span></div>
+    <div class="fstep"><div class="fn">기존 시작점</div><b>신고</b><span>국가 시스템 작동 시작</span></div>
+    <div class="fstep"><div class="fn">기존</div><b>확인 · 검사</b><span>행정 절차</span></div>
+    <div class="fstep"><div class="fn">기존</div><b>대응</b><span>이동제한 · 살처분</span></div>
+  </div>
+
+  <div class="note">
+    <span class="lbl">포지셔닝</span>
+    <p>CowTalk은 <strong>KAHIS를 대체하지 않습니다.</strong> 앞의 두 칸을 채워서 넘깁니다 —
+    <strong>조기감시 레이어</strong>입니다.</p>
+  </div>
+
+  <h3>실제 피해 규모 (2019~2024 살처분 보상금)</h3>
+  <div class="stats">
+    <div class="stat"><div class="v">271억</div><div class="l">럼피스킨 1회 (소 6,455두 · 107호)</div></div>
+    <div class="stat"><div class="v">188억</div><div class="l">구제역 (소 3,782두 · 40호)</div></div>
+    <div class="stat am"><div class="v">5,289억</div><div class="l">4개 질병 합계 (AI · ASF 포함)</div></div>
+    <div class="stat"><div class="v">12~136h</div><div class="l">위내 발열이 임상 증상보다 앞선 시간 (문헌)</div></div>
+  </div>
+
+  <p>살처분 보상금은 <strong>직접비용일 뿐</strong>입니다. 이동제한에 따른 생산 손실, 소비 위축,
+  방역 인력·자재, 재입식 지연이 여기에 더해집니다.</p>
+</section>
+
+<section id="s6">
+  <div class="sn">06</div>
+  <h2>성과 ③ 탄소 · 환경 — 농가에 비용을 지우지 않는 감축</h2>
+  <p class="lead">축산 온실가스를 줄이는 길은 둘뿐입니다. <strong>한 마리가 덜 배출하게 하거나, 마리 수를 줄이거나.</strong>
+  지금까지 정책은 대부분 전자였고, 그건 농가에 비용을 지웁니다.</p>
+
+  <div class="note">
+    <span class="lbl">기전</span>
+    <p>번식효율이 오르고 생애수명이 늘면 <strong>대체 후보축(육성우) 수요가 줄어듭니다.</strong>
+    육성우는 2년간 생산 없이 먹고 배출합니다. 그 두수가 줄면 사료·분뇨·메탄이 동시에 줄고,
+    <strong>우유 총생산량은 유지</strong>됩니다.</p>
+    <p><strong>환경 성과를 위해 새로 할 일이 없습니다. 번식·건강을 잘하면 환경이 따라옵니다.</strong></p>
+  </div>
+
+  <h3>경기 젖소 10만두 보급 기준</h3>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>육성우 감축</th><th class="num">탄소 저감</th><th class="num">2030 감축목표 대비</th><th class="num">분뇨 감소</th><th class="num">사료비 절감</th></tr></thead>
+    <tbody>
+      <tr><td>15% · 6,630두 (보수)</td><td class="num">2.0만톤</td><td class="num"><strong>약 11%</strong></td><td class="num">5.3만톤</td><td class="num">79.6억</td></tr>
+      <tr><td>30% · 13,270두 (기준)</td><td class="num">4.0만톤</td><td class="num"><strong>약 21%</strong></td><td class="num">10.6만톤</td><td class="num">159.2억</td></tr>
+      <tr><td>45% · 19,900두 (적극)</td><td class="num">6.0만톤</td><td class="num"><strong>약 32%</strong></td><td class="num">15.9만톤</td><td class="num">238.8억</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note warn">
+    <span class="lbl">지자체에는 탄소보다 이것이 급합니다</span>
+    <p>전국 가축분뇨 <strong>5,073만톤</strong> 중 <strong>87%가 퇴비·액비로 농경지에 살포</strong>되고,
+    과거 조사에서 <strong>악취 민원의 52%가 토양 살포</strong>에서 발생했습니다.
+    <strong>분뇨 총량이 줄면 민원의 원인 물질 자체가 줍니다.</strong></p>
+  </div>
+
+  <p>육성우 감축률(<span class="grade gC">C</span>)이 이 계산의 최대 변수이며, <strong>시범사업의 1번 측정 항목</strong>입니다.
+  탄소 가치는 시장가(1만원/톤)와 사회적 비용(10만원/톤)이 10배 차이가 나므로 <strong>반드시 함께 표기</strong>했습니다.</p>
+</section>
+
+<section id="s7">
+  <div class="sn">07</div>
+  <h2>성과 ④ 수의 인력 — 한 사람이 두 배를 보게 합니다</h2>
+  <p class="lead">농장동물 수의사 897명을 두 배로 늘리는 정책 대안은 존재하지 않습니다.
+  <strong>한 사람이 두 배를 보게 만드는 것이 유일한 길입니다.</strong></p>
+
+  <div class="cards">
+    <div class="card"><div class="k">진료 전</div><h4>출발 전에 안다</h4><p>담당 농장 전체에서 위험 개체를 자동 정렬. 왕진 동선을 위험도와 지리로 재구성</p></div>
+    <div class="card"><div class="k">진료 중</div><h4>감별을 돕는다</h4><p>후보 질병과 <strong>근거를 항목별로</strong> 제시. 확인검사 트리 함께. <strong>진단과 처방은 수의사 권한</strong></p></div>
+    <div class="card"><div class="k">진료 후</div><h4>기록이 남는다</h4><p>처방전 · <strong>휴약기간 자동 계산</strong> · 치료 결과를 센서로 다시 확인</p></div>
+    <div class="card hi"><div class="k">지역</div><h4>방역 초소가 된다</h4><p>거점 대동물병원이 임상 기관이자 <strong>지역 방역 노드</strong>로 작동</p></div>
+  </div>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>지표</th><th class="num">현재</th><th class="num">목표</th></tr></thead>
+    <tbody>
+      <tr><td>일 진료 건수</td><td class="num">4~5건</td><td class="num"><strong>7~8건</strong></td></tr>
+      <tr><td>담당 가능 농가</td><td class="num">15~20호</td><td class="num"><strong>30~40호</strong></td></tr>
+      <tr><td>현장 기록 완결률</td><td class="num">낮음</td><td class="num"><strong>100%</strong></td></tr>
+      <tr><td>휴약기간 관리</td><td class="num">농가 기억</td><td class="num"><strong>시스템 자동</strong></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note warn">
+    <span class="lbl">규제 관련 — 반드시 구분</span>
+    <p><strong>원격 트리아지 ≠ 원격 진료.</strong> 시스템이 하는 것은 "누구를 먼저 볼지 정하는 것"이지
+    원격으로 진단하는 것이 아닙니다. <strong>진단은 대면 원칙</strong>입니다.</p>
+  </div>
+
+  <p>목표 수치는 <strong>시범사업으로 검증할 지표</strong>이며 실측치가 아닙니다(<span class="grade gC">C</span>).
+  거점 대동물병원 시범사업이 추진된다면, <strong>"수의사 1인당 담당 가능 농가 수"가 그 사업의 성과 지표</strong>가 되어야 합니다.</p>
+</section>
+
+<section id="s8">
+  <div class="sn">08</div>
+  <h2>예산과 근거</h2>
+  <p class="lead">전제: 경기 젖소 150,364두 중 <strong>100,000두 보급(약 67%)</strong> · 두당 월 <strong>12,000원</strong>(현행 실단가) ·
+  통신중계기·설치 500만원/목장.</p>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>편익 항목</th><th class="num">A 보수</th><th class="num">B 기준</th><th class="num">C 적극</th></tr></thead>
+    <tbody>
+      <tr><td>농가 개체 편익</td><td class="num">80.5억</td><td class="num">204.7억</td><td class="num">240.0억</td></tr>
+      <tr><td>육성우 감축 — 사료비</td><td class="num">79.6억</td><td class="num">159.2억</td><td class="num">238.8억</td></tr>
+      <tr><td>육성우 감축 — 분뇨 처리비</td><td class="num">15.9억</td><td class="num">31.8억</td><td class="num">47.8억</td></tr>
+      <tr><td>육성우 감축 — 탄소</td><td class="num">2.0억</td><td class="num">11.9억</td><td class="num">59.7억</td></tr>
+      <tr><td>방역 (옵션가치)</td><td class="num">계상 안 함</td><td class="num">30억</td><td class="num">30억</td></tr>
+      <tr class="sum"><td>연간 총편익 / 구독비용 144억</td><td class="num">178.0억</td><td class="num">437.6억</td><td class="num">616.3억</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="stats">
+    <div class="stat am"><div class="v">1.24</div><div class="l">BCR 보수 — <strong>이 숫자를 기준으로 말씀드립니다</strong></div></div>
+    <div class="stat"><div class="v">3.04</div><div class="l">BCR 기준 (문헌 중간값)</div></div>
+    <div class="stat"><div class="v">4.28</div><div class="l">BCR 적극 (사회적 탄소비용 반영)</div></div>
+    <div class="stat"><div class="v">약 215억</div><div class="l">1년차 (구축 71억 + 구독 144억)</div></div>
+  </div>
+
+  <div class="note warn">
+    <span class="lbl">스스로 정정한 6건</span>
+    <p>이 자료를 준비하며 공개 통계와 대조해 기존 브리핑 수치 <strong>6건을 정정</strong>했습니다 —
+    경기 젖소 두수(10만 → <strong>150,364두</strong>), 낙농가 수, 기준연도, 보급률 정합,
+    경기 육성우 실두수(8만 → <strong>약 6.6만두</strong>), 두당 단가(15,000 → <strong>12,000원</strong>).</p>
+    <p>그리고 <strong>개체 편익만으로는 보수 시나리오가 BCR 0.56으로 미달</strong>합니다.
+    <strong>이 사업의 정당성은 농가 수익이 아니라 자원효율에 있습니다.</strong></p>
+  </div>
+
+  <p>BCR을 가장 크게 흔드는 것은 <strong>육성우 감축률</strong>(±15%p → 2.33~3.74)과
+  <strong>두당 요금</strong>(±3천원 → 2.43~3.65)입니다. 나머지 변수의 영향은 작습니다.</p>
+</section>
+
+<section id="s9">
+  <div class="sn">09</div>
+  <h2>데이터 주권 — 말이 아니라 구조로</h2>
+  <p class="lead">심의에서 가장 먼저 나오는 질문이자, 해외 수출의 전제 조건입니다.</p>
+
+  <ul class="bul">
+    <li><strong>모든 데이터는 DB를 거칩니다</strong> — AI가 파이프라인을 우회해 직접 판단하지 않습니다</li>
+    <li><strong>모든 AI 도구 호출이 감사 로그에 남습니다</strong> — 누가, 언제, 무엇을 근거로</li>
+    <li><strong>권한 밖 데이터는 조회 자체가 차단됩니다</strong> — 화면에서 숨기는 것이 아니라 서버가 거부합니다</li>
+    <li><strong>AI의 장기기억조차 계정 권한 경계 안에서만 회상됩니다</strong> — 권한 밖 맥락은 저장도 하지 않습니다</li>
+  </ul>
+
+  <h3>보관 주체와 운영 주체를 분리합니다</h3>
+  <p>민간 소프트웨어 회사 서버에 국가 방역 데이터가 쌓이는 구조는 심의를 통과하기 어렵습니다.
+  그래서 <strong>데이터센터 운영을 별도 주체(공공 위탁 또는 합작 법인)로 분리</strong>하는 것을 설계 원칙으로 두었습니다.</p>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>데이터 계층</th><th>소유자</th><th class="num">외부 반출</th></tr></thead>
+    <tbody>
+      <tr><td>원시 센서 측정치</td><td><strong>농가</strong></td><td class="num" style="color:var(--no)">불가</td></tr>
+      <tr><td>진료 · 처방 기록</td><td><strong>농가 + 수의사</strong></td><td class="num" style="color:var(--no)">불가</td></tr>
+      <tr><td>개체 마스터 (이력 · 혈통)</td><td>국가 공공데이터</td><td class="num" style="color:var(--warn)">약관 범위</td></tr>
+      <tr><td>AI 해석 결과</td><td>플랫폼 (농가 열람권 보장)</td><td class="num" style="color:var(--no)">불가</td></tr>
+      <tr><td>지역 · 전국 집계 통계</td><td><strong>공공</strong></td><td class="num" style="color:var(--ok)">가능</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>계약 종료 시 데이터는 <strong>반환되고 사본은 파기</strong>됩니다.
+  제3자 제공은 <strong>농가 동의 · 익명화 · 집계</strong> 세 조건을 모두 만족할 때만 가능합니다.</p>
+</section>
+
+<section id="s10">
+  <div class="sn">10</div>
+  <h2>시범사업 설계</h2>
+  <p class="lead">시범사업의 목적은 시연이 아니라 <strong>그 지역의 실측 근거를 확보하는 것</strong>입니다.
+  이 자료의 <span class="grade gC">C</span>등급 가정을 <span class="grade gA">A</span>등급 실측으로 바꾸는 작업입니다.</p>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>단계</th><th>기간</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td>1 · 준비</td><td>M1~M2</td><td>대상 선정, 농가 모집, 센서 설치, 계정·권한 세팅, 교육</td></tr>
+      <tr><td>2 · <strong>기준선 측정</strong></td><td>M3</td><td><strong>개입 전 지표 측정.</strong> 이것이 없으면 12개월 뒤 성과를 증명할 방법이 없습니다</td></tr>
+      <tr><td>3 · 운영</td><td>M4~M11</td><td>실제 운영, 월간 리뷰</td></tr>
+      <tr><td>4 · 평가</td><td>M12</td><td>전후 비교, 확산 설계</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>사전 합의할 성과 지표 5개</h3>
+  <div class="cards">
+    <div class="card hi"><div class="k">지표 1 · 최우선</div><h4>조기감지 리드타임</h4><p>증상 발현 대비 며칠 빨랐나. <strong>이 수치 하나가 사업의 성패를 설명합니다</strong></p></div>
+    <div class="card"><div class="k">지표 2</div><h4>육성우 실제 감축 두수</h4><p>편익 계산의 최대 변수. 개체 등록·도태 이력 전후 비교</p></div>
+    <div class="card"><div class="k">지표 3</div><h4>조치 기록률</h4><p>알림이 실제 행동으로 이어진 비율. <strong>제품의 생명선</strong></p></div>
+    <div class="card"><div class="k">지표 4</div><h4>번식 성적</h4><p>공태일 · 수태율 · 분만간격 (시스템 자동 집계)</p></div>
+    <div class="card"><div class="k">지표 5</div><h4>두당 일 마진</h4><p>유량 · 유성분 · 사료비 실측 기반</p></div>
+  </div>
+
+  <div class="note">
+    <span class="lbl">제안</span>
+    <p><strong>평가 기준을 저희가 먼저 제안드립니다. 이 지표가 움직이지 않으면 확산하지 마십시오.</strong></p>
+  </div>
+</section>
+
+<section id="s11">
+  <div class="sn">11</div>
+  <h2>미래상 — 어디로 가는가</h2>
+  <p class="lead">한 목장에서 시작해 전국으로, 그리고 수출로. 각 단계의 성공 기준을 미리 정해두고,
+  기준을 못 넘기면 다음으로 가지 않습니다.</p>
+
+  <div class="tl">
+    <div class="tl-row">
+      <div class="tl-when">지금</div>
+      <div><h4>개별 목장의 생존 도구</h4>
+      <p>발정·질병·분만을 놓치지 않고, 두당 성적으로 역마진 구조에서 빠져나오는 단계.
+      약 200개 농장·1.1만 두가 연결되어 작동 중입니다.</p></div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-when">1~2년</div>
+      <div><h4>지역 단위 축산 상황판</h4>
+      <p>시군·도 단위로 관내 축산을 실시간으로 보는 체계.
+      착유기 유량 자동 연동, 젖소 혈통·검정 데이터 결합, <strong>거점 대동물병원 연계</strong>로
+      수의 커버리지를 넓히는 단계입니다.</p></div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-when">3~5년</div>
+      <div><h4>국가 조기감시망과 탄소 MRV</h4>
+      <p>신고 이전 구간을 감시해 KAHIS로 넘기는 국가 방역 인프라.
+      그리고 <strong>개체 단위 배출 산정 근거</strong>가 쌓여 축산 감축 실적이
+      측정·보고·검증(MRV) 가능해집니다. 저탄소 축산물 인증·직불의 데이터 기반이 됩니다.</p></div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-when">3~5년</div>
+      <div><h4>축산환경 · 경축순환 결합</h4>
+      <p>휴머스를 활용한 <strong>HBP 시스템</strong> 기반 축산환경관리와 결합해
+      분뇨를 축사 내에서 발효시키고 퇴비·토양으로 순환시키는 모델.
+      환경 관리가 <strong>규제 준수가 아니라 생산성 투자</strong>로 전환됩니다.</p></div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-when">5~10년</div>
+      <div><h4>수출 산업화</h4>
+      <p>동남아·중동은 지금 한국이 겪는 문제를 곧 겪습니다 — 사람 부족, 전염병, 데이터 단절, 식량안보.
+      <strong>국가별 소버린 인스턴스</strong>로 배포하므로 그 나라 데이터는 그 나라에 남습니다.
+      <strong>우리가 수출하는 것은 데이터가 아니라 운영체제입니다.</strong>
+      국내 레퍼런스가 곧 수출 자산이 됩니다.</p></div>
+    </div>
+  </div>
+
+  <div class="quote">규모의 경제로는 미국·호주를 이길 수 없습니다.<br>
+  한국이 갈 수 있는 길은 정밀의 경제입니다 —<br>
+  한 마리를 정확히 관리해 두당 성적으로 격차를 메우는 것.</div>
+</section>
+
+<section id="s12">
+  <div class="sn">12</div>
+  <h2>요청사항</h2>
+  <div class="cards">
+    <div class="card hi"><div class="k">요청 1</div><h4>시범사업</h4><p>일부 시군 + 공수의사 + 거점 대동물병원 대상 실증.
+    이 자료의 가정을 실측으로 바꾸는 유일한 방법입니다</p></div>
+    <div class="card"><div class="k">요청 2</div><h4>데이터 연계 협조</h4><p>KAHIS · 이력제 · 지역 방역 데이터 연동을 위한 행정 협조</p></div>
+    <div class="card"><div class="k">요청 3</div><h4>확산 로드맵 공동 수립</h4><p>지역 전역 → 전국 표준 → 수출까지의 단계 설계</p></div>
+  </div>
+
+  <div class="note">
+    <span class="lbl">덧붙이는 사실</span>
+    <p><strong>지금까지 이 비용을 전액 목장이 자기 돈으로 냈습니다.</strong>
+    보조금 없이 팔린 제품이고, 그 목장들이 지금도 쓰고 있습니다.
+    <strong>저희가 요청드리는 것은 가격 지원이 아니라 확산 속도입니다.</strong></p>
+  </div>
+</section>
+
+<section id="s13">
+  <div class="sn">13</div>
+  <h2>예상 질문</h2>
+  <div>
+    <div class="qa"><div class="q">기존 국가 시스템(KAHIS)과 중복 아닙니까?</div>
+      <div class="a">대체하지 않습니다. KAHIS는 <strong>신고된 것</strong>을 다루는 완결된 시스템입니다.
+      저희가 보는 것은 <strong>신고 이전 며칠</strong>이고, 그 구간이 지금 비어 있습니다. 채워서 넘겨드립니다.</div></div>
+    <div class="qa"><div class="q">외국 센서에 국가 방역을 의존하는 것 아닙니까?</div>
+      <div class="a">세 가지로 방어하고 있습니다. <strong>센서 추상화 계층</strong>(다른 벤더는 커넥터 추가만으로 연결),
+      <strong>원시 데이터 자체 적재</strong>(벤더가 바뀌어도 데이터와 학습 자산은 남음),
+      <strong>자체 조기감지 엔진 병행</strong>(벤더 이벤트 없이도 최소 기능 성립).</div></div>
+    <div class="qa"><div class="q">AI가 틀리면 누가 책임집니까?</div>
+      <div class="a"><strong>최종 판단은 항상 사람입니다.</strong> 시스템은 근거를 정리해 드립니다.
+      처방·처치는 수의사 권한이고, 승인 없이 실행되는 조치는 구조적으로 없습니다.
+      모든 판단이 감사 로그에 남아 사후 검증이 가능합니다.</div></div>
+    <div class="qa"><div class="q">BCR 숫자를 믿을 수 있습니까?</div>
+      <div class="a">저희는 <strong>보수값 1.24를 기준으로</strong> 말씀드립니다.
+      편익의 상당 부분이 육성우 감축에 따른 사료비 절감이고, 감축률은 문헌·추정 기반입니다.
+      개체 편익만 보면 0.56으로 미달합니다. <strong>그 사실을 먼저 말씀드립니다.</strong>
+      어느 쪽이 맞는지는 시범사업이 정합니다.</div></div>
+    <div class="qa"><div class="q">농가가 실제로 쓸까요?</div>
+      <div class="a">가장 정확한 지적입니다. 그래서 핵심 지표를 <strong>조치 기록률</strong>로 잡았습니다 —
+      알림이 실제 행동으로 이어진 비율입니다. 이게 낮으면 제품이 실패한 것입니다.
+      농가 교육은 <strong>아침 3터치</strong>만 가르칩니다. 기능을 다 가르치지 않습니다.</div></div>
+    <div class="qa"><div class="q">이 회사가 이 규모를 감당할 수 있습니까?</div>
+      <div class="a">구조로 답드립니다. <strong>플랫폼이 이미 자동화</strong>되어 사람이 붙어야 하는 구간이 최소이고,
+      <strong>설치·시공은 파트너, 데이터센터는 외주, 수입은 별도 법인</strong>이 맡습니다.
+      그리고 고정비가 낮아 <strong>적자 없이 단계적으로 인력을 확충</strong>할 수 있습니다.
+      확충 규칙도 숫자로 있습니다 — 현장 인력 1인당 약 12,000두.</div></div>
+    <div class="qa"><div class="q">기존 스마트축산 사업과 중복 아닙니까?</div>
+      <div class="a">기존 사업은 대부분 <strong>축사 환경</strong>(온습도·환기·급이)입니다.
+      저희는 <strong>소의 몸속</strong>입니다. 겹치지 않고 오히려 결합됩니다 —
+      환경 데이터가 있으면 저희 해석이 더 정확해집니다.</div></div>
+    <div class="qa"><div class="q">단년도 예산인데 다년 사업이 됩니까?</div>
+      <div class="a">1년차는 구축비 포함, 2년차부터 운영비 구조입니다.
+      시범사업 성과지표를 사전 합의하면 <strong>다년 사업화의 근거 문서</strong>가 됩니다.</div></div>
+  </div>
+</section>
+
+<div class="foot">
+  <b>CowTalk</b> · 농업회사법인 주식회사 디투오<br>
+  이 자료의 모든 수치에는 근거 등급을 표기했습니다 —
+  <span class="grade gA">A</span> 정부·공공기관 공표 통계 ·
+  <span class="grade gB">B</span> 학술 문헌 범위의 하한 채택 ·
+  <span class="grade gC">C</span> 설계 가정(시범사업 검증 대상).<br>
+  규모 수치는 실시간 집계를 단일 기준으로 하며, 문서의 값은 작성 시점 스냅샷입니다.
+</div>
+
+</main>
+</div>

@@ -1,0 +1,298 @@
+<meta charset="utf-8">
+<title>경상북도 축산 디지털 통합플랫폼 구축 시범사업</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ink:#0B2239; --ink2:#243B53; --muted:#5A6B76; --faint:#8A9BA5;
+  --line:#D2DEE3; --line2:#AFC1C9; --panel:#F4F8F8; --panel2:#E9F2F2;
+  --teal:#0E7C7B; --teal-d:#08514F; --amber:#A85F0E; --amber-bg:#FBF2E4;
+  --coral:#A8322F; --green:#2C6E49;
+  --sans:"IBM Plex Sans KR","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--sans);color:var(--ink);font-size:8.4pt;line-height:1.44;
+  -webkit-font-smoothing:antialiased;background:#8996a0}
+.page{width:210mm;height:297mm;background:#fff;padding:11mm 13mm 8mm;
+  display:flex;flex-direction:column;overflow:hidden;margin:0 auto}
+.page + .page{margin-top:6mm}
+
+/* 머리글 */
+.doc-head{border-bottom:2.2pt solid var(--teal);padding-bottom:2.6mm;margin-bottom:3mm}
+.eyebrow{font-family:var(--mono);font-size:7pt;letter-spacing:.15em;color:var(--teal);font-weight:500}
+h1{margin:1.3mm 0 0;font-size:15.8pt;font-weight:700;letter-spacing:-.03em;line-height:1.24}
+.sub{margin-top:1.4mm;font-size:8.5pt;color:var(--muted);line-height:1.5}
+.meta{margin-top:3mm;display:flex;gap:4mm;flex-wrap:wrap;font-size:7.4pt;color:var(--ink2)}
+.meta b{color:var(--teal);font-weight:600;margin-right:1.2mm}
+
+/* 섹션 */
+section{margin-bottom:2.7mm}
+h2{margin:0 0 1.7mm;font-size:9.8pt;font-weight:700;letter-spacing:-.01em;
+  display:flex;align-items:center;gap:2.2mm}
+h2 .n{display:inline-flex;align-items:center;justify-content:center;
+  width:4.7mm;height:4.7mm;border-radius:1mm;background:var(--teal);color:#fff;
+  font-family:var(--mono);font-size:7.2pt;font-weight:600;flex:none}
+h3{margin:2.0mm 0 1.1mm;font-size:8.6pt;font-weight:600;color:var(--ink2)}
+p{margin:0 0 1.2mm}
+strong{font-weight:600}
+.lead{color:var(--muted);margin-bottom:2.2mm}
+
+/* 표 */
+table{width:100%;border-collapse:collapse;font-size:7.9pt;margin-bottom:1.2mm}
+th{background:var(--panel2);text-align:left;font-weight:600;color:var(--teal-d);
+  padding:1.1mm 1.7mm;border:.4pt solid var(--line2);white-space:nowrap}
+td{padding:1.1mm 1.7mm;border:.4pt solid var(--line);vertical-align:top;color:var(--ink2)}
+td.k{background:var(--panel);font-weight:600;color:var(--ink);white-space:nowrap;width:26mm}
+td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.sum td{background:var(--panel2);font-weight:700;color:var(--ink)}
+
+/* 카드 */
+.grid{display:grid;gap:1.8mm}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
+.card{border:.4pt solid var(--line);border-radius:1mm;padding:1.9mm 2.2mm;background:var(--panel)}
+.card .t{font-size:8.1pt;font-weight:700;margin-bottom:.7mm}
+.card .d{font-size:7.4pt;color:var(--muted);line-height:1.4}
+.card .kk{font-family:var(--mono);font-size:6.6pt;letter-spacing:.1em;color:var(--teal);font-weight:600;display:block;margin-bottom:.8mm}
+
+/* 레이어 */
+.layer{display:grid;grid-template-columns:15mm 34mm 1fr;gap:2.4mm;align-items:baseline;
+  border:.4pt solid var(--line);border-radius:1mm;padding:1.5mm 2.2mm;margin-bottom:1.0mm;background:var(--panel)}
+.layer .lv{font-family:var(--mono);font-size:6.9pt;font-weight:600;color:var(--teal)}
+.layer .nm{font-size:8.2pt;font-weight:700}
+.layer .ds{font-size:7.4pt;color:var(--muted);line-height:1.38}
+
+/* 강조 박스 */
+.note{background:var(--amber-bg);border:.4pt solid var(--amber);border-radius:1mm;
+  padding:1.7mm 2.3mm;font-size:7.7pt;color:var(--ink);line-height:1.44}
+.note b{color:var(--amber)}
+.hl{background:var(--panel2);border-left:1.6pt solid var(--teal);border-radius:0 1mm 1mm 0;
+  padding:1.7mm 2.5mm;font-size:7.9pt;line-height:1.45;margin-bottom:1.5mm}
+
+/* 리스트 */
+ul{margin:0 0 1.6mm;padding:0;list-style:none}
+li{position:relative;padding-left:3.2mm;margin-bottom:.7mm;font-size:8.0pt;line-height:1.44;color:var(--ink2)}
+li::before{content:"";position:absolute;left:0;top:1.5mm;width:1.2mm;height:1.2mm;
+  border-radius:50%;background:var(--teal)}
+
+/* 통계 */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:2mm;margin-bottom:1.6mm}
+.stat{border-top:1.4pt solid var(--teal);padding-top:1.6mm}
+.stat.am{border-color:var(--amber)}
+.stat .v{font-family:var(--mono);font-size:12.4pt;font-weight:600;letter-spacing:-.02em;line-height:1.05}
+.stat.am .v{color:var(--amber)}
+.stat .l{font-size:6.9pt;color:var(--muted);margin-top:.6mm;line-height:1.3}
+
+/* 시군 태그 */
+.sigun{display:flex;flex-wrap:wrap;gap:1.1mm;margin-top:1.4mm}
+.sg{font-size:7.1pt;border:.4pt solid var(--line2);border-radius:6mm;padding:.55mm 1.8mm;color:var(--ink2);background:#fff}
+.sg.isl{border-color:var(--amber);color:var(--amber)}
+
+/* 바닥 */
+.foot{margin-top:auto;padding-top:2mm;border-top:.4pt solid var(--line);
+  display:flex;justify-content:space-between;font-size:7pt;color:var(--faint)}
+.foot .pg{font-family:var(--mono)}
+
+@page{size:A4;margin:0}
+@media print{body{background:#fff}.page{margin:0}.page + .page{margin-top:0;page-break-before:always}}
+</style>
+
+<!-- ══════════ PAGE 1 ══════════ -->
+<div class="page">
+  <div class="doc-head">
+    <div class="eyebrow">2027년도 신규사업 개요 (안)</div>
+    <h1>경상북도 축산 디지털 통합플랫폼 구축 시범사업</h1>
+    <p class="sub">위내센서 기반 개체 단위 실시간 모니터링과 AI 해석을 결합해,
+    <strong>도내 22개 시군에 각 2개소씩 44개 시범목장</strong>을 지정하고 농가·수의·방역·행정을 하나의 데이터 체계로 연결한다.</p>
+    <div class="meta">
+      <span><b>대상</b>22개 시군 × 2개소 = 44 목장</span>
+      <span><b>기간</b>2027. 1 ~ 2027. 12 (12개월)</span>
+      <span><b>축종</b>한우 중심 · 낙농 병행</span>
+      <span><b>수행</b>농업회사법인 ㈜디투오</span>
+    </div>
+  </div>
+
+  <section>
+    <h2><span class="n">1</span>사업 개요</h2>
+    <table>
+      <tr><td class="k">사업 목적</td><td>개체 단위 생체 데이터를 상시 확보해 <strong>질병 조기 대응·번식 성적 개선·방역 조기감시</strong>를 동시에 달성하고, 시군 단위로 흩어진 축산 행정 데이터를 통합 플랫폼으로 연결한다.</td></tr>
+      <tr><td class="k">사업 대상</td><td>도내 <strong>22개 시군 각 2개소</strong>(총 44개소). 시군별 축종·규모·의지를 고려해 도·시군 협의로 선정</td></tr>
+      <tr><td class="k">선정 기준</td><td>사육 50두 이상 · 통신 환경 확보 가능 · <strong>기록 참여 의사</strong> · 시군 축산부서 추천 · 담당 수의사 연계 가능</td></tr>
+      <tr><td class="k">사업 규모</td><td>44개소 × 평균 70두 ≈ <strong>3,080두</strong> (선정 결과에 따라 조정)</td></tr>
+      <tr><td class="k">추진 체계</td><td>경상북도(총괄) — 시군 축산부서(선정·현장) — 수행기관(구축·운영·교육) — 도 축산기술연구소·수의사회(자문·평가)</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>추진 배경</h2>
+    <div class="grid g3">
+      <div class="card"><span class="kk">배경 1 · 통상</span><div class="t">가격 경쟁이 닫혔다</div>
+        <div class="d">2026년 1월 미국산 쇠고기 관세 <strong>0%</strong>(FTA 이전 37.3%). 호주 2028년, 뉴질랜드 2029년.
+        남은 경쟁축은 <strong>증명·효율·환경</strong>이며 셋 다 데이터가 전제다.</div></div>
+      <div class="card"><span class="kk">배경 2 · 인력</span><div class="t">지킬 사람이 없다</div>
+        <div class="d">전국 농장동물 임상수의사 <strong>897명</strong>(임상수의사의 11.2%). 한우 농가는 1년 새 3,689호 감소.
+        <strong>1인당 담당 역량</strong>을 늘리지 않으면 관리가 불가능하다.</div></div>
+      <div class="card"><span class="kk">배경 3 · 규제</span><div class="t">감축 수단이 부족하다</div>
+        <div class="d">축산은 2030년까지 온실가스 <strong>30% 감축</strong> 목표를 받았다. 배출이 생물의 대사여서
+        측정·보고·검증(MRV) 없이는 실적으로 인정받지 못한다.</div></div>
+    </div>
+    <div class="hl" style="margin-top:2.2mm">
+      <strong>경상북도의 위치</strong> — 한우 사육 <strong>약 68.5만두 · 약 1.57만 농가</strong>로 전국의 약 22%를 차지하는 최대 한우 주산지다
+      (2026.4, 축산물이력제 데이터랩 기준 / 도 자료로 확정 필요). <strong>전국 한우 표준을 만들 수 있는 유일한 규모</strong>이며,
+      22개 시군에 고르게 분포해 시범 결과를 그대로 전 도로 확산할 수 있다.
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span>위내센서 — 원리 및 제원</h2>
+    <p class="lead">소의 첫째·둘째 위(반추위·벌집위)에 캡슐형 센서를 경구 투여하면 그 자리에 가라앉아 <strong>평생 머무르며</strong> 생체 신호를 상시 측정한다.
+    체내는 항온 환경이라 <strong>외기온·습도·바람의 영향을 받지 않고</strong>, 목걸이·이표와 달리 탈락·분실이 없다.</p>
+
+    <div class="grid g2" style="margin-bottom:2.2mm">
+      <table style="margin:0">
+        <tr><th colspan="2">기본형 볼루스 (Classic SX.2)</th></tr>
+        <tr><td class="k">규격</td><td class="num">105 × 35 mm</td></tr>
+        <tr><td class="k">중량</td><td class="num">210 g</td></tr>
+        <tr><td class="k">배터리</td><td class="num">리튬 · 최대 4년</td></tr>
+        <tr><td class="k">측정 주기</td><td class="num">10분 (체온·활동량)</td></tr>
+        <tr><td class="k">내장 메모리</td><td class="num">6일분 (통신 두절 대비)</td></tr>
+        <tr><td class="k">체온 정확도</td><td class="num">± 0.01 °C (상대·제조사 기준)</td></tr>
+      </table>
+      <table style="margin:0">
+        <tr><th colspan="2">pH 측정형 볼루스 (pH SX.2)</th></tr>
+        <tr><td class="k">규격</td><td class="num">132 × 35 mm</td></tr>
+        <tr><td class="k">중량</td><td class="num">약 220 g</td></tr>
+        <tr><td class="k">배터리</td><td class="num">약 5년</td></tr>
+        <tr><td class="k">pH 측정 기간</td><td class="num">약 150일</td></tr>
+        <tr><td class="k">시간 해상도</td><td class="num">15초 ~ 20분 (적응형)</td></tr>
+        <tr><td class="k">용도</td><td class="num">대표 개체 사양 검증</td></tr>
+      </table>
+    </div>
+
+    <h3>측정 항목과 활용</h3>
+    <div class="grid g5">
+      <div class="card"><span class="kk">°C</span><div class="t">심부체온</div><div class="d">염증·발열, 분만 임박(체온 하강), 열스트레스</div></div>
+      <div class="card"><span class="kk">ACT</span><div class="t">활동량</div><div class="d">발정 탐지, 파행·질병에 따른 활동 저하</div></div>
+      <div class="card"><span class="kk">H₂O</span><div class="t">음수</div><div class="d">음수 횟수·음수량. 식욕 저하의 조기 신호</div></div>
+      <div class="card"><span class="kk">RUM</span><div class="t">반추</div><div class="d">소화기 이상, 사료 적응, 치료 후 회복 추적</div></div>
+      <div class="card"><span class="kk">pH</span><div class="t">반추위 pH</div><div class="d">발효 안정성, 아급성 산독증(SARA) 위험</div></div>
+    </div>
+
+    <h3>데이터 전송 경로</h3>
+    <div class="grid g4">
+      <div class="card"><span class="kk">① 볼루스</span><div class="d">체내 10분 주기 측정 · 근거리 무선 송신</div></div>
+      <div class="card"><span class="kk">② 기지국</span><div class="d">목장 내 자동 수신 · 인터넷 업링크</div></div>
+      <div class="card"><span class="kk">③ 클라우드</span><div class="d">이벤트 판정 (발정·분만·질병 징후)</div></div>
+      <div class="card"><span class="kk">④ 카우톡</span><div class="d">맥락 결합 · AI 해석 · 역할별 전달</div></div>
+    </div>
+    <div class="note"><b>정확도에 대한 유의사항 —</b> ±0.01 °C는 <strong>장치의 상대 측정 정확도</strong>이지 진단 정확도가 아니다.
+    알람은 진단이 아니라 <strong>확인의 우선순위를 정하는 신호</strong>이며, 최종 판단은 수의사의 임상 판단과 현지 방역 지침을 따른다.</div>
+  </section>
+
+  <div class="foot"><span>경상북도 축산 디지털 통합플랫폼 구축 시범사업 (2027년도 신규사업 개요안)</span><span class="pg">1 / 2</span></div>
+</div>
+
+<!-- ══════════ PAGE 2 ══════════ -->
+<div class="page">
+  <section>
+    <h2><span class="n">4</span>카우톡 AI — 디지털 통합플랫폼</h2>
+    <p class="lead">센서는 <strong>“무슨 일이 일어났는가”</strong>까지 알려준다. 카우톡 AI는 그 위에 공공데이터·AI 해석·역할별 행동을 얹어
+    <strong>“그래서 무엇을 해야 하는가”</strong>로 완결시킨다. 알람 → 판단 → 추천 → 행동 → 기록이 한 화면에서 끝난다.</p>
+
+    <div class="layer"><span class="lv">LAYER 4</span><span class="nm">학습 루프</span>
+      <span class="ds">전문가 레이블 · 알람 통계 · 치료 결과가 다음 판단을 개선한다 (모델이 자기 규칙을 고쳐 쓰지 않는 결정적 방식)</span></div>
+    <div class="layer"><span class="lv">LAYER 3</span><span class="nm">역할별 서빙</span>
+      <span class="ds">농가 · 수의사 · 방역관 · 행정이 같은 데이터를 각자의 관점과 권한으로 받는다</span></div>
+    <div class="layer"><span class="lv">LAYER 2</span><span class="nm">AI 해석</span>
+      <span class="ds">센서 이벤트를 재판단하지 않고 맥락을 붙인다. 모든 판단에 근거와 출처를 남긴다</span></div>
+    <div class="layer"><span class="lv">LAYER 1</span><span class="nm">데이터 통합</span>
+      <span class="ds">센서 + 이력제 · 등급판정 · 경락가격 · 기상 + 농장 기록을 소 한 마리에 결합한다</span></div>
+
+    <h3>역할별 제공 기능</h3>
+    <div class="grid g4">
+      <div class="card"><span class="kk">농가</span><div class="t">오늘 뭘 하지</div>
+        <div class="d">발정·분만·질병 알림, 수정 적기와 정액 추천, 오늘 볼 소 목록, 두당 마진</div></div>
+      <div class="card"><span class="kk">수의사</span><div class="t">어디부터 가지</div>
+        <div class="d">담당 농장 위험 개체 자동 정렬, 감별 후보와 근거, 처방전·<strong>휴약기간 자동 계산</strong>, 치료결과 추적</div></div>
+      <div class="card"><span class="kk">방역관</span><div class="t">번지고 있나</div>
+        <div class="d">집단 이상 탐지, 접촉망 추적, <strong>SEIR 확산 시뮬레이션</strong>, 역학조사·보고 워크플로</div></div>
+      <div class="card"><span class="kk">행정</span><div class="t">지역 상황은</div>
+        <div class="d">도–시군–농장–개체 <strong>4단계 드릴다운</strong>, 성과 지표, 월간 리포트, 데이터 내보내기</div></div>
+    </div>
+
+    <div class="note" style="margin-top:2.2mm"><b>AI의 책임 경계 —</b> 시스템은 후보와 근거를 정리한다.
+    <strong>진단과 처방은 수의사의 권한</strong>이며, 승인 없이 실행되는 조치는 구조적으로 없다.
+    모든 조회·판단은 감사 로그에 기록되고, 권한 밖 데이터는 서버에서 거부된다.</div>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span>기대효과</h2>
+    <div class="stats">
+      <div class="stat"><div class="v">12~136h</div><div class="l">위내 발열이 임상 증상보다 앞선 시간 (문헌)</div></div>
+      <div class="stat am"><div class="v">2.5~6.3억</div><div class="l">44개소 연간 농가 편익 (두당 8~20.5만원)</div></div>
+      <div class="stat"><div class="v">44개소</div><div class="l">도내 상시 가동 방역 조기감시 노드</div></div>
+      <div class="stat"><div class="v">271억</div><div class="l">럼피스킨 1회 살처분 보상금 (전국·2023~)</div></div>
+    </div>
+    <div class="grid g3">
+      <div class="card"><span class="kk">농가</span><div class="t">생산성과 소득</div>
+        <div class="d">공태일 단축, 질병 조기 대응, 폐사 감소. 한우는 <strong>사육기간 단축 판단</strong>의 근거 데이터 확보</div></div>
+      <div class="card"><span class="kk">방역</span><div class="t">신고 이전 구간</div>
+        <div class="d">생체 이상 → 임상 증상 → 신고 중 <strong>앞의 두 단계</strong>를 채워 국가 방역 체계로 넘긴다</div></div>
+      <div class="card"><span class="kk">행정</span><div class="t">정책 근거</div>
+        <div class="d">시군별 실측 지표 확보. 축산·방역·환경·디지털 전환 <strong>예산 근거를 하나의 데이터</strong>로 충당</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span>추진 일정 및 소요 예산</h2>
+    <div class="grid g2">
+      <table style="margin:0">
+        <tr><th>단계</th><th>시기</th><th>내용</th></tr>
+        <tr><td>1 준비</td><td class="num">1~2월</td><td>시군 협의, 목장 선정, 계정·권한 설계</td></tr>
+        <tr><td>2 구축</td><td class="num">3~4월</td><td>센서 삽입, 기지국 설치, 개체 등록, 교육</td></tr>
+        <tr><td class="k">3 기준선</td><td class="num">5월</td><td><strong>개입 전 지표 측정</strong> (없으면 성과 증명 불가)</td></tr>
+        <tr><td>4 운영</td><td class="num">6~11월</td><td>일상 운영, 월간 리뷰, 시군 순회 점검</td></tr>
+        <tr><td>5 평가</td><td class="num">12월</td><td>전후 비교, 확산 설계, 결과보고</td></tr>
+      </table>
+      <table style="margin:0">
+        <tr><th>항목</th><th>산출 근거</th><th>금액</th></tr>
+        <tr><td>구독료</td><td class="num">3,080두 × 1.2만 × 12월</td><td class="num">4.44억</td></tr>
+        <tr><td>구축·설치</td><td class="num">44개소 × 500만원</td><td class="num">2.20억</td></tr>
+        <tr><td>교육·운영지원</td><td class="num">5트랙 · 시군 순회</td><td class="num">0.40억</td></tr>
+        <tr><td>성과평가</td><td class="num">연구기관 위탁</td><td class="num">0.30억</td></tr>
+        <tr class="sum"><td>합계</td><td class="num">(플랫폼 구축비 별도)</td><td class="num">7.34억</td></tr>
+      </table>
+    </div>
+    <p style="font-size:7.2pt;color:var(--muted);margin-top:1.1mm">
+      ※ 구축·설치비에는 통신중계기·시공·개체 삽입 시술·개체 기록·시스템 등록이 포함된다.
+      정기구독 고객에게는 <strong>하드웨어 비용을 별도 청구하지 않는다.</strong>
+      도 통합 플랫폼(공공데이터 연계·행정 워크플로·시군 대시보드) 구축비는 요구사항 확정 후 별도 산정하며, 구독료와 <strong>이중 계상하지 않는다.</strong>
+      농가 자부담 비율은 도·시군 방침에 따라 조정한다.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span>시군별 배치 및 요청사항</h2>
+    <div class="sigun">
+      <span class="sg">포항시</span><span class="sg">경주시</span><span class="sg">김천시</span><span class="sg">안동시</span><span class="sg">구미시</span>
+      <span class="sg">영주시</span><span class="sg">영천시</span><span class="sg">상주시</span><span class="sg">문경시</span><span class="sg">경산시</span>
+      <span class="sg">의성군</span><span class="sg">청송군</span><span class="sg">영양군</span><span class="sg">영덕군</span><span class="sg">청도군</span>
+      <span class="sg">고령군</span><span class="sg">성주군</span><span class="sg">칠곡군</span><span class="sg">예천군</span><span class="sg">봉화군</span>
+      <span class="sg">울진군</span><span class="sg isl">울릉군 *</span>
+    </div>
+    <p style="font-size:7.2pt;color:var(--muted);margin-top:1.1mm">
+      * 울릉군은 축산 규모와 통신·물류 여건을 고려해 <strong>1개소 축소 또는 인접 시군 대체 배정</strong>을 검토한다.
+      각 시군은 <strong>한우 1 · 낙농 1</strong> 배정을 원칙으로 하되, 낙농 기반이 없는 시군은 한우 2개소로 대체한다.</p>
+    <div class="grid g3" style="margin-top:1.8mm">
+      <div class="card"><span class="kk">요청 1</span><div class="t">시범목장 선정 협조</div><div class="d">시군 축산부서를 통한 후보 농가 추천 및 참여 의사 확인</div></div>
+      <div class="card"><span class="kk">요청 2</span><div class="t">데이터 연계 협조</div><div class="d">이력제·방역(KAHIS)·도 축산 행정 데이터 연동을 위한 행정 절차</div></div>
+      <div class="card"><span class="kk">요청 3</span><div class="t">성과지표 사전 합의</div><div class="d">조기감지 리드타임 · 조치 기록률 · 번식성적 · 두당 마진 등 5개 지표</div></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>작성 : 농업회사법인 주식회사 디투오 &nbsp;|&nbsp; 본 개요의 수치는 공표 통계와 문헌에 근거하며, 도 실측 자료로 확정한다.</span>
+    <span class="pg">2 / 2</span>
+  </div>
+</div>
