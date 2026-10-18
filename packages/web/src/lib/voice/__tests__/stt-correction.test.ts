@@ -94,3 +94,30 @@ describe('correctSttTranscript', () => {
     expect(correctSttTranscript('   ').text).toBe('');
   });
 });
+
+describe('수의 진단명 교정 (2026-10 보강)', () => {
+  it.each([
+    ['제사위 전위 의심', '제4위전위 의심'],
+    ['제 4 위 전위', '제4위전위'],
+    ['제사의 전위 수술', '제4위전위 수술'],
+    ['난포 낭종 확인', '난포낭종 확인'],
+    ['황체 낭종', '황체낭종'],
+    ['저 칼슘 혈증', '저칼슘혈증'],
+    ['오늘 직장 검사 결과 황체 확인', '오늘 직장검사 결과 황체 확인'],
+  ])('%s → %s', (input, expected) => {
+    expect(correctSttTranscript(input).text).toBe(expected);
+  });
+
+  it('제사(祭祀) 같은 일상어는 건드리지 않는다', () => {
+    expect(correctSttTranscript('내일 제사 지내러 가').text).toBe('내일 제사 지내러 가');
+  });
+
+  it.each([
+    ['123번 소 상태', '123번 소 상태'],
+    ['백이십삼 번 소 상태', '123번 소 상태'],
+    ['일이삼 번 소 상태', '123번 소 상태'],
+    ['그 소 말고 백이십오번', '그 소 말고 125번'],
+  ])('개체번호 세 가지 읽기는 같은 번호로: %s', (input, expected) => {
+    expect(correctSttTranscript(input).text).toBe(expected);
+  });
+});

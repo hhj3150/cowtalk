@@ -764,6 +764,23 @@ export function TinkerbellAssistant({
   });
   const { enqueue: enqueueSpeech, end: endSpeech, reset: resetSpeech, stop: stopStreamingSpeech } = streamingVoice;
 
+  // ── 진행 중인 답변 스트림 (barge-in 취소용) ──
+  // 소리만 끊으면 서버 스트림은 계속 흘러 들어와 ① 취소된 답변이 대화 기록에 확정되고
+  // (다음 질문의 맥락으로 재전송됨) ② 뒤늦게 도착한 문장이 다시 읽힌다.
+  // 끼어들기·새 질문 시 스트림 자체를 끊고, 그 답변은 기록에 남기지 않는다.
+  const activeAnswerRef = useRef<{ readonly controller: AbortController; cancelled: boolean } | null>(null);
+  const cancelActiveAnswer = useCallback((): void => {
+    const active = activeAnswerRef.current;
+    if (!active) return;
+    active.cancelled = true;
+    activeAnswerRef.current = null;
+    active.controller.abort();
+    chunkerRef.current.reset();
+    stopStreamingSpeech();
+    setStreamText('');
+    setToolActivities([]);
+  }, [stopStreamingSpeech]);
+
   const t = useT();
   const { lang: uiLang } = useLang();
   const isQuarantineMode = effectiveRole === 'quarantine_officer';
@@ -916,6 +933,7 @@ export function TinkerbellAssistant({
     // 다층 타임아웃 변수 — try/catch 양쪽에서 정리 필요
     let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let answerHandle: { readonly controller: AbortController; cancelled: boolean } | null = null;
 
     try {
       const token = useAuthStore.getState().accessToken;
@@ -953,7 +971,11 @@ export function TinkerbellAssistant({
       };
 
       // 다층 타임아웃: 전체 90초 + 첫 바이트 30초 + 무응답 45초 (시연 중 빠른 실패 처리)
+      cancelActiveAnswer(); // 이전 답변이 아직 흐르고 있으면 끊는다 (새 질문 우선)
       const controller = new AbortController();
+      const handle = { controller, cancelled: false };
+      answerHandle = handle;
+      activeAnswerRef.current = handle;
       const TOTAL_TIMEOUT_MS = 90_000;
       const FIRST_BYTE_TIMEOUT_MS = 30_000;
       const STALL_TIMEOUT_MS = 45_000;
@@ -1012,6 +1034,7 @@ export function TinkerbellAssistant({
 
       while (true) {
         const { value, done } = await reader.read();
+        if (handle.cancelled) return; // barge-in — 이 답변은 확정하지 않는다
         if (done) break;
         rawBytes += value.byteLength;
         lastDataAt = Date.now();
@@ -1081,6 +1104,8 @@ export function TinkerbellAssistant({
 
       clearInterval(heartbeat);
       clearTimeout(fetchTimeout);
+      if (handle.cancelled) return;
+      if (activeAnswerRef.current === handle) activeAnswerRef.current = null;
       const elapsedMs = Date.now() - startedAt.getTime();
 
       // 빈 응답 진단 — 어디서 끊겼는지 정확히 표시
@@ -1131,6 +1156,9 @@ export function TinkerbellAssistant({
     } catch (err) {
       clearInterval(heartbeat);
       clearTimeout(fetchTimeout);
+      // barge-in으로 끊긴 답변 — 오류가 아니다. 새 질문이 이미 진행 중이므로 상태를 건드리지 않는다
+      if (answerHandle?.cancelled) return;
+      if (answerHandle && activeAnswerRef.current === answerHandle) activeAnswerRef.current = null;
       setStreamText('');
       stopStreamingSpeech(); // 중간까지 큐에 쌓인 문장을 끊는다 — 실패한 답변을 계속 읽으면 안 된다
       const fetchErr = err as { message?: string; name?: string };
@@ -1153,7 +1181,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate, ttsVoiceMode, ttsSpeakText, enqueueSpeech, endSpeech, resetSpeech, stopStreamingSpeech]);
+  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate, ttsVoiceMode, ttsSpeakText, enqueueSpeech, endSpeech, resetSpeech, stopStreamingSpeech, cancelActiveAnswer]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -1206,6 +1234,7 @@ export function TinkerbellAssistant({
     stopSpeaking();
     try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     stopStreamingSpeech();
+    cancelActiveAnswer(); // 답변 생성 중 마이크를 열면 그 답변은 버린다 (barge-in)
     // 자기 음성을 이미 껐으므로 이전 발화는 더 이상 에코 판정 근거가 아니다.
     // 비우지 않으면 답변에 나온 단어를 되쓰는 후속 질문이 에코로 오판돼 통째로 버려진다.
     echoGuardRef.current.clear();
@@ -1343,7 +1372,7 @@ export function TinkerbellAssistant({
       }
       setState('idle');
     }
-  }, [uiLang, askTinkerbell, voiceOutput, stopStreamingSpeech]);
+  }, [uiLang, askTinkerbell, voiceOutput, stopStreamingSpeech, cancelActiveAnswer]);
 
   // 음성 인식 시작 (권한 체크 + 에러 메시지 포함)
   // iOS Safari 중요: await 체인이 사용자 제스처 컨텍스트를 끊으므로
@@ -1375,6 +1404,7 @@ export function TinkerbellAssistant({
     stopSpeaking();
     try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
     stopStreamingSpeech();
+    cancelActiveAnswer(); // 답변 생성 중 마이크를 열면 그 답변은 버린다 (barge-in)
     // 마이크를 사용자에게 여는 순간 에코 기억을 비운다 (오판으로 질문이 삼켜지는 것 방지)
     echoGuardRef.current.clear();
     unlockTts();
@@ -1475,7 +1505,7 @@ export function TinkerbellAssistant({
         setVoiceError('음성 인식을 시작할 수 없습니다.');
       }
     }
-  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput, stopStreamingSpeech]);
+  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput, stopStreamingSpeech, cancelActiveAnswer]);
 
   // 음성 인식 중지 — Web Speech API + MediaRecorder 양쪽 대응
   const stopListening = useCallback(() => {
@@ -1688,6 +1718,7 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
       stopStreamingSpeech();
+      cancelActiveAnswer();
       echoGuardRef.current.clear();
     }
     // 데스크탑에서 호명 시 사이드바 자동 펼침
@@ -1703,7 +1734,7 @@ export function TinkerbellAssistant({
 
     // 듣기는 항상 즉시 시작 — 인사 끝날 때까지 기다리지 않음
     void startListening();
-  }, [state, startListening, playWakeChime, voiceOutput, uiLang, isMobile, stopStreamingSpeech]);
+  }, [state, startListening, playWakeChime, voiceOutput, uiLang, isMobile, stopStreamingSpeech, cancelActiveAnswer]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
   const handleInterruptDetected = useCallback(() => {
@@ -1711,12 +1742,13 @@ export function TinkerbellAssistant({
       try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
       try { stopSpeaking(); } catch { /* ignore */ }
       stopStreamingSpeech();
+      cancelActiveAnswer();
       // 중단시켰으면 남은 에코 기억도 지운다 — 사용자의 다음 말을 에코로 오인하지 않도록
       echoGuardRef.current.clear();
       handsFreeRef.current = false; // 중단 의사를 밝혔는데 다시 듣기 시작하면 안 된다
       setState('idle');
     }
-  }, [state, voiceOutput, stopStreamingSpeech]);
+  }, [state, voiceOutput, stopStreamingSpeech, cancelActiveAnswer]);
 
   // ── 핸즈프리 연속 대화 ──
   // 답변이 끝나면 자동으로 다시 듣는다. 착유·급이 중에는 매번 마이크를 누를 손이 없다.
