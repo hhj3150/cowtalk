@@ -42,3 +42,23 @@ export function decideAffiliation(currentFarmId: string, targetFarmId: string, a
   if (active) return { farmId: targetFarmId, moved: true, applyStatus: true };
   return { farmId: currentFarmId, moved: false, applyStatus: false };
 }
+
+// ── DI-05: 동기화가 로컬 값을 덮어쓰지 않게 ──
+
+/** 목장에서 확정한 종료 상태 — smaXtec 의 active 플래그로 되살리지 않는다 */
+const LOCAL_TERMINAL_STATUSES: ReadonlySet<string> = new Set(['sold', 'dead', 'culled', 'transferred']);
+
+/**
+ * 동기화로 쓸 status. undefined = 바꾸지 않음.
+ * 예전엔 5분마다 smaXtec active 로 덮어써 폐사·도태로 바꾼 소가 다시 active 가 됐다.
+ */
+export function mergeSyncStatus(localStatus: string, incomingActive: boolean, applyStatus: boolean): string | undefined {
+  if (!applyStatus) return undefined;
+  if (LOCAL_TERMINAL_STATUSES.has(localStatus)) return undefined;
+  return incomingActive ? 'active' : 'inactive';
+}
+
+/** 비어 있지 않은 문자열만 반영 — 빈 값·누락으로 수동 입력한 관리번호·이름을 지우지 않는다 */
+export function nonEmpty(value: string | null | undefined): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}

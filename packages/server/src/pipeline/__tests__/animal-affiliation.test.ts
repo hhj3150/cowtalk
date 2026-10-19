@@ -94,3 +94,50 @@ describe('DI-02 syncAnimals — 이동 개체', () => {
     expect(updates[0]!.traceId).toBeUndefined();
   });
 });
+
+// ── DI-05 회귀 — 동기화가 수동 입력값·종료 상태를 덮어쓰던 문제 ──
+import { mergeSyncStatus, nonEmpty } from '../animal-affiliation.js';
+
+describe('DI-05 mergeSyncStatus', () => {
+  it.each(['dead', 'culled', 'sold', 'transferred'])('목장에서 %s 로 바꾼 소는 smaXtec active 로 되살리지 않는다', (st) => {
+    expect(mergeSyncStatus(st, true, true)).toBeUndefined();
+  });
+  it('일반 상태는 smaXtec 값을 따른다', () => {
+    expect(mergeSyncStatus('active', false, true)).toBe('inactive');
+    expect(mergeSyncStatus('inactive', true, true)).toBe('active');
+  });
+  it('다른 목장 잔존 기록이면 바꾸지 않는다', () => {
+    expect(mergeSyncStatus('active', false, false)).toBeUndefined();
+  });
+  it('nonEmpty', () => {
+    expect(nonEmpty('')).toBeUndefined();
+    expect(nonEmpty('  ')).toBeUndefined();
+    expect(nonEmpty(null)).toBeUndefined();
+    expect(nonEmpty('423')).toBe('423');
+  });
+});
+
+describe('DI-05 syncAnimals — 로컬 값 보존', () => {
+  const farmMap = new Map([['org-old', OLD_FARM]]);
+  beforeEach(() => { updates.length = 0; inserts.length = 0; });
+
+  it('관리번호가 비어 올라오면 수동 입력 관리번호를 덮지 않는다 (예전: extId 앞 8자리로 교체)', async () => {
+    existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM }];
+    await syncAnimals([{ _id: 'cow1abcdef', organisation_id: 'org-old', active: true }] as unknown as SyncInput, farmMap);
+    existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM }];
+    await syncAnimals([{ _id: 'cow1', organisation_id: 'org-old', active: true, mark: '' }] as unknown as SyncInput, farmMap);
+    expect(updates.at(-1)!.earTag).toBeUndefined();
+  });
+
+  it('폐사 처리한 소는 active 로 되돌리지 않는다', async () => {
+    existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM, status: 'dead' } as never];
+    await syncAnimals([{ _id: 'cow1', organisation_id: 'org-old', active: true }] as unknown as SyncInput, farmMap);
+    expect(updates[0]!.status).toBeUndefined();
+  });
+
+  it('소프트 삭제된 개체는 갱신하지 않는다', async () => {
+    existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM, deletedAt: new Date() } as never];
+    await syncAnimals([{ _id: 'cow1', organisation_id: 'org-old', active: true, mark: '9' }] as unknown as SyncInput, farmMap);
+    expect(updates).toHaveLength(0);
+  });
+});

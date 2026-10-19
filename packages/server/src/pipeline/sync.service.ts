@@ -11,7 +11,7 @@ import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './conn
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
 import { normalizeSmaxtecEvent } from './normalization.js';
 import { emitNewAlarm } from '../realtime/alarm-emitter.js';
-import { pickCurrentRecords, decideAffiliation } from './animal-affiliation.js';
+import { pickCurrentRecords, decideAffiliation, mergeSyncStatus, nonEmpty } from './animal-affiliation.js';
 
 // ===========================
 // 동기화 결과
@@ -163,17 +163,17 @@ export async function syncAnimals(
 
   // 배치로 로드 (500개씩)
   const LOAD_BATCH = 500;
-  const existingMap = new Map<string, { animalId: string; farmId: string }>();
+  const existingMap = new Map<string, { animalId: string; farmId: string; status: string; deleted: boolean }>();
   for (let i = 0; i < externalIds.length; i += LOAD_BATCH) {
     const batch = externalIds.slice(i, i + LOAD_BATCH);
     const existing = await db
-      .select({ animalId: animals.animalId, externalId: animals.externalId, farmId: animals.farmId })
+      .select({ animalId: animals.animalId, externalId: animals.externalId, farmId: animals.farmId, status: animals.status, deletedAt: animals.deletedAt })
       .from(animals)
       .where(inArray(animals.externalId, batch));
 
     for (const a of existing) {
       if (a.externalId) {
-        existingMap.set(a.externalId, { animalId: a.animalId, farmId: a.farmId });
+        existingMap.set(a.externalId, { animalId: a.animalId, farmId: a.farmId, status: a.status, deleted: a.deletedAt != null });
       }
     }
   }
@@ -197,20 +197,26 @@ export async function syncAnimals(
         const existingRow = existingMap.get(extId);
         const existingAnimalId = existingRow?.animalId;
 
-        if (existingRow && existingAnimalId) {
+        if (existingRow && existingAnimalId && existingRow.deleted) {
+          // DI-05: 소프트 삭제한 개체는 갱신하지 않는다 (이벤트 연결용 매핑만 유지)
+          animalMap.set(extId, existingAnimalId);
+          if (sa.animal_id && sa.animal_id !== extId) animalMap.set(sa.animal_id, existingAnimalId);
+        } else if (existingRow && existingAnimalId) {
           // Update — 소속 목장 변경 반영 (DI-02). 과거 기록의 farm_id 는 건드리지 않는다.
           const decision = decideAffiliation(existingRow.farmId, farmId, Boolean(sa.active));
           await db
             .update(animals)
             .set({
               farmId: decision.farmId,
-              name: sa.name ?? sa.display_name,
-              earTag: sa.mark ?? sa.official_id ?? extId.slice(0, 8),
-              // 이력제 번호가 비어 올라오면 기존 값을 지우지 않는다
-              traceId: sa.official_id ? sa.official_id : undefined,
+              // DI-05: 비어 올라온 값으로 수동 입력한 이름·관리번호·이력번호를 지우거나
+              //        임시 값(extId 앞 8자리)으로 바꾸지 않는다
+              name: nonEmpty(sa.name) ?? nonEmpty(sa.display_name),
+              earTag: nonEmpty(sa.mark),
+              traceId: nonEmpty(sa.official_id),
               currentDeviceId: sa.current_device_id ?? sa.sensor,
-              lactationStatus: sa.lactation_status ?? 'unknown',
-              status: decision.applyStatus ? (sa.active ? 'active' : 'inactive') : undefined,
+              lactationStatus: nonEmpty(sa.lactation_status),
+              // DI-05: 목장에서 확정한 폐사·도태·매각 상태는 되살리지 않는다
+              status: mergeSyncStatus(existingRow.status, Boolean(sa.active), decision.applyStatus),
               updatedAt: new Date(),
             })
             .where(eq(animals.animalId, existingAnimalId));
@@ -224,7 +230,7 @@ export async function syncAnimals(
               reason: 'smaxtec_sync',
               traceNo: sa.official_id ?? null,
             });
-            existingMap.set(extId, { animalId: existingAnimalId, farmId: decision.farmId });
+            existingMap.set(extId, { ...existingRow, farmId: decision.farmId });
             movedCount++;
             logger.info(
               { animalId: existingAnimalId, from: existingRow.farmId, to: decision.farmId },
