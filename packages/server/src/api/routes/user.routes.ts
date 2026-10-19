@@ -10,8 +10,12 @@ import { eq, inArray } from 'drizzle-orm';
 import { isOwnerUserId, setUserApproval } from '../../services/auth/approval.service.js';
 import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
 import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
+import { ROLES } from '@cowtalk/shared';
 
 export const userRouter = Router();
+
+const VALID_ROLES: readonly string[] = ROLES.map((r) => r.role);
+const VALID_STATUSES: readonly string[] = ['active', 'inactive', 'suspended'];
 
 userRouter.use(authenticate);
 
@@ -157,12 +161,33 @@ userRouter.patch('/:userId', requirePermission('user', 'update'), async (req: Re
   try {
     const db = getDb();
     const userId = req.params.userId as string;
-    const { name, role, status, phone } = req.body;
+    const { name, role, status, phone } = req.body as Record<string, unknown>;
+
+    // SEC-03: 역할·상태 변경과 소유자 계정 수정은 소유자만 (DB 실계정 기준).
+    // 예전엔 행정관이면 누구든 자기·타인의 역할을 바꾸고 이름을 'Master Admin'으로 고쳐 소유자 권한을 얻었다.
+    const requesterIsOwner = await isOwnerUserId(req.user!.userId);
+    if (!requesterIsOwner) {
+      if (role !== undefined || status !== undefined) {
+        throw new ForbiddenError('역할·상태 변경은 소유자만 할 수 있습니다');
+      }
+      if (await isOwnerUserId(userId)) {
+        throw new ForbiddenError('소유자 계정은 소유자만 수정할 수 있습니다');
+      }
+    }
+    if (role !== undefined && (typeof role !== 'string' || !VALID_ROLES.includes(role))) {
+      throw new BadRequestError('role 값이 올바르지 않습니다');
+    }
+    if (status !== undefined && (typeof status !== 'string' || !VALID_STATUSES.includes(status))) {
+      throw new BadRequestError('status 값이 올바르지 않습니다');
+    }
+    if (name !== undefined && (typeof name !== 'string' || name.trim().length < 2 || name.length > 100)) {
+      throw new BadRequestError('이름은 2~100자 문자열이어야 합니다');
+    }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (name) updateData.name = name;
-    if (role) updateData.role = role;
-    if (status) updateData.status = status;
+    if (typeof name === 'string') updateData.name = name.trim();
+    if (typeof role === 'string') updateData.role = role;
+    if (typeof status === 'string') updateData.status = status;
     if (phone !== undefined) {
       // 승인 알림톡 수신처 — 숫자·하이픈만, 20자 이내 (빈 문자열 = 삭제)
       const cleaned = String(phone).trim();
