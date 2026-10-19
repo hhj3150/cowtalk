@@ -4,6 +4,18 @@ import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 
+/**
+ * Postgres 22P02(invalid_text_representation) — 형식이 잘못된 UUID·숫자가 쿼리에 들어간 경우.
+ * 사용자 입력 오류이지 서버 장애가 아니다. 예전엔 500 '예상치 못한 오류'로 떨어져 장애 화면이 떴다.
+ * drizzle 은 드라이버 오류를 cause 로 감싸므로 한 단계 안쪽도 본다.
+ */
+export function isInvalidInputSyntaxError(err: unknown): boolean {
+  const codeOf = (e: unknown): unknown => (e && typeof e === 'object' ? (e as { code?: unknown }).code : undefined);
+  if (codeOf(err) === '22P02') return true;
+  const cause = err && typeof err === 'object' ? (err as { cause?: unknown }).cause : undefined;
+  return codeOf(cause) === '22P02';
+}
+
 export function errorHandler(
   err: Error,
   req: Request,
@@ -24,6 +36,15 @@ export function errorHandler(
         code: err.code,
         message: err.message,
       },
+    });
+    return;
+  }
+
+  if (isInvalidInputSyntaxError(err)) {
+    logger.warn({ path: req.path }, '[errorHandler] 잘못된 형식의 식별자 — 400');
+    res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_IDENTIFIER', message: '요청한 식별자의 형식이 올바르지 않습니다' },
     });
     return;
   }

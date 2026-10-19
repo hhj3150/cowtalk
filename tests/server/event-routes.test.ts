@@ -63,10 +63,10 @@ describe('Event Routes', () => {
     expect(res.status).toBe(500);
   });
 
-  it('GET /events/:animalId — non-UUID animalId returns 500', async () => {
+  it('GET /events/:animalId — non-UUID animalId returns 404', async () => {
     const res = await request(app).get('/events/a-1');
-    // non-UUID ID causes DB validation error
-    expect(res.status).toBe(500);
+    // 예전엔 DB 형식 오류가 500 으로 새어 나왔다. 개체 접근 검사가 형식 오류를 '찾을 수 없음'(404)으로 처리한다
+    expect(res.status).toBe(404);
   });
 
   it('POST /events/voice — 음성 이벤트 변환', async () => {

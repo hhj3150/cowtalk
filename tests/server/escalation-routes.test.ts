@@ -27,12 +27,12 @@ describe('Escalation Routes', () => {
     // No seed data, so empty array is expected
   });
 
-  it('POST /escalation/acknowledge/:alertId — non-existent alert returns 500', async () => {
+  it('POST /escalation/acknowledge/:alertId — non-existent alert returns 404', async () => {
     const res = await request(app)
       .post('/escalation/acknowledge/alert-1')
       .send({ notes: '확인 완료' });
-    // No matching alert record in DB
-    expect(res.status).toBe(500);
+    // 알림 접근 검사가 없는 알림을 '찾을 수 없음'(404)으로 처리한다 (예전: DB 오류 500)
+    expect(res.status).toBe(404);
   });
 
   it('GET /escalation/config — 에스컬레이션 설정', async () => {
