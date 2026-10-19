@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { authenticate } from '../middleware/auth.js';
 import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
+import { requireScopedIds } from '../middleware/animal-access.js';
 import { getDb } from '../../config/database.js';
 import { reportSchedules, reportDeliveries } from '../../db/schema.js';
 import { buildPeriodReport } from '../../services/report/period-report.service.js';
@@ -78,6 +79,7 @@ function canManageFarmReports(req: Request, farmId: string): boolean {
 reportRouter.get(
   '/farm/:farmId/monthly',
   requirePermission('farm', 'read'),
+  requireScopedIds([{ source: 'params', field: 'farmId', kind: 'farm', required: true }]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const farmId = req.params.farmId as string;

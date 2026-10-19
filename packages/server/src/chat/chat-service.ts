@@ -27,6 +27,8 @@ import { buildMemoryContext } from './memory/memory.service.js';
 import { getActivePromptGuidances, formatPromptGuidances, type PromptGuidanceRow } from '../intelligence-loop/prompt-improver.service.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
+import { scopeReportParams } from '../services/report/report-scope.js';
+import { dbReportScopeResolvers } from '../services/report/report-scope.db.js';
 import { generateReportContent } from '../services/report/aiContentGenerator.js';
 import { generateDocx } from '../services/report/generators/docxGenerator.js';
 import { generateXlsx } from '../services/report/generators/xlsxGenerator.js';
@@ -67,6 +69,12 @@ export interface ChatMessageRequest {
   readonly permittedFarmIds?: readonly string[] | null;
   readonly animalId: string | null;
   readonly userId?: string;
+  /**
+   * JWT의 배정 농장 — 권한의 유일한 근거. 위 farmId/farmIds는 클라이언트 "요청"일 뿐이다.
+   * 게이트웨이가 이 값으로 도구 파라미터 스코프를 검증한다.
+   */
+  readonly assignedFarmIds?: readonly string[];
+  readonly isMaster?: boolean;
   readonly conversationHistory: readonly ConversationTurn[];
   readonly dashboardContext?: string;
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
@@ -117,7 +125,7 @@ export async function handleChatMessage(
   let detectedType: DetectedType = 'general';
   try {
     const resolved = await resolveContext(
-      question, farmId, animalId, role, dashboardContext,
+      question, farmId, animalId, role, dashboardContext, request.permittedFarmIds ?? null,
     );
     context = resolved.context;
     detectedType = resolved.detectedType;
@@ -294,15 +302,24 @@ export async function handleChatStream(
   const reportIntent = detectReportIntent(question);
   if (reportIntent.isReport) {
     try {
-      const reportParams: Record<string, string | number | undefined> = {};
-      if (reportIntent.traceNo) reportParams['traceNo'] = reportIntent.traceNo;
-      if (farmId) reportParams['farmId'] = farmId;
+      const requestedParams: Record<string, string | number | undefined> = {};
+      if (reportIntent.traceNo) requestedParams['traceNo'] = reportIntent.traceNo;
+      if (farmId) requestedParams['farmId'] = farmId;
+
+      // 이력번호·목장이 권한 범위 안인지 — 귀표 번호만으로 남의 소 보고서가 나오면 안 된다
+      const scopedReport = await scopeReportParams(
+        requestedParams, request.permittedFarmIds ?? null, dbReportScopeResolvers,
+      );
+      if (!scopedReport.ok) {
+        callbacks.onDone(`📄 보고서를 만들 수 없습니다 — ${scopedReport.message}`);
+        return;
+      }
 
       callbacks.onText('📄 보고서를 생성하고 있습니다...\n\n');
 
       const dbData = await collectReportData(
         reportIntent.reportType ?? 'custom',
-        reportParams,
+        scopedReport.params,
       );
 
       const reportContent = await generateReportContent({
@@ -367,7 +384,7 @@ export async function handleChatStream(
   const farmPulsePromise = !overviewPromise && farmId ? buildFarmPulseBlock(farmId) : null;
   try {
     const resolved = await resolveContext(
-      question, farmId, animalId, role, dashboardContext,
+      question, farmId, animalId, role, dashboardContext, request.permittedFarmIds ?? null,
     );
     context = resolved.context;
   } catch (err) {
@@ -537,6 +554,11 @@ export async function handleChatStream(
       role,
       farmId: farmId ?? undefined,
       farmIds: request.farmIds && request.farmIds.length > 0 ? request.farmIds : undefined,
+      // 권한 근거를 그대로 넘긴다 — 게이트웨이가 도구 파라미터를 이 기준으로 검증한다
+      assignedFarmIds: request.assignedFarmIds,
+      isMaster: request.isMaster,
+      // 사용자 발화 하나 = 턴 하나. 기록 도구는 제안 턴과 다른 턴의 명시적 승인으로만 실행된다
+      confirmationTurn: { turnId: uuidv4(), userUtterance: question },
     },
     { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );

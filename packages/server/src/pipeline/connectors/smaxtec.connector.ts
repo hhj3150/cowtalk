@@ -302,6 +302,39 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
   }
 
   private orgNameMap = new Map<string, string>();
+  private lastReconnectAttempt = 0;
+  /** 재연결 시도 최소 간격 — 인증 실패가 이어질 때 smaXtec에 로그인 요청을 쏟아붓지 않게 */
+  private static readonly RECONNECT_MIN_GAP_MS = 60_000;
+
+  /**
+   * 연결 상태를 보장한다. 끊겨 있으면 다시 붙는다.
+   *
+   * 왜 필요한가: 예전에는 부팅 시 인증이 한 번 실패하면 목장 목록이 빈 채로 남았다.
+   * 그 뒤 5분 주기 수집은 "목장 0곳 조회 → 성공, 0건"으로 끝나 오류 로그도 없이
+   * 데이터·알람이 0이 됐고, 비밀번호를 고쳐도 서버를 재시작할 때까지 회복되지 않았다.
+   */
+  async ensureConnected(): Promise<boolean> {
+    const healthy = this.client !== null
+      && this.organisationIds.length > 0
+      && this.status !== 'error'
+      && this.status !== 'disconnected';
+    if (healthy) return true;
+
+    const now = Date.now();
+    if (now - this.lastReconnectAttempt < SmaxtecConnector.RECONNECT_MIN_GAP_MS) return false;
+    this.lastReconnectAttempt = now;
+
+    logger.warn(
+      { status: this.status, orgCount: this.organisationIds.length, lastError: this.lastError },
+      '[smaXtec] 연결 복구 시도',
+    );
+    try {
+      await this.connect();
+    } catch {
+      return false; // connect가 lastError·로그를 남긴다
+    }
+    return this.status === 'connected' && this.organisationIds.length > 0;
+  }
 
   async connect(): Promise<void> {
     const email = config.SMAXTEC_EMAIL ?? process.env.SMAXTEC_EMAIL;
@@ -321,6 +354,13 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
       const orgs = await this.client.getOrganisations();
       this.organisationIds = orgs.map((o) => o.organisation_id);
       this.orgNameMap = new Map(orgs.map((o) => [o.organisation_id, o.name]));
+      if (orgs.length === 0) {
+        // 인증은 됐지만 이 계정에 연결된 목장이 없다 — 다른 계정으로 바꿨거나 권한이 빠진 경우
+        this.status = 'error';
+        this.lastError = 'smaXtec 계정에 연결된 목장(organisation)이 0곳입니다 — 계정의 목장 접근 권한을 확인하세요';
+        logger.error('[smaXtec] 인증 성공, 그러나 연결된 목장이 0곳 — 수집할 데이터가 없습니다');
+        return;
+      }
       this.status = 'connected';
       logger.info(
         { orgCount: orgs.length },
@@ -335,8 +375,9 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
   }
 
   async fetch(since?: Date): Promise<FetchResult<SmaxtecFetchData>> {
-    if (!this.client) {
-      throw new Error('smaXtec connector not connected');
+    // 끊겨 있으면 다시 붙는다. 실패하면 "성공 0건"이 아니라 오류로 드러낸다.
+    if (!(await this.ensureConnected())) {
+      throw new Error(`smaXtec 미연결 — ${this.lastError ?? '인증 정보(SMAXTEC_EMAIL/PASSWORD 또는 SMAXTEC_API_KEY)를 확인하세요'}`);
     }
 
     return this.fetchWithRetry(async () => {

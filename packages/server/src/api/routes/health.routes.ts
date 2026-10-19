@@ -74,14 +74,40 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     checks.push({ name: 'Claude API', status: 'degraded', latencyMs: Date.now() - claudeStart, detail: 'API key not configured' });
   }
 
-  // 4. smaXtec 크레덴셜 확인
+  // 4. smaXtec — "비밀번호가 입력돼 있는가"가 아니라 "실제로 연결돼 데이터가 들어오는가"
+  //    예전에는 자격증명 존재만 보고 healthy 로 표시해, 인증 실패로 데이터가 0인 동안에도 정상으로 보였다.
+  //    공개 엔드포인트라 원문 오류는 노출하지 않고 원인 분류만 알린다.
   const smaxtecStart = Date.now();
-  const smaxtecReady = Boolean(config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD);
+  const credentialsSet = Boolean(config.SMAXTEC_API_KEY || (config.SMAXTEC_EMAIL && config.SMAXTEC_PASSWORD));
+  let smaxtecStatus: 'healthy' | 'degraded' | 'down' = 'degraded';
+  let smaxtecDetail = 'Credentials not configured';
+  if (credentialsSet) {
+    try {
+      const { getPipelineOrchestrator } = await import('../../pipeline/orchestrator.js');
+      const pipeline = await getPipelineOrchestrator().getHealth();
+      const conn = pipeline.connectors.find((c) => c.connectorId === 'smaxtec');
+      const [latest] = await getDb().execute(sql`SELECT max(detected_at) AS last_event FROM smaxtec_events`) as unknown as Array<{ last_event: string | null }>;
+      const lastEventAt = latest?.last_event ? new Date(latest.last_event) : null;
+      const hoursSince = lastEventAt ? (Date.now() - lastEventAt.getTime()) / 3_600_000 : null;
+      smaxtecDetail = describeSmaxtecHealth({
+        running: pipeline.isRunning,
+        connectorStatus: conn?.status ?? 'unknown',
+        lastError: conn?.lastError ?? null,
+        lastSyncAt: conn?.lastSyncAt ?? null,
+        lastEventAt,
+      });
+      const connected = conn?.status === 'connected' || conn?.status === 'syncing';
+      smaxtecStatus = pipeline.isRunning && connected && hoursSince !== null && hoursSince < 6 ? 'healthy' : 'degraded';
+    } catch (err) {
+      logger.warn({ err }, '[Health] smaXtec 상태 조회 실패');
+      smaxtecDetail = 'Status check failed';
+    }
+  }
   checks.push({
     name: 'smaXtec Connector',
-    status: smaxtecReady ? 'healthy' : 'degraded',
+    status: smaxtecStatus,
     latencyMs: Date.now() - smaxtecStart,
-    detail: smaxtecReady ? 'Credentials configured' : 'Credentials not configured',
+    detail: smaxtecDetail,
   });
 
   const overallStatus = checks.every((c) => c.status === 'healthy')
@@ -103,3 +129,27 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     },
   });
 });
+
+/** 공개 헬스 응답용 smaXtec 상태 문구 — 원문 오류 대신 원인 분류 */
+export function describeSmaxtecHealth(h: {
+  readonly running: boolean;
+  readonly connectorStatus: string;
+  readonly lastError: string | null;
+  readonly lastSyncAt: Date | null;
+  readonly lastEventAt: Date | null;
+}): string {
+  const parts: string[] = [];
+  if (!h.running) parts.push('pipeline not running');
+  parts.push(`connector ${h.connectorStatus}`);
+  if (h.lastError) {
+    const e = h.lastError;
+    const cause = /401|auth|인증/i.test(e) ? 'authentication failed'
+      : /0곳|organisation/i.test(e) ? 'no organisations on account'
+      : /미연결|not connected/i.test(e) ? 'not connected'
+      : 'upstream error';
+    parts.push(`cause: ${cause}`);
+  }
+  parts.push(`last sync: ${h.lastSyncAt ? h.lastSyncAt.toISOString() : 'never'}`);
+  parts.push(`last event: ${h.lastEventAt ? h.lastEventAt.toISOString() : 'none'}`);
+  return parts.join(' · ');
+}

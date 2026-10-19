@@ -15,6 +15,7 @@ import { calculateDSI, type DSIResult } from '../../services/earlyDetection/dise
 import { evaluateFarmCluster } from '../../services/earlyDetection/farm-cluster.service.js';
 import { matchSignature } from '../../services/earlyDetection/disease-signature.db.js';
 import { logger } from '../../lib/logger.js';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const earlyDetectionRouter = Router();
 
@@ -87,7 +88,7 @@ const evaluateBodySchema = z.object({
   hasRuminationCessation: z.boolean().optional(),
 }).optional();
 
-earlyDetectionRouter.post('/evaluate/:animalId', async (req, res, next) => {
+earlyDetectionRouter.post('/evaluate/:animalId', requireAnimalAccess(), async (req, res, next) => {
   try {
     const animalId = z.string().uuid().parse(req.params.animalId);
     const body = evaluateBodySchema.parse(req.body);

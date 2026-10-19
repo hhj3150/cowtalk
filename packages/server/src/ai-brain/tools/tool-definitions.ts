@@ -213,6 +213,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        confirmationId: { type: 'string', description: '사용자 확인용 ID. 1차 호출 결과의 confirmationId — 사용자가 다음 발화에서 저장을 승인했을 때만 넣는다. 처음 호출할 때는 넣지 않는다.' },
         animalId: { type: 'string', description: '동물 ID (필수)' },
         farmId: { type: 'string', description: '농장 ID (필수)' },
         semenInfo: { type: 'string', description: '정액 정보 (종모우번호 또는 설명)' },
@@ -229,6 +230,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        confirmationId: { type: 'string', description: '사용자 확인용 ID. 1차 호출 결과의 confirmationId — 사용자가 다음 발화에서 저장을 승인했을 때만 넣는다. 처음 호출할 때는 넣지 않는다.' },
         animalId: { type: 'string', description: '동물 ID (필수)' },
         result: {
           type: 'string',
@@ -265,6 +267,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        confirmationId: { type: 'string', description: '사용자 확인용 ID. 1차 호출 결과의 confirmationId — 사용자가 다음 발화에서 저장을 승인했을 때만 넣는다. 처음 호출할 때는 넣지 않는다.' },
         animalId: { type: 'string', description: '동물 ID (필수)' },
         farmId: { type: 'string', description: '농장 ID (필수)' },
         protocol: {
@@ -300,6 +303,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        confirmationId: { type: 'string', description: '사용자 확인용 ID. 1차 호출 결과의 confirmationId — 사용자가 다음 발화에서 저장을 승인했을 때만 넣는다. 처음 호출할 때는 넣지 않는다.' },
         animalId: { type: 'string', description: '동물 ID (필수)' },
         diagnosis: { type: 'string', description: '진단명 (예: 유방염, 케토시스, 파행)' },
         severity: {
@@ -361,6 +365,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        confirmationId: { type: 'string', description: '사용자 확인용 ID. 1차 호출 결과의 confirmationId — 사용자가 다음 발화에서 저장을 승인했을 때만 넣는다. 처음 호출할 때는 넣지 않는다.' },
         treatmentId: { type: 'string', description: '치료 기록 ID (필수)' },
         outcome: {
           type: 'string',
@@ -378,6 +383,7 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        confirmationId: { type: 'string', description: '사용자 확인용 ID. 1차 호출 결과의 confirmationId — 사용자가 다음 발화에서 저장을 승인했을 때만 넣는다. 처음 호출할 때는 넣지 않는다.' },
         animalId: { type: 'string', description: '동물 ID (필수)' },
         diagnosis: { type: 'string', description: '전문가가 내린 진단명·판단 (필수). 예: 케토시스, 유방염, 구제역 의심' },
         labelType: {

@@ -9,6 +9,7 @@ import { paginationSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, animals, farms } from '../../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
+import { requireAlertAccess } from '../middleware/resource-access.js';
 
 export const alertRouter = Router();
 
@@ -80,7 +81,7 @@ alertRouter.get('/', requirePermission('alert', 'read'), validate({ query: pagin
 });
 
 // GET /alerts/:alertId — 단일 알림 상세
-alertRouter.get('/:alertId', requirePermission('alert', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+alertRouter.get('/:alertId', requireAlertAccess, requirePermission('alert', 'read'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const alertId = req.params.alertId as string;
@@ -121,7 +122,7 @@ alertRouter.get('/:alertId', requirePermission('alert', 'read'), async (req: Req
 });
 
 // PATCH /alerts/:alertId/status — 알림 상태 변경 (확인/해제)
-alertRouter.patch('/:alertId/status', requirePermission('alert', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+alertRouter.patch('/:alertId/status', requireAlertAccess, requirePermission('alert', 'update'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const alertId = req.params.alertId as string;

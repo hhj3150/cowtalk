@@ -25,6 +25,7 @@ import { computeHerd, getHerdTotal, getLiveCountByFarm } from '../../services/me
 import { computeAccuracy } from '../../services/metrics/ai-performance-service.js';
 import { getAlertCountForWidget } from '../../services/alerts/alert-aggregator.js';
 import { getCachedBriefingNarrative } from '../../serving/briefing-ai.service.js';
+import { createSwrCache } from '../../serving/swr-cache.js';
 import { getVetActionPlan } from '../../ai-brain/vet-action-plans.js';
 import type {
   UnifiedDashboardData,
@@ -167,6 +168,15 @@ unifiedDashboardRouter.use((req: Request, _res: Response, next: NextFunction) =>
 // 메인 엔드포인트
 // ===========================
 
+// 콜드 스타트·동시 접속 시 12개 위젯 쿼리가 겹쳐 커넥션 풀을 고갈시키지 않도록
+// 60초 fresh / 10분 stale-while-revalidate + 같은 키 동시 요청 합류.
+// (클라이언트도 5분 staleTime으로 갱신하므로 체감 신선도는 기존과 같은 수준)
+const unifiedDashboardCache = createSwrCache<UnifiedDashboardData>({
+  freshMs: 60_000,
+  staleMs: 10 * 60_000,
+  maxEntries: 500,
+});
+
 unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = (req.query.farmId as string | undefined) ?? null;
@@ -175,7 +185,14 @@ unifiedDashboardRouter.get('/', async (req: Request, res: Response, next: NextFu
 
     // farmId와 _currentFarmIds는 미들웨어에서 설정됨
     const role = (req.query.role as string | undefined) ?? req.user?.role ?? 'government_admin';
-    const data = await buildUnifiedDashboard(farmId, periodDays, undefined, role);
+    // 캐시 키 = 권한 스코프(미들웨어가 확정한 유효 farmIds) + 요청 파라미터
+    const scope = [...(farmIdsStorage.getStore() ?? [])].sort().join(',');
+    const cacheKey = `${role}|${periodDays}|${farmId ?? ''}|${scope}`;
+    const data = await unifiedDashboardCache.get(
+      cacheKey,
+      () => buildUnifiedDashboard(farmId, periodDays, undefined, role),
+      (error) => { logger.error({ error, cacheKey }, 'Unified dashboard background refresh failed'); },
+    );
     res.json({ success: true, data });
   } catch (error) {
     logger.error({ error }, 'Unified dashboard build failed');
@@ -1143,7 +1160,7 @@ function getSmaxtecCategory(smaxtecType: string): string {
   return 'health';
 }
 
-unifiedDashboardRouter.get('/animal/:animalId/timeline', async (req: Request, res: Response, next: NextFunction) => {
+unifiedDashboardRouter.get('/animal/:animalId/timeline', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -1268,7 +1285,7 @@ async function getSmaxtecConnector(): Promise<SmaxtecConnector | null> {
   }
 }
 
-unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', async (req: Request, res: Response, next: NextFunction) => {
+unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -3462,6 +3479,7 @@ import type {
 } from '@cowtalk/shared';
 import { farmProfitEntries } from '../../db/schema.js';
 import { z } from 'zod';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 /** Seeded pseudo-random for reproducible demo data per farmId+month */
 function seededRandom(seed: string): () => number {

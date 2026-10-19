@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { animalEvents, animals } from '../../db/schema.js';
+import { requireAnimalAccess } from '../middleware/animal-access.js';
 
 export const animalEventsRouter = Router();
 
@@ -109,7 +110,7 @@ const EventCreateSchema = z.object({
 
 // ── GET /:animalId ──
 
-animalEventsRouter.get('/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+animalEventsRouter.get('/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { animalId } = req.params as { animalId: string };
@@ -138,7 +139,7 @@ animalEventsRouter.get('/:animalId', async (req: Request, res: Response, next: N
 
 // ── POST /:animalId ──
 
-animalEventsRouter.post('/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+animalEventsRouter.post('/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { animalId } = req.params as { animalId: string };

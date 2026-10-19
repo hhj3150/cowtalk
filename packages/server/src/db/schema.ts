@@ -409,6 +409,25 @@ export const toolApprovalRequests = pgTable('tool_approval_requests', {
   index('tool_approval_requests_farm_id_idx').on(table.farmId),
 ]);
 
+// 기록 도구 확인 대기 — AI가 진료·번식 기록을 사용자 확인 없이 저장하지 못하게 (마이그레이션 0038)
+export const toolWriteConfirmations = pgTable('tool_write_confirmations', {
+  confirmationId: uuid('confirmation_id').primaryKey().defaultRandom(),
+  toolName: varchar('tool_name', { length: 60 }).notNull(),
+  toolInput: jsonb('tool_input').notNull().default('{}'),
+  userId: uuid('user_id').references(() => users.userId),
+  role: varchar('role', { length: 30 }).notNull(),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  turnId: varchar('turn_id', { length: 64 }).notNull(),
+  summary: text('summary').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('awaiting'), // awaiting | executed | cancelled | failed
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  executionResult: jsonb('execution_result'),
+}, (table) => [
+  index('tool_write_confirmations_user_status_idx').on(table.userId, table.status),
+]);
+
 // Farm Intelligence Index 일별 스냅샷 — "오늘의 목장 점수" 추이 원료 (24h 배치)
 export const farmIndexSnapshots = pgTable('farm_index_snapshots', {
   snapshotId: uuid('snapshot_id').primaryKey().defaultRandom(),

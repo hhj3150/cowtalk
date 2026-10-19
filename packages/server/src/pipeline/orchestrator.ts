@@ -298,9 +298,9 @@ export class PipelineOrchestrator {
   private sensorOffset = 0;
 
   private async collectSensorBatch(): Promise<void> {
-    const status = this.smaxtec.getStatus();
-    if (status !== 'connected') {
-      logger.warn({ status }, '[Pipeline] Sensor batch skipped — connector not connected');
+    // 끊겨 있으면 재연결을 시도한다 — 부팅 시 한 번 실패했다고 센서 수집이 영영 멈추면 안 된다
+    if (!(await this.smaxtec.ensureConnected())) {
+      logger.warn({ status: this.smaxtec.getStatus() }, '[Pipeline] Sensor batch skipped — smaXtec 미연결 (재연결 실패)');
       return;
     }
 

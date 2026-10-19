@@ -11,11 +11,14 @@
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 import { createHash } from 'node:crypto';
+import { getAudioModels } from './model-registry.js';
 
 // === 타입 ===
 
-export type TtsVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-export type TtsModel = 'tts-1' | 'tts-1-hd';
+export type TtsVoice =
+  | 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  | 'coral' | 'sage' | 'ash' | 'ballad' | 'verse';
+export type TtsModel = 'tts-1' | 'tts-1-hd' | 'gpt-4o-mini-tts';
 export type TtsFormat = 'mp3' | 'opus' | 'aac' | 'flac';
 
 export interface SynthesizeOptions {
@@ -24,7 +27,15 @@ export interface SynthesizeOptions {
   readonly model?: TtsModel;
   readonly format?: TtsFormat;
   readonly maxChars?: number; // 응답 앞 N자만 합성 (비용 절감)
+  /** 말투 지시 — gpt-4o-mini-tts에서만 반영된다 (구 모델은 무시) */
+  readonly instructions?: string;
 }
+
+/** instructions 파라미터를 지원하는 모델 */
+function supportsInstructions(model: TtsModel): boolean {
+  return model === 'gpt-4o-mini-tts';
+}
+
 
 export interface SynthesizeResult {
   readonly audio: Buffer;
@@ -47,10 +58,18 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const audioCache = new Map<string, CacheEntry>();
 
-function makeCacheKey(text: string, voice: TtsVoice, model: TtsModel, format: TtsFormat): string {
+function makeCacheKey(
+  text: string,
+  voice: TtsVoice,
+  model: TtsModel,
+  format: TtsFormat,
+  instructions: string,
+): string {
   // 텍스트 해시 + 옵션으로 키 생성 (긴 텍스트도 짧은 키로)
+  // instructions가 바뀌면 음색이 달라지므로 키에 포함해야 한다.
   const hash = createHash('sha1').update(text).digest('hex').slice(0, 16);
-  return `${hash}:${voice}:${model}:${format}`;
+  const instrHash = instructions ? createHash('sha1').update(instructions).digest('hex').slice(0, 8) : 'none';
+  return `${hash}:${voice}:${model}:${format}:${instrHash}`;
 }
 
 function getFromCache(key: string): CacheEntry | null {
@@ -208,6 +227,36 @@ function stripMarkdownForTts(text: string): string {
   return out;
 }
 
+// === OpenAI 호출 ===
+
+// gpt-4o-mini-tts는 speed를 받지 않고 instructions로 속도·톤을 지시한다.
+// 구 모델(tts-1/tts-1-hd)은 반대로 instructions를 모르고 speed만 받는다.
+async function callSpeechApi(
+  apiKey: string,
+  model: TtsModel,
+  input: string,
+  voice: TtsVoice,
+  format: TtsFormat,
+  instructions: string,
+): Promise<Response> {
+  return fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      input,
+      voice,
+      response_format: format,
+      ...(supportsInstructions(model)
+        ? (instructions ? { instructions } : {})
+        : { speed: config.OPENAI_TTS_SPEED }),
+    }),
+  });
+}
+
 // === 메인: synthesize ===
 
 export async function synthesize(options: SynthesizeOptions): Promise<SynthesizeResult> {
@@ -217,9 +266,13 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   }
 
   const voice = options.voice ?? config.OPENAI_TTS_VOICE;
-  const model = options.model ?? config.OPENAI_TTS_MODEL;
+  // 레지스트리가 이 키로 실제 사용 가능함을 확인한 최상위 모델. 호출자 지정이 있으면 그것을 존중한다.
+  const model = options.model ?? (await getAudioModels()).tts;
   const format = options.format ?? config.OPENAI_TTS_FORMAT;
   const maxChars = options.maxChars ?? config.OPENAI_TTS_MAX_CHARS;
+  const instructions = supportsInstructions(model)
+    ? (options.instructions ?? config.OPENAI_TTS_INSTRUCTIONS)
+    : '';
 
   // 1) 마크다운 제거
   const stripped = stripMarkdownForTts(options.text);
@@ -233,7 +286,7 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   const truncated = finalText.length < originalLength;
 
   // 3) 캐시 조회
-  const cacheKey = makeCacheKey(finalText, voice, model, format);
+  const cacheKey = makeCacheKey(finalText, voice, model, format, instructions);
   const cached = getFromCache(cacheKey);
   if (cached) {
     logger.debug({ voice, model, length: finalText.length }, '[tts] cache hit');
@@ -247,29 +300,17 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
     };
   }
 
-  // 4) OpenAI API 호출
+  // 4) OpenAI API 호출 — 모델은 레지스트리가 이미 "사용 가능함을 확인한" 것만 넘어온다
   const startedAt = Date.now();
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      input: finalText,
-      voice,
-      response_format: format,
-      speed: config.OPENAI_TTS_SPEED,
-    }),
-  });
+  const usedModel = model;
+  const response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, instructions);
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
     // 보안: 키나 민감 정보가 포함될 수 있으니 마스킹
     const safeMsg = errBody.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***');
     logger.error(
-      { status: response.status, body: safeMsg.slice(0, 500), voice, model },
+      { status: response.status, body: safeMsg.slice(0, 500), voice, model: usedModel },
       '[tts] OpenAI API error',
     );
     throw new Error(`OpenAI TTS 실패 (HTTP ${String(response.status)})`);
@@ -283,7 +324,7 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
   logger.info(
     {
       voice,
-      model,
+      model: usedModel,
       chars: finalText.length,
       audioBytes: audio.length,
       elapsedMs,
