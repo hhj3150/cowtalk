@@ -43,6 +43,37 @@ interface PipelineState {
   connectorHealth: ReadonlyMap<string, ConnectorHealth>;
 }
 
+/** OPS-01: 소버린 알람 순회 페이지 크기 (상한이 아니라 한 번에 읽는 단위) */
+export const SOVEREIGN_SWEEP_PAGE_SIZE = 100;
+
+/** OPS-01: 키셋 페이지로 모든 농장을 순회 — 상한 없음, 한 농장 실패가 나머지를 막지 않음 */
+export async function forEachFarmPaged(
+  fetchPage: (afterFarmId: string) => Promise<readonly string[]>,
+  handle: (farmId: string) => Promise<void>,
+  onError: (err: unknown, farmId: string) => void,
+  pageSize: number = SOVEREIGN_SWEEP_PAGE_SIZE,
+): Promise<{ scanned: number; failed: number }> {
+  let scanned = 0;
+  let failed = 0;
+  let after = '';
+  for (;;) {
+    const page = await fetchPage(after);
+    if (page.length === 0) break;
+    for (const farmId of page) {
+      scanned++;
+      try {
+        await handle(farmId);
+      } catch (err) {
+        failed++;
+        onError(err, farmId);
+      }
+    }
+    after = page[page.length - 1]!;
+    if (page.length < pageSize) break;
+  }
+  return { scanned, failed };
+}
+
 /** DI-09: 이미 저장된 시각(같은 개체·메트릭)과 한 배치 안의 중복을 걸러낸다 */
 export function filterNewMeasurements<T extends { timestamp: Date }>(values: readonly T[], existing: readonly Date[]): T[] {
   const seen = new Set(existing.map((d) => d.getTime()));
@@ -656,23 +687,29 @@ export class PipelineOrchestrator {
       const db = getDb();
       const { generateSovereignAlarms } = await import('../services/sovereign-alarm/orchestrator.js');
 
-      // 활성 농장 ID 목록
-      const farmRows = await db.execute(sql`
-        SELECT farm_id FROM farms WHERE status = 'active' LIMIT 200
-      `) as unknown as Array<{ farm_id: string }>;
-
+      // OPS-01: 예전엔 정렬 없는 LIMIT 200 — 농장이 201곳이 되면서 매번 임의의 농장이 알람 분석에서 빠졌다.
+      // 이제 전체 활성 농장을 id 순 페이지로 끝까지 돈다. 개별 실패는 기록하고 다음 농장으로 진행.
       let totalAlarms = 0;
-      for (const row of farmRows) {
-        try {
-          const alarms = await generateSovereignAlarms(row.farm_id, 10);
+      const { scanned, failed } = await forEachFarmPaged(
+        async (after) => {
+          const page = await db.execute(sql`
+            SELECT farm_id FROM farms
+            WHERE status = 'active' AND farm_id::text > ${after}
+            ORDER BY farm_id::text
+            LIMIT ${SOVEREIGN_SWEEP_PAGE_SIZE}
+          `) as unknown as Array<{ farm_id: string }>;
+          return page.map((r) => r.farm_id);
+        },
+        async (farmId) => {
+          const alarms = await generateSovereignAlarms(farmId, 10);
           totalAlarms += alarms.length;
-        } catch {
-          // 개별 농장 실패 무시
-        }
-      }
+        },
+        (err, farmId) => logger.warn({ err, farmId }, '[Pipeline] Sovereign alarm sweep — 농장 실패, 다음 농장 진행'),
+      );
 
       logger.info({
-        farms: farmRows.length,
+        farms: scanned,
+        failed,
         totalAlarms,
       }, '[Pipeline] Sovereign alarm sweep completed');
     } catch (error) {
