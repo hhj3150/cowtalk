@@ -5,13 +5,13 @@ export interface InseminationAnimalBriefing {
   readonly earTag: string;
   readonly estrusDetectedAt: string;
   readonly hoursRemaining: number; // 수정 적기 잔여시간
-  readonly estrusIntensity: 'strong' | 'moderate' | 'weak';
-  readonly activityIncreasePct: number;
-  readonly temperatureDelta: number; // 체온 변화 (℃)
+  readonly estrusIntensity: 'strong' | 'moderate' | 'weak' | 'unknown'; // 활동 실측 없으면 unknown
+  readonly activityIncreasePct: number | null; // 실측 없으면 null (AI-03: 추정치로 채우지 않음)
+  readonly temperatureDelta: number | null; // 체온 변화 (℃), 실측 없으면 null
   readonly lactationNumber: number;
   readonly daysSinceLastCalving: number;
   readonly previousInseminationCount: number; // 이번 사이클 수정 횟수
-  readonly suggestedSemen: string; // AI 추천 정액
+  readonly suggestedSemen: string; // 정액 추천 안내 (개체 번식 추천 화면에서 품종·근교 검사 후 확정)
   readonly suggestedAction: string;
   readonly optimalWindowStart: string; // ISO
   readonly optimalWindowEnd: string; // ISO

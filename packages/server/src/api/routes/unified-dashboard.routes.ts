@@ -8,6 +8,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
+import { config } from '../../config/index.js';
 import { getDb } from '../../config/database.js';
 import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js';
 import {
@@ -1285,11 +1286,19 @@ async function getSmaxtecConnector(): Promise<SmaxtecConnector | null> {
   }
 }
 
+/** AI-03: 센서 차트 합성 허용 여부 — 개발 환경 + 명시 요청일 때만 */
+export function shouldSimulateSensorChart(simulateParam: unknown, nodeEnv: string): boolean {
+  return nodeEnv === 'development' && simulateParam === '1';
+}
+
 unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
     const days = Math.min(Number(req.query.days) || 14, 90); // 최대 90일
+    // AI-03: 합성 곡선은 개발 환경에서 명시적으로 요청할 때만 (?simulate=1).
+    // 예전엔 결측이면 항상 이벤트 근처 이상치까지 넣은 가짜 곡선을 채웠고, 일부 화면이 이를 실측으로 표시했다.
+    const allowSimulation = shouldSimulateSensorChart(req.query.simulate, config.NODE_ENV);
 
     // 동물 기본 정보 + 프로필
     const [animal] = await db.select({
@@ -1517,7 +1526,7 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess
     // 실제 smaXtec 연동 시 해당 메트릭은 실 데이터가 사용됨
     const requiredMetrics = ['temp', 'act', 'rum', 'dr'];
     const missingMetrics = requiredMetrics.filter((k) => !metrics[k] || metrics[k]!.length === 0);
-    if (missingMetrics.length > 0) {
+    if (missingMetrics.length > 0 && allowSimulation) {
       // 이벤트 목록을 미리 가져와서 이상 구간 시뮬레이션에 활용
       const animalEvents = await db.select({
         eventType: smaxtecEvents.eventType,
@@ -1689,8 +1698,10 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess
         metrics,
         eventMarkers: markers,
         animalProfile,
-        // 시뮬레이션된 메트릭 목록 — 프론트엔드에서 "추정치" 라벨 표시용
-        simulatedMetrics: missingMetrics,
+        // 시뮬레이션된 메트릭 목록 — 프론트엔드에서 "추정치" 라벨 표시용 (개발 환경 명시 요청 시에만)
+        simulatedMetrics: allowSimulation ? missingMetrics : [],
+        // AI-03: 실측이 없어 비워 둔 메트릭 — 화면은 '데이터 없음'으로 표시한다
+        noDataMetrics: allowSimulation ? [] : missingMetrics,
       },
     });
   } catch (error) {
@@ -4672,14 +4683,7 @@ const ESTRUS_EVENT_TYPES = [
   'activity_increase', 'mounting',
 ];
 
-const SEMEN_RECOMMENDATIONS: readonly string[] = [
-  '한우 정액 (KPN-1128)',
-  '홀스타인 정액 (HAX-2245)',
-  '저지 정액 (JRS-0081)',
-  '브라운스위스 정액 (BSW-3370)',
-  '한우 우량 정액 (KPN-1205)',
-  '수정란이식 추천',
-];
+const SEMEN_RECOMMENDATION_NOTICE = '개체 상세의 번식 추천에서 확인 (품종·근교계수 검사)';
 
 function computeInseminationPriority(
   hoursRemaining: number,
@@ -4922,8 +4926,6 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
     let totalEstrusAnimals = 0;
     let totalWindowClosingSoon = 0;
 
-    const rng = seededRandom(`insem-${dateParam}`);
-
     const stops: InseminationRouteStop[] = routeOrder.reduce<InseminationRouteStop[]>((acc, idx, orderIdx) => {
       const farm = sortedFarms[idx];
       if (!farm) return acc;
@@ -4946,9 +4948,12 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
         if (hoursRemaining <= 2) stopWindowClosingSoon += 1;
 
         const detailObj = (evt.details ?? {}) as Record<string, unknown>;
-        const activityIncrease = Number(detailObj['activityIncreasePct'] ?? detailObj['activity_increase'] ?? 120);
-        const tempDelta = Number(detailObj['temperatureDelta'] ?? detailObj['temp_delta'] ?? 0.3 + rng() * 0.4);
-        const intensity = estimateEstrusIntensity(activityIncrease);
+        // AI-03: 실측값이 없으면 null — 예전엔 활동 120%, 체온 0.3~0.7℃ 난수로 채워 실측처럼 보였다
+        const rawActivity = detailObj['activityIncreasePct'] ?? detailObj['activity_increase'];
+        const rawTemp = detailObj['temperatureDelta'] ?? detailObj['temp_delta'];
+        const activityIncrease = rawActivity == null || !Number.isFinite(Number(rawActivity)) ? null : Number(rawActivity);
+        const tempDelta = rawTemp == null || !Number.isFinite(Number(rawTemp)) ? null : Number(rawTemp);
+        const intensity = activityIncrease === null ? 'unknown' as const : estimateEstrusIntensity(activityIncrease);
 
         const lastCalving = animalInfo?.lastCalvingDate;
         const daysSinceCalving = lastCalving
@@ -4961,9 +4966,9 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
         const optStart = new Date(detectedAt.getTime() + OPTIMAL_INSEMINATION_START_HOURS * 3_600_000);
         const optEnd = new Date(detectedAt.getTime() + OPTIMAL_INSEMINATION_END_HOURS * 3_600_000);
 
-        // AI 정액 추천 (산차, 수정 횟수 기반)
-        const semenIdx = Math.floor(rng() * SEMEN_RECOMMENDATIONS.length);
-        const suggestedSemen = SEMEN_RECOMMENDATIONS[semenIdx] ?? SEMEN_RECOMMENDATIONS[0]!;
+        // 정액 추천 — 예전엔 품종과 무관하게 목록에서 무작위로 골라 'AI 추천'으로 보였다 (한우↔젖소 교차 포함).
+        // 실제 추천은 개체의 품종·근교계수·보유 정액을 보는 번식 추천(/breeding/recommend)에서만 한다.
+        const suggestedSemen = SEMEN_RECOMMENDATION_NOTICE;
 
         const suggestedAction = hoursRemaining <= 2
           ? '수정 적기 임박 — 즉시 수정 실시'
@@ -4978,7 +4983,7 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
           hoursRemaining: Math.round(hoursRemaining * 10) / 10,
           estrusIntensity: intensity,
           activityIncreasePct: activityIncrease,
-          temperatureDelta: Math.round(tempDelta * 100) / 100,
+          temperatureDelta: tempDelta === null ? null : Math.round(tempDelta * 100) / 100,
           lactationNumber: animalInfo?.lactationNumber ?? 0,
           daysSinceLastCalving: daysSinceCalving,
           previousInseminationCount: breedingCount,

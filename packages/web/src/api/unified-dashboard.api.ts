@@ -332,6 +332,8 @@ export interface AnimalSensorChartData {
   readonly animalProfile?: AnimalProfileData;
   /** smaXtec 원시 데이터 없이 이벤트 기반 추정으로 채운 메트릭 키 목록 */
   readonly simulatedMetrics?: readonly string[];
+  /** 실측이 없어 비워 둔 메트릭 (AI-03) */
+  readonly noDataMetrics?: readonly string[];
 }
 
 export function fetchAnimalSensorChart(

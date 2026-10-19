@@ -226,6 +226,8 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
   });
 
   const hasSimulated = (data?.simulatedMetrics?.length ?? 0) > 0;
+  const NO_DATA_LABEL: Readonly<Record<string, string>> = { temp: '체온', act: '활동', rum: '반추', dr: '음수' };
+  const noDataLabels = (data?.noDataMetrics ?? []).map((k) => NO_DATA_LABEL[k] ?? k);
 
   return (
     <div style={{
@@ -253,6 +255,19 @@ export function SensorChartInline({ animalId }: Props): React.JSX.Element {
               border: '1px solid rgba(245,158,11,0.3)',
             }}>
               추정치 포함
+            </span>
+          )}
+          {noDataLabels.length > 0 && (
+            <span
+              title="센서 측정값이 없어 비워 둔 항목입니다 (추정치로 채우지 않음)"
+              style={{
+                fontSize: 9, fontWeight: 600,
+                background: 'var(--ct-border)',
+                color: 'var(--ct-text-muted)',
+                padding: '1px 5px', borderRadius: 4,
+              }}
+            >
+              데이터 없음: {noDataLabels.join('·')}
             </span>
           )}
         </div>
