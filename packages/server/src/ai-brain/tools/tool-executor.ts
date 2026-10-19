@@ -44,6 +44,12 @@ export interface ExecutorContext {
   readonly role?: string;
   readonly farmId?: string;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구를 이 농장들로 데이터 레벨 한정
+  /**
+   * 게이트웨이가 JWT로 확정한 접근 가능 농장. null = 무제한.
+   * earTag/traceId처럼 미리 농장을 알 수 없는 조회는 이 값으로 반드시 필터링해야 한다
+   * (게이트웨이가 사전 검사할 수 없는 유일한 경로다).
+   */
+  readonly allowedFarmIds?: readonly string[] | null;
 }
 
 // ===========================
@@ -62,7 +68,7 @@ export async function executeTool(
 
     switch (name) {
       case 'query_animal':
-        result = await queryAnimal(input);
+        result = await queryAnimal(input, context);
         break;
       case 'query_animal_events':
         result = await queryAnimalEvents(input);
@@ -71,7 +77,7 @@ export async function executeTool(
         result = await queryAnimalGraph(input);
         break;
       case 'record_milk_yield':
-        result = await handleRecordMilkYield(input);
+        result = await handleRecordMilkYield(input, context);
         break;
       case 'query_farm_summary':
         result = await queryFarmSummary(input);
@@ -157,7 +163,7 @@ export async function executeTool(
 // 1. 개체 조회
 // ===========================
 
-async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
+async function queryAnimal(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const db = getDb();
   const earTag = input.earTag as string | undefined;
   const traceId = input.traceId as string | undefined;
@@ -168,6 +174,15 @@ async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
   }
 
   const conditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
+
+  // 농장 격리 — 이력번호는 귀표에 인쇄돼 외부에 노출된다. 필터가 없으면
+  // 번호만 알아도 남의 목장 개체가 조회된다(실제로 그랬다).
+  // animalId는 게이트웨이가 사전 검사하지만, earTag/traceId는 여기서만 막을 수 있다.
+  const allowed = context?.allowedFarmIds;
+  if (allowed != null) {
+    if (allowed.length === 0) return { error: '접근 가능한 목장이 없습니다.' };
+    conditions.push(inArray(animals.farmId, [...allowed]));
+  }
   if (animalId) conditions.push(eq(animals.animalId, animalId));
   else if (traceId) conditions.push(eq(animals.traceId, traceId));
   else if (earTag) conditions.push(eq(animals.earTag, earTag));
@@ -192,7 +207,35 @@ async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
 
   if (rows.length === 0) return { error: '해당 개체를 찾을 수 없습니다.' };
 
-  const animal = rows[0]!;
+  // 같은 귀표번호가 여러 목장에 있을 수 있다 (목장 관리번호는 목장마다 따로 매긴다).
+  // 예전에는 첫 행을 조용히 골라, 다른 목장 소의 기록을 근거로 답하거나 엉뚱한 소에 기록할 위험이 있었다.
+  // 선택된 목장으로 하나로 좁혀지면 그걸 쓰고, 아니면 후보를 돌려줘 AI가 사용자에게 되묻게 한다.
+  let candidates = rows;
+  if (candidates.length > 1 && context?.farmId) {
+    const inSelected = candidates.filter((r) => r.farmId === context.farmId);
+    if (inSelected.length >= 1) candidates = inSelected;
+  }
+  if (candidates.length > 1) {
+    const farmNames = await db
+      .select({ farmId: farms.farmId, name: farms.name })
+      .from(farms)
+      .where(inArray(farms.farmId, [...new Set(candidates.map((r) => r.farmId))]));
+    const nameOf = new Map(farmNames.map((f) => [f.farmId, f.name]));
+    return {
+      ambiguous: true,
+      message: `같은 번호의 개체가 ${candidates.length}두 있습니다. 어느 목장의 소인지 사용자에게 확인한 뒤 animalId로 다시 조회하세요. 임의로 고르지 마세요.`,
+      candidates: candidates.map((r) => ({
+        animalId: r.animalId,
+        earTag: r.earTag,
+        traceId: r.traceId,
+        farmName: nameOf.get(r.farmId) ?? '미상',
+        breed: r.breed,
+        parity: r.parity,
+      })),
+    };
+  }
+
+  const animal = candidates[0]!;
 
   // 농장명
   const farmRow = await db
@@ -230,9 +273,15 @@ async function queryAnimal(input: Record<string, unknown>): Promise<unknown> {
 // ===========================
 
 // 유량 기록 (서비스 위임) — 경제 레이어 원료
-async function handleRecordMilkYield(input: Record<string, unknown>): Promise<unknown> {
+async function handleRecordMilkYield(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const { recordMilkYield } = await import('../../services/milk/milk-record.service.js');
-  return recordMilkYield(input as unknown as Parameters<typeof recordMilkYield>[0]);
+  const base = input as unknown as Parameters<typeof recordMilkYield>[0];
+  // 귀번호 검색은 게이트웨이가 사전 검사할 수 없다 — 선택 목장 → 접근 가능 목장 순으로 범위를 건다
+  return recordMilkYield({
+    ...base,
+    farmId: base.farmId ?? (base.earTag && !base.animalId ? context?.farmId : undefined),
+    allowedFarmIds: context?.allowedFarmIds,
+  });
 }
 
 // 온톨로지 그래프 조회 — 개체/농장의 전체 맥락(관계)을 한 번에

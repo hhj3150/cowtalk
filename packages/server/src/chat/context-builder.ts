@@ -4,7 +4,7 @@
 // quarantine_officer + 방역 키워드 → 방역 전용 컨텍스트
 
 import type { Role, BreedingPipelineData } from '@cowtalk/shared';
-import { eq, and, isNull, ilike, or } from 'drizzle-orm';
+import { eq, and, isNull, ilike, or, inArray } from 'drizzle-orm';
 import { buildAnimalProfile, buildFarmProfile, buildGlobalContext } from '../pipeline/profile-builder.js';
 import { romanizeIfHangul } from '../lib/romanize-hangul.js';
 import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
@@ -29,6 +29,12 @@ export async function resolveContext(
   currentAnimalId: string | null,
   _role: Role,
   dashboardContext?: string,
+  /**
+   * 사용자가 접근 가능한 농장 (rbac.scopedFarmIds). null = 무제한(마스터·미배정 관리역할).
+   * 질문 속 귀표번호·농장명으로 찾는 개체·농장과 전국 맥락을 이 범위로 제한한다 —
+   * 그렇지 않으면 "423번"이라고만 말해도 남의 목장 소의 프로필이 프롬프트에 실린다.
+   */
+  allowedFarms: readonly string[] | null = null,
 ): Promise<ResolvedContext> {
   let currentFarmId = initialFarmId;
 
@@ -63,7 +69,7 @@ export async function resolveContext(
     const earTag = earTagMatch[1];
     logger.debug({ earTag }, 'Detected ear tag in question — searching DB');
 
-    const animalId = await findAnimalByEarTag(earTag, currentFarmId);
+    const animalId = await findAnimalByEarTag(earTag, currentFarmId, allowedFarms);
     if (animalId) {
       const profile = await buildAnimalProfile(animalId);
       if (profile) {
@@ -75,7 +81,8 @@ export async function resolveContext(
   // 2.5. 질문에서 농장명 감지 → 퍼지 매칭
   // "갈전리 목장" → "갈전리목장(미양)" 매칭 지원
   if (!currentFarmId) {
-    const farmId = await findFarmByName(question);
+    const found = await findFarmByName(question);
+    const farmId = found && (allowedFarms === null || allowedFarms.includes(found)) ? found : null;
     if (farmId) {
       const profile = await buildFarmProfile(farmId);
       if (profile) {
@@ -105,7 +112,8 @@ export async function resolveContext(
 
   // 4. 전체 농장 글로벌 컨텍스트 (핵심 강화)
   // 특정 개체/농장이 아닌 모든 질문 → 전체 데이터 기반 응답
-  try {
+  // 단, 전국 맥락은 무제한 스코프(마스터·미배정 관리역할)에게만 — 제한 사용자에게 남의 목장 현황을 싣지 않는다
+  if (allowedFarms === null) try {
     // 번식 관련 질문이면 번식 파이프라인 데이터도 함께 로드
     const isBreeding = isBreedingQuery(question);
     const [globalCtx, breedingData] = await Promise.all([
@@ -205,6 +213,7 @@ async function findFarmByName(question: string): Promise<string | null> {
 async function findAnimalByEarTag(
   earTag: string,
   farmId: string | null,
+  allowedFarms: readonly string[] | null,
 ): Promise<string | null> {
   const db = getDb();
 
@@ -212,6 +221,10 @@ async function findAnimalByEarTag(
     const baseConditions = [isNull(animals.deletedAt)];
     if (farmId) {
       baseConditions.push(eq(animals.farmId, farmId));
+    } else if (allowedFarms !== null) {
+      // 농장 미지정 + 제한 사용자 → 배정 농장 안에서만 찾는다
+      if (allowedFarms.length === 0) return null;
+      baseConditions.push(inArray(animals.farmId, [...allowedFarms]));
     }
 
     // 1) 정확 일치 (팅커벨이 "423번" → "42423"로 오인하는 문제 방지)
@@ -219,8 +232,11 @@ async function findAnimalByEarTag(
       .select({ animalId: animals.animalId })
       .from(animals)
       .where(and(eq(animals.earTag, earTag), ...baseConditions))
-      .limit(1);
+      .limit(2);
 
+    // 같은 번호가 여러 목장에 있으면 고르지 않는다 — 엉뚱한 소의 기록을 근거로 답하는 것보다
+    // 개체를 특정하지 못한 채 AI가 되묻게 하는 편이 안전하다 (query_animal 도구가 후보를 제시)
+    if (exactMatch.length > 1) return null;
     if (exactMatch[0]) return exactMatch[0].animalId;
 
     // 2) contains 매칭 fallback (사용자가 부분번호로 질의한 경우)
@@ -228,9 +244,10 @@ async function findAnimalByEarTag(
       .select({ animalId: animals.animalId })
       .from(animals)
       .where(and(ilike(animals.earTag, `%${earTag}%`), ...baseConditions))
-      .limit(1);
+      .limit(2);
 
-    return fuzzy[0]?.animalId ?? null;
+    // 부분 일치는 후보가 정확히 하나일 때만 — "23번"이 123·423 중 아무거나 잡히면 안 된다
+    return fuzzy.length === 1 ? fuzzy[0]!.animalId : null;
   } catch (error) {
     logger.error({ error, earTag }, 'Failed to search animal by ear tag');
     return null;

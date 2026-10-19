@@ -5,6 +5,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
+import { requireScopedIds } from '../middleware/animal-access.js';
 import { getDb } from '../../config/database.js';
 import {
   farms,
@@ -96,6 +97,7 @@ function parseMonthRange(month: string): MonthRange {
 reportRouter.get(
   '/farm/:farmId/monthly',
   requirePermission('farm', 'read'),
+  requireScopedIds([{ source: 'params', field: 'farmId', kind: 'farm', required: true }]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const db = getDb();
