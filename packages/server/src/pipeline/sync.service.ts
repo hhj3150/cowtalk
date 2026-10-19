@@ -671,6 +671,21 @@ async function normalizeLactationStatus(): Promise<void> {
 }
 
 // ===========================
+/** 같은 분만으로 묶는 간격 — 분만 간격은 생물학적으로 이보다 짧을 수 없다 */
+export const CALVING_EPISODE_GAP_DAYS = 120;
+
+/** DI-06: 분만 이벤트 시각 목록 → 분만 횟수 (SQL 갱신과 같은 규칙, 검증용 순수 함수) */
+export function countCalvingEpisodes(dates: readonly Date[], gapDays: number = CALVING_EPISODE_GAP_DAYS): number {
+  const sorted = [...dates].map((d) => d.getTime()).sort((a, b) => a - b);
+  let count = 0;
+  let prev: number | null = null;
+  for (const t of sorted) {
+    if (prev === null || t - prev > gapDays * 86_400_000) count++;
+    prev = t;
+  }
+  return count;
+}
+
 // DIM/parity 이벤트 기반 업데이트
 // ===========================
 
@@ -700,20 +715,31 @@ async function updateDimAndParity(): Promise<number> {
         AND (a.days_in_milk IS NULL OR a.days_in_milk != lc.dim)
     `);
 
-    // Parity 업데이트: 분만 횟수
+    // Parity 업데이트: 분만 횟수 (DI-06)
+    //  - 한 번의 분만에 감지(calving_detection)·확인(calving_confirmation) 두 이벤트가 오면 예전엔 2로 셌다
+    //    → CALVING_EPISODE_GAP_DAYS 안의 이벤트는 같은 분만으로 묶는다 (countCalvingEpisodes 와 같은 규칙)
+    //  - 센서 장착 전 분만은 이벤트가 없다 → 기존 산차보다 작아지지 않게 GREATEST
     await db.execute(sql`
-      WITH calving_count AS (
-        SELECT animal_id, count(*)::int AS parity
+      WITH ordered AS (
+        SELECT animal_id, detected_at,
+               LAG(detected_at) OVER (PARTITION BY animal_id ORDER BY detected_at) AS prev_at
         FROM smaxtec_events
         WHERE event_type IN ('calving_confirmation', 'calving_detection')
+      ),
+      calving_count AS (
+        SELECT animal_id,
+               count(*) FILTER (
+                 WHERE prev_at IS NULL OR detected_at - prev_at > make_interval(days => ${CALVING_EPISODE_GAP_DAYS}::int)
+               )::int AS parity
+        FROM ordered
         GROUP BY animal_id
       )
       UPDATE animals a
-      SET parity = cc.parity, updated_at = now()
+      SET parity = GREATEST(COALESCE(a.parity, 0), cc.parity), updated_at = now()
       FROM calving_count cc
       WHERE a.animal_id = cc.animal_id
         AND a.status = 'active'
-        AND (a.parity IS NULL OR a.parity != cc.parity)
+        AND (a.parity IS NULL OR a.parity < cc.parity)
     `);
 
     // 간단한 카운트 추정 (정확한 rowCount 접근이 드라이버마다 다름)

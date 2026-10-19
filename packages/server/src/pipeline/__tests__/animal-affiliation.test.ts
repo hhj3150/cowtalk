@@ -141,3 +141,19 @@ describe('DI-05 syncAnimals — 로컬 값 보존', () => {
     expect(updates).toHaveLength(0);
   });
 });
+
+// ── DI-06 회귀 — 한 번의 분만을 감지·확인 이벤트로 두 번 세던 산차 ──
+describe('DI-06 countCalvingEpisodes', () => {
+  it('감지+확인 이벤트 2건(같은 분만)은 1산', async () => {
+    const { countCalvingEpisodes } = await import('../sync.service.js');
+    expect(countCalvingEpisodes([new Date('2026-03-01T02:00:00Z'), new Date('2026-03-01T09:00:00Z')])).toBe(1);
+  });
+  it('1년 간격 분만 2회는 2산', async () => {
+    const { countCalvingEpisodes } = await import('../sync.service.js');
+    expect(countCalvingEpisodes([new Date('2025-03-01'), new Date('2025-03-02'), new Date('2026-03-05')])).toBe(2);
+  });
+  it('이벤트 없음은 0', async () => {
+    const { countCalvingEpisodes } = await import('../sync.service.js');
+    expect(countCalvingEpisodes([])).toBe(0);
+  });
+});
