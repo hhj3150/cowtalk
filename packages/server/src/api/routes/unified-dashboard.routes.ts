@@ -387,7 +387,7 @@ unifiedDashboardRouter.get('/drilldown', async (req: Request, res: Response, nex
       : null;
 
     const typeFilter = requestedTypes && requestedTypes.length > 0
-      ? sql`${smaxtecEvents.eventType} IN (${sql.raw(requestedTypes.map((t) => `'${t}'`).join(','))})`
+      ? inArray(smaxtecEvents.eventType, requestedTypes)
       : eventType === 'ALL'
         ? undefined
         : eventType === 'HEALTH_ALL'
@@ -1993,22 +1993,59 @@ unifiedDashboardRouter.get('/herd-composition', async (req: Request, res: Respon
 // GET /api/unified-dashboard/farm-comparison?farmIds=id1,id2,id3
 // ===========================
 
+/** 목장 비교 최대 개수 — 요청 1건이 농장당 4개 쿼리를 만들므로 상한을 둔다 */
+const FARM_COMPARISON_MAX = 10;
+
+export type ComparisonSelection =
+  | { readonly mode: 'top' }
+  | { readonly mode: 'explicit'; readonly farmIds: readonly string[] };
+
+/**
+ * SEC-01: /farm-comparison 의 farmIds 파라미터 해석 (순수 함수).
+ * - UUID 형식이 아닌 값은 버린다 (SQL 조각이 끼어들 여지 제거)
+ * - 배정 스코프가 있으면 교집합만 — 권한 밖 목장 id는 조용히 제외 (빈 결과 가능)
+ * - 파라미터가 있었는데 유효한 id가 하나도 없으면 빈 배열 (상위 3개로 대체하지 않음)
+ */
+export function resolveComparisonFarmIds(
+  farmIdsParam: string | undefined,
+  scope: readonly string[] | null,
+): ComparisonSelection {
+  if (farmIdsParam === undefined || farmIdsParam.trim() === '') return { mode: 'top' };
+  const valid = [...new Set(
+    farmIdsParam.split(',').map((id) => id.trim().toLowerCase()).filter((id) => UUID_REGEX.test(id)),
+  )];
+  const permitted = scope === null
+    ? valid
+    : valid.filter((id) => scope.some((s) => s.toLowerCase() === id));
+  return { mode: 'explicit', farmIds: permitted.slice(0, FARM_COMPARISON_MAX) };
+}
+
 unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
-    const farmIdsParam = req.query.farmIds as string | undefined;
+    const rawFarmIds = req.query.farmIds;
+    // ?farmIds=a&farmIds=b (배열)도 문자열과 같게 — 형식이 다르다고 500이 나지 않게
+    const farmIdsParam = Array.isArray(rawFarmIds)
+      ? rawFarmIds.filter((v): v is string => typeof v === 'string').join(',')
+      : typeof rawFarmIds === 'string' ? rawFarmIds : undefined;
     const last7d = daysAgo(7);
 
-    // farmIds 결정: 파라미터 없으면 동물 수 상위 3개 농장
-    let targetFarmIds: string[];
-    if (farmIdsParam) {
-      targetFarmIds = farmIdsParam.split(',').map((id) => id.trim()).filter(Boolean);
+    // SEC-01: 요청 farmIds는 UUID 검증 + 배정 스코프 교집합 후 파라미터 바인딩(inArray)으로만 쓴다.
+    const scope = scopedFarmIds(req);
+    const selection = resolveComparisonFarmIds(farmIdsParam, scope);
+    let targetFarmIds: readonly string[];
+    if (selection.mode === 'explicit') {
+      targetFarmIds = selection.farmIds;
     } else {
+      // 파라미터 없으면 (권한 범위 안에서) 동물 수 상위 3개 농장
       const topFarms = await db.select({
         farmId: farms.farmId,
       })
         .from(farms)
-        .where(eq(farms.status, 'active'))
+        .where(whereAll(
+          eq(farms.status, 'active'),
+          scope === null ? undefined : inArray(farms.farmId, [...scope]),
+        ))
         .orderBy(desc(farms.currentHeadCount))
         .limit(3);
       targetFarmIds = topFarms.map((f) => f.farmId);
@@ -2019,15 +2056,13 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
       return;
     }
 
-    const farmIdsList = targetFarmIds.map((id) => `'${id}'`).join(',');
-
     // 농장 기본 정보
     const farmRows = await db.select({
       farmId: farms.farmId,
       farmName: farms.name,
     })
       .from(farms)
-      .where(sql`${farms.farmId} IN (${sql.raw(farmIdsList)})`);
+      .where(inArray(farms.farmId, [...targetFarmIds]));
 
     // 농장별 메트릭 계산
     const data = await Promise.all(farmRows.map(async (farm) => {

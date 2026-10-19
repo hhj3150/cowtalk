@@ -91,7 +91,7 @@ async function saveDiagnosisHistory(
       ${animalId},
       ${result.farmId ?? null},
       ${userId ?? null},
-      ${symptoms.length > 0 ? sql.raw(`ARRAY[${symptoms.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')}]::text[]`) : sql`'{}'::text[]`},
+      ${symptoms.length > 0 ? sql`ARRAY[${sql.join(symptoms.map((s) => sql`${s}`), sql`, `)}]::text[]` : sql`'{}'::text[]`},
       ${JSON.stringify(result.candidates)}::jsonb,
       ${result.urgencyLevel},
       ${result.dataQuality},
