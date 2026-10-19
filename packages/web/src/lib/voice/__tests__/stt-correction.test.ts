@@ -34,6 +34,31 @@ describe('normalizeKoreanNumerals', () => {
     expect(normalizeKoreanNumerals('사료 좀 봐줘')).toBe('사료 좀 봐줘');
   });
 
+  // VO-03 회귀 — 일상어를 개체번호로 바꾸던 오변환
+  it.each([
+    ['이번 소 상태 어때', '이번 소 상태 어때'],
+    ['이번 주 발정 예정', '이번 주 발정 예정'],
+    ['이분이 수의사야', '이분이 수의사야'],
+    ['구두 신고 들어가', '구두 신고 들어가'],
+    ['저번 소', '저번 소'],
+  ])('VO-03 일상어는 그대로: %s', (input, expected) => {
+    expect(normalizeKoreanNumerals(input)).toBe(expected);
+  });
+
+  it('VO-03 띄어 읽은 수사는 한 수로 합친다', () => {
+    expect(normalizeKoreanNumerals('사백이십 삼번 소')).toBe('423번 소');
+    expect(normalizeKoreanNumerals('천 오백번')).toBe('1500번');
+  });
+
+  it('VO-03 정상 변환은 유지', () => {
+    expect(normalizeKoreanNumerals('이백삼번')).toBe('203번');
+    expect(normalizeKoreanNumerals('삼십번')).toBe('30번');
+    expect(normalizeKoreanNumerals('일공삼번')).toBe('103번');
+    expect(normalizeKoreanNumerals('이산차 소')).toBe('2산차 소');
+    expect(normalizeKoreanNumerals('구 두 남았어')).toBe('9두 남았어');
+    expect(normalizeKoreanNumerals('칠번 소')).toBe('7번 소');
+  });
+
   it('이미 아라비아 숫자인 입력은 그대로 둔다', () => {
     expect(normalizeKoreanNumerals('423번 소')).toBe('423번 소');
   });

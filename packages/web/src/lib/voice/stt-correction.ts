@@ -91,6 +91,21 @@ function parseDigitSequence(text: string): string | null {
 const SINO_CHARS = '영공일이삼사오육륙칠팔구십백천만';
 
 /**
+ * VO-03: 한 글자 수사 + 단위가 일상어와 겹치는 경우 — 숫자로 바꾸지 않는다.
+ *   "이번 소"(this cow) → "2번 소", "이번 주" → "2번 주", "이분" → "2분", "구두" → "9두"로 오변환되던 문제.
+ *   - '이' 한 글자는 지시어(이번·이분·이주·이도·이일·이시…)와 겹친다 → 산차·개월·마리처럼
+ *     지시어로 쓰이지 않는 단위만 숫자로 본다.
+ *   - 단위 '두'(두수)에 한 글자 수사가 붙어 있으면 낱말(구두·이두·오두)로 본다. 띄어 말하면("구 두") 숫자.
+ */
+const UNAMBIGUOUS_UNITS_FOR_I = new Set(['산차', '산', '개월', '마리', '회', '리터', '킬로', '킬로그램', '퍼센트', '건', '명', '개', '일째']);
+function isAmbiguousSingleNumeral(numeral: string, gap: string, unit: string): boolean {
+  if (numeral.length !== 1) return false;
+  if (numeral === '이' && !UNAMBIGUOUS_UNITS_FOR_I.has(unit)) return true;
+  if (unit === '두' && gap === '') return true;
+  return false;
+}
+
+/**
  * 단위가 뒤따르는 한국어 수사를 아라비아 숫자로 바꾼다.
  * "사백이십삼번 소" → "423번 소", "세 마리" → "3마리", "삼산차" → "3산차"
  */
@@ -98,11 +113,20 @@ export function normalizeKoreanNumerals(input: string): string {
   const unitAlt = NUMERIC_UNITS.slice().sort((a, b) => b.length - a.length).join('|');
 
   // (1) 한자어 수사 + 단위
-  const sinoRe = new RegExp(`([${SINO_CHARS}]{1,8})\\s*(${unitAlt})(?![가-힣])`, 'g');
-  let out = input.replace(sinoRe, (match, numeral: string, unit: string) => {
+  //   VO-03: 단어 중간의 글자를 수사로 읽지 않도록 앞이 한글이 아닐 때만 시작한다.
+  //   띄어 읽은 수사("사백이십 삼번")는 한 수로 합친다.
+  const sinoRe = new RegExp(
+    `(?<![가-힣])([${SINO_CHARS}]{1,8}(?: [${SINO_CHARS}]{1,8}){0,3})(\\s*)(${unitAlt})(?![가-힣])`,
+    'g',
+  );
+  let out = input.replace(sinoRe, (match, numeralRaw: string, gap: string, unit: string) => {
+    const numeral = numeralRaw.replace(/ /g, '');
+    if (isAmbiguousSingleNumeral(numeral, gap, unit)) return match;
     // 자릿수 문자(십·백·천·만)가 없는 2글자 이상은 번호 나열로 본다: "공사삼이번" → "0432번"
     const hasUnitChar = /[십백천만]/.test(numeral);
     if (!hasUnitChar && numeral.length >= 2) {
+      // 띄어 쓴 한 글자들("이 사 번")은 나열로 확신할 수 없다 — 그대로 둔다
+      if (numeralRaw.includes(' ')) return match;
       const seq = parseDigitSequence(numeral);
       return seq === null ? match : `${seq}${unit}`;
     }
