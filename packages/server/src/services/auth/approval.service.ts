@@ -12,6 +12,7 @@ import { getDb } from '../../config/database.js';
 import { users } from '../../db/schema.js';
 import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
 import { logger } from '../../lib/logger.js';
+import { config } from '../../config/index.js';
 import type { ApprovalStatus } from '@cowtalk/shared';
 
 /** 소유자 식별 — 마이그레이션 0032의 승인 조건과 동일해야 한다 */
@@ -22,6 +23,28 @@ export function isOwnerAccount(user: { readonly role: string; readonly name: str
     (user.role === 'government_admin' && user.name.includes('Master Admin')) ||
     OWNER_EMAILS.includes(user.email)
   );
+}
+
+/**
+ * 토큰에 실을 데이터 스코프. 소유자 계정은 목장 배정과 무관하게 **전체 목장**을 본다.
+ *
+ * 왜 필요한가: 스코프는 "배정 우선" 규칙이라, 소유자 계정에 목장이 하나라도 배정되면
+ * (예: 파일럿 목장을 직접 관리하려고 배정) 그 목장 데이터만 보이게 된다. 소유자는 플랫폼
+ * 전체를 운영·점검해야 하므로 배정을 무시하고 마스터(isMaster)로 발급한다.
+ */
+export function tokenScopeFor(
+  email: string | null | undefined,
+  assignedFarmIds: readonly string[],
+): { readonly farmIds: string[]; readonly isMaster?: true } {
+  const normalized = (email ?? '').trim().toLowerCase();
+  if (OWNER_EMAILS.includes(normalized)) return { farmIds: [], isMaster: true };
+  // 소유자 단독 운영 단계 — 승인된 모든 계정에 전체 공개 (Railway OPEN_DATA_SCOPE=true)
+  if (config.OPEN_DATA_SCOPE) return { farmIds: [], isMaster: true };
+  return { farmIds: [...assignedFarmIds] };
+}
+
+export function isOwnerEmail(email: string | null | undefined): boolean {
+  return OWNER_EMAILS.includes((email ?? '').trim().toLowerCase());
 }
 
 const CACHE_TTL_MS = 60_000;

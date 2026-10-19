@@ -23,6 +23,11 @@ const envSchema = z.object({
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
 
   REDIS_ENABLED: z.coerce.boolean().default(true),
+  // 데이터 전체 공개 스위치 — 소유자 단독 운영 단계용. "true"일 때만 켜진다.
+  // 켜면 로그인한(=소유자가 승인한) 모든 계정이 목장 배정과 무관하게 전체 목장을 본다.
+  // ⚠️ 다른 사용자(목장주·수의사)를 받기 전에 반드시 끈다 — 끄면 목장별 권한으로 즉시 복귀(재로그인·토큰 갱신 시)
+  // (z.coerce.boolean은 "false"도 true로 바꾸므로 쓰지 않는다)
+  OPEN_DATA_SCOPE: z.string().optional().transform((v) => v === 'true'),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(''),
