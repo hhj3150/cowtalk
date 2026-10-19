@@ -618,6 +618,7 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
         AND NOT EXISTS (
           SELECT 1 FROM breeding_events be
           WHERE be.notes = 'smaxtec:' || se.external_event_id
+            AND be.notes LIKE 'smaxtec:%' -- OPS-06: 부분 인덱스(breeding_events_smaxtec_notes_idx) 사용 조건
         )
       ON CONFLICT DO NOTHING
     `);
@@ -651,6 +652,7 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
         AND NOT EXISTS (
           SELECT 1 FROM pregnancy_checks pc
           WHERE pc.notes = 'smaxtec:' || se.external_event_id
+            AND pc.notes LIKE 'smaxtec:%' -- OPS-06: 부분 인덱스(pregnancy_checks_smaxtec_notes_idx) 사용 조건
         )
       ON CONFLICT DO NOTHING
     `);

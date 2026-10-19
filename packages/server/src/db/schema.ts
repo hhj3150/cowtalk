@@ -134,6 +134,7 @@ export const animals = pgTable('animals', {
   index('animals_farm_id_idx').on(table.farmId),
   index('animals_status_idx').on(table.status),
   index('animals_ear_tag_idx').on(table.earTag),
+  index('animals_external_id_idx').on(table.externalId), // OPS-06 (0041)
   // DI-08: 살아 있는 행 기준 식별자 유니크 (마이그레이션 0039 — 중복이 없을 때만 생성)
   uniqueIndex('animals_external_id_live_uidx').on(table.externalId)
     .where(sql`${table.externalId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
@@ -236,6 +237,7 @@ export const smaxtecEvents = pgTable('smaxtec_events', {
   // 드릴다운 가속 (event_type + detected_at DESC) — 0019 migration
   index('smaxtec_events_event_type_detected_at_idx').on(table.eventType, table.detectedAt),
   index('smaxtec_events_farm_event_detected_idx').on(table.farmId, table.eventType, table.detectedAt),
+  index('smaxtec_events_external_event_id_idx').on(table.externalEventId), // OPS-06 (0041)
 ]);
 
 // ======================================================================
@@ -262,6 +264,7 @@ export const breedingEvents = pgTable('breeding_events', {
   index('breeding_events_animal_id_idx').on(table.animalId),
   index('breeding_events_farm_id_idx').on(table.farmId),
   index('breeding_events_status_idx').on(table.status),
+  index('breeding_events_smaxtec_notes_idx').on(table.notes).where(sql`${table.notes} LIKE 'smaxtec:%'`), // OPS-06 (0041)
 ]);
 
 export const pregnancyChecks = pgTable('pregnancy_checks', {
@@ -275,6 +278,7 @@ export const pregnancyChecks = pgTable('pregnancy_checks', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('pregnancy_checks_animal_id_idx').on(table.animalId),
+  index('pregnancy_checks_smaxtec_notes_idx').on(table.notes).where(sql`${table.notes} LIKE 'smaxtec:%'`), // OPS-06 (0041)
 ]);
 
 export const calvingEvents = pgTable('calving_events', {
