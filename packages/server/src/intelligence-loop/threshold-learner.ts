@@ -7,6 +7,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { getDb } from '../config/database.js';
 import { thresholdSuggestions, modelRegistry } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
+import { learnableLabelRawCondition } from './label-source.js';
 
 const DEFAULT_THRESHOLD = 0.60;
 const BORDERLINE_RANGE = 0.05;
@@ -355,6 +356,7 @@ async function aggregateLabelStats(
       count(*) FILTER (WHERE verdict = 'modified')::int AS modified
     FROM sovereign_alarm_labels
     WHERE labeled_at >= ${since}::timestamptz
+      AND ${learnableLabelRawCondition()}
     ${farmFilter}
     GROUP BY alarm_type
     ORDER BY count(*) DESC

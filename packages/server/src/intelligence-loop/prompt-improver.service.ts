@@ -10,6 +10,7 @@
 
 import { getDb } from '../config/database.js';
 import { promptGuidances, sovereignAlarmLabels } from '../db/schema.js';
+import { learnableLabelCondition } from './label-source.js';
 import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 
@@ -98,7 +99,7 @@ export function formatPromptGuidances(rows: readonly PromptGuidanceRow[]): strin
   if (rows.length === 0) return null;
   const lines = rows.map((r) => `- ${r.guidanceText}`);
   return [
-    '## AI 자기보정 가이드 (실측 라벨 기반 — Intelligence Loop 자동 생성)',
+    '## AI 자기보정 가이드 (전문가 판정 + 실제 발사 알람 자동 매칭 라벨 기반 — Intelligence Loop 자동 생성)',
     ...lines,
   ].join('\n');
 }
@@ -127,7 +128,7 @@ async function aggregateLabels(windowDays: number): Promise<AggRow[]> {
       modified: sql<number>`count(*) filter (where ${sovereignAlarmLabels.verdict} = 'modified')::int`,
     })
     .from(sovereignAlarmLabels)
-    .where(gte(sovereignAlarmLabels.labeledAt, since))
+    .where(and(gte(sovereignAlarmLabels.labeledAt, since), learnableLabelCondition()))
     .groupBy(sovereignAlarmLabels.farmId, sovereignAlarmLabels.alarmType);
 
   // 글로벌 집계 (farmId null)
@@ -140,7 +141,7 @@ async function aggregateLabels(windowDays: number): Promise<AggRow[]> {
       modified: sql<number>`count(*) filter (where ${sovereignAlarmLabels.verdict} = 'modified')::int`,
     })
     .from(sovereignAlarmLabels)
-    .where(gte(sovereignAlarmLabels.labeledAt, since))
+    .where(and(gte(sovereignAlarmLabels.labeledAt, since), learnableLabelCondition()))
     .groupBy(sovereignAlarmLabels.alarmType);
 
   return [

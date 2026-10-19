@@ -6,6 +6,7 @@ import { getDb } from '../../config/database.js';
 import { alerts, farms, sovereignAlarmLabels } from '../../db/schema.js';
 import { gte, eq, sql, count } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { learnableLabelCondition } from '../../intelligence-loop/label-source.js';
 
 // ===========================
 // 타입
@@ -178,7 +179,8 @@ export async function getEarlyDetectionMetrics(): Promise<EarlyDetectionMetrics>
         confirmed: sql<number>`count(*) filter (where ${sovereignAlarmLabels.verdict} in ('confirmed', 'modified'))`,
         falsePositive: sql<number>`count(*) filter (where ${sovereignAlarmLabels.verdict} = 'false_positive')`,
       })
-      .from(sovereignAlarmLabels);
+      .from(sovereignAlarmLabels)
+      .where(learnableLabelCondition()); // AI-02: 알람 실재 미확인 옛 자동 레이블 제외
     const confirmedN = Number(labelCounts?.confirmed ?? 0);
     const falsePositiveN = Number(labelCounts?.falsePositive ?? 0);
     const labeledTotal = confirmedN + falsePositiveN;
