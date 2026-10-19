@@ -13,6 +13,7 @@ export const ko: Readonly<Record<string, string>> = {
   'nav.epi-dash': '방역 대시보드',
   'nav.automation': '자동화 룰',
   'nav.alerts': '알림 설정',
+  'nav.report-sched': '보고서 발송',
   'nav.subscription': '구독 관리',
   'nav.admin-farms': '목장 관리',
   'nav.admin-users': '사용자 관리',
