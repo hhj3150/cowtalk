@@ -16,7 +16,7 @@ import { runTreatmentOutcomeCheck } from '../services/vet/treatment-outcome.serv
 import { completeAfterSnapshots } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
 import { getDb } from '../config/database.js';
 import { animals, sensorMeasurements } from '../db/schema.js';
-import { eq, and, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, isNotNull, sql } from 'drizzle-orm';
 import { SmaxtecConnector } from './connectors/smaxtec.connector.js';
 import {
   TraceabilityConnector,
@@ -41,6 +41,19 @@ interface PipelineState {
   lastRealtimeRun: Date | null;
   lastBatchRun: Date | null;
   connectorHealth: ReadonlyMap<string, ConnectorHealth>;
+}
+
+/** DI-09: 이미 저장된 시각(같은 개체·메트릭)과 한 배치 안의 중복을 걸러낸다 */
+export function filterNewMeasurements<T extends { timestamp: Date }>(values: readonly T[], existing: readonly Date[]): T[] {
+  const seen = new Set(existing.map((d) => d.getTime()));
+  const out: T[] = [];
+  for (const v of values) {
+    const t = v.timestamp.getTime();
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(v);
+  }
+  return out;
 }
 
 export class PipelineOrchestrator {
@@ -362,8 +375,23 @@ export class PipelineOrchestrator {
             qualityFlag: 'good' as const,
           }));
 
-          await db.insert(sensorMeasurements).values(values).onConflictDoNothing();
-          totalStored += values.length;
+          // DI-09: 운영 DB 에는 (animal_id, timestamp, metric_type) 유니크 인덱스가 마이그레이션으로 만들어지지 않아
+          // onConflictDoNothing 이 아무것도 막지 못했다 — 겹치는 구간을 다시 받으면 그대로 중복 저장됐다.
+          // 인덱스는 기존 중복 정리(운영 데이터 변경, 별도 승인) 뒤에 만든다. 그 전까지 저장 전에 직접 걸러낸다.
+          const tsList = values.map((v) => v.timestamp);
+          const existing = await db
+            .select({ timestamp: sensorMeasurements.timestamp })
+            .from(sensorMeasurements)
+            .where(and(
+              eq(sensorMeasurements.animalId, animal.animalId),
+              eq(sensorMeasurements.metricType, values[0]!.metricType),
+              gte(sensorMeasurements.timestamp, new Date(Math.min(...tsList.map((t) => t.getTime())))),
+              lte(sensorMeasurements.timestamp, new Date(Math.max(...tsList.map((t) => t.getTime())))),
+            ));
+          const fresh = filterNewMeasurements(values, existing.map((e) => e.timestamp));
+          if (fresh.length === 0) continue;
+          await db.insert(sensorMeasurements).values(fresh).onConflictDoNothing();
+          totalStored += fresh.length;
         }
       } catch (err) {
         logger.warn({ err, animalId: animal.animalId }, '[Pipeline] Sensor fetch failed for animal');
