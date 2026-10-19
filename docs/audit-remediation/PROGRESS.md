@@ -39,9 +39,17 @@
 | AI-01 질문→진료기록 | ✅ | f608913 | chat-learner-no-autowrite.test.ts |
 | AI-02 미검증 학습 레이블 | ✅ | d2c69ce | auto-labeler-matched.test.ts |
 | AI-03 합성 센서값 | ✅ | cb855d7 | sensor-chart-simulation.test.ts |
-| OPS-01 ~ OPS-07 | ⬜ | | |
+| OPS-01 알람 순회 200 상한 | ✅ | 0e2c43b | sovereign-sweep.test.ts |
+| OPS-02 /health/deep Redis | ✅ | 4514f57 | health-smaxtec.test.ts |
+| OPS-03 전체 이력 재수집 | ⏸ 보류 | — | smaXtec API 기간 파라미터 미확인 (외부 API 호출 구조 변경 = 승인 사항) |
+| OPS-04 잡 중복·알림톡 중복 | ✅ | 929d2c3 | 마이그레이션 0040 — 배포 승인 대상 |
+| OPS-05 센서 수집 누락 | ✅ | 6ec2c24 | sensor-dedupe.test.ts |
+| OPS-06 핫패스 인덱스 | ✅ | 129cca4 | 마이그레이션 0041 — 배포 승인 대상 |
+| OPS-07 매 사이클 전수 UPDATE | ✅ | 45841dd | animal-affiliation.test.ts |
+| (기존 실패 16건) | ✅ | f159178 | 8건 DB 필요, 7건 옛 계약, 1건 mock — npm test 1360 통과 |
 
 ## 승인·정책 대기 (코드로 해결 불가)
+- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스
 - 배포 시 `schema_migrations` 테이블 생성 (SEC-03)
 - 기존 진료 기록 휴약 종료일 보정 (DI-01)
 - 이동 개체 과거 기록 귀속 정책 (DI-02)
@@ -50,6 +58,10 @@
 - DI-09: 운영 sensor_measurements 중복 정리 → 유니크 인덱스
 - AI-02: 옛 무차별 자동 레이블 데이터 정리 여부 (현재는 학습에서 제외만)
 - SEC-22: 0033(비밀번호 해시)·0034(전화번호) 공개 저장소 노출 — 비밀번호 변경·저장소 비공개 여부
+
+## 검증 기록 (P1 완료 시점, 로컬)
+- typecheck 0 오류 / lint 0 오류(경고 36, 기존) / build 3종 통과
+- vitest server+shared 1010 통과·1 skip / web 248 통과 / npm test 전체 1360 통과·1 skip (로컬 Postgres 가동)
 
 ## 테스트 기준선
 - CI 5단계(빌드 3종, server+shared vitest, web vitest) 통과 유지가 조건
