@@ -15,6 +15,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import type { AutomationTrigger, AutomationAction } from '@cowtalk/shared';
@@ -1968,4 +1969,23 @@ export const regionalInterpretations = pgTable('regional_interpretations', {
   updatedAt:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('regional_interpretations_key_idx').on(table.regionId, table.role, table.model),
+]);
+
+// ======================================================================
+// OPS-04: 잡 임대 · 아침 브리핑 발송 원장 (마이그레이션 0040)
+// ======================================================================
+
+export const jobLeases = pgTable('job_leases', {
+  name: varchar('name', { length: 100 }).primaryKey(),
+  holder: varchar('holder', { length: 100 }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+export const briefingDeliveries = pgTable('briefing_deliveries', {
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  briefingDate: date('briefing_date').notNull(),
+  claimedBy: varchar('claimed_by', { length: 100 }).notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.farmId, table.briefingDate] }),
 ]);

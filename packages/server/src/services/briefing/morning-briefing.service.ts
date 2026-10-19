@@ -15,6 +15,7 @@ import { sendAlimtalk } from '../../lib/kakao-alimtalk.js';
 import { logger } from '../../lib/logger.js';
 import { URGENCY_LABELS } from '@cowtalk/shared';
 import type { DecisionCard } from '@cowtalk/shared';
+import { claimBriefingDelivery } from '../ops/job-lease.js';
 
 /** KST(UTC+9) 기준 현재 시각 정보 */
 export function kstNow(now: Date = new Date()): { hour: number; dateStr: string } {
@@ -98,6 +99,11 @@ export async function runMorningBriefing(force = false): Promise<MorningBriefing
   for (const farm of targets) {
     const phones = phonesByFarm.get(farm.farmId) ?? (farm.phone ? [farm.phone] : []);
     sentFarms.add(farm.farmId); // 수신자 없어도 오늘은 재시도하지 않음
+    // OPS-04: 발송 원장 선점 — 재시작·다중 레플리카에서도 농장당 하루 한 번 (유료 알림톡 중복 방지)
+    // 수동 강제 발송(force)은 원장을 보지 않는다. 원장 판단 불가 시 메모리 가드(위)로 진행.
+    if (!force && phones.length > 0 && (await claimBriefingDelivery(farm.farmId, dateStr)) === false) {
+      continue;
+    }
     if (phones.length === 0) {
       skippedNoPhone++;
       continue;
