@@ -19,3 +19,19 @@ describe('DI-09 filterNewMeasurements', () => {
     expect(filterNewMeasurements([at('2026-10-19T02:00:00Z')], [])).toHaveLength(1);
   });
 });
+
+// OPS-05 회귀 — 최근 6시간만 저장해 ~20시간 순환 동안 대부분의 센서 데이터가 버려지던 문제
+describe('OPS-05 sensorFromFor', () => {
+  it('마지막 저장 이후부터 (최근 저장이 있으면 그 시각)', async () => {
+    const { sensorFromFor } = await import('../orchestrator.js');
+    const def = new Date('2026-10-17T12:00:00Z');
+    expect(sensorFromFor(new Date('2026-10-18T20:00:00Z'), def).toISOString()).toBe('2026-10-18T20:00:00.000Z');
+  });
+  it('저장 이력이 없거나 48시간보다 오래면 48시간 전부터 (예전: 6시간)', async () => {
+    const { sensorFromFor, SENSOR_MAX_BACKFILL_MS } = await import('../orchestrator.js');
+    const def = new Date('2026-10-17T12:00:00Z');
+    expect(sensorFromFor(undefined, def)).toBe(def);
+    expect(sensorFromFor(new Date('2026-10-01T00:00:00Z'), def)).toBe(def);
+    expect(SENSOR_MAX_BACKFILL_MS).toBe(48 * 3600 * 1000);
+  });
+});
