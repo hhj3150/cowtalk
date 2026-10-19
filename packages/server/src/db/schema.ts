@@ -346,7 +346,16 @@ export interface TreatmentDetails {
   readonly route?: 'IM' | 'IV' | 'SC' | 'PO' | 'topical' | 'intramammary';
   readonly frequency?: string;          // BID, SID, q12h
   readonly durationDays?: number;
-  readonly withdrawalEndDate?: string;  // ISO date, 자동계산
+  readonly withdrawalEndDate?: string;  // KST 날짜, 자동계산 (원유·식육 중 늦은 쪽)
+  /** DI-01: 원유·식육 별도 휴약 (KST 기준, 종료 시각 이후 출하) */
+  readonly withdrawal?: {
+    readonly milkDays: number;
+    readonly meatDays: number;
+    readonly milkEndAt: string;         // ISO instant
+    readonly meatEndAt: string;         // ISO instant
+    readonly basis: 'entered' | 'drug_database' | 'entered_and_drug_database';
+    readonly enteredDays?: number;
+  };
   readonly clinicalFindings?: {
     readonly bcs?: number;              // 1-5
     readonly rectalTemp?: number;       // °C
