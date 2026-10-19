@@ -29,14 +29,26 @@
 | SEC-09 기록 API 본문 farmId | ✅ | 4d80d51 | write-scope.guard.test.ts |
 | SEC-10 AI 목장 요약 검색 | ✅ | 035302a | farm-summary-scope.test.ts |
 | SEC-11 UUID 형식 우회 | ✅ | 035302a | tool-scope.test.ts |
-| DI-03 ~ DI-09 | ⬜ | | |
-| AI-01 ~ AI-03 | ⬜ | | |
+| DI-03 smaXtec 시각 +9h | 🟡 부분 | 3555a5e | 누락·오류·미래 시각 표시. 시간대 해석 변경은 운영 원본 샘플 확인 후 (검증 보류) |
+| DI-04 수집 기준점 | ✅ | 3192a42 | smaxtec-org-cursor.test.ts |
+| DI-05 동기화 덮어쓰기 | ✅ | 79f7308 | animal-affiliation.test.ts |
+| DI-06 산차 이중 계산 | ✅ | cad0cf7 | animal-affiliation.test.ts |
+| DI-07 진료기록 트랜잭션 | ✅ | c3c98a9 | treatment-transaction.test.ts |
+| DI-08 개체 중복 | ✅ | f02af81 | 마이그레이션 0039(중복 시 보류) — 배포 승인 대상 |
+| DI-09 센서 중복 | ✅(코드) | 9a332e3 | 유니크 인덱스는 운영 중복 정리 후 (승인 대기) |
+| AI-01 질문→진료기록 | ✅ | f608913 | chat-learner-no-autowrite.test.ts |
+| AI-02 미검증 학습 레이블 | ✅ | d2c69ce | auto-labeler-matched.test.ts |
+| AI-03 합성 센서값 | ✅ | cb855d7 | sensor-chart-simulation.test.ts |
 | OPS-01 ~ OPS-07 | ⬜ | | |
 
 ## 승인·정책 대기 (코드로 해결 불가)
 - 배포 시 `schema_migrations` 테이블 생성 (SEC-03)
 - 기존 진료 기록 휴약 종료일 보정 (DI-01)
 - 이동 개체 과거 기록 귀속 정책 (DI-02)
+- DI-03: 운영 smaxtec_events.raw_data->>'event_ts' 샘플 확인 → 시간대 해석 결정
+- DI-08: 운영 animals 중복(external_id·trace_id) 확인·정리 → 0039 인덱스 생성
+- DI-09: 운영 sensor_measurements 중복 정리 → 유니크 인덱스
+- AI-02: 옛 무차별 자동 레이블 데이터 정리 여부 (현재는 학습에서 제외만)
 - SEC-22: 0033(비밀번호 해시)·0034(전화번호) 공개 저장소 노출 — 비밀번호 변경·저장소 비공개 여부
 
 ## 테스트 기준선
