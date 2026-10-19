@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import type { LoginInput, RegisterInput, Role } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
 import { farms, regions } from '../../db/schema.js';
-import { isOwnerUserId } from '../../services/auth/approval.service.js';
+import { isOwnerUserId, tokenScopeFor, isOwnerEmail } from '../../services/auth/approval.service.js';
 import {
   hashPassword,
   verifyPassword,
@@ -63,7 +63,8 @@ export async function login(req: Request, res: Response): Promise<void> {
   const accessToken = signAccessToken({
     userId: user.userId,
     role: user.role as Role,
-    farmIds,
+    // 소유자 계정은 배정과 무관하게 전체 목장 (tokenScopeFor)
+    ...tokenScopeFor(user.email, farmIds),
   });
 
   const refreshToken = signRefreshToken({ userId: user.userId });
@@ -83,7 +84,7 @@ export async function login(req: Request, res: Response): Promise<void> {
         name: user.name,
         email: user.email,
         role: user.role,
-        farmIds,
+        farmIds: tokenScopeFor(user.email, farmIds).farmIds,
       },
     },
   });
@@ -127,7 +128,7 @@ export async function refresh(req: Request, res: Response): Promise<void> {
   const newAccessToken = signAccessToken({
     userId: user.userId,
     role: user.role as Role,
-    farmIds,
+    ...tokenScopeFor(user.email, farmIds),
   });
 
   const newRefreshToken = signRefreshToken({ userId: user.userId });
@@ -206,7 +207,8 @@ export async function quickLogin(req: Request, res: Response): Promise<void> {
   const accessToken = signAccessToken({
     userId: user.userId,
     role: user.role as Role,
-    farmIds,
+    // 소유자 계정은 배정과 무관하게 전체 목장 (tokenScopeFor)
+    ...tokenScopeFor(user.email, farmIds),
   });
 
   const refreshToken = signRefreshToken({ userId: user.userId });
@@ -226,7 +228,7 @@ export async function quickLogin(req: Request, res: Response): Promise<void> {
         name: user.name,
         email: user.email,
         role: user.role,
-        farmIds,
+        farmIds: tokenScopeFor(user.email, farmIds).farmIds,
       },
     },
   });
@@ -295,7 +297,7 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     throw new NotFoundError('User not found');
   }
 
-  const isMaster = user.role === 'government_admin' || user.email === 'ha@d2o.kr';
+  const isMaster = user.role === 'government_admin' || isOwnerEmail(user.email);
   if (!isMaster) {
     res.status(403).json({ success: false, message: '역할 전환 권한이 없습니다' });
     return;
