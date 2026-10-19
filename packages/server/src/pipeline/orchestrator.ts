@@ -238,6 +238,8 @@ export class PipelineOrchestrator {
       const fetchData = result.data.data[0] as unknown as SmaxtecFetchData | undefined;
       if (fetchData) {
         const syncResult = await syncSmaxtecData(fetchData);
+        // DI-04: DB 반영이 끝난 조직만 기준점 전진 (수집 실패 조직·반영 실패 시에는 다음 사이클에 다시 본다)
+        this.smaxtec.commitOrgCursors(fetchData.orgCursors);
         logger.info(
           {
             farmsCreated: syncResult.farmsCreated,

@@ -88,6 +88,30 @@ export interface SmaxtecFetchData {
   readonly animals: readonly SmaxtecAnimal[];
   readonly events: readonly SmaxtecRawEvent[];
   readonly sensorData: readonly SmaxtecSensorData[];
+  /**
+   * DI-04: 이번 수집에 **성공한** 조직별 수집 시작 시각. DB 반영이 끝난 뒤 commitOrgCursors 로 확정한다.
+   * 실패한 조직은 여기 없으므로 기준점이 전진하지 않는다.
+   */
+  readonly orgCursors?: Readonly<Record<string, string>>;
+}
+
+/** 소급 입력·지연 반영 이벤트를 놓치지 않도록 기준점보다 이만큼 앞부터 다시 본다 (중복은 DB가 걸러낸다) */
+export const ORG_CURSOR_OVERLAP_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * DI-04: 조직 기준점 이후 이벤트만 남긴다. 비교 시각은 생성 시각(create_ts) 우선 —
+ * 발생 시각(event_ts)으로 비교하면 늦게 입력·소급된 이벤트(발생은 과거, 생성은 지금)가 영원히 빠진다.
+ */
+export function filterEventsSinceCursor<T extends { create_ts?: string; event_ts?: string; timestamp?: string }>(
+  events: readonly T[],
+  cursor: Date | undefined,
+): T[] {
+  if (!cursor) return [...events];
+  const threshold = cursor.getTime() - ORG_CURSOR_OVERLAP_MS;
+  return events.filter((e) => {
+    const t = new Date(e.create_ts ?? e.event_ts ?? e.timestamp ?? '').getTime();
+    return Number.isNaN(t) || t > threshold; // 시각을 못 읽으면 버리지 않는다
+  });
 }
 
 // ===========================
@@ -302,6 +326,17 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
   }
 
   private orgNameMap = new Map<string, string>();
+  /** DI-04: 조직별 수집 기준점 (DB 반영까지 끝난 수집의 시작 시각) */
+  private readonly orgCursors = new Map<string, Date>();
+
+  /** DB 반영이 끝난 뒤 호출 — 성공한 조직만 기준점을 전진시킨다 */
+  commitOrgCursors(cursors: Readonly<Record<string, string>> | undefined): void {
+    if (!cursors) return;
+    for (const [orgId, iso] of Object.entries(cursors)) {
+      const d = new Date(iso);
+      if (!Number.isNaN(d.getTime())) this.orgCursors.set(orgId, d);
+    }
+  }
   private lastReconnectAttempt = 0;
   /** 재연결 시도 최소 간격 — 인증 실패가 이어질 때 smaXtec에 로그인 요청을 쏟아붓지 않게 */
   private static readonly RECONNECT_MIN_GAP_MS = 60_000;
@@ -380,7 +415,11 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
       throw new Error(`smaXtec 미연결 — ${this.lastError ?? '인증 정보(SMAXTEC_EMAIL/PASSWORD 또는 SMAXTEC_API_KEY)를 확인하세요'}`);
     }
 
+    // since(전역 기준점)는 더 이상 쓰지 않는다 — 조직별 기준점으로 대체 (DI-04). 시그니처는 호환 유지.
+    void since;
     return this.fetchWithRetry(async () => {
+      const fetchStartedAt = new Date().toISOString();
+      const succeeded: Record<string, string> = {};
       const allOrgs: SmaxtecOrganisation[] = [];
       const allAnimals: SmaxtecAnimal[] = [];
       const allEvents: SmaxtecRawEvent[] = [];
@@ -413,10 +452,9 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
             ...e,
             organisation_id: orgId,
           }));
-          const filtered = since
-            ? eventsWithOrg.filter((e) => new Date(e.event_ts ?? e.timestamp ?? '') > since)
-            : eventsWithOrg;
+          const filtered = filterEventsSinceCursor(eventsWithOrg, this.orgCursors.get(orgId));
           allEvents.push(...filtered);
+          succeeded[orgId] = fetchStartedAt;
 
           allOrgs.push({
             organisation_id: orgId,
@@ -440,6 +478,7 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
         animals: allAnimals,
         events: allEvents,
         sensorData: [], // 센서 데이터는 별도 배치로 수집
+        orgCursors: succeeded,
       };
 
       return {
