@@ -7,7 +7,7 @@ import { getDb } from '../../config/database.js';
 import { weightMeasurements } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedAnimalAndFarmBody } from '../middleware/animal-access.js';
 
 export const weightRouter = Router();
 
@@ -16,7 +16,8 @@ weightRouter.use(authenticate);
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB base64
 
 // POST /weight — 체중 측정 기록 저장
-weightRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 체중 기록은 본인 스코프의 개체·목장만
+weightRouter.post('/', ...requireScopedAnimalAndFarmBody, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
       animalId,

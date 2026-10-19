@@ -18,6 +18,9 @@ import { computeSensorRoi } from '../../services/economics/roi.service.js';
 import { isEconomicParameterKey } from '@cowtalk/shared';
 import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
 
+import { requireScopedIds } from '../middleware/animal-access.js';
+import { scopedFarmIds } from '../middleware/rbac.js';
+
 export const economicsRouter = Router();
 
 economicsRouter.use(authenticate);
@@ -95,7 +98,8 @@ economicsRouter.delete('/parameters/:key', async (req: Request, res: Response, n
 });
 
 // POST /economics — 경제 데이터 저장
-economicsRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 남의 목장 손익 기록 차단
+economicsRouter.post('/', requireScopedIds([{ source: 'body', field: 'farmId', kind: 'farm', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { farmId, period, revenue, costs, notes } = req.body;
@@ -180,7 +184,9 @@ economicsRouter.get('/benchmark/:tenantId', async (req: Request, res: Response, 
       .from(farms)
       .where(eq(farms.tenantId, tenantId));
 
-    const farmIds = tenantFarms.map((f) => f.farmId);
+    // SEC-09: 벤치마크도 권한 범위 안의 농장만 집계
+    const scope = scopedFarmIds(req);
+    const farmIds = tenantFarms.map((f) => f.farmId).filter((id) => scope === null || scope.includes(id));
 
     if (farmIds.length === 0) {
       res.json({

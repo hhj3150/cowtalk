@@ -291,6 +291,30 @@ export function requireScopedIds(specs: readonly ScopedIdSpec[]) {
   };
 }
 
+/**
+ * 본문의 animalId 가 본문의 farmId 소속인지 — requireScopedIds(animal) 뒤에 둔다.
+ * "내 목장 id + 남의 소" 조합으로 남의 소 기록을 내 목장에 붙이거나 그 반대를 막는다. (SEC-08/09)
+ */
+export function requireAnimalInBodyFarm(field = 'farmId') {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const farmId = (req.body as Record<string, unknown> | undefined)?.[field];
+    if (typeof farmId === 'string' && farmId !== '' && req.animalFarmId && req.animalFarmId !== farmId) {
+      res.status(400).json({ success: false, error: '개체가 해당 목장 소속이 아닙니다' });
+      return;
+    }
+    next();
+  };
+}
+
+/** 본문 animalId(필수)·farmId(필수) 스코프 검사 + 소속 일치 */
+export const requireScopedAnimalAndFarmBody = [
+  requireScopedIds([
+    { source: 'body', field: 'animalId', kind: 'animal', required: true },
+    { source: 'body', field: 'farmId', kind: 'farm', required: true },
+  ]),
+  requireAnimalInBodyFarm(),
+];
+
 /** 테스트·진단용 */
 export const __testing = {
   clearCache: () => farmIdCache.clear(),

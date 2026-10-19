@@ -61,14 +61,15 @@ export async function recordMilkYield(input: RecordMilkYieldInput): Promise<Reco
 
   // 개체 해석: animalId 우선, 없으면 earTag(+farmId)
   const conds = [eq(animals.status, 'active')];
+  // SEC-09: 허용 범위는 animalId·earTag 어느 경로든 항상 적용한다 (예전: earTag+farmId 미지정일 때만)
+  if (input.allowedFarmIds != null) {
+    if (input.allowedFarmIds.length === 0) return { success: false, error: '접근 가능한 목장이 없습니다.' };
+    conds.push(inArray(animals.farmId, [...input.allowedFarmIds]));
+  }
   if (input.animalId) conds.push(eq(animals.animalId, input.animalId));
   else if (input.earTag) {
     conds.push(eq(animals.earTag, input.earTag));
     if (input.farmId) conds.push(eq(animals.farmId, input.farmId));
-    else if (input.allowedFarmIds != null) {
-      if (input.allowedFarmIds.length === 0) return { success: false, error: '접근 가능한 목장이 없습니다.' };
-      conds.push(inArray(animals.farmId, [...input.allowedFarmIds]));
-    }
   } else {
     return { success: false, error: 'animalId 또는 earTag 중 하나를 지정하세요.' };
   }

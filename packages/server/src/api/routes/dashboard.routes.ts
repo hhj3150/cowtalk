@@ -15,6 +15,8 @@ import {
 import { eq, count, sql, gt, and, desc, isNull, inArray } from 'drizzle-orm';
 import { getHerdTotal } from '../../services/metrics/herd-service.js';
 
+import { requireScopedIds } from '../middleware/animal-access.js';
+
 export const dashboardRouter = Router();
 
 dashboardRouter.use(authenticate);
@@ -111,7 +113,11 @@ dashboardRouter.get('/estrus-route', async (_req: Request, res: Response, next: 
 // 수정 액션 기록 (수정 완료 / 넘김)
 // ===========================
 
-dashboardRouter.post('/estrus-action', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 남의 소·남의 알람에 수정/건너뜀 조치 기록 차단
+dashboardRouter.post('/estrus-action', requireScopedIds([
+  { source: 'body', field: 'animalId', kind: 'animal', required: true },
+  { source: 'body', field: 'eventId', kind: 'event' },
+]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const {

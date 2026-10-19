@@ -18,28 +18,13 @@ import { getTransitionRisk } from '../../services/breeding/transition-risk.servi
 import { getMonthlyTrends, getFarmComparison, getParityAnalysis } from '../../services/breeding/breeding-performance.service.js';
 import { createSyncSchedule, getTodaySyncTasks, completeSyncTask, getAvailableProtocols } from '../../services/breeding/sync-protocol.service.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
-import { requireAnimalAccess, requireScopedIds } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds, requireScopedAnimalAndFarmBody } from '../middleware/animal-access.js';
 import { breedingEvents as breedingEventsTable } from '../../db/schema.js';
 
 // SEC-08: 예전엔 farmId·animalId 를 검사하지 않아 번식 캘린더·정액 재고·설정·인사이트를 남의 목장 것까지 조회하고,
 // 수정·임신감정·발정동기화·재고를 남의 목장에 기록할 수 있었다. farmId 를 빼면 전 농장 데이터가 나왔다.
 
-/** 본문의 animalId 가 본문의 farmId 소속인지 — requireScopedIds 뒤에 둔다 (내 농장 id + 남의 소 조합 차단) */
-function requireAnimalInBodyFarm(req: Request, res: Response, next: NextFunction): void {
-  const farmId = (req.body as { farmId?: unknown } | undefined)?.farmId;
-  if (typeof farmId === 'string' && req.animalFarmId && req.animalFarmId !== farmId) {
-    res.status(400).json({ success: false, error: '개체가 해당 목장 소속이 아닙니다' });
-    return;
-  }
-  next();
-}
-const scopedAnimalAndFarmBody = [
-  requireScopedIds([
-    { source: 'body', field: 'animalId', kind: 'animal', required: true },
-    { source: 'body', field: 'farmId', kind: 'farm', required: true },
-  ]),
-  requireAnimalInBodyFarm,
-];
+const scopedAnimalAndFarmBody = requireScopedAnimalAndFarmBody;
 const scopedFarmParam = requireScopedIds([{ source: 'params', field: 'farmId', kind: 'farm', required: true }]);
 
 export const breedingRouter = Router();

@@ -3043,7 +3043,12 @@ async function queryRumenHealth(
 const VALID_VERDICTS: readonly LabelVerdict[] = ['confirmed', 'false_positive', 'modified', 'missed'];
 const VALID_OUTCOMES: readonly LabelOutcome[] = ['resolved', 'ongoing', 'worsened', 'no_action'];
 
-unifiedDashboardRouter.post('/event-label', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 레이블은 학습 정답이 된다 — 남의 목장 알람·개체에 레이블을 붙이지 못하게
+unifiedDashboardRouter.post('/event-label', requireScopedIds([
+  { source: 'body', field: 'eventId', kind: 'event' },
+  { source: 'body', field: 'animalId', kind: 'animal' },
+  { source: 'body', field: 'farmId', kind: 'farm' },
+]), requireAnimalInBodyFarm(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const body = req.body as CreateEventLabelRequest;
@@ -3514,7 +3519,7 @@ import type {
 } from '@cowtalk/shared';
 import { farmProfitEntries } from '../../db/schema.js';
 import { z } from 'zod';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds, requireAnimalInBodyFarm } from '../middleware/animal-access.js';
 
 /** Seeded pseudo-random for reproducible demo data per farmId+month */
 function seededRandom(seed: string): () => number {
@@ -3952,7 +3957,8 @@ unifiedDashboardRouter.get('/farm-profit', async (req: Request, res: Response, n
 });
 
 // POST /api/unified-dashboard/farm-profit — 수익성 데이터 입력 (upsert)
-unifiedDashboardRouter.post('/farm-profit', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 남의 목장 손익 입력 차단
+unifiedDashboardRouter.post('/farm-profit', requireScopedIds([{ source: 'body', field: 'farmId', kind: 'farm', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = farmProfitEntrySchema.safeParse(req.body);
     if (!parsed.success) {
