@@ -20,8 +20,15 @@
 |---|---|---|---|
 | VO-01 맥락 텍스트로 승인 판정 | ✅ | a5d2e94 | userText 분리 |
 | VO-02 부정문 승인 오판 | ✅ | a5d2e94 | write-confirmation.test.ts |
-| VO-03 개체번호 STT 보정 | ✅ | (다음 커밋) | stt-correction.test.ts |
-| SEC-04 ~ SEC-11 | ⬜ | | |
+| VO-03 개체번호 STT 보정 | ✅ | 7ca9b17 | stt-correction.test.ts |
+| SEC-04 방역 API 무인증 | ✅ | 5a29163 | epidemic.guard.test.ts |
+| SEC-05 /admin 권한 | ✅ | 2717d69 | admin-users.guard.test.ts |
+| SEC-06 사용자 목록 개인정보 | ✅ | 2717d69 | admin-users.guard.test.ts |
+| SEC-07 마스터 토큰·자기 배정 | ✅ | 2717d69 | admin-users.guard.test.ts |
+| SEC-08 번식 API 타 목장 | ✅ | 4a71a70 | breeding-scope.guard.test.ts |
+| SEC-09 기록 API 본문 farmId | ✅ | 4d80d51 | write-scope.guard.test.ts |
+| SEC-10 AI 목장 요약 검색 | ✅ | 035302a | farm-summary-scope.test.ts |
+| SEC-11 UUID 형식 우회 | ✅ | 035302a | tool-scope.test.ts |
 | DI-03 ~ DI-09 | ⬜ | | |
 | AI-01 ~ AI-03 | ⬜ | | |
 | OPS-01 ~ OPS-07 | ⬜ | | |
@@ -35,3 +42,9 @@
 ## 테스트 기준선
 - CI 5단계(빌드 3종, server+shared vitest, web vitest) 통과 유지가 조건
 - 루트 `npm test`의 `tests/server/*` 16건 실패는 기준 커밋부터 존재 — Phase 5에서 원인 분류·해결
+
+## 이후 단계 (오류 수정·검증 완료 후 착수 — 2026-10-20 차세대 개발 지시서)
+- 2장 대화형 AI 중심 UI 간소화, 3장 역할별 워크스페이스(목장주·수의사 다목장·행정·방역),
+  4장 범용 대화 AI 품질 원인 분석, 5장 데이터 출처 추적(실측/계산/추정/시뮬레이션 구분),
+  6장 대화형 업무 실행, 7장 음성 고도화, 8장 KPI 정의서
+- 원칙: 기존 기능 보존 우선, 오류 77건 정리 이후 진행
