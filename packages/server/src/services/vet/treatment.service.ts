@@ -133,22 +133,10 @@ export async function recordTreatment(input: RecordTreatmentInput): Promise<Reco
   try {
     const severity = input.severity ?? 'medium';
 
-    // 1. healthEvent 생성
-    const [healthEvent] = await db.insert(healthEvents).values({
-      animalId,
-      eventDate: new Date(),
-      diagnosis,
-      severity,
-      notes: input.notes,
-    }).returning({ eventId: healthEvents.eventId });
-
-    if (!healthEvent) {
-      return { success: false, diagnosis, severity, drug: '', message: '', error: '건강 이벤트 생성 실패' };
-    }
-
-    // 2. treatment 기록 (약물 정보가 있는 경우)
+    // DI-07: 조회·계산(약품 DB·센서 스냅샷)을 먼저 끝내고, health_events·treatments 두 쓰기는 한 트랜잭션으로.
+    // 예전엔 두 번째 쓰기가 실패하면 치료 없는 고아 health_event 가 남고, 재시도하면 중복됐다.
     const drug = input.drug;
-    let treatmentId: string | undefined;
+    let treatmentValues: Omit<typeof treatments.$inferInsert, 'healthEventId'> | undefined;
     let withdrawalEndDate: string | undefined;
     let withdrawalNotes: string[] = [];
 
@@ -203,17 +191,35 @@ export async function recordTreatment(input: RecordTreatmentInput): Promise<Reco
         sensorEvidencePre,
       };
 
-      const [treatment] = await db.insert(treatments).values({
-        healthEventId: healthEvent.eventId,
+      treatmentValues = {
         drug,
         dosage: input.dosage ?? null,
         withdrawalDays: wdDays,
         administeredAt,
         details,
-      }).returning({ treatmentId: treatments.treatmentId });
-
-      treatmentId = treatment?.treatmentId;
+      };
     }
+
+    const written = await db.transaction(async (tx) => {
+      const [healthEvent] = await tx.insert(healthEvents).values({
+        animalId,
+        eventDate: new Date(),
+        diagnosis,
+        severity,
+        notes: input.notes,
+      }).returning({ eventId: healthEvents.eventId });
+      if (!healthEvent) throw new Error('건강 이벤트 생성 실패');
+
+      let treatmentId: string | undefined;
+      if (treatmentValues) {
+        const [treatment] = await tx.insert(treatments)
+          .values({ ...treatmentValues, healthEventId: healthEvent.eventId })
+          .returning({ treatmentId: treatments.treatmentId });
+        if (!treatment) throw new Error('치료 기록 생성 실패');
+        treatmentId = treatment.treatmentId;
+      }
+      return { healthEventId: healthEvent.eventId, treatmentId };
+    });
 
     const parts: string[] = [`치료 기록 완료: ${diagnosis}`];
     if (drug) parts.push(`약물: ${drug}`);
@@ -225,8 +231,8 @@ export async function recordTreatment(input: RecordTreatmentInput): Promise<Reco
 
     return {
       success: true,
-      healthEventId: healthEvent.eventId,
-      treatmentId,
+      healthEventId: written.healthEventId,
+      treatmentId: written.treatmentId,
       diagnosis,
       severity,
       drug: drug ?? '미투약',
