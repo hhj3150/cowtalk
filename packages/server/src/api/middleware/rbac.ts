@@ -48,6 +48,23 @@ export function requirePlatformAdmin(req: Request, _res: Response, next: NextFun
   next();
 }
 
+/**
+ * 단일 farmId 를 받는 조회 API 용 범위 계산 (SEC-08).
+ * - farmId 를 지정했으면 배정 스코프 안이어야 한다 (밖이면 403)
+ * - 지정하지 않았으면 무제한 사용자는 전체(undefined), 제한 사용자는 자기 배정 목록
+ *   (미배정 농장주·수의사는 NO_FARM_SENTINEL → 빈 결과)
+ */
+export function farmScopeForRequest(req: Request, requestedFarmId?: string): string | readonly string[] | undefined {
+  const scope = scopedFarmIds(req);
+  if (requestedFarmId) {
+    if (scope !== null && !scope.includes(requestedFarmId)) {
+      throw new ForbiddenError('접근 권한이 없는 농장입니다');
+    }
+    return requestedFarmId;
+  }
+  return scope === null ? undefined : scope;
+}
+
 /** 농장 단위 역할 — 배정된 목장 밖은 절대 볼 수 없다 */
 const FARM_SCOPED_ROLES: readonly string[] = ['farmer', 'veterinarian'];
 

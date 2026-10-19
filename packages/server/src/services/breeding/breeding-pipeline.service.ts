@@ -18,6 +18,7 @@ import type {
   CalendarEvent,
   CalendarEventType,
 } from '@cowtalk/shared';
+import { animalFarmCondition, singleFarmId, type BreedingFarmScope } from './farm-scope.js';
 
 // ===========================
 // 상수
@@ -618,7 +619,7 @@ function makeCalendarEvent(
 export async function getBreedingCalendarEvents(
   startDate: string,
   endDate: string,
-  farmId?: string,
+  farmScope?: BreedingFarmScope,
 ): Promise<readonly CalendarEvent[]> {
   const db = getDb();
   const now = new Date();
@@ -632,7 +633,8 @@ export async function getBreedingCalendarEvents(
 
   // 1. 활성 암소 조회
   const animalConditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
-  if (farmId) animalConditions.push(eq(animals.farmId, farmId));
+  const farmCond = animalFarmCondition(farmScope);
+  if (farmCond) animalConditions.push(farmCond);
 
   const allAnimals = await db
     .select({ animalId: animals.animalId, earTag: animals.earTag, farmId: animals.farmId, sex: animals.sex })
@@ -676,7 +678,8 @@ export async function getBreedingCalendarEvents(
     .where(inArray(calvingEvents.animalId, animalIds));
 
   // 목장 설정
-  const settings = farmId ? await getFarmBreedingSettings(farmId) : null;
+  const settingsFarmId = singleFarmId(farmScope);
+  const settings = settingsFarmId ? await getFarmBreedingSettings(settingsFarmId) : null;
   const gestationDays = settings?.gestationDays ?? 280;
   const pregnancyCheckDays = settings?.pregnancyCheckDays ?? 28;
   const estrusRecurrenceDays = settings?.estrusRecurrenceDays ?? 21;
@@ -843,7 +846,7 @@ export async function getBreedingCalendarEvents(
   calendarEvents.sort((a, b) => a.date.localeCompare(b.date));
 
   logger.info(
-    { startDate, endDate, farmId, eventCount: calendarEvents.length },
+    { startDate, endDate, farmId: settingsFarmId, eventCount: calendarEvents.length },
     '[BreedingCalendar] 캘린더 이벤트 산출 완료',
   );
 
