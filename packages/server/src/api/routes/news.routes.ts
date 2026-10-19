@@ -3,6 +3,8 @@
 import { Router } from 'express';
 import { getLatestNews, refreshNewsCache } from '../../services/news.service.js';
 import { logger } from '../../lib/logger.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 
 export const newsRouter = Router();
 
@@ -18,7 +20,8 @@ newsRouter.get('/', async (_req, res) => {
 });
 
 // POST /api/news/refresh — 캐시 강제 갱신 (관리자용)
-newsRouter.post('/refresh', async (_req, res) => {
+// SEC-04: 예전엔 인증 없이 누구나 외부 뉴스 수집을 반복 실행할 수 있었다
+newsRouter.post('/refresh', authenticate, requireRole('government_admin'), async (_req, res) => {
   try {
     const items = await refreshNewsCache();
     res.json({ success: true, data: items, message: `Refreshed ${items.length} items` });
