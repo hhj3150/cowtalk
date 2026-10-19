@@ -40,6 +40,7 @@ import { approvalRouter } from './routes/approval.routes.js';
 import { automationRouter } from './routes/automation.routes.js';
 import { memoryRouter } from './routes/memory.routes.js';
 import { labelChatRouter } from './routes/label-chat.routes.js';
+import { caseRouter } from './routes/case.routes.js';
 import { reportRouter } from './routes/report.routes.js';
 import { weatherRouter } from './routes/weather.routes.js';
 import { errorLogRouter } from './routes/error-log.routes.js';
@@ -110,6 +111,7 @@ export function createApiRouter(): Router {
   api.use('/automation', automationRouter);
   api.use('/memory', memoryRouter);
   api.use('/label-chat', labelChatRouter);
+  api.use('/cases', caseRouter);
   api.use('/reports', reportRouter);
   api.use('/weather', weatherRouter);
   api.use('/errors', errorLogRouter);
