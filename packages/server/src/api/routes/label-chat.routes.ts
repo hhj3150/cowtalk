@@ -23,6 +23,7 @@ import type {
   MisclassificationItem,
   DailyLabelCount,
 } from '@cowtalk/shared';
+import { requireAnimalAccess, requireScopedIds } from '../middleware/animal-access.js';
 
 export const labelChatRouter = Router();
 
@@ -33,7 +34,7 @@ labelChatRouter.use(authenticate);
 // GET /api/label-chat/context/:eventId
 // ===========================
 
-labelChatRouter.get('/context/:eventId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/context/:eventId', requireScopedIds([{ source: 'params', field: 'eventId', kind: 'event', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const eventId = req.params.eventId as string;
@@ -159,7 +160,7 @@ labelChatRouter.get('/context/:eventId', async (req: Request, res: Response, nex
 // POST /api/label-chat/stream
 // ===========================
 
-labelChatRouter.post('/stream', async (req: Request, res: Response) => {
+labelChatRouter.post('/stream', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }, { source: 'body', field: 'eventId', kind: 'event' }]), async (req: Request, res: Response) => {
   const body = req.body as {
     question: string;
     eventId: string;
@@ -239,7 +240,7 @@ labelChatRouter.post('/stream', async (req: Request, res: Response) => {
 // POST /api/label-chat/label
 // ===========================
 
-labelChatRouter.post('/label', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.post('/label', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }, { source: 'body', field: 'eventId', kind: 'event' }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const userId = req.user?.userId ?? null;
@@ -456,7 +457,7 @@ labelChatRouter.get('/sovereign-stats', async (_req: Request, res: Response, nex
 // GET /api/label-chat/events/:animalId
 // ===========================
 
-labelChatRouter.get('/events/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/events/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -524,7 +525,7 @@ labelChatRouter.get('/events/:animalId', async (req: Request, res: Response, nex
 // GET /api/label-chat/animal-info/:animalId
 // ===========================
 
-labelChatRouter.get('/animal-info/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/animal-info/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -567,7 +568,7 @@ labelChatRouter.get('/animal-info/:animalId', async (req: Request, res: Response
 // → 소버린 AI가 "진단→처방→결과" 인과관계를 학습
 // ===========================
 
-labelChatRouter.post('/follow-up', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.post('/follow-up', requireScopedIds([{ source: 'body', field: 'labelId', kind: 'label' }, { source: 'body', field: 'eventId', kind: 'event' }, { source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const {
@@ -639,7 +640,7 @@ labelChatRouter.post('/follow-up', async (req: Request, res: Response, next: Nex
 // GET /api/label-chat/follow-ups/:labelId
 // ===========================
 
-labelChatRouter.get('/follow-ups/:labelId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/follow-ups/:labelId', requireScopedIds([{ source: 'params', field: 'labelId', kind: 'label', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const labelId = req.params.labelId as string;
@@ -690,7 +691,7 @@ labelChatRouter.get('/follow-ups/:labelId', async (req: Request, res: Response, 
 // → 레이블 + 모든 follow-up을 시간순으로 반환
 // ===========================
 
-labelChatRouter.get('/label-history/:eventId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/label-history/:eventId', requireScopedIds([{ source: 'params', field: 'eventId', kind: 'event', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const eventId = req.params.eventId as string;
@@ -790,7 +791,7 @@ labelChatRouter.get('/label-history/:eventId', async (req: Request, res: Respons
 // 분만, 수정, 치료, 일반 관찰 등 → 소버린 AI 학습 자료
 // ===========================
 
-labelChatRouter.post('/observation', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.post('/observation', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }, { source: 'body', field: 'eventId', kind: 'event' }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const {
@@ -865,7 +866,7 @@ labelChatRouter.post('/observation', async (req: Request, res: Response, next: N
 // GET /api/label-chat/observations/:animalId
 // ===========================
 
-labelChatRouter.get('/observations/:animalId', async (_req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/observations/:animalId', requireAnimalAccess(), async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = _req.params.animalId as string;
@@ -904,7 +905,7 @@ labelChatRouter.get('/observations/:animalId', async (_req: Request, res: Respon
 // POST /api/label-chat/session
 // ===========================
 
-labelChatRouter.post('/session', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.post('/session', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }, { source: 'body', field: 'eventId', kind: 'event' }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const body = req.body as {
@@ -955,7 +956,7 @@ labelChatRouter.post('/session', async (req: Request, res: Response, next: NextF
 // GET /api/label-chat/session/:animalId
 // ===========================
 
-labelChatRouter.get('/session/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.get('/session/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -984,7 +985,7 @@ labelChatRouter.get('/session/:animalId', async (req: Request, res: Response, ne
 // POST /api/label-chat/save-conversation-record
 // ===========================
 
-labelChatRouter.post('/save-conversation-record', async (req: Request, res: Response, next: NextFunction) => {
+labelChatRouter.post('/save-conversation-record', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }, { source: 'body', field: 'eventId', kind: 'event' }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const body = req.body as {

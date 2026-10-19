@@ -34,6 +34,8 @@ export function useUnifiedDashboard() {
     staleTime: STALE_TIME,
     refetchInterval: STALE_TIME,
     refetchIntervalInBackground: false,
+    // 재시도는 getUnifiedDashboard(apiGetWithRetry)가 담당 — 겹치면 최악 대기가 3배로 늘어난다
+    retry: false,
   });
 }
 

@@ -7,6 +7,8 @@ import { requireRole } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { prescriptions, prescriptionItems, drugDatabase, users } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
+import { requireAnimalAccess, requireScopedIds } from '../middleware/animal-access.js';
+import { requirePrescriptionAccess } from '../middleware/resource-access.js';
 
 export const prescriptionRouter = Router();
 
@@ -33,6 +35,7 @@ prescriptionRouter.get('/drugs', async (_req: Request, res: Response, next: Next
 prescriptionRouter.post(
   '/',
   requireRole('veterinarian'),
+  requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal', required: true }, { source: 'body', field: 'farmId', kind: 'farm', required: true }]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const db = getDb();
@@ -85,7 +88,7 @@ prescriptionRouter.post(
 );
 
 // GET /prescriptions/animal/:animalId — 개체별 처방 이력
-prescriptionRouter.get('/animal/:animalId', async (req: Request, res: Response, next: NextFunction) => {
+prescriptionRouter.get('/animal/:animalId', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
@@ -134,7 +137,7 @@ prescriptionRouter.get('/animal/:animalId', async (req: Request, res: Response, 
 });
 
 // GET /prescriptions/:prescriptionId/pdf — 처방전 PDF (실생성·스트림)
-prescriptionRouter.get('/:prescriptionId/pdf', async (req: Request, res: Response, next: NextFunction) => {
+prescriptionRouter.get('/:prescriptionId/pdf', requirePrescriptionAccess, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prescriptionId = req.params.prescriptionId as string;
     const { generatePrescriptionPdf } = await import('../../services/vet/prescription-pdf.service.js');

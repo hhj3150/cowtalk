@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
+import { requireScopedIds } from '../middleware/animal-access.js';
 import { generateSovereignAlarms, saveSovereignAlarmLabel, getSovereignAlarmAccuracy } from '../../services/sovereign-alarm.service.js';
 import { computeAccuracyComparison } from '../../services/sovereign-alarm/comparison/accuracy-comparison.service.js';
 import { getRuleCount } from '../../services/sovereign-alarm/rules/rule-registry.js';
@@ -19,7 +20,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 
-sovereignAlarmRouter.get('/', async (req, res, _next) => {
+sovereignAlarmRouter.get('/', requireScopedIds([{ source: 'query', field: 'farmId', kind: 'farm' }]), async (req, res, _next) => {
   try {
     const { farmId, limit } = querySchema.parse(req.query);
     const alarms = await generateSovereignAlarms(farmId, limit);
@@ -42,7 +43,7 @@ const labelSchema = z.object({
   notes:             z.string().optional(),
 });
 
-sovereignAlarmRouter.post('/label', async (req, res, next) => {
+sovereignAlarmRouter.post('/label', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal' }, { source: 'body', field: 'farmId', kind: 'farm' }]), async (req, res, next) => {
   try {
     const input = labelSchema.parse(req.body);
     await saveSovereignAlarmLabel(input);
@@ -53,7 +54,7 @@ sovereignAlarmRouter.post('/label', async (req, res, next) => {
   }
 });
 
-sovereignAlarmRouter.get('/accuracy', async (req, res, next) => {
+sovereignAlarmRouter.get('/accuracy', requireScopedIds([{ source: 'query', field: 'farmId', kind: 'farm' }]), async (req, res, next) => {
   try {
     const farmId = z.string().uuid().parse(req.query.farmId);
     const accuracy = await getSovereignAlarmAccuracy(farmId);
@@ -70,7 +71,7 @@ const comparisonSchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(90),
 });
 
-sovereignAlarmRouter.get('/comparison', async (req, res, next) => {
+sovereignAlarmRouter.get('/comparison', requireScopedIds([{ source: 'query', field: 'farmId', kind: 'farm' }]), async (req, res, next) => {
   try {
     const { farmId, days } = comparisonSchema.parse(req.query);
     const comparison = await computeAccuracyComparison(farmId, undefined, days);

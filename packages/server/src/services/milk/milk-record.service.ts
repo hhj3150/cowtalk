@@ -26,6 +26,11 @@ export interface RecordMilkYieldInput {
   /** 유당 (%) */
   readonly lactose?: number;
   readonly scc?: number;
+  /**
+   * 접근 가능한 농장 (null/undefined = 무제한). 귀번호는 목장마다 따로 매기므로
+   * 이 범위 없이 찾으면 다른 목장의 같은 번호 소에 기록될 수 있다.
+   */
+  readonly allowedFarmIds?: readonly string[] | null;
 }
 
 export interface RecordMilkYieldResult {
@@ -60,6 +65,10 @@ export async function recordMilkYield(input: RecordMilkYieldInput): Promise<Reco
   else if (input.earTag) {
     conds.push(eq(animals.earTag, input.earTag));
     if (input.farmId) conds.push(eq(animals.farmId, input.farmId));
+    else if (input.allowedFarmIds != null) {
+      if (input.allowedFarmIds.length === 0) return { success: false, error: '접근 가능한 목장이 없습니다.' };
+      conds.push(inArray(animals.farmId, [...input.allowedFarmIds]));
+    }
   } else {
     return { success: false, error: 'animalId 또는 earTag 중 하나를 지정하세요.' };
   }

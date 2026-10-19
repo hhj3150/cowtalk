@@ -53,7 +53,8 @@ export function getUnifiedDashboard(
   params?: { farmId?: string; farmIds?: string; role?: string },
 ): Promise<UnifiedDashboardData> {
   const extra = params?.role ? { role: params.role } : undefined;
-  return apiGet<UnifiedDashboardData>(`/unified-dashboard${farmQuery(params?.farmId, params?.farmIds, extra)}`);
+  // 로그인 직후 첫 화면 — 콜드 스타트에 15초 단일 타임아웃으로 끊고 오류를 띄우지 않도록 8s→15s→30s 재시도
+  return apiGetWithRetry<UnifiedDashboardData>(`/unified-dashboard${farmQuery(params?.farmId, params?.farmIds, extra)}`);
 }
 
 export function getLiveAlarms(farmId?: string, farmIds?: string): Promise<{ alarms: readonly LiveAlarm[] }> {
