@@ -1,9 +1,18 @@
 // 팅커벨 자동 강화 학습 시스템
-// 대화에서 진단/치료/번식/결과 신호를 자동 추출 → DB 기록 → AI 강화
-// 원칙: 대화가 곧 기록. 사용자는 자연스럽게 말하면 됨.
+// 대화에서 진단/치료/번식/결과 신호를 추출 → 대화 로그에 '미검증 신호'로 보관 → 농장 패턴 요약에 활용
+//
+// AI-01 (2026-10 감사): 예전엔 정규식이 사용자 **질문**까지 사실로 읽어 animal_events(치료·분만·수정·임신감정)와
+//   clinical_observations 를 확인 없이 기록하고 event_labels.outcome 을 바꿨다.
+//   "임신 확인해줘?" → 임신 기록, "수정했나요?" → 수정 기록, "죽겠다" → 폐사 예후.
+//   기록 도구의 사용자 확인 게이트를 통째로 우회하는 뒷문이었다.
+// 이제:
+//   - 진료·번식·분만 기록은 여기서 만들지 않는다. 확인 게이트를 거치는 기록 도구(record_*)만 기록한다.
+//   - 질문·요청·부정문은 신호로 잡지 않는다.
+//   - 예후 메모(label_follow_ups)는 전문가(수의사·방역관)의 평서문일 때만 남기고,
+//     학습 정답인 event_labels.outcome 은 자동으로 바꾸지 않는다 (confirm_treatment_outcome 도구 소관).
 
 import { getDb } from '../config/database.js';
-import { chatConversations, animalEvents, clinicalObservations, eventLabels, labelFollowUps } from '../db/schema.js';
+import { chatConversations, eventLabels, labelFollowUps } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { eq, and, gte, desc } from 'drizzle-orm';
 import { rememberFromConversation } from './memory/memory.service.js';
@@ -64,16 +73,33 @@ const OUTCOME_PATTERNS: ReadonlyArray<{ pattern: RegExp; outcome: string }> = [
   { pattern: /호전|좋아지|나아지/i, outcome: 'improving' },
   { pattern: /악화|심해|더.*나빠/i, outcome: 'worsened' },
   { pattern: /변화.*없|그대로|차도.*없/i, outcome: 'unchanged' },
-  { pattern: /폐사|죽|사망/i, outcome: 'dead' },
-  { pattern: /도태|출하|팔/i, outcome: 'culled' },
+  { pattern: /폐사|죽었|사망/i, outcome: 'dead' },
+  { pattern: /도태(?:했|됐|시켰)|출하했|팔았/i, outcome: 'culled' },
 ];
 
 const DURATION_PATTERN = /(\d+)\s*일\s*(간|동안)?/;
 
 // ── 학습 신호 추출 ──
 
+/** 질문 — 물음표 또는 의문형 어미 */
+const QUESTION_RE = /[?？]|(?:나요|까요|을까|ㄹ까|니까|는지|인가|건가|어때|었어\?|했니|됐니|맞아\?)\s*[.!~…]*$/;
+/** 요청·제안 — "확인해줘", "보여줘", "기록해줘" 등은 사실 진술이 아니다 */
+const REQUEST_RE = /(?:해\s*줘|해\s*주세요|해주라|알려\s*줘|보여\s*줘|봐\s*줘|찾아\s*줘|해\s*볼까|하자|할래|해야\s*(?:해|돼|하나))\s*[.!~…]*$/;
+/** 부정 — "임신 안 됐어", "아직 안 나았어", "못 먹어" */
+const NEGATION_RE = /(?:^|\s)(?:안|못)(?=\s|[가-힣])|않|아직|아니/;
+
+/** 사실을 진술하는 평서문인가 — 질문·요청이면 false */
+export function isFactStatement(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return !QUESTION_RE.test(t) && !REQUEST_RE.test(t);
+}
+
 export function extractLearningSignals(text: string): readonly LearningSignal[] {
   const signals: LearningSignal[] = [];
+  // AI-01: 질문·요청은 사실이 아니다 — 신호 없음
+  if (!isFactStatement(text)) return signals;
+  const negated = NEGATION_RE.test(text);
 
   // 진단 감지
   for (const { pattern, diagnosis } of DIAGNOSIS_PATTERNS) {
@@ -107,6 +133,7 @@ export function extractLearningSignals(text: string): readonly LearningSignal[] 
 
   // 번식 감지
   for (const { pattern, eventType, details } of BREEDING_PATTERNS) {
+    if (negated && eventType === 'insemination') continue; // "수정 안 했어"
     if (pattern.test(text)) {
       signals.push({
         type: 'breeding',
@@ -131,8 +158,8 @@ export function extractLearningSignals(text: string): readonly LearningSignal[] 
     }
   }
 
-  // 결과/예후 감지
-  for (const { pattern, outcome } of OUTCOME_PATTERNS) {
+  // 결과/예후 감지 — 부정문("아직 안 나았어")은 예후로 읽지 않는다
+  for (const { pattern, outcome } of negated ? [] : OUTCOME_PATTERNS) {
     if (pattern.test(text)) {
       signals.push({
         type: 'outcome',
@@ -187,9 +214,9 @@ export async function saveChatConversation(input: {
       permittedFarmIds: input.permittedFarmIds ?? null,
     });
 
-    // 학습 신호가 있으면 자동 기록 (진단 레이블은 전문가 역할만 — 농장주 추측 오염 방지)
+    // 기록은 만들지 않는다 (AI-01). 전문가의 예후 진술만 기존 레이블에 추적 메모로 연결한다.
     if (signals.length > 0 && input.animalId) {
-      await processLearningSignals(signals, input.animalId, input.farmId, input.userId, input.role);
+      await linkExpertOutcomeNote(signals, input.animalId, input.userId, input.role);
     }
 
     if (signals.length > 0) {
@@ -331,159 +358,51 @@ export function formatFarmLearningContext(snapshot: FarmLearningSnapshot): strin
   return lines.join('\n');
 }
 
-// ── 학습 신호 → 이벤트 자동 기록 ──
+// ── 전문가 예후 진술 → 레이블 추적 메모 ──
 
-// 진단 레이블 생성 권한 역할 — 전문가 판단만 정답 레이블로 인정.
-// (치료·분만·번식 같은 '사실' 기록은 농장주도 가능하지만, 진단은 전문가 한정)
-const EXPERT_DIAGNOSIS_ROLES: ReadonlySet<string> = new Set(['veterinarian', 'quarantine_officer']);
+// 예후 메모를 남길 수 있는 역할 — 전문가 판단만 (농장주·행정관 추측은 학습 데이터 오염 방지로 제외)
+const EXPERT_ROLES: ReadonlySet<string> = new Set(['veterinarian', 'quarantine_officer']);
 
-async function processLearningSignals(
+/**
+ * "나았어요"/"악화됐어요" 같은 전문가의 평서문 예후를 최근 21일 레이블에 추적 메모(label_follow_ups)로 남긴다.
+ * 학습 정답(event_labels.outcome)은 바꾸지 않는다 — 확정은 confirm_treatment_outcome 도구(사용자 확인)로만.
+ */
+async function linkExpertOutcomeNote(
   signals: readonly LearningSignal[],
   animalId: string,
-  farmId: string | null,
   userId: string,
   role: string,
 ): Promise<void> {
-  const db = getDb();
-  const isExpert = EXPERT_DIAGNOSIS_ROLES.has(role);
+  const outcome = signals.find((s) => s.type === 'outcome');
+  if (!outcome) return;
+  if (!EXPERT_ROLES.has(role)) {
+    logger.info({ outcome: outcome.value, role, animalId }, '[ChatLearner] 비전문가 예후 진술 — 추적 메모 생략');
+    return;
+  }
+  try {
+    const db = getDb();
+    const since = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
+    const [label] = await db
+      .select({ labelId: eventLabels.labelId, eventId: eventLabels.eventId, labeledAt: eventLabels.labeledAt })
+      .from(eventLabels)
+      .where(and(eq(eventLabels.animalId, animalId), gte(eventLabels.labeledAt, since)))
+      .orderBy(desc(eventLabels.labeledAt))
+      .limit(1);
+    if (!label) return;
 
-  for (const signal of signals) {
-    try {
-      switch (signal.type) {
-        case 'treatment': {
-          if (!farmId) break;
-          const meds = signal.details.medications as ReadonlyArray<Record<string, unknown>> | undefined;
-          await db.insert(animalEvents).values({
-            animalId,
-            farmId,
-            eventType: 'treatment',
-            eventDate: new Date(),
-            recordedBy: userId,
-            recordedByName: null,
-            details: {
-              diagnosis: signals.find((s) => s.type === 'diagnosis')?.value ?? '팅커벨 대화 기록',
-              medications: meds ?? [],
-              source: 'tinkerbell_chat',
-            },
-            notes: `[팅커벨 자동기록] ${signal.value}`,
-          });
-          break;
-        }
-
-        case 'calving': {
-          if (!farmId) break;
-          await db.insert(animalEvents).values({
-            animalId,
-            farmId,
-            eventType: 'calving',
-            eventDate: new Date(),
-            recordedBy: userId,
-            recordedByName: null,
-            details: { ...signal.details, source: 'tinkerbell_chat' },
-            notes: '[팅커벨 자동기록] 분만',
-          });
-          break;
-        }
-
-        case 'breeding': {
-          if (!farmId) break;
-          await db.insert(animalEvents).values({
-            animalId,
-            farmId,
-            eventType: signal.value,
-            eventDate: new Date(),
-            recordedBy: userId,
-            recordedByName: null,
-            details: { ...signal.details, source: 'tinkerbell_chat' },
-            notes: `[팅커벨 자동기록] ${signal.value}`,
-          });
-          break;
-        }
-
-        case 'diagnosis': {
-          if (!farmId) break;
-          // 전문가(수의사·방역관)의 진단만 레이블로 기록. 농장주·행정관 추측은 제외.
-          if (!isExpert) {
-            logger.info(
-              { diagnosis: signal.value, role, animalId },
-              '[ChatLearner] 비전문가 진단 신호 — 레이블 기록 생략 (전문가 한정)',
-            );
-            break;
-          }
-          await db.insert(clinicalObservations).values({
-            animalId,
-            farmId,
-            observationType: 'general_note',
-            description: `진단: ${signal.value}`,
-            recordedBy: userId,
-            observedAt: new Date(),
-            conversationSummary: `팅커벨 대화에서 자동 추출: ${signal.value}`,
-          });
-          break;
-        }
-
-        // outcome — 최근 21일 내 이 개체의 레이블에 예후를 연결해 종단 학습 루프를 닫는다.
-        // "나았어요"/"악화됐어요" 한 마디가 label_follow_ups 예후 기록 + event_labels.outcome 갱신이 된다.
-        case 'outcome': {
-          const since = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
-          const [label] = await db
-            .select({
-              labelId: eventLabels.labelId,
-              eventId: eventLabels.eventId,
-              labeledAt: eventLabels.labeledAt,
-            })
-            .from(eventLabels)
-            .where(and(eq(eventLabels.animalId, animalId), gte(eventLabels.labeledAt, since)))
-            .orderBy(desc(eventLabels.labeledAt))
-            .limit(1);
-
-          if (!label) {
-            logger.info(
-              { outcome: signal.value, animalId },
-              '[ChatLearner] Outcome 신호 감지 — 최근 21일 내 레이블 없음, 연결 생략',
-            );
-            break;
-          }
-
-          const daysSinceLabel = Math.max(
-            0,
-            Math.floor((Date.now() - label.labeledAt.getTime()) / (24 * 60 * 60 * 1000)),
-          );
-          await db.insert(labelFollowUps).values({
-            labelId: label.labelId,
-            eventId: label.eventId,
-            animalId,
-            daysSinceLabel,
-            followUpDate: new Date(),
-            status: signal.value, // recovered | improving | unchanged | worsened | dead | culled
-            conversationSummary: '[팅커벨 자동기록] 대화에서 추출된 예후',
-            recordedBy: userId,
-          });
-
-          // 레이블 자체의 최종 결과도 갱신 (도태는 예후 추적만 — 질병 결과가 아님)
-          const OUTCOME_TO_LABEL: Readonly<Record<string, string>> = {
-            recovered: 'resolved',
-            improving: 'ongoing',
-            unchanged: 'ongoing',
-            worsened: 'worsened',
-            dead: 'worsened',
-          };
-          const labelOutcome = OUTCOME_TO_LABEL[signal.value];
-          if (labelOutcome) {
-            await db.update(eventLabels)
-              .set({ outcome: labelOutcome })
-              .where(eq(eventLabels.labelId, label.labelId));
-          }
-
-          logger.info(
-            { outcome: signal.value, animalId, labelId: label.labelId, daysSinceLabel },
-            '[ChatLearner] Outcome 예후 기록 완료 — 학습 루프 연결',
-          );
-          break;
-        }
-      }
-    } catch (err) {
-      logger.warn({ err, signal }, '[ChatLearner] Failed to process learning signal');
-    }
+    const daysSinceLabel = Math.max(0, Math.floor((Date.now() - label.labeledAt.getTime()) / (24 * 60 * 60 * 1000)));
+    await db.insert(labelFollowUps).values({
+      labelId: label.labelId,
+      eventId: label.eventId,
+      animalId,
+      daysSinceLabel,
+      followUpDate: new Date(),
+      status: outcome.value, // recovered | improving | unchanged | worsened | dead | culled
+      conversationSummary: '[팅커벨 대화 — 미확정 예후 진술] 레이블 결과는 확인 도구로만 확정',
+      recordedBy: userId,
+    });
+    logger.info({ outcome: outcome.value, animalId, labelId: label.labelId }, '[ChatLearner] 전문가 예후 진술 — 추적 메모 기록');
+  } catch (err) {
+    logger.warn({ err, animalId }, '[ChatLearner] 예후 추적 메모 기록 실패');
   }
 }

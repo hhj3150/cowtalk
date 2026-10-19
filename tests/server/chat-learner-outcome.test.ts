@@ -92,7 +92,9 @@ describe('outcome 예후 → 레이블 연결 (종단 학습 루프)', () => {
     await closeDb();
   });
 
-  it('"나았어요" 한 마디가 label_follow_ups 예후 + event_labels.outcome 갱신으로 이어진다', async () => {
+  // AI-01: 예후 진술은 추적 메모(label_follow_ups)로만 남고, 학습 정답(event_labels.outcome)은
+  // 사용자 확인을 거치는 confirm_treatment_outcome 도구로만 바뀐다. (예전 기대값: outcome 자동 'resolved')
+  it('전문가의 "완치됐어요"는 추적 메모로 남고 레이블 결과는 자동으로 바뀌지 않는다', async () => {
     await saveChatConversation({
       userId: USER_ID,
       role: 'veterinarian',
@@ -110,6 +112,10 @@ describe('outcome 예후 → 레이블 연결 (종단 학습 루프)', () => {
     expect(followUps[0]!.daysSinceLabel).toBeGreaterThanOrEqual(2);
 
     const [label] = await db.select().from(eventLabels).where(eq(eventLabels.labelId, labelId));
-    expect(label!.outcome).toBe('resolved');
+    expect(label!.outcome).not.toBe('resolved');
+
+    // 진료·번식 이벤트는 대화만으로 생기지 않는다
+    const events = await db.select().from(animalEvents).where(eq(animalEvents.animalId, animalId));
+    expect(events).toHaveLength(0);
   });
 });
