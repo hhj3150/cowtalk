@@ -194,6 +194,9 @@ const chatDocumentSchema = z.object({
 
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
+  // VO-01: 클라이언트가 question 에 개체 맥락·지시문을 덧붙이므로, 사용자가 실제로 한 말을 따로 받는다.
+  // 기록 승인 판정·대화 학습·기억 추출은 이 원문만 쓴다.
+  userText: z.string().min(1).max(2000).optional(),
   farmId: z.string().uuid().optional(),
   // 지역(그룹) 스코프 — 활성 지역 필터의 농장 id 목록. 집계 도구를 이 농장들로 데이터 레벨 한정.
   farmIds: z.array(z.string().uuid()).max(5000).optional(),

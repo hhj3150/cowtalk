@@ -63,6 +63,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
   try {
     const body = req.body as {
       question: string;
+      userText?: string;
       farmId?: string;
       animalId?: string;
       conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -82,6 +83,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
     }
     const result = await handleChatMessage({
       question: sanitizeQuestion(body.question),
+      userText: body.userText !== undefined ? sanitizeQuestion(body.userText) : undefined,
       role: req.user?.role as Role,
       farmId: scoped.farmId,
       animalId: scoped.animalId,
@@ -107,6 +109,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
 chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Request, res: Response) => {
   const body = req.body as {
     question: string;
+    userText?: string;
     farmId?: string;
     farmIds?: string[];
     animalId?: string;
@@ -153,6 +156,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
 
   const chatRequest = {
     question: sanitizeQuestion(body.question),
+    userText: body.userText !== undefined ? sanitizeQuestion(body.userText) : undefined,
     role: req.user?.role as Role,
     farmId: scoped.farmId,
     farmIds: scoped.farmIds,

@@ -24,6 +24,7 @@ import { parseDocument, type ParsedDocument } from '../services/document/documen
 import { detectSkill } from '../services/skills/skills-registry.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
 import { buildMemoryContext } from './memory/memory.service.js';
+import { extractUserUtterance } from '../services/approval/write-confirmation.js';
 import { getActivePromptGuidances, formatPromptGuidances, type PromptGuidanceRow } from '../intelligence-loop/prompt-improver.service.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
@@ -58,6 +59,8 @@ export interface ChatDocument {
 
 export interface ChatMessageRequest {
   readonly question: string;
+  /** VO-01: 사용자가 실제로 한 말 (맥락이 덧붙지 않은 원문). 없으면 question 에서 추출한다. */
+  readonly userText?: string;
   readonly role: Role;
   readonly farmId: string | null;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
@@ -191,7 +194,7 @@ export async function handleChatMessage(
         role,
         animalId,
         farmId,
-        question,
+        question: extractUserUtterance(question, request.userText),
         answer,
         contextType: detectedType,
         permittedFarmIds: request.permittedFarmIds ?? null,
@@ -519,7 +522,7 @@ export async function handleChatStream(
           role,
           animalId,
           farmId,
-          question,
+          question: extractUserUtterance(question, request.userText),
           answer: fullText,
           contextType: context.type,
           permittedFarmIds: request.permittedFarmIds ?? null,
@@ -558,7 +561,7 @@ export async function handleChatStream(
       assignedFarmIds: request.assignedFarmIds,
       isMaster: request.isMaster,
       // 사용자 발화 하나 = 턴 하나. 기록 도구는 제안 턴과 다른 턴의 명시적 승인으로만 실행된다
-      confirmationTurn: { turnId: uuidv4(), userUtterance: question },
+      confirmationTurn: { turnId: uuidv4(), userUtterance: extractUserUtterance(question, request.userText) },
     },
     { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
   );

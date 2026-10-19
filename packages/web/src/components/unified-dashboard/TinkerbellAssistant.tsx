@@ -941,6 +941,8 @@ export function TinkerbellAssistant({
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
           : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}${scopeDirective}\n\n질문: ${question}`,
+        // VO-01: 위 question 에는 개체 맥락·지시문이 덧붙는다. 기록 승인 판정·학습은 이 원문만 쓴다.
+        userText: question,
         role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
         // 지역(그룹) 스코프 — 서버 집계 도구를 이 농장들로 데이터 레벨 한정 (방역 대시보드 등)
