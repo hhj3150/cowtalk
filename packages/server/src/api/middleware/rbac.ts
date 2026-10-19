@@ -33,6 +33,21 @@ export function requirePermission(resource: ResourceType, action: ActionType) {
   };
 }
 
+/**
+ * 플랫폼 관리 권한 — 마스터(소유자) 토큰, 또는 배정 없는(전국) 행정관만.
+ * 배정이 걸린 행정관·농장주·수의사·방역관은 사용자 목록·감사 로그·시스템 작업에 접근할 수 없다. (SEC-05)
+ */
+export function requirePlatformAdmin(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) {
+    throw new UnauthorizedError();
+  }
+  const unrestrictedAdmin = req.user.role === 'government_admin' && (req.user.farmIds ?? []).length === 0;
+  if (!req.user.isMaster && !unrestrictedAdmin) {
+    throw new ForbiddenError('플랫폼 관리자만 사용할 수 있습니다');
+  }
+  next();
+}
+
 /** 농장 단위 역할 — 배정된 목장 밖은 절대 볼 수 없다 */
 const FARM_SCOPED_ROLES: readonly string[] = ['farmer', 'veterinarian'];
 

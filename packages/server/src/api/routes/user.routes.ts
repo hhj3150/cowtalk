@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, requirePlatformAdmin } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { users, userFarmAccess, farms } from '../../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
@@ -20,7 +20,8 @@ const VALID_STATUSES: readonly string[] = ['active', 'inactive', 'suspended'];
 userRouter.use(authenticate);
 
 // GET /users — 사용자 목록
-userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+// SEC-06: 사용자 목록은 플랫폼 관리자만 (배정이 걸린 행정관 제외)
+userRouter.get('/', requirePermission('user', 'read'), requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
 
@@ -48,10 +49,14 @@ userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res
 
 // PUT /users/:userId/farms — 목장 배정 교체 (관리자 전용)
 // body: { farmIds: string[] } — 전달된 목록으로 배정을 전면 교체한다 (빈 배열 = 전체 해제)
-userRouter.put('/:userId/farms', requirePermission('user', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+userRouter.put('/:userId/farms', requirePermission('user', 'update'), requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const targetUserId = req.params.userId as string;
+    // SEC-07: 자기 배정을 스스로 바꾸면(특히 전체 해제) 제한 계정이 전국 계정이 된다 — 소유자만 예외
+    if (targetUserId === req.user!.userId && !(await isOwnerUserId(req.user!.userId))) {
+      throw new ForbiddenError('자기 계정의 목장 배정은 바꿀 수 없습니다');
+    }
     const { farmIds } = req.body as { farmIds?: unknown };
 
     if (!Array.isArray(farmIds) || farmIds.some((f) => typeof f !== 'string') || farmIds.length > 500) {
@@ -114,7 +119,16 @@ userRouter.patch('/:userId/approval', async (req: Request, res: Response, next: 
 });
 
 // GET /users/:userId — 단일 사용자 상세
-userRouter.get('/:userId', requirePermission('user', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+// 본인 정보는 누구나, 타인 정보는 플랫폼 관리자만 (SEC-06)
+function requireSelfOrPlatformAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.user && req.params.userId === req.user.userId) {
+    next();
+    return;
+  }
+  requirePermission('user', 'read')(req, res, () => requirePlatformAdmin(req, res, next));
+}
+
+userRouter.get('/:userId', requireSelfOrPlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const userId = req.params.userId as string;
@@ -157,7 +171,7 @@ userRouter.get('/:userId', requirePermission('user', 'read'), async (req: Reques
 });
 
 // PATCH /users/:userId — 사용자 정보 수정
-userRouter.patch('/:userId', requirePermission('user', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+userRouter.patch('/:userId', requirePermission('user', 'update'), requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const userId = req.params.userId as string;

@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { requirePlatformAdmin } from '../middleware/rbac.js';
 import { devOnly } from '../middleware/dev-only.js';
 import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
@@ -10,7 +11,9 @@ import { sql, count, desc, gte, eq, and } from 'drizzle-orm';
 
 export const adminRouter = Router();
 
-adminRouter.use(authenticate);
+// SEC-05: 예전엔 로그인만 하면 농장주도 사용자 목록(이메일)·감사 로그(타 목장 도구 입력)·시스템 상태를 보고
+// 지능 루프·동기화를 실행할 수 있었다. 이제 라우터 전체를 플랫폼 관리자 전용으로 묶는다.
+adminRouter.use(authenticate, requirePlatformAdmin);
 
 // GET /admin/data-freshness — 소스별 데이터 신선도 (실시간 반영 여부)
 adminRouter.get('/data-freshness', async (_req: Request, res: Response, next: NextFunction) => {
