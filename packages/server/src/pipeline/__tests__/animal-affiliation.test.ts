@@ -157,3 +157,16 @@ describe('DI-06 countCalvingEpisodes', () => {
     expect(countCalvingEpisodes([])).toBe(0);
   });
 });
+
+// ── DI-08 회귀 — 수동 등록한 소를 동기화가 새로 만들어 두 마리가 되던 문제 ──
+describe('DI-08 syncAnimals — 이력번호로 기존 개체 연결', () => {
+  const farmMap = new Map([['org-old', OLD_FARM]]);
+  beforeEach(() => { updates.length = 0; inserts.length = 0; });
+
+  it('externalId 는 없지만 이력번호가 같은 수동 등록 개체에 연결하고 새로 만들지 않는다', async () => {
+    existingRows = [{ animalId: 'manual-1', externalId: null, traceId: '002132665191', farmId: OLD_FARM, status: 'active' } as never];
+    await syncAnimals([{ _id: 'smx-1', organisation_id: 'org-old', active: true, official_id: '002132665191' }] as unknown as SyncInput, farmMap);
+    expect(inserts).toHaveLength(0);
+    expect(updates[0]).toMatchObject({ externalId: 'smx-1' });
+  });
+});

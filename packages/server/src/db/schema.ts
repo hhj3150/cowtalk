@@ -16,7 +16,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import type { AutomationTrigger, AutomationAction } from '@cowtalk/shared';
 
 // ======================================================================
@@ -133,6 +133,11 @@ export const animals = pgTable('animals', {
   index('animals_farm_id_idx').on(table.farmId),
   index('animals_status_idx').on(table.status),
   index('animals_ear_tag_idx').on(table.earTag),
+  // DI-08: 살아 있는 행 기준 식별자 유니크 (마이그레이션 0039 — 중복이 없을 때만 생성)
+  uniqueIndex('animals_external_id_live_uidx').on(table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+  uniqueIndex('animals_trace_id_live_uidx').on(table.traceId)
+    .where(sql`${table.traceId} IS NOT NULL AND ${table.traceId} <> '' AND ${table.deletedAt} IS NULL`),
 ]);
 
 export const animalStatusHistory = pgTable('animal_status_history', {

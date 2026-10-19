@@ -5,7 +5,7 @@
 import { getDb } from '../config/database.js';
 import { farms, animals, regions, smaxtecEvents, animalTransfers } from '../db/schema.js';
 import { captureBeforeSnapshot } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './connectors/smaxtec.connector.js';
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
@@ -187,6 +187,33 @@ export async function syncAnimals(
     }),
   );
 
+  // DI-08: externalId 로 못 찾은 개체는 이력번호로 한 번 더 찾는다 — 수동 등록한 소(externalId 없음)를
+  // 동기화가 새로 만들어 같은 소가 두 마리가 되던 문제. 찾으면 그 행에 externalId 를 연결한다.
+  const linkByTrace = new Set<string>();
+  const unmatchedTraceIds = [...new Set(current
+    .filter((c) => !existingMap.has(c.extId) && nonEmpty(c.sa.official_id))
+    .map((c) => c.sa.official_id as string))];
+  for (let i = 0; i < unmatchedTraceIds.length; i += LOAD_BATCH) {
+    const batch = unmatchedTraceIds.slice(i, i + LOAD_BATCH);
+    const rows = await db
+      .select({ animalId: animals.animalId, traceId: animals.traceId, farmId: animals.farmId, status: animals.status })
+      .from(animals)
+      .where(and(inArray(animals.traceId, batch), isNull(animals.externalId), isNull(animals.deletedAt)));
+    const byTrace = new Map<string, typeof rows>();
+    for (const r of rows) {
+      if (!r.traceId) continue;
+      byTrace.set(r.traceId, [...(byTrace.get(r.traceId) ?? []), r]);
+    }
+    for (const c of current) {
+      const matches = byTrace.get(c.sa.official_id ?? '');
+      // 이력번호가 같은 행이 둘 이상이면 어느 쪽인지 모르므로 연결하지 않는다 (사람이 정리)
+      if (existingMap.has(c.extId) || !matches || matches.length !== 1) continue;
+      const m = matches[0]!;
+      existingMap.set(c.extId, { animalId: m.animalId, farmId: m.farmId, status: m.status, deleted: false });
+      linkByTrace.add(c.extId);
+    }
+  }
+
   // 배치 처리 (100개씩)
   const BATCH_SIZE = 100;
   for (let i = 0; i < current.length; i += BATCH_SIZE) {
@@ -207,6 +234,7 @@ export async function syncAnimals(
           await db
             .update(animals)
             .set({
+              externalId: linkByTrace.has(extId) ? extId : undefined,
               farmId: decision.farmId,
               // DI-05: 비어 올라온 값으로 수동 입력한 이름·관리번호·이력번호를 지우거나
               //        임시 값(extId 앞 8자리)으로 바꾸지 않는다
