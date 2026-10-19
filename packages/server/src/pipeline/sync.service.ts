@@ -11,7 +11,7 @@ import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './conn
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
 import { normalizeSmaxtecEvent } from './normalization.js';
 import { emitNewAlarm } from '../realtime/alarm-emitter.js';
-import { pickCurrentRecords, decideAffiliation, mergeSyncStatus, nonEmpty } from './animal-affiliation.js';
+import { pickCurrentRecords, decideAffiliation, mergeSyncStatus, nonEmpty, diffAnimalPatch, type ExistingAnimalRow } from './animal-affiliation.js';
 
 // ===========================
 // 동기화 결과
@@ -163,17 +163,24 @@ export async function syncAnimals(
 
   // 배치로 로드 (500개씩)
   const LOAD_BATCH = 500;
-  const existingMap = new Map<string, { animalId: string; farmId: string; status: string; deleted: boolean }>();
+  const existingMap = new Map<string, ExistingAnimalRow>();
   for (let i = 0; i < externalIds.length; i += LOAD_BATCH) {
     const batch = externalIds.slice(i, i + LOAD_BATCH);
     const existing = await db
-      .select({ animalId: animals.animalId, externalId: animals.externalId, farmId: animals.farmId, status: animals.status, deletedAt: animals.deletedAt })
+      .select({
+        animalId: animals.animalId, externalId: animals.externalId, farmId: animals.farmId, status: animals.status,
+        deletedAt: animals.deletedAt, name: animals.name, earTag: animals.earTag, traceId: animals.traceId,
+        currentDeviceId: animals.currentDeviceId, lactationStatus: animals.lactationStatus,
+      })
       .from(animals)
       .where(inArray(animals.externalId, batch));
 
     for (const a of existing) {
       if (a.externalId) {
-        existingMap.set(a.externalId, { animalId: a.animalId, farmId: a.farmId, status: a.status, deleted: a.deletedAt != null });
+        existingMap.set(a.externalId, {
+          animalId: a.animalId, farmId: a.farmId, status: a.status, deleted: a.deletedAt != null,
+          current: { name: a.name, earTag: a.earTag, traceId: a.traceId, currentDeviceId: a.currentDeviceId, lactationStatus: a.lactationStatus },
+        });
       }
     }
   }
@@ -209,7 +216,7 @@ export async function syncAnimals(
       // 이력번호가 같은 행이 둘 이상이면 어느 쪽인지 모르므로 연결하지 않는다 (사람이 정리)
       if (existingMap.has(c.extId) || !matches || matches.length !== 1) continue;
       const m = matches[0]!;
-      existingMap.set(c.extId, { animalId: m.animalId, farmId: m.farmId, status: m.status, deleted: false });
+      existingMap.set(c.extId, { animalId: m.animalId, farmId: m.farmId, status: m.status, deleted: false, current: {} });
       linkByTrace.add(c.extId);
     }
   }
@@ -231,9 +238,10 @@ export async function syncAnimals(
         } else if (existingRow && existingAnimalId) {
           // Update — 소속 목장 변경 반영 (DI-02). 과거 기록의 farm_id 는 건드리지 않는다.
           const decision = decideAffiliation(existingRow.farmId, farmId, Boolean(sa.active));
-          await db
-            .update(animals)
-            .set({
+          // OPS-07: 바뀐 값만 UPDATE — 예전엔 매 사이클 개체마다(약 11,000건) 무조건 UPDATE 했다
+          const patch = diffAnimalPatch(
+            { ...existingRow.current, farmId: existingRow.farmId, status: existingRow.status },
+            {
               externalId: linkByTrace.has(extId) ? extId : undefined,
               farmId: decision.farmId,
               // DI-05: 비어 올라온 값으로 수동 입력한 이름·관리번호·이력번호를 지우거나
@@ -245,9 +253,14 @@ export async function syncAnimals(
               lactationStatus: nonEmpty(sa.lactation_status),
               // DI-05: 목장에서 확정한 폐사·도태·매각 상태는 되살리지 않는다
               status: mergeSyncStatus(existingRow.status, Boolean(sa.active), decision.applyStatus),
-              updatedAt: new Date(),
-            })
-            .where(eq(animals.animalId, existingAnimalId));
+            },
+          );
+          if (Object.keys(patch).length > 0) {
+            await db
+              .update(animals)
+              .set({ ...patch, updatedAt: new Date() })
+              .where(eq(animals.animalId, existingAnimalId));
+          }
 
           if (decision.moved) {
             await db.insert(animalTransfers).values({
@@ -526,22 +539,26 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
 async function updateFarmHeadCounts(
   farmMap: ReadonlyMap<string, string>,
 ): Promise<void> {
-  const db = getDb();
-
-  for (const [, farmId] of farmMap) {
-    try {
-      const countResult = await db
-        .select({ animalId: animals.animalId })
-        .from(animals)
-        .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active')));
-
-      await db
-        .update(farms)
-        .set({ currentHeadCount: countResult.length, updatedAt: new Date() })
-        .where(eq(farms.farmId, farmId));
-    } catch {
-      // non-critical, continue
-    }
+  // OPS-07: 예전엔 농장마다 개체 id 전체를 메모리로 읽어 길이를 세고 매번 UPDATE 했다.
+  // 이제 한 번의 집계 UPDATE — 값이 바뀐 농장만 갱신한다.
+  const farmIds = [...new Set(farmMap.values())];
+  if (farmIds.length === 0) return;
+  try {
+    await getDb().execute(sql`
+      WITH counts AS (
+        SELECT f.farm_id, count(a.animal_id)::int AS cnt
+        FROM farms f
+        LEFT JOIN animals a ON a.farm_id = f.farm_id AND a.status = 'active'
+        WHERE f.farm_id IN (${sql.join(farmIds.map((id) => sql`${id}::uuid`), sql`, `)})
+        GROUP BY f.farm_id
+      )
+      UPDATE farms f
+      SET current_head_count = c.cnt, updated_at = now()
+      FROM counts c
+      WHERE f.farm_id = c.farm_id AND f.current_head_count IS DISTINCT FROM c.cnt
+    `);
+  } catch (err) {
+    logger.warn({ err }, '[Sync] 농장 두수 갱신 실패 — 다음 사이클에 재시도');
   }
 }
 

@@ -62,3 +62,28 @@ export function mergeSyncStatus(localStatus: string, incomingActive: boolean, ap
 export function nonEmpty(value: string | null | undefined): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
+
+// ── OPS-07: 바뀐 값만 갱신 ──
+
+export interface ExistingAnimalRow {
+  readonly animalId: string;
+  readonly farmId: string;
+  readonly status: string;
+  readonly deleted: boolean;
+  /** 비교용 현재 값 (이력번호 연결로 찾은 행은 비어 있을 수 있음 → 그때는 들어온 값을 모두 쓴다) */
+  readonly current: Readonly<Record<string, unknown>>;
+}
+
+/** undefined(=바꾸지 않음)와 현재 값과 같은 필드를 뺀 패치 */
+export function diffAnimalPatch(
+  current: Readonly<Record<string, unknown>>,
+  incoming: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v === undefined) continue;
+    if (k in current && current[k] === v) continue;
+    patch[k] = v;
+  }
+  return patch;
+}

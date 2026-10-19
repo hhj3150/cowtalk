@@ -84,7 +84,8 @@ describe('DI-02 syncAnimals — 이동 개체', () => {
   it('같은 목장이면 이동 이력 없음', async () => {
     existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM }];
     await syncAnimals([{ _id: 'cow1', organisation_id: 'org-old', active: true }] as unknown as SyncInput, farmMap);
-    expect(updates[0]).toMatchObject({ farmId: OLD_FARM });
+    // 소속이 그대로면 farmId 를 다른 값으로 바꾸는 갱신이 없다 (OPS-07 이후 바뀐 값만 갱신)
+    expect(updates.every((u) => u.farmId === undefined || u.farmId === OLD_FARM)).toBe(true);
     expect(inserts).toHaveLength(0);
   });
 
@@ -132,7 +133,7 @@ describe('DI-05 syncAnimals — 로컬 값 보존', () => {
   it('폐사 처리한 소는 active 로 되돌리지 않는다', async () => {
     existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM, status: 'dead' } as never];
     await syncAnimals([{ _id: 'cow1', organisation_id: 'org-old', active: true }] as unknown as SyncInput, farmMap);
-    expect(updates[0]!.status).toBeUndefined();
+    expect(updates.some((u) => u.status !== undefined)).toBe(false);
   });
 
   it('소프트 삭제된 개체는 갱신하지 않는다', async () => {
@@ -168,5 +169,19 @@ describe('DI-08 syncAnimals — 이력번호로 기존 개체 연결', () => {
     await syncAnimals([{ _id: 'smx-1', organisation_id: 'org-old', active: true, official_id: '002132665191' }] as unknown as SyncInput, farmMap);
     expect(inserts).toHaveLength(0);
     expect(updates[0]).toMatchObject({ externalId: 'smx-1' });
+  });
+});
+
+// ── OPS-07 회귀 — 바뀐 것이 없으면 UPDATE 하지 않는다 ──
+describe('OPS-07 diffAnimalPatch / syncAnimals', () => {
+  it('같은 값·undefined 는 패치에서 빠진다', async () => {
+    const { diffAnimalPatch } = await import('../animal-affiliation.js');
+    expect(diffAnimalPatch({ name: '423', earTag: '423' }, { name: '423', earTag: '424', traceId: undefined })).toEqual({ earTag: '424' });
+  });
+  it('변경 없는 개체는 UPDATE 0건 (예전: 매 사이클 개체마다 UPDATE)', async () => {
+    updates.length = 0;
+    existingRows = [{ animalId: 'a1', externalId: 'cow1', farmId: OLD_FARM, status: 'active', name: '423', earTag: '423', traceId: '002132665191', currentDeviceId: 'dev1', lactationStatus: 'lactating' } as never];
+    await syncAnimals([{ _id: 'cow1', organisation_id: 'org-old', active: true, name: '423', mark: '423', official_id: '002132665191', current_device_id: 'dev1', lactation_status: 'lactating' }] as unknown as SyncInput, new Map([['org-old', OLD_FARM]]));
+    expect(updates).toHaveLength(0);
   });
 });
