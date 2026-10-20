@@ -36,6 +36,7 @@ import { generateReportContent } from '../services/report/aiContentGenerator.js'
 import { generateDocx } from '../services/report/generators/docxGenerator.js';
 import { generateXlsx } from '../services/report/generators/xlsxGenerator.js';
 import { generatePptx } from '../services/report/generators/pptxGenerator.js';
+import { writeReportOwner } from '../services/report/report-owner.js';
 import { generatePdf } from '../services/report/generators/pdfGenerator.js';
 import { REPORT_CONFIG } from '../services/report/config.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -354,6 +355,7 @@ export async function handleChatStream(
       };
       const gen = generators[fmt];
       if (gen) await gen(reportContent, outputPath);
+      if (request.userId) writeReportOwner(fileId, request.userId); // SEC-20: 만든 사람만 내려받는다
 
       const title = String(reportContent['title'] ?? fileName);
       const downloadUrl = `/api/report-generate/download/${fileId}`;

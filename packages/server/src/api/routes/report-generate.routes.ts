@@ -19,6 +19,7 @@ import { generateXlsx } from '../../services/report/generators/xlsxGenerator.js'
 import { generatePptx } from '../../services/report/generators/pptxGenerator.js';
 import { generatePdf } from '../../services/report/generators/pdfGenerator.js';
 import { REPORT_CONFIG } from '../../services/report/config.js';
+import { writeReportOwner, canDownloadReport } from '../../services/report/report-owner.js';
 import type { OutputFormat } from '../../services/report/config.js';
 import { logger } from '../../lib/logger.js';
 import { kstToday } from '../../lib/kst.js';
@@ -115,6 +116,7 @@ reportGenerateRouter.post('/generate', async (req: Request, res: Response, next:
       return;
     }
     await generator(reportContent, outputPath);
+    writeReportOwner(fileId, req.user!.userId); // SEC-20
 
     logger.info({ fileName }, '[Report] File created');
 
@@ -140,6 +142,12 @@ reportGenerateRouter.get('/download/:fileId', (req: Request, res: Response) => {
   // 정확한 UUID만 받는다 — 접두어 매칭이라 'a' 한 글자로도 남의 보고서가 내려받아졌다
   if (!fileId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
     res.status(400).json({ success: false, error: 'fileId가 올바르지 않습니다.' });
+    return;
+  }
+
+  // SEC-20: 만든 사람만 받는다. 남의 파일은 존재 여부도 알리지 않는다(404)
+  if (!canDownloadReport(fileId, req.user?.userId)) {
+    res.status(404).json({ success: false, error: '파일을 찾을 수 없습니다 (만료 또는 미존재).' });
     return;
   }
 
