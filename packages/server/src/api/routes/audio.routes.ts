@@ -5,15 +5,39 @@
 import { Router, raw } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
-import { synthesize, type TtsVoice, type TtsModel } from '../../services/audio/tts.service.js';
+import { synthesize, type TtsVoice } from '../../services/audio/tts.service.js';
 import { transcribe } from '../../services/audio/stt.service.js';
 import { logger } from '../../lib/logger.js';
 import { getAudioModels, TTS_PREFERENCE, STT_PREFERENCE } from '../../services/audio/model-registry.js';
 import { config } from '../../config/index.js';
+import rateLimit from 'express-rate-limit';
+import { RedisFallbackStore } from '../../lib/rate-limit-store.js';
+import { getRedis } from '../../serving/cache.service.js';
 
 export const audioRouter = Router();
 
 audioRouter.use(authenticate);
+
+// VO-09: 비용 남용 방지 — 예전엔 IP당 30분 1000건(전역 제한)뿐이었다. 계정별 시간당 한도.
+// 스트리밍 음성은 문장 단위로 합성하므로 답변 하나에 여러 번 호출된다 → 넉넉하게, 남용만 막는다.
+function perUserLimit(name: string, max: number) {
+  return rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user?.userId ?? req.ip ?? 'anonymous',
+    store: new RedisFallbackStore(`audio-${name}`, getRedis),
+    message: { success: false, error: { code: 'AUDIO_RATE_LIMITED', message: '음성 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' } },
+  });
+}
+const speakLimit = perUserLimit('speak', config.TTS_HOURLY_LIMIT_PER_USER);
+const transcribeLimit = perUserLimit('transcribe', config.STT_HOURLY_LIMIT_PER_USER);
+
+/** VO-09: 모델·말투는 서버 설정만, 길이는 서버 상한 이하로 (클라이언트가 HD 모델·4000자를 지정할 수 있었다) */
+export function resolveSpeakOptions(input: { maxChars?: number }, serverMaxChars: number): { maxChars: number } {
+  return { maxChars: Math.min(input.maxChars ?? serverMaxChars, serverMaxChars) };
+}
 
 const speakSchema = z.object({
   text: z.string().min(1).max(4000),
@@ -26,15 +50,14 @@ const speakSchema = z.object({
   instructions: z.string().max(1000).optional(),
 });
 
-audioRouter.post('/speak', async (req, res) => {
+audioRouter.post('/speak', speakLimit, async (req, res) => {
   try {
     const input = speakSchema.parse(req.body);
+    // model·instructions 는 하위 호환을 위해 받기만 하고 쓰지 않는다
     const result = await synthesize({
       text: input.text,
       voice: input.voice as TtsVoice | undefined,
-      model: input.model as TtsModel | undefined,
-      maxChars: input.maxChars,
-      instructions: input.instructions,
+      ...resolveSpeakOptions(input, config.OPENAI_TTS_MAX_CHARS),
     });
 
     // 클라이언트 친화 메타데이터를 헤더로 노출 (CORS 화이트리스트 필요할 수 있음)
@@ -107,7 +130,9 @@ audioRouter.post('/speak', async (req, res) => {
 // Body: raw audio buffer (최대 25MB)
 audioRouter.post(
   '/transcribe',
-  raw({ type: ['audio/*', 'application/octet-stream'], limit: '25mb' }),
+  transcribeLimit,
+  // VO-09: 25MB → 10MB (질문 음성은 수십 초 — webm/opus 기준 수백 KB)
+  raw({ type: ['audio/*', 'application/octet-stream'], limit: '10mb' }),
   async (req, res) => {
     try {
       const audio = req.body as Buffer;

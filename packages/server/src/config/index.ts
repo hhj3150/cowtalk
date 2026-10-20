@@ -133,6 +133,9 @@ const envSchema = z.object({
       '숫자와 개체번호는 특히 정확하고 천천히 발음하세요. 축사 소음 속에서도 알아들을 수 있도록 발음을 분명히 하세요.',
     ),
   OPENAI_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(4000).default(800),
+  // VO-09: 계정별 시간당 음성 요청 한도
+  TTS_HOURLY_LIMIT_PER_USER: z.coerce.number().int().min(1).default(300),
+  STT_HOURLY_LIMIT_PER_USER: z.coerce.number().int().min(1).default(120),
   OPENAI_TTS_FORMAT: z.enum(['mp3', 'opus', 'aac', 'flac']).default('mp3'),
   // TTS 속도: 1.0=기본, 0.85=차분, 1.1=빠름. 자연 대화에는 0.95~1.05 권장
   // (gpt-4o-mini-tts는 speed를 받지 않음 — OPENAI_TTS_INSTRUCTIONS로 속도를 지시한다)
