@@ -195,19 +195,24 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     signal: abort.signal,
   };
 
+  // 규칙 7(Fallback 보장): Claude 를 쓸 수 없으면 데이터 기반(v4) 요약으로 답한다
+  const ruleBasedAnswer = async (notice: string): Promise<string> => {
+    try {
+      const { context } = await resolveContext(
+        chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
+        chatRequest.permittedFarmIds,
+      );
+      return `${notice}${buildStreamFallback(chatRequest.question, chatRequest.role, context)}`;
+    } catch {
+      return 'AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.\n\n💡 잠시 후 다시 시도해 주세요.';
+    }
+  };
+  let textSent = false;
+
   try {
     // API 키 없으면 데이터 기반 fallback 응답 생성
     if (!isClaudeAvailable()) {
-      let fallbackText: string;
-      try {
-        const { context } = await resolveContext(
-          chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
-          chatRequest.permittedFarmIds,
-        );
-        fallbackText = buildStreamFallback(chatRequest.question, chatRequest.role, context);
-      } catch {
-        fallbackText = 'AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.\n\n💡 잠시 후 다시 시도해 주세요.';
-      }
+      const fallbackText = await ruleBasedAnswer('');
       res.write(`data: ${JSON.stringify({ type: 'text', content: fallbackText })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done', content: fallbackText })}\n\n`);
       clearInterval(keepAlive);
@@ -219,6 +224,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
       chatRequest,
       {
         onText: (text) => {
+          textSent = true;
           res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
         },
         onDone: (fullText) => {
@@ -227,11 +233,24 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
           res.end();
         },
         onError: (error) => {
-          clearInterval(keepAlive);
-          // error.message가 이미 상세 정보(status, model 등)를 포함 — 그대로 노출
-          const errorMsg = error.message || 'AI 서비스 오류';
-          res.write(`data: ${JSON.stringify({ type: 'error', content: errorMsg })}\n\n`);
-          res.end();
+          // AI-10: 실행 중 Claude 오류(과부하 529·타임아웃 등)에도 v4 규칙 기반 답으로 대체한다.
+          // 예전엔 API 키가 없을 때만 대체하고, 실행 중 오류는 원문(상태코드·모델명)을 그대로 보여 줬다.
+          // 이미 답변 일부가 나간 뒤라면 섞을 수 없으므로 짧은 오류 안내만 보낸다.
+          logger.warn({ err: error }, '[chat] Claude 실행 중 오류 — 규칙 기반 답변으로 대체');
+          if (res.writableEnded || abort.signal.aborted) return;
+          if (textSent) {
+            clearInterval(keepAlive);
+            res.write(`data: ${JSON.stringify({ type: 'error', content: 'AI 응답이 중간에 끊겼습니다. 잠시 후 다시 질문해 주세요.' })}\n\n`);
+            res.end();
+            return;
+          }
+          void ruleBasedAnswer('⚠️ AI 엔진이 잠시 응답하지 않아 데이터 기반 요약으로 답합니다.\n\n').then((text) => {
+            clearInterval(keepAlive);
+            if (res.writableEnded) return;
+            res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'done', content: text })}\n\n`);
+            res.end();
+          });
         },
         onToolEvent: (event) => {
           res.write(`data: ${JSON.stringify({ type: 'tool_event', ...event })}\n\n`);
@@ -243,9 +262,23 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
       },
     );
   } catch (error) {
+    logger.warn({ err: error }, '[chat] 스트림 처리 실패');
+    if (res.writableEnded || abort.signal.aborted) {
+      clearInterval(keepAlive);
+      return;
+    }
+    // AI-10: 아직 아무것도 보내지 않았으면 규칙 기반 답으로 대체 (원문 오류 노출 금지)
+    const text = textSent
+      ? null
+      : await ruleBasedAnswer('⚠️ AI 엔진이 잠시 응답하지 않아 데이터 기반 요약으로 답합니다.\n\n');
     clearInterval(keepAlive);
-    const msg = error instanceof Error ? error.message : 'AI 서비스 오류가 발생했습니다';
-    res.write(`data: ${JSON.stringify({ type: 'error', content: msg })}\n\n`);
+    if (res.writableEnded) return;
+    if (text) {
+      res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done', content: text })}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'error', content: 'AI 응답이 중간에 끊겼습니다. 잠시 후 다시 질문해 주세요.' })}\n\n`);
+    }
     res.end();
   }
 });
