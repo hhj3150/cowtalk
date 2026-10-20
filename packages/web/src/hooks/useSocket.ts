@@ -26,7 +26,8 @@ function getOrCreateSocket(token: string): Socket {
   sharedSocket?.disconnect();
 
   sharedSocket = io(SOCKET_URL, {
-    auth: { token },
+    // SEC-14: 서버가 토큰 만료 시 연결을 끊으므로, (재)접속할 때마다 최신 토큰을 읽는다
+    auth: (cb) => cb({ token: useAuthStore.getState().accessToken ?? token }),
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 1000,
@@ -57,7 +58,13 @@ export function useSocket(): UseSocketReturn {
     setConnectionState(socket.connected ? 'connected' : 'connecting');
 
     const onConnect = () => setConnectionState('connected');
-    const onDisconnect = () => setConnectionState('disconnected');
+    const onDisconnect = (reason: Socket.DisconnectReason) => {
+      setConnectionState('disconnected');
+      // 서버가 끊은 경우(토큰 만료 등)는 socket.io 가 자동 재연결하지 않는다 — 새 토큰으로 다시 붙는다
+      if (reason === 'io server disconnect') {
+        setTimeout(() => { if (socketRefCount > 0) socket.connect(); }, 2000);
+      }
+    };
     const onError = () => setConnectionState('error');
     const onReconnect = () => setConnectionState('connected');
 
