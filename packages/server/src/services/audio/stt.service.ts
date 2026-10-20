@@ -54,6 +54,7 @@ async function callTranscribeApi(apiKey: string, form: FormData): Promise<Respon
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}` },
     body: form,
+    signal: AbortSignal.timeout(60_000), // OPS-11: 25MB 음성도 여유 있게, 무한 대기는 막음
   });
 }
 

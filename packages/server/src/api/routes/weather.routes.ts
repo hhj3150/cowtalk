@@ -89,7 +89,7 @@ async function fetchWeatherFromAPI(
 
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${String(lat)}&lon=${String(lng)}&appid=${apiKey}&units=metric&lang=kr`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(8_000) }); // OPS-11
   if (!response.ok) {
     throw new Error(`OpenWeatherMap API error: ${String(response.status)}`);
   }

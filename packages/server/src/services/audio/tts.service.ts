@@ -241,6 +241,7 @@ async function callSpeechApi(
 ): Promise<Response> {
   return fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
+    signal: AbortSignal.timeout(30_000), // OPS-11
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',

@@ -170,6 +170,7 @@ async function sendViaSolapi(
         Authorization: buildSolapiAuthHeader(apiKey, apiSecret),
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000), // OPS-11: 브리핑 잡이 발송 대기로 멈추지 않게
     });
 
     if (!response.ok) {

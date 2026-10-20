@@ -5,6 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { findUnverifiedClaims, hasUnverified, type UnverifiedClaims } from './answer-verifier.js';
 import { config } from '../config/index.js';
+import { anthropicClientOptions } from './anthropic-client-options.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
@@ -32,7 +33,7 @@ function getClient(): Anthropic | null {
     return null;
   }
   if (!client) {
-    client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
+    client = new Anthropic(anthropicClientOptions());
   }
   return client;
 }

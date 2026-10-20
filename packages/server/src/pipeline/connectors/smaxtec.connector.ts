@@ -146,6 +146,7 @@ export class SmaxtecApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: this.email, password: this.password }),
+      signal: AbortSignal.timeout(15_000), // OPS-11
     });
 
     if (!res.ok) {

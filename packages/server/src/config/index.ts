@@ -96,6 +96,9 @@ const envSchema = z.object({
   ANTHROPIC_TEMPERATURE_CHAT_FINAL: z.coerce.number().min(0).max(1).default(0.3),
   // Extended Thinking — 감별진단·번식 추천 같은 복잡 질문에 활성화 (budget=0 비활성)
   // 1024~16000 토큰 권장. 비용 추가되므로 휴리스틱으로 일부 케이스만.
+  // OPS-11: SDK 기본값은 요청당 최대 10분 + 재시도 2회 → 채팅·브리핑 잡이 수십 분 멈출 수 있었다
+  ANTHROPIC_TIMEOUT_MS: z.coerce.number().int().min(5_000).default(180_000),
+  ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   ANTHROPIC_THINKING_BUDGET: z.coerce.number().int().min(0).max(16000).default(2048),
 
   // OpenWeatherMap API
