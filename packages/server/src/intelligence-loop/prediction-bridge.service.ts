@@ -88,12 +88,13 @@ export async function saveDifferentialDiagnosisAsPrediction(
         rankScore: candidate.probability / 100,
         predictionLabel: candidate.disease,
         explanationText: `${candidate.diseaseKo} (확률 ${candidate.probability}%)`,
-        contributingFeatures: Object.fromEntries(
-          candidate.evidence.map((e) => [e.metric, e.currentValue ?? 0]),
-        ),
+        // AI-06: 결측값을 0 으로 저장하면 학습·평가에서 '측정값 0'으로 읽힌다 → null 로 보존
+        contributingFeatures: diagnosisFeatures(candidate.evidence),
         recommendedAction: candidate.confirmatoryTests[0] ?? '수의사 진찰 권장',
         modelVersion: 'diff-diag-v1.0',
         roleSpecific: {},
+        // AI-06: 계산한 데이터 품질을 함께 남긴다 (예전: 버려짐 → 평가 때 근거 부족 예측과 구분 불가)
+        dataQuality: { level: result.dataQuality },
       });
     }
 
@@ -104,6 +105,15 @@ export async function saveDifferentialDiagnosisAsPrediction(
   } catch (error) {
     logger.warn({ error, animalId: result.animalId }, '[PredBridge] Failed to save diff diagnosis');
   }
+}
+
+/** 감별진단 근거 → 저장용 특성 (결측은 null) */
+export function diagnosisFeatures(
+  evidence: ReadonlyArray<{ readonly metric: string; readonly currentValue?: number | null }>,
+): Record<string, number | null> {
+  return Object.fromEntries(
+    evidence.map((e) => [e.metric, typeof e.currentValue === 'number' && Number.isFinite(e.currentValue) ? e.currentValue : null]),
+  );
 }
 
 // ── 번식 추천 → prediction ──
