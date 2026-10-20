@@ -5,6 +5,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { farmScopeForRequest, scopedFarmIds } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
 import { animals, farms } from '../../db/schema.js';
@@ -38,7 +39,9 @@ xaiRouter.get('/animal', validate(animalQuerySchema), async (req: Request, res: 
     const db = getDb();
 
     const [animal] = await db.select().from(animals).where(eq(animals.animalId, animalId)).limit(1);
-    if (!animal) {
+    // 배정 범위 밖 개체는 없는 것과 같다 (예전: 남의 개체 AI 해석을 Claude 비용까지 쓰며 만들어 줬다)
+    const scope = scopedFarmIds(req);
+    if (!animal || (scope !== null && !scope.includes(animal.farmId))) {
       res.status(404).json({ success: false, error: '개체를 찾을 수 없습니다.' });
       return;
     }
@@ -61,6 +64,7 @@ xaiRouter.get('/animal', validate(animalQuerySchema), async (req: Request, res: 
 xaiRouter.get('/farm', validate(farmQuerySchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { farmId, role = 'farmer' } = req.query as { farmId: string; role?: Role };
+    farmScopeForRequest(req, farmId); // 배정 범위 밖 농장은 403
     const db = getDb();
 
     const [farm] = await db.select().from(farms).where(eq(farms.farmId, farmId)).limit(1);

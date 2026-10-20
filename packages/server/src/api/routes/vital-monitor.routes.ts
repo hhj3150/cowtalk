@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { farmScopeForRequest, farmScopeWhere, farmScopeSqlFragment } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, animals, farms } from '../../db/schema.js';
@@ -47,14 +48,14 @@ vitalMonitorRouter.get('/', async (req: Request, res: Response, next: NextFuncti
     const days = Math.min(Math.max(Number(req.query.days) || 30, 7), 90);
     const fromDate = new Date(Date.now() - days * 86_400_000);
 
-    const farmCondition = farmId
-      ? eq(smaxtecEvents.farmId, farmId)
-      : undefined;
+    // 배정 범위 밖 farmId 는 403, 지정 없으면 배정 목장만 (예전: 범위 검사 없이 전 농장 개체 바이탈)
+    const scope = farmScopeForRequest(req, farmId);
+    const farmCondition = farmScopeWhere(smaxtecEvents.farmId, scope);
 
     // SQL IN 절 빌드 (Drizzle sql 템플릿 호환)
     const vitalTypeList = sql.join(ALL_VITAL_TYPES.map((t) => sql`${t}`), sql`, `);
-    const farmFilter = farmId ? sql`AND farm_id = ${farmId}` : sql``;
-    const farmFilterE = farmId ? sql`AND e.farm_id = ${farmId}` : sql``;
+    const farmFilter = farmScopeSqlFragment(sql`farm_id`, scope);
+    const farmFilterE = farmScopeSqlFragment(sql`e.farm_id`, scope);
 
     // 1) 일별 체온/반추 이벤트 집계
     const dailyRows = await db.execute(sql`

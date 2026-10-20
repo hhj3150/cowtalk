@@ -109,9 +109,10 @@ quarantineDashboardRouter.patch('/action/:id', officerRoles, async (req, res, ne
 // GET /quarantine/early-detection-metrics
 // ===========================
 
-quarantineDashboardRouter.get('/early-detection-metrics', async (_req, res, next) => {
+quarantineDashboardRouter.get('/early-detection-metrics', async (req, res, next) => {
   try {
-    const data = await getEarlyDetectionMetrics();
+    // 목장 단위 사용자는 자기 목장 사례만 (예전: 전국 감지 사례 — 다른 농장 이름 포함 — 를 그대로 받았다)
+    const data = await getEarlyDetectionMetrics(scopedFarmIds(req));
     res.json({ success: true, data });
   } catch (err) {
     next(err);

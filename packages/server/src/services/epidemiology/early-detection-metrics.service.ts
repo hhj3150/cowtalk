@@ -4,7 +4,7 @@
 
 import { getDb } from '../../config/database.js';
 import { alerts, farms, sovereignAlarmLabels } from '../../db/schema.js';
-import { gte, eq, sql, count } from 'drizzle-orm';
+import { gte, eq, sql, count, and, inArray } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { learnableLabelCondition } from '../../intelligence-loop/label-source.js';
 
@@ -84,7 +84,7 @@ const SPREAD_PER_HOUR = 0.5;
 // 실제 경보 통계 집계
 // ===========================
 
-async function fetchAlertStats(sinceDate: Date): Promise<{
+async function fetchAlertStats(sinceDate: Date, scope: readonly string[] | null): Promise<{
   total: number;
   criticalCount: number;
   farms: readonly string[];
@@ -97,12 +97,12 @@ async function fetchAlertStats(sinceDate: Date): Promise<{
       critical: sql<number>`count(*) filter (where ${alerts.priority} = 'critical')`,
     })
     .from(alerts)
-    .where(gte(alerts.createdAt, sinceDate));
+    .where(and(gte(alerts.createdAt, sinceDate), scopeCond(scope)));
 
   const farmRows = await db
     .select({ farmId: alerts.farmId })
     .from(alerts)
-    .where(gte(alerts.createdAt, sinceDate))
+    .where(and(gte(alerts.createdAt, sinceDate), scopeCond(scope)))
     .groupBy(alerts.farmId);
 
   return {
@@ -116,7 +116,7 @@ async function fetchAlertStats(sinceDate: Date): Promise<{
 // 최근 감지 사례 목록
 // ===========================
 
-async function fetchRecentCases(): Promise<readonly DetectionCase[]> {
+async function fetchRecentCases(scope: readonly string[] | null): Promise<readonly DetectionCase[]> {
   const db = getDb();
   const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
@@ -132,7 +132,7 @@ async function fetchRecentCases(): Promise<readonly DetectionCase[]> {
     })
     .from(alerts)
     .innerJoin(farms, eq(alerts.farmId, farms.farmId))
-    .where(gte(alerts.createdAt, since30d))
+    .where(and(gte(alerts.createdAt, since30d), scopeCond(scope)))
     .orderBy(sql`${alerts.createdAt} desc`)
     .limit(30);
 
@@ -159,16 +159,21 @@ async function fetchRecentCases(): Promise<readonly DetectionCase[]> {
 // 메인: getEarlyDetectionMetrics
 // ===========================
 
-export async function getEarlyDetectionMetrics(): Promise<EarlyDetectionMetrics> {
+/** 배정 범위 조건 — null 이면 전체 (전국 관리자) */
+function scopeCond(scope: readonly string[] | null) {
+  return scope === null ? undefined : inArray(alerts.farmId, [...scope]);
+}
+
+export async function getEarlyDetectionMetrics(scope: readonly string[] | null = null): Promise<EarlyDetectionMetrics> {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
 
     const [monthlyAlerts, yearlyAlerts, recentCases] = await Promise.all([
-      fetchAlertStats(startOfMonth),
-      fetchAlertStats(startOfYear),
-      fetchRecentCases(),
+      fetchAlertStats(startOfMonth, scope),
+      fetchAlertStats(startOfYear, scope),
+      fetchRecentCases(scope),
     ]);
 
     // 오탐/정탐률 — sovereign_alarm_labels 실측 (표본 10 미만이면 null = '—')

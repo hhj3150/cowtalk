@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, farmScopeForRequest, farmScopeWhere } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { alerts, farms } from '../../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
@@ -21,9 +21,9 @@ actionRouter.get('/', requirePermission('action', 'read'), async (req: Request, 
     const status = (req.query.status as string) ?? 'new';
 
     const conditions = [eq(alerts.status, status)];
-    if (farmId) {
-      conditions.push(eq(alerts.farmId, farmId));
-    }
+    // 배정 범위 밖 farmId 는 403, 지정 없으면 배정 목장만 (예전: 범위 검사 없이 전 농장 조치 목록)
+    const scopeCond = farmScopeWhere(alerts.farmId, farmScopeForRequest(req, farmId));
+    if (scopeCond) conditions.push(scopeCond);
 
     const actions = await db
       .select({

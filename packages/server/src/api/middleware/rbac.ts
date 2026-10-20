@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { ForbiddenError, UnauthorizedError } from '../../lib/errors.js';
 import { hasPermission } from '@cowtalk/shared';
 import type { Role, ResourceType, ActionType } from '@cowtalk/shared';
+import { eq, inArray, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 /**
  * SEC-21: 목장 범위 제한이 없는 토큰인가 — 마스터(소유자) 또는 OPEN_DATA_SCOPE 열람 토큰.
@@ -107,6 +108,23 @@ export function farmScopeForRequest(req: Request, requestedFarmId?: string): str
     return requestedFarmId;
   }
   return scope === null ? undefined : scope;
+}
+
+/**
+ * 요청 스코프를 쿼리 조건으로 — farmScopeForRequest 결과(단일 farmId·배정 목록·무제한)를 그대로 받는다.
+ * 무제한(undefined)이면 조건 없음.
+ */
+export function farmScopeWhere(column: AnyColumn, scope: string | readonly string[] | undefined): SQL | undefined {
+  if (scope === undefined) return undefined;
+  if (typeof scope === 'string') return eq(column, scope);
+  return inArray(column, [...scope]);
+}
+
+/** 원시 SQL 용 — `AND <컬럼> IN (...)` 조각 (무제한이면 빈 조각) */
+export function farmScopeSqlFragment(columnSql: SQL, scope: string | readonly string[] | undefined): SQL {
+  if (scope === undefined) return sql``;
+  const ids = typeof scope === 'string' ? [scope] : [...scope];
+  return sql`AND ${columnSql} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`;
 }
 
 /** 농장 단위 역할 — 배정된 목장 밖은 절대 볼 수 없다 */
