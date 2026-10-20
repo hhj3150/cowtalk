@@ -52,7 +52,8 @@ vi.mock('../../../services/approval/write-confirmation.service.js', () => ({
     return Promise.resolve({ ok: true, toolName: r.toolName, toolInput: r.toolInput });
   },
   finishWriteProposal: (id: string, status: string) => { const r = store.get(id); if (r) r.status = status; return Promise.resolve(); },
-  cancelWriteProposal: (id: string) => { const r = store.get(id); if (r && r.status === 'awaiting') r.status = 'cancelled'; return Promise.resolve(); },
+  cancelWriteProposal: (id: string, _u?: string, turnId?: string) => { const r = store.get(id); if (r && r.status === 'awaiting' && r.turnId !== turnId) r.status = 'cancelled'; return Promise.resolve(); },
+  getProposalTurnId: (id: string, userId?: string) => { const r = store.get(id); return Promise.resolve(r && r.userId === userId ? r.turnId : null); },
   describeAnimal: () => Promise.resolve('송영신목장 123번'),
 }));
 
@@ -147,5 +148,15 @@ describe('기록 도구 사용자 확인 게이트', () => {
   it('조회 도구는 확인 없이 바로 실행', async () => {
     await executeToolWithGateway('query_animal', { earTag: '123' }, vet('t1', '123번 보여줘'));
     expect(executed).toHaveLength(1);
+  });
+});
+
+describe('NEW-05 같은 턴의 발화는 제안에 대한 대답이 아니다', () => {
+  it('"다시 기록해줘" 턴에서 AI 가 스스로 확인해도 제안이 취소되지 않고, 다음 턴 "저장해"로 저장된다', async () => {
+    const id = await propose('t-retry');
+    await executeToolWithGateway('record_treatment', { ...TREATMENT, confirmationId: id }, vet('t-retry', '다시 기록해줘'));
+    expect(store.get(id)?.status).toBe('awaiting');
+    const r = await executeToolWithGateway('record_treatment', { ...TREATMENT, confirmationId: id }, vet('t-next', '저장해'));
+    expect(r.success).toBe(true);
   });
 });
