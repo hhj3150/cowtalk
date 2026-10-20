@@ -4,6 +4,7 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { allowedOrigins } from './lib/cors-origins.js';
 import { RedisFallbackStore } from './lib/rate-limit-store.js';
 import { getRedis } from './serving/cache.service.js';
 import { createApiRouter } from './api/index.js';
@@ -26,9 +27,7 @@ export function createApp(): express.Express {
 
   // --- CORS ---
   app.use(cors({
-    origin: config.NODE_ENV === 'production'
-      ? [/\.netlify\.app$/, /cowtalk\.kr$/, /cowtalk\.netlify\.app$/]
-      : ['http://localhost:5173', 'http://localhost:3000'],
+    origin: allowedOrigins(config.NODE_ENV, config.CORS_EXTRA_ORIGINS), // SEC-19: 정확한 출처만
     credentials: true,
   }));
 

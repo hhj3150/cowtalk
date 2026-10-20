@@ -9,6 +9,7 @@ import { logger } from '../lib/logger.js';
 import { verifyAccessToken } from '../lib/auth.js';
 import { isUserApproved } from '../services/auth/approval.service.js';
 import { attachRedisAdapter } from './socket-redis-adapter.js';
+import { allowedOrigins } from '../lib/cors-origins.js';
 import type { AuthTokenPayload } from '@cowtalk/shared';
 
 let io: SocketServer | null = null;
@@ -35,9 +36,8 @@ export function msUntilExpiry(token: string, now: number = Date.now()): number |
   return decoded?.exp ? decoded.exp * 1000 - now : null;
 }
 
-const CORS_ORIGINS = config.NODE_ENV === 'production'
-  ? [/\.netlify\.app$/, /cowtalk\.kr$/, /cowtalk\.netlify\.app$/]
-  : ['http://localhost:5173', 'http://localhost:3000'];
+// SEC-19: API 와 같은 정확한 출처 목록
+const CORS_ORIGINS = allowedOrigins(config.NODE_ENV, config.CORS_EXTRA_ORIGINS);
 
 /**
  * OPS-12: 다중 레플리카 전파용 Redis 어댑터 연결. HTTP listen 전에 await 한다 —

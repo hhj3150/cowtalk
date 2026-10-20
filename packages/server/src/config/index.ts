@@ -64,6 +64,8 @@ const envSchema = z.object({
   // ⚠️ 다른 사용자(목장주·수의사)를 받기 전에 반드시 끈다 — 끄면 목장별 권한으로 즉시 복귀(재로그인·토큰 갱신 시)
   // (z.coerce.boolean은 "false"도 true로 바꾸므로 쓰지 않는다)
   OPEN_DATA_SCOPE: z.string().optional().transform((v) => v === 'true'),
+  // SEC-19: 추가 허용 출처 (쉼표 구분, 예: https://staging.example.com)
+  CORS_EXTRA_ORIGINS: z.string().optional(),
   // OPS-12: Socket.IO Redis 어댑터 (REDIS_ENABLED 이고 Redis 연결 성공 시에만 붙는다)
   SOCKET_IO_REDIS_ADAPTER: envBool(true),
   REDIS_HOST: z.string().default('localhost'),
