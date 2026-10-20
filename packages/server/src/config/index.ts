@@ -23,6 +23,24 @@ export function envBool(defaultValue: boolean) {
   });
 }
 
+// SEC-18: 공개 저장소에 있는 개발용 기본값 — 운영에서 이 값이면 누구나 토큰을 위조할 수 있다
+export const DEV_JWT_ACCESS_SECRET = 'dev-access-secret-change-in-production';
+export const DEV_JWT_REFRESH_SECRET = 'dev-refresh-secret-change-in-production';
+// 코드 기본값 + .env.example 예시값 (둘 다 공개 저장소에 있다) + 빈 값
+const PUBLIC_JWT_SECRETS: ReadonlySet<string> = new Set([
+  DEV_JWT_ACCESS_SECRET, DEV_JWT_REFRESH_SECRET,
+  'change-me-access-secret-min-32-chars', 'change-me-refresh-secret-min-32-chars', '',
+]);
+
+/** SEC-18: 운영인데 JWT 시크릿이 기본값이거나 두 시크릿이 같으면 문제 목록 (비어 있으면 통과) */
+export function jwtSecretProblems(env: { NODE_ENV: string; JWT_ACCESS_SECRET: string; JWT_REFRESH_SECRET: string }): string[] {
+  if (env.NODE_ENV !== 'production') return [];
+  const problems: string[] = [];
+  if (PUBLIC_JWT_SECRETS.has(env.JWT_ACCESS_SECRET)) problems.push('JWT_ACCESS_SECRET 이 공개된 기본값');
+  if (PUBLIC_JWT_SECRETS.has(env.JWT_REFRESH_SECRET)) problems.push('JWT_REFRESH_SECRET 이 공개된 기본값');
+  return problems;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -52,8 +70,8 @@ const envSchema = z.object({
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(''),
 
-  JWT_ACCESS_SECRET: z.string().default('dev-access-secret-change-in-production'),
-  JWT_REFRESH_SECRET: z.string().default('dev-refresh-secret-change-in-production'),
+  JWT_ACCESS_SECRET: z.string().default(DEV_JWT_ACCESS_SECRET),
+  JWT_REFRESH_SECRET: z.string().default(DEV_JWT_REFRESH_SECRET),
   JWT_ACCESS_EXPIRES_IN: z.string().default('2h'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
@@ -171,6 +189,16 @@ const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error('Invalid environment variables:', parsed.error.flatten().fieldErrors);
   throw new Error('Invalid environment configuration');
+}
+
+// SEC-18: 운영에서 공개 기본 시크릿이면 기동하지 않는다 (누구나 관리자 토큰을 만들 수 있는 상태로 서비스하지 않음)
+const jwtProblems = jwtSecretProblems(parsed.data);
+if (jwtProblems.length > 0) {
+  console.error('[config] 안전하지 않은 JWT 설정:', jwtProblems.join(', '));
+  throw new Error('Insecure JWT configuration');
+}
+if (parsed.data.NODE_ENV === 'production' && parsed.data.JWT_ACCESS_SECRET === parsed.data.JWT_REFRESH_SECRET) {
+  console.warn('[config] JWT_ACCESS_SECRET 과 JWT_REFRESH_SECRET 이 같습니다 — 서로 다른 값으로 바꾸세요');
 }
 
 export const config = parsed.data;
