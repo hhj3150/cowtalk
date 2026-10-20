@@ -4,13 +4,36 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
+import { requireAnimalAccess, requireScopedIds } from '../middleware/animal-access.js';
 import { recordMilkYield, type RecordMilkYieldInput } from '../../services/milk/milk-record.service.js';
 import { getDb } from '../../config/database.js';
 import { milkRecords, farmMilkSummary } from '../../db/schema.js';
 import { and, eq, gte, desc } from 'drizzle-orm';
 
 export const milkRouter = Router();
+
+/**
+ * SEC-09: 클라이언트 본문을 그대로 넘기지 않는다 — 허용 필드만 골라 담고, 허용 목장(allowedFarmIds)은
+ * 서버가 계정 권한으로 채운다. 예전엔 본문에 allowedFarmIds 를 넣어 남의 목장 소에 기록할 수 있었다.
+ */
+export function toMilkInput(raw: unknown, scope: readonly string[] | null): RecordMilkYieldInput {
+  const b = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  return {
+    animalId: str(b.animalId),
+    earTag: str(b.earTag),
+    farmId: str(b.farmId),
+    yieldL: typeof b.yieldL === 'number' ? b.yieldL : Number.NaN,
+    date: str(b.date),
+    fat: num(b.fat),
+    protein: num(b.protein),
+    lactose: num(b.lactose),
+    scc: num(b.scc),
+    allowedFarmIds: scope,
+  };
+}
 
 milkRouter.use(authenticate);
 
@@ -20,7 +43,7 @@ milkRouter.post(
   requirePermission('animal', 'update'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await recordMilkYield(req.body as RecordMilkYieldInput);
+      const result = await recordMilkYield(toMilkInput(req.body, scopedFarmIds(req)));
       res.status(result.success ? 200 : 400).json({ success: result.success, data: result });
     } catch (error) {
       next(error);
@@ -34,7 +57,7 @@ milkRouter.post(
   requirePermission('animal', 'update'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { records } = req.body as { records: RecordMilkYieldInput[] };
+      const { records } = req.body as { records: unknown[] };
       if (!Array.isArray(records) || records.length === 0) {
         res.status(400).json({ success: false, error: 'records 배열이 필요합니다' });
         return;
@@ -44,8 +67,9 @@ milkRouter.post(
         return;
       }
       const results = [];
+      const scope = scopedFarmIds(req);
       for (const r of records) {
-        results.push(await recordMilkYield(r));
+        results.push(await recordMilkYield(toMilkInput(r, scope)));
       }
       const succeeded = results.filter((r) => r.success).length;
       res.json({
@@ -83,10 +107,9 @@ milkRouter.post(
         res.status(400).json({ success: false, error: 'farmId와 date(YYYY-MM-DD)가 필요합니다' });
         return;
       }
-      // 농장 쓰기 스코프 — 배정 사용자는 배정 농장만
-      const user = req.user!;
-      const userFarmIds = user.farmIds ?? [];
-      if (user.role !== 'government_admin' && !user.isMaster && !userFarmIds.includes(farmId)) {
+      // 농장 쓰기 스코프 — 배정 우선 규칙(scopedFarmIds). 예전엔 배정이 걸린 행정관도 모든 농장에 기록 가능했다
+      const scope = scopedFarmIds(req);
+      if (scope !== null && !scope.includes(farmId)) {
         res.status(403).json({ success: false, error: '접근 권한이 없는 농장입니다' });
         return;
       }
@@ -131,7 +154,7 @@ milkRouter.post(
         priceKrwPerL: fields.priceKrwPerL as number | null,
         selfProcessedYieldL: fields.selfProcessedYieldL as number | null,
         note: typeof b.note === 'string' ? b.note.slice(0, 500) : null,
-        createdBy: user.userId,
+        createdBy: req.user!.userId,
       };
 
       const [existing] = await db
@@ -159,6 +182,7 @@ milkRouter.post(
 milkRouter.get(
   '/farm-summary',
   requirePermission('animal', 'read'),
+  requireScopedIds([{ source: 'query', field: 'farmId', kind: 'farm' }]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const farmId = req.query.farmId as string | undefined;
@@ -189,6 +213,7 @@ milkRouter.get(
 milkRouter.get(
   '/records/:animalId',
   requirePermission('animal', 'read'),
+  requireAnimalAccess(),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const db = getDb();

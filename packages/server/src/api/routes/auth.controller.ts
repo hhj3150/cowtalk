@@ -291,13 +291,14 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // 마스터 사용자 검증: government_admin 또는 ha@d2o.kr만 역할 전환 가능
+  // 역할 전환은 소유자만 (SEC-07). 전환 토큰은 isMaster 라 전국 접근 + 전환한 역할의 쓰기 권한을 갖는다.
+  // 예전엔 government_admin 이면 누구나 — 목장이 배정된(제한된) 행정관도 전국 마스터 토큰을 받았다.
   const user = await findUserById(req.user.userId);
   if (!user) {
     throw new NotFoundError('User not found');
   }
 
-  const isMaster = user.role === 'government_admin' || isOwnerEmail(user.email);
+  const isMaster = isOwnerEmail(user.email);
   if (!isMaster) {
     res.status(403).json({ success: false, message: '역할 전환 권한이 없습니다' });
     return;
@@ -387,7 +388,8 @@ export async function onboarding(req: Request, res: Response): Promise<void> {
           ownerName: input.farm.ownerName ?? input.name,
           phone: input.farm.phone ?? null,
           regionId: defaultRegion.regionId,
-          status: 'active',
+          // SEC-17: 승인 전 농장은 'pending' — 전국 통계·목록에 잡히지 않고, 소유자가 계정을 승인하면 활성화된다
+          status: 'pending',
         })
         .returning({ farmId: farms.farmId });
 

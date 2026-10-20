@@ -15,6 +15,8 @@ import {
 import { eq, count, sql, gt, and, desc, isNull, inArray } from 'drizzle-orm';
 import { getHerdTotal } from '../../services/metrics/herd-service.js';
 
+import { requireScopedIds } from '../middleware/animal-access.js';
+
 export const dashboardRouter = Router();
 
 dashboardRouter.use(authenticate);
@@ -111,7 +113,11 @@ dashboardRouter.get('/estrus-route', async (_req: Request, res: Response, next: 
 // 수정 액션 기록 (수정 완료 / 넘김)
 // ===========================
 
-dashboardRouter.post('/estrus-action', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 남의 소·남의 알람에 수정/건너뜀 조치 기록 차단
+dashboardRouter.post('/estrus-action', requireScopedIds([
+  { source: 'body', field: 'animalId', kind: 'animal', required: true },
+  { source: 'body', field: 'eventId', kind: 'event' },
+]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const {
@@ -128,27 +134,40 @@ dashboardRouter.post('/estrus-action', async (req: Request, res: Response, next:
       skipReason?: string;
     };
 
-    const technicianId = req.user?.userId ?? null;
+    // DI-15: 예전엔 type 'ai'(다른 쿼리는 'insemination' 을 센다)·'skipped' 로, farmId 없이, 중복 방지 없이 넣었다.
+    // 번식 파이프라인·수태율 집계가 이 기록을 보지 못했다. 이제 표준 경로(recordInsemination)와 같은 규칙으로 기록한다.
+    if (action !== 'inseminated' && action !== 'skipped') {
+      res.status(400).json({ success: false, error: "action 은 'inseminated' 또는 'skipped' 여야 합니다" });
+      return;
+    }
+    const farmId = req.animalFarmId;
+    if (!farmId) {
+      res.status(404).json({ success: false, error: '개체를 찾을 수 없습니다' });
+      return;
+    }
 
     if (action === 'inseminated') {
-      await db.insert(breedingEvents).values({
+      const { recordInsemination } = await import('../../services/breeding/breeding-advisor.service.js');
+      const result = await recordInsemination({
         animalId,
-        eventDate: new Date(),
-        type: 'ai',
-        semenInfo: semenName ?? null,
-        technicianId,
-        notes: `발정 이벤트 ${eventId} 기반 수정`,
+        farmId,
+        semenInfo: semenName,
+        technicianName: undefined,
+        notes: eventId ? `발정 이벤트 ${eventId} 기반 수정` : undefined,
       });
-    } else {
-      await db.insert(breedingEvents).values({
-        animalId,
-        eventDate: new Date(),
-        type: 'skipped',
-        semenInfo: null,
-        technicianId,
-        notes: skipReason ?? '사유 미입력',
-      });
+      res.json({ success: true, data: { eventId, action, breedingEventId: result.eventId } });
+      return;
     }
+
+    await db.insert(breedingEvents).values({
+      animalId,
+      farmId,
+      eventDate: new Date(),
+      type: 'no_insemination',
+      noInseminationReason: skipReason ?? '사유 미입력',
+      technicianId: req.user?.userId ?? null,
+      notes: eventId ? `발정 이벤트 ${eventId} — 수정 안 함` : null,
+    });
 
     res.json({ success: true, data: { eventId, action } });
   } catch (error) {
@@ -415,8 +434,8 @@ async function buildVetDashboard(farmIds?: string[]): Promise<DashboardData> {
   const fusionCandidates: Array<{
     animalId: string;
     events: Array<{ eventType: string; severity: string; detectedAt: Date }>;
-    primary: { interpretation: string; confidence: number };
-    secondary: { interpretation: string; confidence: number };
+    primary: FusionHypothesis;
+    secondary: FusionHypothesis;
     recommendedAction: string;
   }> = [];
 
@@ -901,9 +920,23 @@ async function buildEstrusRoute(): Promise<{
 // ===========================
 
 // Decision Fusion — 복수 이벤트 유형 경합 해석
-function deriveFusionInterpretation(types: string[]): {
-  primary: { interpretation: string; confidence: number };
-  secondary: { interpretation: string; confidence: number };
+/**
+ * AI-09: 아래 점수는 측정·학습된 확률이 아니라 손으로 정한 경험치다. 예전엔 'confidence'(신뢰도)라는
+ * 이름으로 나가 화면·AI 가 실측 신뢰도처럼 읽을 수 있었다 → heuristicScore(0-100) + scoreKind 로 구분.
+ */
+interface FusionHypothesis {
+  readonly interpretation: string;
+  readonly heuristicScore: number;
+  readonly scoreKind: 'heuristic';
+}
+
+function hypothesis(interpretation: string, heuristicScore: number): FusionHypothesis {
+  return { interpretation, heuristicScore, scoreKind: 'heuristic' };
+}
+
+export function deriveFusionInterpretation(types: string[]): {
+  primary: FusionHypothesis;
+  secondary: FusionHypothesis;
   action: string;
 } {
   const typeSet = new Set(types);
@@ -917,8 +950,8 @@ function deriveFusionInterpretation(types: string[]): {
   // 발정 + 활동 → 발정 우선
   if (hasEstrus || (hasActivity && hasTemp)) {
     return {
-      primary: { interpretation: '발정 가능성', confidence: hasEstrus ? 85 : 65 },
-      secondary: { interpretation: hasTemp ? '발열/질병 가능성' : '열스트레스 가능성', confidence: hasTemp ? 25 : 15 },
+      primary: hypothesis('발정 가능성', hasEstrus ? 85 : 65),
+      secondary: hypothesis(hasTemp ? '발열/질병 가능성' : '열스트레스 가능성', hasTemp ? 25 : 15),
       action: hasEstrus ? '직장검사 + 수정 적기 확인' : '체온 재측정 + 발정 징후 관찰',
     };
   }
@@ -926,8 +959,8 @@ function deriveFusionInterpretation(types: string[]): {
   // 체온 + 건강경고 → 질병 우선
   if (hasTemp && hasHealth) {
     return {
-      primary: { interpretation: '질병/감염 가능성', confidence: 78 },
-      secondary: { interpretation: '열스트레스 가능성', confidence: 18 },
+      primary: hypothesis('질병/감염 가능성', 78),
+      secondary: hypothesis('열스트레스 가능성', 18),
       action: '직장검사 + 혈액검사 권고',
     };
   }
@@ -935,8 +968,8 @@ function deriveFusionInterpretation(types: string[]): {
   // 반추 + 음수 → 사양 문제 우선
   if (hasRumination && hasDrinking) {
     return {
-      primary: { interpretation: '사양/소화 문제', confidence: 72 },
-      secondary: { interpretation: '초기 질병 가능성', confidence: 22 },
+      primary: hypothesis('사양/소화 문제', 72),
+      secondary: hypothesis('초기 질병 가능성', 22),
       action: '사료 급여량 및 품질 확인',
     };
   }
@@ -944,16 +977,16 @@ function deriveFusionInterpretation(types: string[]): {
   // 체온 단독 + 다른 유형
   if (hasTemp) {
     return {
-      primary: { interpretation: '발열 의심', confidence: 60 },
-      secondary: { interpretation: '환경적 요인(열스트레스)', confidence: 30 },
+      primary: hypothesis('발열 의심', 60),
+      secondary: hypothesis('환경적 요인(열스트레스)', 30),
       action: '체온 재측정 + 환경 온도 확인',
     };
   }
 
   // 기본 경합
   return {
-    primary: { interpretation: '복합 이상 감지', confidence: 55 },
-    secondary: { interpretation: '환경/일시적 요인', confidence: 25 },
+    primary: hypothesis('복합 이상 감지', 55),
+    secondary: hypothesis('환경/일시적 요인', 25),
     action: '상세 관찰 + 반복 확인',
   };
 }

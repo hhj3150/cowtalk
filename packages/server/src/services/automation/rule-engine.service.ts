@@ -19,6 +19,7 @@ import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { AutomationTrigger, AutomationAction, AutomationRunStatus } from '@cowtalk/shared';
 import { executeToolWithGateway } from '../../ai-brain/tools/tool-gateway.js';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 const MS_PER_HOUR = 3_600_000;
 /** 스윕 조회 범위 — 스윕 주기(10분)보다 넉넉하게 잡아 재시작 공백을 흡수 */
@@ -252,7 +253,7 @@ async function executeRuleAction(
     farmId: candidate.farmId,
     earTag,
     eventType: candidate.eventType,
-    today: new Date().toISOString().slice(0, 10), // {{today}} — 당일 시작 처방 등
+    today: kstToday(), // {{today}} — 당일 시작 처방 등
   });
 
   let status: AutomationRunStatus;

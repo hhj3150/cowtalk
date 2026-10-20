@@ -3,6 +3,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import { signAccessToken } from '@server/lib/auth';
+import { vi } from 'vitest';
+// 승인 게이트는 이 테스트의 관심사가 아니다 (approval.service 테스트 담당) — 승인된 사용자로 고정
+vi.mock('@server/services/auth/approval.service.js', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  isUserApproved: async () => true,
+}));
 import { authenticate, optionalAuth } from '@server/api/middleware/auth';
 import { requireRole, requirePermission } from '@server/api/middleware/rbac';
 import { validate } from '@server/api/middleware/validate';
@@ -37,11 +43,12 @@ describe('authenticate middleware', () => {
     farmIds: ['f1'],
   };
 
-  it('유효한 Bearer 토큰 → req.user 설정', () => {
+  // authenticate 는 계정 승인 게이트(DB 조회)가 생기면서 비동기가 됐다 — await / rejects 로 검증
+  it('유효한 Bearer 토큰 → req.user 설정', async () => {
     const token = signAccessToken(payload);
     const req = mockReq({ headers: { authorization: `Bearer ${token}` } });
 
-    authenticate(req, mockRes(), next);
+    await authenticate(req, mockRes(), next);
 
     expect(req.user).toBeDefined();
     expect(req.user?.userId).toBe('u1');
@@ -49,14 +56,14 @@ describe('authenticate middleware', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('헤더 없음 → UnauthorizedError', () => {
+  it('헤더 없음 → UnauthorizedError', async () => {
     const req = mockReq();
-    expect(() => authenticate(req, mockRes(), next)).toThrow(UnauthorizedError);
+    await expect(authenticate(req, mockRes(), next)).rejects.toThrow(UnauthorizedError);
   });
 
-  it('잘못된 토큰 → UnauthorizedError', () => {
+  it('잘못된 토큰 → UnauthorizedError', async () => {
     const req = mockReq({ headers: { authorization: 'Bearer invalid' } });
-    expect(() => authenticate(req, mockRes(), next)).toThrow(UnauthorizedError);
+    await expect(authenticate(req, mockRes(), next)).rejects.toThrow(UnauthorizedError);
   });
 });
 

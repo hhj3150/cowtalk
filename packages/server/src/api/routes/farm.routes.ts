@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { requirePermission, scopedFarmIds } from '../middleware/rbac.js';
+import { requirePermission, scopedFarmIds, farmParamGuard } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { farmQuerySchema, farmCreateSchema, farmUpdateSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
@@ -16,6 +16,8 @@ import { getHerdTotal, getHerdPerFarm } from '../../services/metrics/herd-servic
 export const farmRouter = Router();
 
 farmRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+farmRouter.param('farmId', farmParamGuard(true));
 
 // GET /farms — 농장 목록 (실제 DB 쿼리)
 farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQuerySchema }), async (req: Request, res: Response, next: NextFunction) => {

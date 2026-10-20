@@ -3,20 +3,25 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, requirePlatformAdmin } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { users, userFarmAccess, farms } from '../../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
 import { isOwnerUserId, setUserApproval } from '../../services/auth/approval.service.js';
 import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
 import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
+import { ROLES } from '@cowtalk/shared';
 
 export const userRouter = Router();
+
+const VALID_ROLES: readonly string[] = ROLES.map((r) => r.role);
+const VALID_STATUSES: readonly string[] = ['active', 'inactive', 'suspended'];
 
 userRouter.use(authenticate);
 
 // GET /users — 사용자 목록
-userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res: Response, next: NextFunction) => {
+// SEC-06: 사용자 목록은 플랫폼 관리자만 (배정이 걸린 행정관 제외)
+userRouter.get('/', requirePermission('user', 'read'), requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
 
@@ -44,10 +49,14 @@ userRouter.get('/', requirePermission('user', 'read'), async (_req: Request, res
 
 // PUT /users/:userId/farms — 목장 배정 교체 (관리자 전용)
 // body: { farmIds: string[] } — 전달된 목록으로 배정을 전면 교체한다 (빈 배열 = 전체 해제)
-userRouter.put('/:userId/farms', requirePermission('user', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+userRouter.put('/:userId/farms', requirePermission('user', 'update'), requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const targetUserId = req.params.userId as string;
+    // SEC-07: 자기 배정을 스스로 바꾸면(특히 전체 해제) 제한 계정이 전국 계정이 된다 — 소유자만 예외
+    if (targetUserId === req.user!.userId && !(await isOwnerUserId(req.user!.userId))) {
+      throw new ForbiddenError('자기 계정의 목장 배정은 바꿀 수 없습니다');
+    }
     const { farmIds } = req.body as { farmIds?: unknown };
 
     if (!Array.isArray(farmIds) || farmIds.some((f) => typeof f !== 'string') || farmIds.length > 500) {
@@ -110,7 +119,16 @@ userRouter.patch('/:userId/approval', async (req: Request, res: Response, next: 
 });
 
 // GET /users/:userId — 단일 사용자 상세
-userRouter.get('/:userId', requirePermission('user', 'read'), async (req: Request, res: Response, next: NextFunction) => {
+// 본인 정보는 누구나, 타인 정보는 플랫폼 관리자만 (SEC-06)
+function requireSelfOrPlatformAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.user && req.params.userId === req.user.userId) {
+    next();
+    return;
+  }
+  requirePermission('user', 'read')(req, res, () => requirePlatformAdmin(req, res, next));
+}
+
+userRouter.get('/:userId', requireSelfOrPlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const userId = req.params.userId as string;
@@ -153,16 +171,37 @@ userRouter.get('/:userId', requirePermission('user', 'read'), async (req: Reques
 });
 
 // PATCH /users/:userId — 사용자 정보 수정
-userRouter.patch('/:userId', requirePermission('user', 'update'), async (req: Request, res: Response, next: NextFunction) => {
+userRouter.patch('/:userId', requirePermission('user', 'update'), requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const userId = req.params.userId as string;
-    const { name, role, status, phone } = req.body;
+    const { name, role, status, phone } = req.body as Record<string, unknown>;
+
+    // SEC-03: 역할·상태 변경과 소유자 계정 수정은 소유자만 (DB 실계정 기준).
+    // 예전엔 행정관이면 누구든 자기·타인의 역할을 바꾸고 이름을 'Master Admin'으로 고쳐 소유자 권한을 얻었다.
+    const requesterIsOwner = await isOwnerUserId(req.user!.userId);
+    if (!requesterIsOwner) {
+      if (role !== undefined || status !== undefined) {
+        throw new ForbiddenError('역할·상태 변경은 소유자만 할 수 있습니다');
+      }
+      if (await isOwnerUserId(userId)) {
+        throw new ForbiddenError('소유자 계정은 소유자만 수정할 수 있습니다');
+      }
+    }
+    if (role !== undefined && (typeof role !== 'string' || !VALID_ROLES.includes(role))) {
+      throw new BadRequestError('role 값이 올바르지 않습니다');
+    }
+    if (status !== undefined && (typeof status !== 'string' || !VALID_STATUSES.includes(status))) {
+      throw new BadRequestError('status 값이 올바르지 않습니다');
+    }
+    if (name !== undefined && (typeof name !== 'string' || name.trim().length < 2 || name.length > 100)) {
+      throw new BadRequestError('이름은 2~100자 문자열이어야 합니다');
+    }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (name) updateData.name = name;
-    if (role) updateData.role = role;
-    if (status) updateData.status = status;
+    if (typeof name === 'string') updateData.name = name.trim();
+    if (typeof role === 'string') updateData.role = role;
+    if (typeof status === 'string') updateData.status = status;
     if (phone !== undefined) {
       // 승인 알림톡 수신처 — 숫자·하이픈만, 20자 이내 (빈 문자열 = 삭제)
       const cleaned = String(phone).trim();

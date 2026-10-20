@@ -8,6 +8,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
+import { config } from '../../config/index.js';
 import { getDb } from '../../config/database.js';
 import { SmaxtecConnector } from '../../pipeline/connectors/smaxtec.connector.js';
 import {
@@ -15,7 +16,8 @@ import {
   sensorDailyAgg, sensorMeasurements, eventLabels,
   pregnancyChecks, calvingEvents, regions,
 } from '../../db/schema.js';
-import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
+import { eq, count, sql, and, gte, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { kstDateString, kstToday } from '../../lib/kst.js';
 import { resolveFarmProvince } from '../../services/epidemiology/province-mapper.js';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
@@ -94,7 +96,9 @@ function daysAgo(days: number): Date {
 }
 
 // 최근 24시간 기준 (자정 리셋 방지 — 항상 데이터가 있도록)
-function todayStart(): Date {
+// DI-16: 예전 이름은 todayStart 였지만 실제로는 '지금부터 24시간 전'이다 (오늘 0시가 아님).
+// 알림 위젯은 아침에도 밤사이 알림이 보이도록 최근 24시간 창을 쓴다 — 동작은 그대로 두고 이름을 정직하게.
+function last24hStart(): Date {
   return new Date(Date.now() - 24 * 60 * 60 * 1000);
 }
 
@@ -132,6 +136,11 @@ function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | u
   if (valid.length === 0) return undefined;
   if (valid.length === 1) return valid[0];
   return and(...valid) ?? valid[0];
+}
+
+// OPS-10: 센서 장착 개체 — 활성·미삭제 개체 중 현재 센서 보유 (farm-index 와 같은 정의)
+export function sensorAttachedCondition(): SqlCondition {
+  return and(eq(animals.status, 'active'), isNull(animals.deletedAt), isNotNull(animals.currentDeviceId)) as SqlCondition;
 }
 
 // ===========================
@@ -387,7 +396,7 @@ unifiedDashboardRouter.get('/drilldown', async (req: Request, res: Response, nex
       : null;
 
     const typeFilter = requestedTypes && requestedTypes.length > 0
-      ? sql`${smaxtecEvents.eventType} IN (${sql.raw(requestedTypes.map((t) => `'${t}'`).join(','))})`
+      ? inArray(smaxtecEvents.eventType, requestedTypes)
       : eventType === 'ALL'
         ? undefined
         : eventType === 'HEALTH_ALL'
@@ -1285,11 +1294,19 @@ async function getSmaxtecConnector(): Promise<SmaxtecConnector | null> {
   }
 }
 
+/** AI-03: 센서 차트 합성 허용 여부 — 개발 환경 + 명시 요청일 때만 */
+export function shouldSimulateSensorChart(simulateParam: unknown, nodeEnv: string): boolean {
+  return nodeEnv === 'development' && simulateParam === '1';
+}
+
 unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const animalId = req.params.animalId as string;
     const days = Math.min(Number(req.query.days) || 14, 90); // 최대 90일
+    // AI-03: 합성 곡선은 개발 환경에서 명시적으로 요청할 때만 (?simulate=1).
+    // 예전엔 결측이면 항상 이벤트 근처 이상치까지 넣은 가짜 곡선을 채웠고, 일부 화면이 이를 실측으로 표시했다.
+    const allowSimulation = shouldSimulateSensorChart(req.query.simulate, config.NODE_ENV);
 
     // 동물 기본 정보 + 프로필
     const [animal] = await db.select({
@@ -1517,7 +1534,7 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess
     // 실제 smaXtec 연동 시 해당 메트릭은 실 데이터가 사용됨
     const requiredMetrics = ['temp', 'act', 'rum', 'dr'];
     const missingMetrics = requiredMetrics.filter((k) => !metrics[k] || metrics[k]!.length === 0);
-    if (missingMetrics.length > 0) {
+    if (missingMetrics.length > 0 && allowSimulation) {
       // 이벤트 목록을 미리 가져와서 이상 구간 시뮬레이션에 활용
       const animalEvents = await db.select({
         eventType: smaxtecEvents.eventType,
@@ -1689,8 +1706,10 @@ unifiedDashboardRouter.get('/animal/:animalId/sensor-chart', requireAnimalAccess
         metrics,
         eventMarkers: markers,
         animalProfile,
-        // 시뮬레이션된 메트릭 목록 — 프론트엔드에서 "추정치" 라벨 표시용
-        simulatedMetrics: missingMetrics,
+        // 시뮬레이션된 메트릭 목록 — 프론트엔드에서 "추정치" 라벨 표시용 (개발 환경 명시 요청 시에만)
+        simulatedMetrics: allowSimulation ? missingMetrics : [],
+        // AI-03: 실측이 없어 비워 둔 메트릭 — 화면은 '데이터 없음'으로 표시한다
+        noDataMetrics: allowSimulation ? [] : missingMetrics,
       },
     });
   } catch (error) {
@@ -1993,22 +2012,59 @@ unifiedDashboardRouter.get('/herd-composition', async (req: Request, res: Respon
 // GET /api/unified-dashboard/farm-comparison?farmIds=id1,id2,id3
 // ===========================
 
+/** 목장 비교 최대 개수 — 요청 1건이 농장당 4개 쿼리를 만들므로 상한을 둔다 */
+const FARM_COMPARISON_MAX = 10;
+
+export type ComparisonSelection =
+  | { readonly mode: 'top' }
+  | { readonly mode: 'explicit'; readonly farmIds: readonly string[] };
+
+/**
+ * SEC-01: /farm-comparison 의 farmIds 파라미터 해석 (순수 함수).
+ * - UUID 형식이 아닌 값은 버린다 (SQL 조각이 끼어들 여지 제거)
+ * - 배정 스코프가 있으면 교집합만 — 권한 밖 목장 id는 조용히 제외 (빈 결과 가능)
+ * - 파라미터가 있었는데 유효한 id가 하나도 없으면 빈 배열 (상위 3개로 대체하지 않음)
+ */
+export function resolveComparisonFarmIds(
+  farmIdsParam: string | undefined,
+  scope: readonly string[] | null,
+): ComparisonSelection {
+  if (farmIdsParam === undefined || farmIdsParam.trim() === '') return { mode: 'top' };
+  const valid = [...new Set(
+    farmIdsParam.split(',').map((id) => id.trim().toLowerCase()).filter((id) => UUID_REGEX.test(id)),
+  )];
+  const permitted = scope === null
+    ? valid
+    : valid.filter((id) => scope.some((s) => s.toLowerCase() === id));
+  return { mode: 'explicit', farmIds: permitted.slice(0, FARM_COMPARISON_MAX) };
+}
+
 unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
-    const farmIdsParam = req.query.farmIds as string | undefined;
+    const rawFarmIds = req.query.farmIds;
+    // ?farmIds=a&farmIds=b (배열)도 문자열과 같게 — 형식이 다르다고 500이 나지 않게
+    const farmIdsParam = Array.isArray(rawFarmIds)
+      ? rawFarmIds.filter((v): v is string => typeof v === 'string').join(',')
+      : typeof rawFarmIds === 'string' ? rawFarmIds : undefined;
     const last7d = daysAgo(7);
 
-    // farmIds 결정: 파라미터 없으면 동물 수 상위 3개 농장
-    let targetFarmIds: string[];
-    if (farmIdsParam) {
-      targetFarmIds = farmIdsParam.split(',').map((id) => id.trim()).filter(Boolean);
+    // SEC-01: 요청 farmIds는 UUID 검증 + 배정 스코프 교집합 후 파라미터 바인딩(inArray)으로만 쓴다.
+    const scope = scopedFarmIds(req);
+    const selection = resolveComparisonFarmIds(farmIdsParam, scope);
+    let targetFarmIds: readonly string[];
+    if (selection.mode === 'explicit') {
+      targetFarmIds = selection.farmIds;
     } else {
+      // 파라미터 없으면 (권한 범위 안에서) 동물 수 상위 3개 농장
       const topFarms = await db.select({
         farmId: farms.farmId,
       })
         .from(farms)
-        .where(eq(farms.status, 'active'))
+        .where(whereAll(
+          eq(farms.status, 'active'),
+          scope === null ? undefined : inArray(farms.farmId, [...scope]),
+        ))
         .orderBy(desc(farms.currentHeadCount))
         .limit(3);
       targetFarmIds = topFarms.map((f) => f.farmId);
@@ -2019,15 +2075,13 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
       return;
     }
 
-    const farmIdsList = targetFarmIds.map((id) => `'${id}'`).join(',');
-
     // 농장 기본 정보
     const farmRows = await db.select({
       farmId: farms.farmId,
       farmName: farms.name,
     })
       .from(farms)
-      .where(sql`${farms.farmId} IN (${sql.raw(farmIdsList)})`);
+      .where(inArray(farms.farmId, [...targetFarmIds]));
 
     // 농장별 메트릭 계산
     const data = await Promise.all(farmRows.map(async (farm) => {
@@ -2071,12 +2125,11 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
       const tempWarned = Number(tempAlerted?.count ?? 0);
       const tempStability = total > 0 ? Math.round(clampPct(((total - tempWarned) / total) * 100)) : 0;
 
-      // 센서 장착률
-      const [sensorAnimals] = await db.select({
-        count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
-      })
-        .from(smaxtecEvents)
-        .where(eq(smaxtecEvents.farmId, farm.farmId));
+      // 센서 장착률 — OPS-10: 이벤트 전체 기간 COUNT(DISTINCT) 스캔 대신 현재 장착 센서 기준
+      // (farm-index·방역 대시보드와 같은 정의: 활성 개체 중 current_device_id 보유)
+      const [sensorAnimals] = await db.select({ count: sql<number>`count(*)::int` })
+        .from(animals)
+        .where(and(sensorAttachedCondition(), eq(animals.farmId, farm.farmId)));
       const sensorRate = total > 0 ? Math.min(100, Math.round((Number(sensorAnimals?.count ?? 0) / total) * 100)) : 0;
 
       // 반추·사료효율은 TimescaleDB aggregation 파이프라인 미구현 — 0으로 반환
@@ -2361,7 +2414,7 @@ async function buildUnifiedDashboard(
 ): Promise<UnifiedDashboardData> {
   const db = getDb();
   const periodStart = daysAgo(periodDays);
-  const today = todayStart();
+  const today = last24hStart();
   const thirtyDaysAgo = daysAgo(30);
 
   // farmCondition은 _currentFarmIds 또는 farmId를 사용
@@ -2431,13 +2484,11 @@ async function queryHerdOverview(
   // 두수 단일 소스 — D7/D9 라이브 (BUG-007).
   const herd = await getHerdTotal(currentFarmScope(farmId));
 
-  // 센서 장착: 활성 동물 중 smaXtec 이벤트가 있는 동물 수
-  const [sensorCount] = await db.select({
-    count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
-  })
-    .from(smaxtecEvents)
-    .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
-    .where(whereAll(farmCondition(smaxtecEvents.farmId, farmId), eq(animals.status, 'active')));
+  // 센서 장착: 활성 동물 중 현재 센서가 붙은 동물 수
+  // OPS-10: 예전엔 이벤트 전 기간 COUNT(DISTINCT) 스캔 (대시보드 로드마다) → 개체 테이블 기준
+  const [sensorCount] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(animals)
+    .where(whereAll(farmCondition(animals.farmId, farmId), sensorAttachedCondition()));
 
   // 미확인 알림 / 건강 이상 — alert-aggregator 단일 소스 (D3, BUG-007 Part 2).
   // window=24h, ackedFilter=false (미확인만). 878 vs 874 모순 해소.
@@ -2715,7 +2766,7 @@ async function queryDailyRumination(
 ): Promise<readonly RuminationDataPoint[]> {
   const baseConditions = [
     sql`${sensorDailyAgg.metricType} LIKE '%rumination%'`,
-    gte(sensorDailyAgg.date, sql`${thirtyDaysAgo.toISOString().slice(0, 10)}`),
+    gte(sensorDailyAgg.date, sql`${kstDateString(thirtyDaysAgo)}`),
   ];
 
   const rows = await db.select({
@@ -2758,7 +2809,7 @@ async function queryWeeklyRumination(
     .where(whereAll(
       farmCondition(animals.farmId, farmId),
       sql`${sensorDailyAgg.metricType} LIKE '%rumination%'`,
-      gte(sensorDailyAgg.date, sql`${thirtyDaysAgo.toISOString().slice(0, 10)}`),
+      gte(sensorDailyAgg.date, sql`${kstDateString(thirtyDaysAgo)}`),
     ))
     .groupBy(sql`DATE_TRUNC('week', ${sensorDailyAgg.date}::timestamp)`)
     .orderBy(sql`DATE_TRUNC('week', ${sensorDailyAgg.date}::timestamp)`);
@@ -2988,7 +3039,7 @@ async function queryRumenHealth(
     .where(whereAll(
       farmCondition(animals.farmId, farmId),
       sql`${sensorDailyAgg.metricType} LIKE '%ph%'`,
-      gte(sensorDailyAgg.date, sql`${thirtyDaysAgo.toISOString().slice(0, 10)}`),
+      gte(sensorDailyAgg.date, sql`${kstDateString(thirtyDaysAgo)}`),
     ))
     .groupBy(sensorDailyAgg.date)
     .orderBy(sensorDailyAgg.date);
@@ -3008,7 +3059,12 @@ async function queryRumenHealth(
 const VALID_VERDICTS: readonly LabelVerdict[] = ['confirmed', 'false_positive', 'modified', 'missed'];
 const VALID_OUTCOMES: readonly LabelOutcome[] = ['resolved', 'ongoing', 'worsened', 'no_action'];
 
-unifiedDashboardRouter.post('/event-label', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 레이블은 학습 정답이 된다 — 남의 목장 알람·개체에 레이블을 붙이지 못하게
+unifiedDashboardRouter.post('/event-label', requireScopedIds([
+  { source: 'body', field: 'eventId', kind: 'event' },
+  { source: 'body', field: 'animalId', kind: 'animal' },
+  { source: 'body', field: 'farmId', kind: 'farm' },
+]), requireAnimalInBodyFarm(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const body = req.body as CreateEventLabelRequest;
@@ -3273,7 +3329,7 @@ unifiedDashboardRouter.get('/vet-route', async (req: Request, res: Response, nex
   try {
     const db = getDb();
     const user = req.user;
-    const dateParam = (req.query.date as string | undefined) ?? new Date().toISOString().slice(0, 10);
+    const dateParam = (req.query.date as string | undefined) ?? kstToday();
     const farmIdParam = (req.query.farmId as string | undefined) ?? null;
 
     // 48시간 전부터의 미확인 건강 이벤트 조회
@@ -3479,7 +3535,7 @@ import type {
 } from '@cowtalk/shared';
 import { farmProfitEntries } from '../../db/schema.js';
 import { z } from 'zod';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds, requireAnimalInBodyFarm } from '../middleware/animal-access.js';
 
 /** Seeded pseudo-random for reproducible demo data per farmId+month */
 function seededRandom(seed: string): () => number {
@@ -3917,7 +3973,8 @@ unifiedDashboardRouter.get('/farm-profit', async (req: Request, res: Response, n
 });
 
 // POST /api/unified-dashboard/farm-profit — 수익성 데이터 입력 (upsert)
-unifiedDashboardRouter.post('/farm-profit', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 남의 목장 손익 입력 차단
+unifiedDashboardRouter.post('/farm-profit', requireScopedIds([{ source: 'body', field: 'farmId', kind: 'farm', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = farmProfitEntrySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -4631,14 +4688,7 @@ const ESTRUS_EVENT_TYPES = [
   'activity_increase', 'mounting',
 ];
 
-const SEMEN_RECOMMENDATIONS: readonly string[] = [
-  '한우 정액 (KPN-1128)',
-  '홀스타인 정액 (HAX-2245)',
-  '저지 정액 (JRS-0081)',
-  '브라운스위스 정액 (BSW-3370)',
-  '한우 우량 정액 (KPN-1205)',
-  '수정란이식 추천',
-];
+const SEMEN_RECOMMENDATION_NOTICE = '개체 상세의 번식 추천에서 확인 (품종·근교계수 검사)';
 
 function computeInseminationPriority(
   hoursRemaining: number,
@@ -4706,7 +4756,7 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
   try {
     const db = getDb();
     const user = req.user;
-    const dateParam = (req.query.date as string | undefined) ?? new Date().toISOString().slice(0, 10);
+    const dateParam = (req.query.date as string | undefined) ?? kstToday();
     const farmIdParam = (req.query.farmId as string | undefined) ?? null;
     const now = new Date();
 
@@ -4881,8 +4931,6 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
     let totalEstrusAnimals = 0;
     let totalWindowClosingSoon = 0;
 
-    const rng = seededRandom(`insem-${dateParam}`);
-
     const stops: InseminationRouteStop[] = routeOrder.reduce<InseminationRouteStop[]>((acc, idx, orderIdx) => {
       const farm = sortedFarms[idx];
       if (!farm) return acc;
@@ -4905,9 +4953,12 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
         if (hoursRemaining <= 2) stopWindowClosingSoon += 1;
 
         const detailObj = (evt.details ?? {}) as Record<string, unknown>;
-        const activityIncrease = Number(detailObj['activityIncreasePct'] ?? detailObj['activity_increase'] ?? 120);
-        const tempDelta = Number(detailObj['temperatureDelta'] ?? detailObj['temp_delta'] ?? 0.3 + rng() * 0.4);
-        const intensity = estimateEstrusIntensity(activityIncrease);
+        // AI-03: 실측값이 없으면 null — 예전엔 활동 120%, 체온 0.3~0.7℃ 난수로 채워 실측처럼 보였다
+        const rawActivity = detailObj['activityIncreasePct'] ?? detailObj['activity_increase'];
+        const rawTemp = detailObj['temperatureDelta'] ?? detailObj['temp_delta'];
+        const activityIncrease = rawActivity == null || !Number.isFinite(Number(rawActivity)) ? null : Number(rawActivity);
+        const tempDelta = rawTemp == null || !Number.isFinite(Number(rawTemp)) ? null : Number(rawTemp);
+        const intensity = activityIncrease === null ? 'unknown' as const : estimateEstrusIntensity(activityIncrease);
 
         const lastCalving = animalInfo?.lastCalvingDate;
         const daysSinceCalving = lastCalving
@@ -4920,9 +4971,9 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
         const optStart = new Date(detectedAt.getTime() + OPTIMAL_INSEMINATION_START_HOURS * 3_600_000);
         const optEnd = new Date(detectedAt.getTime() + OPTIMAL_INSEMINATION_END_HOURS * 3_600_000);
 
-        // AI 정액 추천 (산차, 수정 횟수 기반)
-        const semenIdx = Math.floor(rng() * SEMEN_RECOMMENDATIONS.length);
-        const suggestedSemen = SEMEN_RECOMMENDATIONS[semenIdx] ?? SEMEN_RECOMMENDATIONS[0]!;
+        // 정액 추천 — 예전엔 품종과 무관하게 목록에서 무작위로 골라 'AI 추천'으로 보였다 (한우↔젖소 교차 포함).
+        // 실제 추천은 개체의 품종·근교계수·보유 정액을 보는 번식 추천(/breeding/recommend)에서만 한다.
+        const suggestedSemen = SEMEN_RECOMMENDATION_NOTICE;
 
         const suggestedAction = hoursRemaining <= 2
           ? '수정 적기 임박 — 즉시 수정 실시'
@@ -4937,7 +4988,7 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
           hoursRemaining: Math.round(hoursRemaining * 10) / 10,
           estrusIntensity: intensity,
           activityIncreasePct: activityIncrease,
-          temperatureDelta: Math.round(tempDelta * 100) / 100,
+          temperatureDelta: tempDelta === null ? null : Math.round(tempDelta * 100) / 100,
           lactationNumber: animalInfo?.lactationNumber ?? 0,
           daysSinceLastCalving: daysSinceCalving,
           previousInseminationCount: breedingCount,

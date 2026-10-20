@@ -9,6 +9,7 @@ import type { ReportData } from './dataCollector.js';
 import { logger } from '../../lib/logger.js';
 import { deidentifyRecord } from '../../ai-brain/prompts/deidentify.js';
 import { temperatureParam } from '../../ai-brain/claude-model-params.js';
+import { anthropicClientOptions } from '../../ai-brain/anthropic-client-options.js';
 
 let client: Anthropic | null = null;
 
@@ -17,7 +18,7 @@ function getClient(): Anthropic {
     if (!config.ANTHROPIC_API_KEY) {
       throw new Error('ANTHROPIC_API_KEY가 설정되지 않았습니다.');
     }
-    client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
+    client = new Anthropic(anthropicClientOptions());
   }
   return client;
 }

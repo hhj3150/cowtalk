@@ -6,10 +6,11 @@
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20) NOT NULL DEFAULT 'pending';
 
--- 소유자 계정만 승인 상태로 (Master Admin 명칭 또는 소유자 이메일)
+-- 소유자 계정만 승인 상태로 (소유자 이메일만 — SEC-03)
+-- 예전엔 name LIKE '%Master Admin%' 도 승인했는데, 이 파일이 부팅마다 재실행되면서
+-- 소유자가 차단(revoked)한 계정이라도 이름에 'Master Admin'이 있으면 매 부팅 다시 승인됐다.
 UPDATE users SET approval_status = 'approved'
- WHERE name LIKE '%Master Admin%'
-    OR email IN ('ha@d2o.kr', 'hhj3150@hanmail.net');
+ WHERE lower(email) IN ('ha@d2o.kr', 'hhj3150@hanmail.net');
 
 -- 미승인 계정의 기존 세션(리프레시 토큰) 즉시 폐기 — 이미 로그인된 계정도 차단
 DELETE FROM refresh_tokens

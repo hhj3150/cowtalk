@@ -47,7 +47,7 @@ export async function getFarmSemenPerformance(
       WHERE be.type = 'insemination'
         AND be.farm_id = ${farmId}
         AND be.semen_id IS NOT NULL
-        AND be.event_date >= ${cutoff}
+        AND be.event_date >= ${cutoff.toISOString()}::timestamptz
       GROUP BY be.semen_id
     `);
 
@@ -144,7 +144,7 @@ export async function computeConceptionStats(farmId?: string, farmIds?: readonly
         AND pc.check_date > be.event_date
         AND pc.check_date < be.event_date + INTERVAL '120 days'
       WHERE be.type = 'insemination'
-        AND be.event_date >= ${cutoff}
+        AND be.event_date >= ${cutoff.toISOString()}::timestamptz
         ${farmFilter}
     `);
 
@@ -171,7 +171,7 @@ export async function computeConceptionStats(farmId?: string, farmIds?: readonly
         AND pc.check_date > be.event_date
         AND pc.check_date < be.event_date + INTERVAL '120 days'
       WHERE be.type = 'insemination'
-        AND be.event_date >= ${cutoff}
+        AND be.event_date >= ${cutoff.toISOString()}::timestamptz
         ${farmFilter}
       GROUP BY COALESCE(be.semen_info, '미기록')
       HAVING COUNT(*) >= 2
@@ -212,7 +212,7 @@ export async function computeConceptionStats(farmId?: string, farmIds?: readonly
         AND pc.check_date > be.event_date
         AND pc.check_date < be.event_date + INTERVAL '120 days'
       WHERE be.type = 'insemination'
-        AND be.event_date >= ${cutoff}
+        AND be.event_date >= ${cutoff.toISOString()}::timestamptz
         AND a.status = 'active'
         ${farmFilter}
       GROUP BY be.animal_id, a.ear_tag

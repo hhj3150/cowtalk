@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
-import { requireFarmAccess } from '../middleware/rbac.js';
+import { requireFarmAccess, requireRoleOrMaster } from '../middleware/rbac.js';
 import {
   startInvestigation,
   getInvestigation,
@@ -20,7 +20,8 @@ import { logger } from '../../lib/logger.js';
 
 export const investigationRouter = Router();
 
-investigationRouter.use(authenticate);
+// SEC-12: 역학조사는 방역·행정 업무 — 예전엔 목장주를 포함한 모든 역할이 조회·수정할 수 있었다
+investigationRouter.use(authenticate, requireRoleOrMaster('quarantine_officer', 'government_admin'));
 
 // ===========================
 // GET /investigation/list — 전체 조사 목록

@@ -114,7 +114,8 @@ const EVENT_TYPE_MAP: Readonly<Record<string, SmaxtecEventType>> = {
 export function normalizeSmaxtecEvent(raw: SmaxtecRawEvent): NormalizedSmaxtecEvent {
   // Real API uses _id / event_ts; legacy uses event_id / timestamp
   const eventId = raw._id ?? raw.event_id ?? '';
-  const eventTimestamp = raw.event_ts ?? raw.timestamp ?? new Date().toISOString();
+  // DI-03: 시각이 없거나 깨졌을 때 조용히 '지금'으로 바꾸면 감지 시각이 만들어진다 → 출처를 details 에 남긴다
+  const ts = resolveEventTimestamp(raw.event_ts ?? raw.timestamp, (raw as { create_ts?: string }).create_ts, new Date());
   const confidence = raw.confidence ?? inferConfidence(raw.event_type);
   const severity = raw.severity ?? inferSeverity(raw.event_type);
 
@@ -128,6 +129,8 @@ export function normalizeSmaxtecEvent(raw: SmaxtecRawEvent): NormalizedSmaxtecEv
   if (raw.number != null) details.number = raw.number;
   if (raw.value != null) details.value = raw.value;
   if (raw.data != null) Object.assign(details, raw.data);
+  if (ts.source !== 'event_ts') details.timestampSource = ts.source;
+  if (ts.future) details.timestampInFuture = true;
 
   return {
     externalEventId: eventId,
@@ -136,7 +139,7 @@ export function normalizeSmaxtecEvent(raw: SmaxtecRawEvent): NormalizedSmaxtecEv
     confidence: Math.min(Math.max(confidence, 0), 1),
     severity: SEVERITY_MAP[severity] ?? 'low',
     stage: raw.stage ?? null,
-    detectedAt: toKST(eventTimestamp),
+    detectedAt: ts.date,
     details,
     rawData: raw as unknown as Record<string, unknown>,
   };
@@ -275,14 +278,45 @@ export function buildIdMappingIndex(
 }
 
 // ===========================
-// 타임존 통일 (KST)
+// 이벤트 시각 해석 (DI-03)
 // ===========================
+//
+// smaXtec 시각에 시간대 표기가 없으면 JS 는 UTC 로 읽는다. 운영에서 감지 시각이 조회 시각보다
+// 몇 시간 뒤(미래)로 저장된 정황이 있어, 표기 없는 값이 한국 시각일 가능성이 제기됐다(감사 DI-03).
+// 운영 원본 샘플로 확인하기 전까지 해석 규칙은 바꾸지 않고(오판 시 전 이벤트가 9시간 어긋난다),
+// 아래만 한다:
+//   - 시각 없음·깨짐 → event_ts 대신 create_ts, 그것도 없으면 현재 시각 + 출처 표시(timestampSource)
+//   - 현재보다 10분 넘게 미래면 timestampInFuture 표시 + 경고 로그 (운영 확인 근거)
 
-function toKST(isoString: string): Date {
-  const date = new Date(isoString);
-  if (isNaN(date.getTime())) {
-    logger.warn({ raw: isoString }, '[Normalization] Invalid date string');
-    return new Date();
+const FUTURE_TOLERANCE_MS = 10 * 60 * 1000;
+
+export interface ResolvedEventTimestamp {
+  readonly date: Date;
+  readonly source: 'event_ts' | 'create_ts' | 'fallback_now';
+  readonly future: boolean;
+}
+
+function parseTs(value: string | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function resolveEventTimestamp(
+  eventTs: string | undefined,
+  createTs: string | undefined,
+  now: Date,
+): ResolvedEventTimestamp {
+  const fromEvent = parseTs(eventTs);
+  const fromCreate = fromEvent ? null : parseTs(createTs);
+  const date = fromEvent ?? fromCreate ?? now;
+  const source = fromEvent ? 'event_ts' : fromCreate ? 'create_ts' : 'fallback_now';
+  if (source !== 'event_ts') {
+    logger.warn({ eventTs, createTs, source }, '[Normalization] 이벤트 시각 없음/오류 — 대체 시각 사용');
   }
-  return date; // JS Date는 내부적으로 UTC, 표시만 KST
+  const future = date.getTime() - now.getTime() > FUTURE_TOLERANCE_MS;
+  if (future) {
+    logger.warn({ eventTs, aheadMinutes: Math.round((date.getTime() - now.getTime()) / 60000) }, '[Normalization] 미래 시각 이벤트 — 시간대 해석 확인 필요 (DI-03)');
+  }
+  return { date, source, future };
 }

@@ -113,7 +113,11 @@ export async function finishWriteProposal(
     .where(eq(toolWriteConfirmations.confirmationId, confirmationId));
 }
 
-export async function cancelWriteProposal(confirmationId: string, userId?: string): Promise<void> {
+/**
+ * 사용자가 거부했을 때 제안 취소. turnId 를 주면 그 턴에 만든 제안은 취소하지 않는다 —
+ * 같은 턴의 발화는 '제안에 대한 대답'이 아니라 '제안을 부른 요청'이다 (예: "다시 기록해줘"의 '다시'를 거부로 읽음).
+ */
+export async function cancelWriteProposal(confirmationId: string, userId?: string, turnId?: string): Promise<void> {
   const userCond = userId
     ? eq(toolWriteConfirmations.userId, userId)
     : sql`${toolWriteConfirmations.userId} IS NULL`;
@@ -124,7 +128,21 @@ export async function cancelWriteProposal(confirmationId: string, userId?: strin
       eq(toolWriteConfirmations.confirmationId, confirmationId),
       userCond,
       eq(toolWriteConfirmations.status, 'awaiting'),
+      ...(turnId ? [ne(toolWriteConfirmations.turnId, turnId)] : []),
     ));
+}
+
+/** 제안을 만든 턴 — 같은 턴에서의 확인·거부 판정을 건너뛰기 위해 (없으면 null) */
+export async function getProposalTurnId(confirmationId: string, userId?: string): Promise<string | null> {
+  const userCond = userId
+    ? eq(toolWriteConfirmations.userId, userId)
+    : sql`${toolWriteConfirmations.userId} IS NULL`;
+  const [row] = await getDb()
+    .select({ turnId: toolWriteConfirmations.turnId })
+    .from(toolWriteConfirmations)
+    .where(and(eq(toolWriteConfirmations.confirmationId, confirmationId), userCond))
+    .limit(1);
+  return row?.turnId ?? null;
 }
 
 /** 요약에 넣을 개체 표시 — "송영신목장 123번". 개체를 사람이 눈으로 확인하게 하는 핵심 */

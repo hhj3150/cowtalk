@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, farmParamGuard } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { sensorQuerySchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
@@ -11,9 +11,24 @@ import { sensorMeasurements, sensorDevices, animals, smaxtecEvents } from '../..
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
 import { requireAnimalAccess } from '../middleware/animal-access.js';
 
+/** 24h·48h 는 분 단위, 그 외는 시 단위 버킷 키 ('YYYY-MM-DDTHH:MM' / 'YYYY-MM-DDTHH') */
+export function sensorHistoryBucketKey(isoTs: string, range: string): string {
+  return range === '24h' || range === '48h' ? isoTs.slice(0, 16) : isoTs.slice(0, 13);
+}
+
+/**
+ * 버킷 키 → ISO 시각. 예전엔 분 단위 키에도 ':00:00Z' 를 붙여 'THH:MM:00:00Z'(잘못된 시각)가 되어
+ * 기본 범위(24h)에서 이벤트가 하나라도 있으면 RangeError 로 500 이 났다.
+ */
+export function bucketKeyToIso(bucketKey: string): string {
+  return new Date(bucketKey.length === 16 ? `${bucketKey}:00Z` : `${bucketKey}:00:00Z`).toISOString();
+}
+
 export const sensorRouter = Router();
 
 sensorRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+sensorRouter.param('farmId', farmParamGuard(false));
 
 // GET /sensors — 센서 측정값 목록
 sensorRouter.get('/', requirePermission('sensor', 'read'), validate({ query: sensorQuerySchema }), async (req: Request, res: Response, next: NextFunction) => {
@@ -170,13 +185,11 @@ sensorRouter.get('/:animalId/history', requireAnimalAccess(), requirePermission(
     for (const evt of events) {
       const ts = new Date(evt.detectedAt).toISOString();
       // 시간 단위로 버킷팅 (같은 시간대 이벤트 합침)
-      const bucketKey = range === '24h' || range === '48h'
-        ? ts.slice(0, 16) // minute-level
-        : ts.slice(0, 13); // hour-level
+      const bucketKey = sensorHistoryBucketKey(ts, range);
 
       if (!pointMap.has(bucketKey)) {
         pointMap.set(bucketKey, {
-          timestamp: new Date(bucketKey + ':00:00Z').toISOString(),
+          timestamp: bucketKeyToIso(bucketKey),
           temperature: null,
           rumination: null,
           activity: null,

@@ -25,6 +25,7 @@ export {
   loginIdSchema,
   refreshTokenSchema,
   registerSchema,
+  onboardingSchema,
   farmQuerySchema,
   farmCreateSchema,
   farmUpdateSchema,

@@ -38,4 +38,6 @@ export interface DifferentialDiagnosisResult {
   readonly similarCases: readonly SimilarCase[];  // 유사 센서 패턴의 과거 사례
   readonly urgencyLevel: 'immediate' | 'within_24h' | 'routine';
   readonly dataQuality: 'good' | 'limited' | 'insufficient';
+  /** DI-17: 판단에 쓴 센서 일별 집계 구간 (KST 날짜, YYYY-MM-DD) */
+  readonly sensorWindow?: { readonly from: string; readonly to: string };
 }

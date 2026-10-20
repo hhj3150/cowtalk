@@ -4,12 +4,13 @@
 //   1) 신형 모델이 열려 있으면 반드시 신형을 쓴다 (업그레이드가 실제로 적용됨)
 //   2) 운영자가 환경변수로 고정했으면 그 뜻이 조회 결과보다 우선한다
 //   3) 조회 실패는 강등 근거가 아니다 — 선호 1순위를 그대로 쓰고 unverified로 표시한다
-//   4) 조회에 성공한 결과만 캐시한다 (일시 장애로 구형이 고착되지 않도록)
+//   4) 조회에 성공한 결과는 계속, 실패는 60초만 캐시한다 (고착 금지 + 장애 중 요청마다 재조회 금지, VO-10)
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getAudioModels,
   resetAudioModelCache,
+  FAILED_PROBE_TTL_MS,
   TTS_PREFERENCE,
   STT_PREFERENCE,
 } from '@server/services/audio/model-registry';
@@ -112,17 +113,24 @@ describe('model-registry — 최신 모델 확정', () => {
     expect(models.probeError).toContain('network');
   });
 
-  it('조회 실패 결과는 캐시하지 않는다 — 회복되면 다음 호출에서 확정된다', async () => {
+  // VO-10: 예전 계약은 "실패는 캐시하지 않는다"였고, 그 결과 OpenAI 장애 동안 음성 요청마다 조회(최대 8초)를 반복했다.
+  // 바뀐 계약: 실패는 60초만 기억하고(요청마다 재조회 금지), 그 뒤 다시 조회해 회복되면 확정한다 (고착 금지는 유지).
+  it('조회 실패는 60초만 기억하고, 그 뒤 회복되면 확정된다', async () => {
     const fetchMock = vi.fn()
       .mockImplementationOnce(() => Promise.reject(new Error('일시 장애')))
       .mockImplementation(() => Promise.resolve(modelsResponse(ALL_MODERN)));
     vi.stubGlobal('fetch', fetchMock);
 
-    const first = await getAudioModels();
+    const t0 = Date.now();
+    const first = await getAudioModels(t0);
     expect(first.ttsSource).toBe('preferred-unverified');
 
-    const second = await getAudioModels();
-    expect(second.ttsSource).toBe('probed-best');
+    const within = await getAudioModels(t0 + 5_000);
+    expect(within.ttsSource).toBe('preferred-unverified');
+    expect(fetchMock).toHaveBeenCalledTimes(1); // 60초 안에는 다시 묻지 않는다
+
+    const after = await getAudioModels(t0 + FAILED_PROBE_TTL_MS + 1_000);
+    expect(after.ttsSource).toBe('probed-best');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

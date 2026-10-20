@@ -7,7 +7,7 @@ import { requireFarmAccess } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { calvingEvents, calvingChecklists, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds } from '../middleware/animal-access.js';
 
 export const calvingRouter = Router();
 
@@ -63,7 +63,8 @@ calvingRouter.get('/upcoming/:farmId', requireFarmAccess, async (req: Request, r
 });
 
 // POST /calving/record — 분만 기록
-calvingRouter.post('/record', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 남의 소 분만 기록 차단
+calvingRouter.post('/record', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const { animalId, calvingDate, calfSex, calfStatus, complications, notes } = req.body;

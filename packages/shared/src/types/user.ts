@@ -74,6 +74,11 @@ export interface AuthTokenPayload {
   readonly farmIds: readonly string[];
   /** 소유자(마스터) 토큰 — 역할 전환 시에도 전체 농장 접근 유지 */
   readonly isMaster?: boolean;
+  /**
+   * SEC-21: OPEN_DATA_SCOPE 로 발급된 '전체 데이터 열람' 토큰. 목장 범위만 풀고 관리 권한은 주지 않는다
+   * (예전엔 isMaster 를 줘서 사용자 관리·플랫폼 관리 API 까지 열렸다)
+   */
+  readonly openScope?: boolean;
 }
 
 /** 계정 승인 상태 — 소유자가 승인한 계정만 접근 가능 */

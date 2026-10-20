@@ -51,6 +51,21 @@ export const registerSchema = z.object({
   farmIds: z.array(z.string().uuid()).optional(),
 });
 
+// 공개 자가 가입 (SEC-17) — 예전엔 검증 없이 받아 농장 행을 무제한 만들 수 있었다
+export const onboardingSchema = z.object({
+  name: z.string().trim().min(2).max(50),
+  email: z.string().trim().email().max(200),
+  password: z.string().min(8).max(128),
+  role: z.string().max(30).optional(), // 서버는 farmer 로 강제 (클라이언트 값 무시)
+  farm: z.object({
+    name: z.string().trim().min(2).max(100),
+    address: z.string().trim().max(200).optional(),
+    ownerName: z.string().trim().max(50).optional(),
+    phone: z.string().trim().regex(/^[0-9-]{9,20}$/).optional(),
+    capacity: z.number().int().min(0).max(100000).optional(),
+  }).optional(),
+});
+
 // === 농장 ===
 
 export const farmQuerySchema = paginationSchema.extend({
@@ -194,6 +209,11 @@ const chatDocumentSchema = z.object({
 
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
+  // VO-01: 클라이언트가 question 에 개체 맥락·지시문을 덧붙이므로, 사용자가 실제로 한 말을 따로 받는다.
+  // 기록 승인 판정·대화 학습·기억 추출은 이 원문만 쓴다.
+  userText: z.string().min(1).max(2000).optional(),
+  // VO-07: 한 번의 음성 발화(인식 세션)에 붙는 ID — 같은 발화가 두 번 제출되면 서버가 두 번째를 거절한다
+  clientRequestId: z.string().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(),
   farmId: z.string().uuid().optional(),
   // 지역(그룹) 스코프 — 활성 지역 필터의 농장 id 목록. 집계 도구를 이 농장들로 데이터 레벨 한정.
   farmIds: z.array(z.string().uuid()).max(5000).optional(),

@@ -60,7 +60,8 @@ export const PERMISSION_MATRIX: PermissionMatrix = {
     action: READ_CREATE_UPDATE,
     feedback: READ_CREATE,
     regional: [],
-    user: READ_ONLY,
+    // SEC-06: 전체 사용자 목록(이메일·전화)은 개인정보 — 목장 단위 역할에는 열지 않는다
+    user: [],
     system: [],
   },
   veterinarian: {
@@ -72,7 +73,7 @@ export const PERMISSION_MATRIX: PermissionMatrix = {
     action: READ_CREATE_UPDATE,
     feedback: READ_CREATE,
     regional: READ_ONLY,
-    user: READ_ONLY,
+    user: [],
     system: [],
   },
   government_admin: {
@@ -96,7 +97,7 @@ export const PERMISSION_MATRIX: PermissionMatrix = {
     action: READ_CREATE_UPDATE,
     feedback: READ_CREATE,
     regional: READ_EXPORT,
-    user: READ_ONLY,
+    user: [],
     system: READ_ONLY,
   },
 } as const;

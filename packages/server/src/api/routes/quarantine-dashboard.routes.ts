@@ -14,7 +14,7 @@ import { authenticate } from '../middleware/auth.js';
 import { getQuarantineDashboard, getActionQueue, getVaccinationStatus } from '../../services/epidemiology/quarantine-dashboard.service.js';
 import { getEarlyDetectionMetrics } from '../../services/epidemiology/early-detection-metrics.service.js';
 import { getNationalSituation, getProvinceDetail, getProvinceFarms, getAllMapFarms, getFarmIdsByProvince } from '../../services/epidemiology/national-situation.service.js';
-import { NO_FARM_SENTINEL } from '../middleware/rbac.js';
+import { NO_FARM_SENTINEL, requireRoleOrMaster, scopedFarmIds } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { smaxtecEvents, farms, feedback } from '../../db/schema.js';
 import { eq, desc, count, sql, ilike, or } from 'drizzle-orm';
@@ -25,6 +25,24 @@ import { romanizeIfHangul } from '../../lib/romanize-hangul.js';
 export const quarantineDashboardRouter = Router();
 
 quarantineDashboardRouter.use(authenticate);
+
+// SEC-12: 농장 단위 방역 데이터(위험 농장 목록·조치 큐·사례 DB·시도별 농장)는 방역·행정·수의 역할만.
+// 전국 집계(national-situation)와 지도(map-farms)는 메인 대시보드 전국 지도가 모든 역할에 쓰므로 유지하되,
+// 목장 단위 사용자에게는 다른 농장의 이름·정확한 좌표를 주지 않는다 (maskMapFarmsForScope).
+const regionalRoles = requireRoleOrMaster('quarantine_officer', 'government_admin', 'veterinarian');
+const officerRoles = requireRoleOrMaster('quarantine_officer', 'government_admin');
+
+/** 배정 스코프 밖 농장은 이름·id 를 가리고 좌표를 약 5km 격자로 뭉갠다 (지역 위험 분포는 유지) */
+export function maskMapFarmsForScope<T extends { farmId: string; farmName: string; lat: number; lng: number }>(
+  list: readonly T[],
+  scope: readonly string[] | null,
+): T[] {
+  if (scope === null) return [...list];
+  const coarse = (v: number): number => Math.round(v / 0.05) * 0.05;
+  return list.map((f, i) => (scope.includes(f.farmId)
+    ? f
+    : { ...f, farmId: `other-${String(i)}`, farmName: '다른 농장', lat: coarse(f.lat), lng: coarse(f.lng) }));
+}
 
 // ===========================
 // GET /quarantine/dashboard
@@ -38,7 +56,7 @@ async function resolveProvinceScope(province: string | undefined): Promise<reado
   return farmIds.length > 0 ? farmIds : [NO_FARM_SENTINEL];
 }
 
-quarantineDashboardRouter.get('/dashboard', async (req, res, next) => {
+quarantineDashboardRouter.get('/dashboard', regionalRoles, async (req, res, next) => {
   try {
     const province = (req.query.province as string | undefined) || undefined;
     const farmIds = await resolveProvinceScope(province);
@@ -53,7 +71,7 @@ quarantineDashboardRouter.get('/dashboard', async (req, res, next) => {
 // GET /quarantine/action-queue
 // ===========================
 
-quarantineDashboardRouter.get('/action-queue', async (req, res, next) => {
+quarantineDashboardRouter.get('/action-queue', regionalRoles, async (req, res, next) => {
   try {
     const province = (req.query.province as string | undefined) || undefined;
     const farmIds = await resolveProvinceScope(province);
@@ -72,7 +90,7 @@ const actionPatchSchema = z.object({
   status: z.enum(['pending', 'dispatched', 'phone_confirmed', 'monitoring', 'completed']),
 });
 
-quarantineDashboardRouter.patch('/action/:id', async (req, res, next) => {
+quarantineDashboardRouter.patch('/action/:id', officerRoles, async (req, res, next) => {
   try {
     const { id } = req.params;
     const body = actionPatchSchema.parse(req.body);
@@ -91,9 +109,10 @@ quarantineDashboardRouter.patch('/action/:id', async (req, res, next) => {
 // GET /quarantine/early-detection-metrics
 // ===========================
 
-quarantineDashboardRouter.get('/early-detection-metrics', async (_req, res, next) => {
+quarantineDashboardRouter.get('/early-detection-metrics', async (req, res, next) => {
   try {
-    const data = await getEarlyDetectionMetrics();
+    // 목장 단위 사용자는 자기 목장 사례만 (예전: 전국 감지 사례 — 다른 농장 이름 포함 — 를 그대로 받았다)
+    const data = await getEarlyDetectionMetrics(scopedFarmIds(req));
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -119,7 +138,7 @@ quarantineDashboardRouter.get('/national-situation', async (_req, res, next) => 
 
 quarantineDashboardRouter.get('/national-situation/:province', async (req, res, next) => {
   try {
-    const province = decodeURIComponent(req.params.province ?? '');
+    const province = decodeURIComponent(String(req.params.province ?? ''));
     if (!province) {
       res.status(400).json({ success: false, error: 'province required' });
       return;
@@ -135,14 +154,18 @@ quarantineDashboardRouter.get('/national-situation/:province', async (req, res, 
 // GET /quarantine/province-farms/:province
 // ===========================
 
+// 메인 대시보드 전국→시도 드릴다운이 모든 역할에 쓰므로 역할 제한 대신 범위 필터 (SEC-12)
 quarantineDashboardRouter.get('/province-farms/:province', async (req, res, next) => {
   try {
-    const province = decodeURIComponent(req.params.province ?? '');
+    const province = decodeURIComponent(String(req.params.province ?? ''));
     if (!province) {
       res.status(400).json({ success: false, error: 'province required' });
       return;
     }
-    const data = await getProvinceFarms(province);
+    const scope = scopedFarmIds(req);
+    const all = await getProvinceFarms(province);
+    // 목장 단위 사용자: 자기 배정 목장만 목록에 (다른 농장 이름·좌표 비노출)
+    const data = scope === null ? all : all.filter((f) => scope.includes(f.farmId));
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -153,9 +176,9 @@ quarantineDashboardRouter.get('/province-farms/:province', async (req, res, next
 // GET /quarantine/map-farms — 전체 농장 지도 마커 데이터
 // ===========================
 
-quarantineDashboardRouter.get('/map-farms', async (_req, res, next) => {
+quarantineDashboardRouter.get('/map-farms', async (req, res, next) => {
   try {
-    const data = await getAllMapFarms();
+    const data = maskMapFarmsForScope(await getAllMapFarms(), scopedFarmIds(req));
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -166,7 +189,7 @@ quarantineDashboardRouter.get('/map-farms', async (_req, res, next) => {
 // GET /quarantine/vaccination-status — 접종 현황 (법정 백신 프로토콜별)
 // ===========================
 
-quarantineDashboardRouter.get('/vaccination-status', async (_req, res, next) => {
+quarantineDashboardRouter.get('/vaccination-status', regionalRoles, async (_req, res, next) => {
   try {
     const data = await getVaccinationStatus();
     res.json({ success: true, data });
@@ -179,7 +202,7 @@ quarantineDashboardRouter.get('/vaccination-status', async (_req, res, next) => 
 // GET /quarantine/cases — 방역 사례 DB (경보 이력 + 피드백 + 정확도)
 // ===========================
 
-quarantineDashboardRouter.get('/cases', async (req, res, next) => {
+quarantineDashboardRouter.get('/cases', regionalRoles, async (req, res, next) => {
   try {
     const db = getDb();
     const page = Number(req.query.page) || 1;

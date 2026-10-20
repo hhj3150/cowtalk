@@ -9,7 +9,9 @@ import { smaxtecEvents, farmEvents, animals } from '../../db/schema.js';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { recordFarmEventFeedback } from '../../intelligence-loop/event-feedback.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds, requireAnimalInBodyFarm, resolveScopedFarmId } from '../middleware/animal-access.js';
+import { scopedFarmIds } from '../middleware/rbac.js';
+import { ForbiddenError, BadRequestError } from '../../lib/errors.js';
 
 /**
  * 열린 루프 닫기 — 사용자 farm_event 를 정답 feedback 으로 적재하고 같은 동물의
@@ -63,6 +65,25 @@ export function mapBulkEventToInsertValues(
 
 export const eventRouter = Router();
 
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function assertBulkEventsInScope(
+  events: ReadonlyArray<Record<string, unknown>>,
+  scope: readonly string[] | null,
+): Promise<void> {
+  for (const e of events) {
+    const farmId = typeof e.farmId === 'string' ? e.farmId : '';
+    if (!UUID_SHAPE.test(farmId)) throw new BadRequestError('각 이벤트에 올바른 farmId 가 필요합니다');
+    if (scope !== null && !scope.includes(farmId)) throw new ForbiddenError('다른 목장의 이벤트는 기록할 수 없습니다');
+    const animalId = typeof e.animalId === 'string' && e.animalId !== '' ? e.animalId : null;
+    if (animalId) {
+      if (!UUID_SHAPE.test(animalId)) throw new BadRequestError('animalId 형식이 올바르지 않습니다');
+      const animalFarm = await resolveScopedFarmId('animal', animalId);
+      if (animalFarm !== farmId) throw new ForbiddenError('개체가 해당 목장 소속이 아닙니다');
+    }
+  }
+}
+
 eventRouter.use(authenticate);
 
 // GET /events/types — 이벤트 타입 정의
@@ -86,7 +107,11 @@ eventRouter.get('/types', async (_req: Request, res: Response, next: NextFunctio
 // POST /events — 단건 이벤트 기록
 // 프론트엔드: { animalId, farmId, eventTypeId, data }
 // 레거시:     { farmId, eventType, subType, description, eventDate, metadata }
-eventRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 본문 farmId·animalId 를 스코프로 검사 (예전: 남의 목장에 이벤트 기록 가능)
+eventRouter.post('/', requireScopedIds([
+  { source: 'body', field: 'farmId', kind: 'farm', required: true },
+  { source: 'body', field: 'animalId', kind: 'animal' },
+]), requireAnimalInBodyFarm(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const body = req.body as Record<string, unknown>;
@@ -141,8 +166,13 @@ eventRouter.post('/', async (req: Request, res: Response, next: NextFunction) =>
 eventRouter.post('/bulk', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
-    const { events } = req.body;
+    const { events } = req.body as { events?: unknown };
     const recordedBy = req.user!.userId;
+    if (!Array.isArray(events) || events.length === 0 || events.length > 500) {
+      throw new BadRequestError('events 는 1~500건 배열이어야 합니다');
+    }
+    // SEC-09: 각 건의 farmId·animalId 를 스코프로 검사 — 하나라도 밖이면 전체 거부
+    await assertBulkEventsInScope(events as Array<Record<string, unknown>>, scopedFarmIds(req));
 
     const values = (events as Array<Record<string, unknown>>).map((e) =>
       mapBulkEventToInsertValues(e, recordedBy),
@@ -250,20 +280,8 @@ eventRouter.get('/farm/:farmId', requireFarmAccess, async (req: Request, res: Re
 });
 
 // POST /events/voice — 음성 이벤트 변환
-eventRouter.post('/voice', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { farmId, animalId } = req.body;
-
-    const parsed = {
-      eventType: 'observation',
-      subType: '기타',
-      description: '음성 입력에서 변환된 이벤트',
-      confidence: 0.85,
-      rawTranscript: '(음성 텍스트 변환 결과)',
-    };
-
-    res.json({ success: true, data: { parsed, farmId, animalId } });
-  } catch (error) {
-    next(error);
-  }
+// NEW-04: 구현되지 않은 자리표시 — 예전엔 입력과 무관한 고정 결과(신뢰도 0.85)를 '변환 성공'처럼 돌려줬다.
+// 화면에서 쓰지 않으며, 음성 기록은 팅커벨 대화(확인 후 저장) 경로를 쓴다. 지어낸 결과 대신 미구현을 알린다.
+eventRouter.post('/voice', (_req: Request, res: Response) => {
+  res.status(501).json({ success: false, error: { code: 'NOT_IMPLEMENTED', message: '음성 이벤트 변환은 팅커벨 대화로 기록해 주세요.' } });
 });

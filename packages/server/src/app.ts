@@ -4,6 +4,9 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { allowedOrigins } from './lib/cors-origins.js';
+import { RedisFallbackStore } from './lib/rate-limit-store.js';
+import { getRedis } from './lib/redis.js';
 import { createApiRouter } from './api/index.js';
 import { errorHandler, notFoundHandler } from './api/middleware/error.js';
 import { requestLogger } from './api/middleware/request-logger.js';
@@ -24,9 +27,7 @@ export function createApp(): express.Express {
 
   // --- CORS ---
   app.use(cors({
-    origin: config.NODE_ENV === 'production'
-      ? [/\.netlify\.app$/, /cowtalk\.kr$/, /cowtalk\.netlify\.app$/]
-      : ['http://localhost:5173', 'http://localhost:3000'],
+    origin: allowedOrigins(config.NODE_ENV, config.CORS_EXTRA_ORIGINS), // SEC-19: 정확한 출처만
     credentials: true,
   }));
 
@@ -34,6 +35,7 @@ export function createApp(): express.Express {
   app.use(rateLimit({
     windowMs: 30 * 60 * 1000, // 30분
     max: 1000,
+    store: new RedisFallbackStore('global', getRedis), // OPS-12: 레플리카·재시작 공유 카운터
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },
@@ -43,12 +45,31 @@ export function createApp(): express.Express {
   const authRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000, // 15분
     max: 10,
+    store: new RedisFallbackStore('auth', getRedis),
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '인증 시도가 너무 많습니다. 15분 후 다시 시도해주세요.' } },
   });
   app.use('/api/auth/login', authRateLimit);
   app.use('/api/auth/register', authRateLimit);
+
+  // SEC-17: 공개 가입·토큰 갱신도 속도 제한 (예전: 제한 없음 → 농장 행 무제한 생성, 이메일 존재 확인 반복)
+  app.use('/api/auth/onboarding', rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    store: new RedisFallbackStore('onboarding', getRedis),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '가입 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.' } },
+  }));
+  app.use('/api/auth/refresh', rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    store: new RedisFallbackStore('refresh', getRedis),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' } },
+  }));
 
   // --- Body Parsing ---
   // 50mb — Vision 첨부 이미지(최대 5장 × base64 ~7.5MB) 수용

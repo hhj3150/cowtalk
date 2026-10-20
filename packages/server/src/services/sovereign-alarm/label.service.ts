@@ -4,9 +4,10 @@
 
 import { getDb } from '../../config/database.js';
 import { sovereignAlarmLabels } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { computeAccuracy } from '../metrics/ai-performance-service.js';
 import type { SaveSovereignLabelInput, SovereignAlarmAccuracy } from './types.js';
+import { learnableLabelCondition } from '../../intelligence-loop/label-source.js';
 
 export async function saveSovereignAlarmLabel(input: SaveSovereignLabelInput): Promise<void> {
   const db = getDb();
@@ -34,7 +35,7 @@ export async function getSovereignAlarmAccuracy(farmId: string): Promise<Soverei
   const db = getDb();
   const rows = await db.select()
     .from(sovereignAlarmLabels)
-    .where(eq(sovereignAlarmLabels.farmId, farmId));
+    .where(and(eq(sovereignAlarmLabels.farmId, farmId), learnableLabelCondition())); // AI-02
 
   const byType: Record<string, { confirmed: number; falsePositive: number; modified: number; total: number }> = {};
   let confirmed = 0, falsePositive = 0, modified = 0;

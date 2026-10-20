@@ -55,8 +55,15 @@ interface CacheEntry {
 }
 
 const CACHE_MAX = 200;
+// VO-09: 개수만 제한하면 긴 음성 200개로 메모리가 커진다 → 총 용량도 제한
+export const CACHE_MAX_BYTES = 50 * 1024 * 1024;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const audioCache = new Map<string, CacheEntry>();
+let cacheBytes = 0;
+
+export function ttsCacheStats(): { entries: number; bytes: number } {
+  return { entries: audioCache.size, bytes: cacheBytes };
+}
 
 function makeCacheKey(
   text: string,
@@ -77,6 +84,7 @@ function getFromCache(key: string): CacheEntry | null {
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
     audioCache.delete(key);
+    cacheBytes -= entry.audio.length;
     return null;
   }
   // LRU: 사용 시 맨 뒤로
@@ -85,12 +93,22 @@ function getFromCache(key: string): CacheEntry | null {
   return entry;
 }
 
-function setCache(key: string, audio: Buffer, contentType: string): void {
-  if (audioCache.size >= CACHE_MAX) {
-    // 가장 오래된 항목 제거
-    const firstKey = audioCache.keys().next().value;
-    if (firstKey) audioCache.delete(firstKey);
+export function setCache(key: string, audio: Buffer, contentType: string): void {
+  if (audio.length > CACHE_MAX_BYTES) return;
+  const prev = audioCache.get(key);
+  if (prev) {
+    audioCache.delete(key);
+    cacheBytes -= prev.audio.length;
   }
+  // 가장 오래된 항목부터 제거 — 개수·용량 둘 다 한도 안으로
+  while (audioCache.size > 0 && (audioCache.size >= CACHE_MAX || cacheBytes + audio.length > CACHE_MAX_BYTES)) {
+    const firstKey = audioCache.keys().next().value;
+    if (firstKey === undefined) break;
+    const first = audioCache.get(firstKey);
+    audioCache.delete(firstKey);
+    if (first) cacheBytes -= first.audio.length;
+  }
+  cacheBytes += audio.length;
   audioCache.set(key, {
     audio,
     contentType,
@@ -143,7 +161,11 @@ const ABBREV_MAP: ReadonlyArray<[RegExp, string]> = [
   [/\bCMT\b/g, '씨엠티'],
   [/\bIM\b/g, '근육 주사'],
   [/\bIV\b/g, '정맥 주사'],
-  [/\bAI\b/g, '인공 수정'],
+  // VO-11: 'AI' 는 번식 맥락에서만 인공수정 — 예전엔 항상 '인공 수정'으로 읽어 "AI 분석"이 "인공 수정 분석"이 됐다
+  [/\bAI\s*수정/g, '인공 수정'],
+  [/\bAI(?=\s*(?:정액|시술|횟수|회차|일자|날짜|예정|적기|실시|기록|후\b|\d+\s*회))/g, '인공 수정'],
+  [/(?<=(?:정액|번식|발정|수정사|수태)[^.!?\n]{0,12})\bAI\b/g, '인공 수정'],
+  [/\bAI\b/g, '에이아이'],
   [/\bPCR\b/g, '피시알'],
   [/\bKAHIS\b/g, '카이스'],
   [/\bWOAH\b/g, '세계 동물 보건 기구'],
@@ -241,6 +263,7 @@ async function callSpeechApi(
 ): Promise<Response> {
   return fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
+    signal: AbortSignal.timeout(30_000), // OPS-11
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -351,6 +374,6 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
 export const __testing = {
   stripMarkdownForTts,
   truncateToSentence,
-  clearCache: () => audioCache.clear(),
+  clearCache: () => { audioCache.clear(); cacheBytes = 0; },
   cacheSize: () => audioCache.size,
 };

@@ -44,15 +44,15 @@ describe('Prescription Routes', () => {
     expect(res.status).toBe(500);
   });
 
-  it('GET /prescriptions/animal/:animalId — non-UUID returns 500', async () => {
+  it('GET /prescriptions/animal/:animalId — non-UUID returns 404', async () => {
     const res = await request(app).get('/prescriptions/animal/a-1');
-    // non-UUID animalId causes DB validation error
-    expect(res.status).toBe(500);
+    // 개체 접근 검사가 형식 오류를 '찾을 수 없음'(404)으로 처리한다 (예전: DB 오류 500)
+    expect(res.status).toBe(404);
   });
 
-  it('GET /prescriptions/:id/pdf — PDF 링크', async () => {
+  it('GET /prescriptions/:id/pdf — 존재하지 않는 처방전은 404', async () => {
     const res = await request(app).get('/prescriptions/rx-1/pdf');
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveProperty('url');
+    // 처방전 접근 검사(requirePrescriptionAccess)가 없는 처방전에 링크를 만들어 주지 않는다
+    expect(res.status).toBe(404);
   });
 });

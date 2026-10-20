@@ -182,3 +182,12 @@ describe('thinkingSafeTemperature — 두 제약이 겹치는 자리', () => {
     expect(thinkingSafeTemperature('claude-opus-5', false, 0.4)).toEqual({});
   });
 });
+
+// AI-05 회귀 — 깊은 분석 경로가 ANTHROPIC_THINKING_BUDGET=0 정지 스위치를 무시하던 문제
+describe('AI-05 deepThinkingFor', () => {
+  it('budget 0 이면 adaptive 모델이어도 thinking 을 보내지 않는다', async () => {
+    const { deepThinkingFor } = await import('../claude-client.js');
+    expect(deepThinkingFor('claude-opus-4-8', 0)).toEqual({});
+    expect(deepThinkingFor('claude-opus-4-8', 2048)).toEqual({ thinking: { type: 'adaptive' } });
+  });
+});

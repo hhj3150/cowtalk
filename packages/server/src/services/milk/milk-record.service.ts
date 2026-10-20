@@ -10,6 +10,7 @@ import { getDb } from '../../config/database.js';
 import { milkRecords, animals } from '../../db/schema.js';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 export interface RecordMilkYieldInput {
   readonly animalId?: string;
@@ -54,21 +55,22 @@ export async function recordMilkYield(input: RecordMilkYieldInput): Promise<Reco
   if (typeof input.yieldL !== 'number' || !Number.isFinite(input.yieldL) || input.yieldL < 0 || input.yieldL > 100) {
     return { success: false, error: 'yieldL은 0~100 사이 리터 값이어야 합니다.' };
   }
-  const date = input.date ?? new Date().toISOString().slice(0, 10);
+  const date = input.date ?? kstToday();
   if (!isValidDateStr(date)) {
     return { success: false, error: 'date는 YYYY-MM-DD 형식이어야 합니다.' };
   }
 
   // 개체 해석: animalId 우선, 없으면 earTag(+farmId)
   const conds = [eq(animals.status, 'active')];
+  // SEC-09: 허용 범위는 animalId·earTag 어느 경로든 항상 적용한다 (예전: earTag+farmId 미지정일 때만)
+  if (input.allowedFarmIds != null) {
+    if (input.allowedFarmIds.length === 0) return { success: false, error: '접근 가능한 목장이 없습니다.' };
+    conds.push(inArray(animals.farmId, [...input.allowedFarmIds]));
+  }
   if (input.animalId) conds.push(eq(animals.animalId, input.animalId));
   else if (input.earTag) {
     conds.push(eq(animals.earTag, input.earTag));
     if (input.farmId) conds.push(eq(animals.farmId, input.farmId));
-    else if (input.allowedFarmIds != null) {
-      if (input.allowedFarmIds.length === 0) return { success: false, error: '접근 가능한 목장이 없습니다.' };
-      conds.push(inArray(animals.farmId, [...input.allowedFarmIds]));
-    }
   } else {
     return { success: false, error: 'animalId 또는 earTag 중 하나를 지정하세요.' };
   }

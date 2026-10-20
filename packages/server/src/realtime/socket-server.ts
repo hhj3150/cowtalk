@@ -6,9 +6,11 @@ import type { Server as HttpServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
-import { getDb } from '../config/database.js';
-import { userFarmAccess } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { verifyAccessToken } from '../lib/auth.js';
+import { isUserApproved } from '../services/auth/approval.service.js';
+import { attachRedisAdapter } from './socket-redis-adapter.js';
+import { allowedOrigins } from '../lib/cors-origins.js';
+import type { AuthTokenPayload } from '@cowtalk/shared';
 
 let io: SocketServer | null = null;
 
@@ -16,15 +18,38 @@ export function getIO(): SocketServer | null {
   return io;
 }
 
-interface TokenPayload {
-  readonly userId: string;
-  readonly email: string;
-  readonly role: string;
+/**
+ * SEC-14: 소켓 방 = 데이터 범위. HTTP API 와 같은 배정 우선 규칙을 따른다.
+ *   - 마스터 토큰, 또는 배정 없는 행정·방역관 → 전체 알람 방
+ *   - 그 외 → 토큰의 배정 목장 방만 (예전: 배정이 걸린 행정관도 alarms:all 에 들어갔다)
+ */
+export function socketRoomsFor(payload: Pick<AuthTokenPayload, 'role' | 'farmIds' | 'isMaster' | 'openScope'>): string[] {
+  const farmIds = payload.farmIds ?? [];
+  const adminRole = payload.role === 'government_admin' || payload.role === 'quarantine_officer';
+  if (payload.isMaster || payload.openScope || (adminRole && farmIds.length === 0)) return ['alarms:all'];
+  return farmIds.map((id) => `farm:${id}`);
 }
 
-const CORS_ORIGINS = config.NODE_ENV === 'production'
-  ? [/\.netlify\.app$/, /cowtalk\.kr$/, /cowtalk\.netlify\.app$/]
-  : ['http://localhost:5173', 'http://localhost:3000'];
+/** 토큰 만료까지 남은 ms (만료 정보가 없으면 null) */
+export function msUntilExpiry(token: string, now: number = Date.now()): number | null {
+  const decoded = jwt.decode(token) as { exp?: number } | null;
+  return decoded?.exp ? decoded.exp * 1000 - now : null;
+}
+
+// SEC-19: API 와 같은 정확한 출처 목록
+const CORS_ORIGINS = allowedOrigins(config.NODE_ENV, config.CORS_EXTRA_ORIGINS);
+
+/**
+ * OPS-12: 다중 레플리카 전파용 Redis 어댑터 연결. HTTP listen 전에 await 한다 —
+ * 연결된 뒤에 어댑터를 바꾸면 이미 접속한 소켓의 방 정보가 새 어댑터에 없다.
+ */
+export async function attachSocketAdapter(): Promise<boolean> {
+  if (!io) return false;
+  return attachRedisAdapter(io).catch((err: unknown) => {
+    logger.warn({ err }, '[Socket] Redis adapter 초기화 실패 — 인메모리 유지');
+    return false;
+  });
+}
 
 export function createSocketServer(httpServer: HttpServer): SocketServer {
   io = new SocketServer(httpServer, {
@@ -47,19 +72,17 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         return;
       }
 
-      const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as TokenPayload;
+      const payload = verifyAccessToken(token);
+      // SEC-14: HTTP API 와 같은 승인 게이트 — 승인 대기·차단 계정은 실시간 알람도 받지 못한다
+      if (!(await isUserApproved(payload.userId))) {
+        next(new Error('Account not approved'));
+        return;
+      }
       socket.data.userId = payload.userId;
       socket.data.role = payload.role;
-      socket.data.email = payload.email;
-
-      // 사용자의 farmIds 조회 (user_farm_access 테이블)
-      const db = getDb();
-      const farmAccessRows = await db
-        .select({ farmId: userFarmAccess.farmId })
-        .from(userFarmAccess)
-        .where(eq(userFarmAccess.userId, payload.userId));
-
-      socket.data.farmIds = farmAccessRows.map((r) => r.farmId);
+      socket.data.farmIds = payload.farmIds ?? [];
+      socket.data.rooms = socketRoomsFor(payload);
+      socket.data.expiresInMs = msUntilExpiry(token);
 
       next();
     } catch (err) {
@@ -70,22 +93,25 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
   // ── 연결 핸들러 ──
   io.on('connection', (socket) => {
-    const { userId, role, farmIds } = socket.data as {
+    const { userId, role, farmIds, rooms, expiresInMs } = socket.data as {
       userId: string;
       role: string;
       farmIds: readonly string[];
+      rooms: readonly string[];
+      expiresInMs: number | null;
     };
 
-    logger.info({ userId, role, farmCount: farmIds.length }, '[Socket] Connected');
+    logger.info({ userId, role, farmCount: farmIds.length, rooms: rooms.length }, '[Socket] Connected');
 
-    // farmId별 room 자동 join
-    for (const farmId of farmIds) {
-      socket.join(`farm:${farmId}`);
+    for (const room of rooms) {
+      void socket.join(room);
     }
 
-    // 전체 알람 room (관리자용)
-    if (role === 'government_admin' || role === 'quarantine_officer') {
-      socket.join('alarms:all');
+    // SEC-14: 토큰이 만료되면 연결을 끊는다 — 클라이언트는 새 토큰으로 재연결한다
+    // (예전: 한 번 연결되면 토큰 만료·승인 해제 후에도 계속 알람을 받았다)
+    if (expiresInMs !== null) {
+      const timer = setTimeout(() => socket.disconnect(true), Math.max(0, expiresInMs));
+      socket.on('disconnect', () => clearTimeout(timer));
     }
 
     // ── 클라이언트 → 서버 이벤트 ──
@@ -106,7 +132,36 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     });
   });
 
+  // OPS-16: 연결 중 승인 해제된 계정은 토큰 만료(최대 2h)까지 알람을 계속 받았다 → 5분마다 재검증
+  const revalidateTimer = setInterval(() => {
+    // 이 프로세스에 붙은 소켓만 (레플리카마다 자기 소켓을 본다)
+    if (io) void revalidateSockets(io.local).catch((err: unknown) => logger.warn({ err }, '[Socket] 재검증 실패'));
+  }, SOCKET_REVALIDATE_MS);
+  revalidateTimer.unref();
+
   logger.info('[Socket.IO] Server initialized');
 
   return io;
+}
+
+export const SOCKET_REVALIDATE_MS = 5 * 60 * 1000;
+
+/** OPS-16: 승인이 해제된 사용자의 연결을 끊는다. 끊은 수를 돌려준다 */
+export async function revalidateSockets(
+  server: { fetchSockets: () => Promise<Array<{ data: unknown; disconnect: (close?: boolean) => unknown }>> },
+  approved: (userId: string) => Promise<boolean> = isUserApproved,
+): Promise<number> {
+  const sockets = await server.fetchSockets();
+  let dropped = 0;
+  for (const s of sockets) {
+    const userId = (s.data as { userId?: string }).userId;
+    if (!userId) continue;
+    const ok = await approved(userId).catch(() => true); // 조회 실패로 정상 사용자를 끊지 않는다
+    if (!ok) {
+      s.disconnect(true);
+      dropped++;
+    }
+  }
+  if (dropped > 0) logger.info({ dropped }, '[Socket] 승인 해제 계정 연결 종료');
+  return dropped;
 }

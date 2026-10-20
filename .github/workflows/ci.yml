@@ -1,13 +1,14 @@
-# CowTalk CI — 타입체크 + 빌드 + 테스트
+# CowTalk CI — 타입체크 + 빌드 + 린트 + 테스트
 # P0 신뢰 회복: 모든 PR/푸시가 최소한 컴파일·유닛테스트를 통과해야 한다.
 #
 # 범위:
-#  - build: shared → server → web 순서 빌드 (tsc 타입체크 포함)
-#  - unit tests: packages/*/src 유닛 테스트 (DB 불필요 — 421개)
-#  - web tests: @cowtalk/web vitest (jsdom — 146개)
+#  - build-and-test: shared → server → web 빌드(tsc 포함) + lint + 유닛 테스트(DB 불필요) + web 테스트
+#  - db-tests (OPS-15): PostgreSQL 16 서비스에 마이그레이션 전체를 빈 DB 에 적용한 뒤
+#    루트 vitest 전체(tests/server · tests/unit 포함)를 실행한다.
+#    → 마이그레이션이 빈 DB 에서 끝까지 적용되는지도 함께 검증된다.
+#    (TimescaleDB 는 쓰지 않는다 — 마이그레이션 실행기가 hypertable 구문을 건너뛴다)
 #
-# tests/server/ 통합 테스트(8파일)는 PostgreSQL+TimescaleDB가 필요하므로 제외.
-# → 후속: services 컨테이너(timescale/timescaledb) 추가 시 별도 job으로 활성화.
+# 필수 체크 지정(branch protection: build-and-test, db-tests)은 저장소 설정에서 해야 한다.
 
 name: CI
 
@@ -40,8 +41,59 @@ jobs:
       - name: Build web (tsc + vite)
         run: npm run build --workspace @cowtalk/web
 
+      - name: Lint (errors fail, warnings reported)
+        run: npm run lint
+
+      - name: Confidence unit audit (AI-09 — 알람 신뢰도 0-1 단위 유지)
+        run: npm run audit:confidence-units
+
       - name: Unit tests (server + shared, DB 불필요)
         run: npx vitest run packages/server/src packages/shared/src
 
       - name: Web tests
         run: npm run test --workspace @cowtalk/web
+
+  db-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cowtalk
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: cowtalk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cowtalk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: cowtalk
+      DB_USER: cowtalk
+      DB_PASSWORD: ci_only_password
+      REDIS_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared
+        run: npm run build --workspace @cowtalk/shared
+
+      - name: Apply migrations to empty DB (fails on any migration error)
+        run: npm run migrate --workspace @cowtalk/server
+
+      - name: All root tests (tests/server, tests/unit, packages/*/src)
+        run: npx vitest run

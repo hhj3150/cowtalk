@@ -7,6 +7,7 @@ import { eq, and, gte, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { computeCR, decisionsFromPregnancyChecks, decisionsFromSmaxtecPregnancyEvents } from '../metrics/fertility-service.js';
 import type { MonthlyKpiTrend, FarmKpiComparison, ParityKpiGroup } from '@cowtalk/shared';
+import { animalFarmCondition, type BreedingFarmScope } from './farm-scope.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -14,7 +15,8 @@ const MS_PER_DAY = 86_400_000;
 // 1. 월별 KPI 추이
 // ===========================
 
-export async function getMonthlyTrends(farmId?: string, months = 6): Promise<readonly MonthlyKpiTrend[]> {
+export async function getMonthlyTrends(farmScope?: BreedingFarmScope, months = 6): Promise<readonly MonthlyKpiTrend[]> {
+  const farmId = typeof farmScope === 'string' ? farmScope : undefined;
   const db = getDb();
   const now = new Date();
 
@@ -34,7 +36,8 @@ export async function getMonthlyTrends(farmId?: string, months = 6): Promise<rea
 
   // 활성 암소 조회
   const animalConditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
-  if (farmId) animalConditions.push(eq(animals.farmId, farmId));
+  const farmCond = animalFarmCondition(farmScope);
+  if (farmCond) animalConditions.push(farmCond);
 
   const allAnimals = await db
     .select({ animalId: animals.animalId, farmId: animals.farmId, sex: animals.sex })
@@ -141,16 +144,16 @@ function emptyTrend(month: string): MonthlyKpiTrend {
 // 2. 농장별 KPI 비교
 // ===========================
 
-export async function getFarmComparison(limit = 10): Promise<readonly FarmKpiComparison[]> {
+export async function getFarmComparison(limit = 10, farmScope?: BreedingFarmScope): Promise<readonly FarmKpiComparison[]> {
   const db = getDb();
   const now = new Date();
   const since365d = new Date(now.getTime() - 365 * MS_PER_DAY);
 
-  // 활성 농장 + 암소 수
+  // 활성 농장 + 암소 수 (SEC-08: 허용 농장 범위 안에서만 비교)
   const allAnimals = await db
     .select({ animalId: animals.animalId, farmId: animals.farmId, sex: animals.sex })
     .from(animals)
-    .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
+    .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt), animalFarmCondition(farmScope)));
 
   const femaleAnimals = allAnimals.filter((a) => a.sex !== 'male');
 
@@ -252,13 +255,15 @@ const PARITY_GROUPS: ReadonlyArray<{ label: string; range: readonly [number, num
   { label: '4산+', range: [4, 99] },
 ];
 
-export async function getParityAnalysis(farmId?: string): Promise<readonly ParityKpiGroup[]> {
+export async function getParityAnalysis(farmScope?: BreedingFarmScope): Promise<readonly ParityKpiGroup[]> {
+  const farmId = typeof farmScope === 'string' ? farmScope : undefined;
   const db = getDb();
   const now = new Date();
   const since365d = new Date(now.getTime() - 365 * MS_PER_DAY);
 
   const animalConditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
-  if (farmId) animalConditions.push(eq(animals.farmId, farmId));
+  const farmCond = animalFarmCondition(farmScope);
+  if (farmCond) animalConditions.push(farmCond);
 
   const allAnimals = await db
     .select({ animalId: animals.animalId, parity: animals.parity, sex: animals.sex })

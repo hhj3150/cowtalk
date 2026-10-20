@@ -5,6 +5,7 @@ import { getDb } from '../../config/database.js';
 import { sensorHourlyAgg, animals } from '../../db/schema.js';
 import { eq, gte, and } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { setBounded } from '../../lib/bounded-map.js';
 
 // ===========================
 // 타입
@@ -127,7 +128,7 @@ export async function buildBaseline(animalId: string): Promise<BaselineProfile> 
     builtAt: Date.now(),
   };
 
-  profileCache.set(animalId, profile);
+  setBounded(profileCache, animalId, profile, 20_000); // OPS-16
   return profile;
 }
 

@@ -24,7 +24,7 @@ const SMAXTEC_KEY_MAP: Record<string, keyof FarmBreedingSettings> = {
 };
 
 /** smaXtec Organisation Settings API에서 번식 설정 추출 */
-function extractBreedingSettings(
+export function extractBreedingSettings(
   smaxtecSettings: Record<string, unknown>,
 ): FarmBreedingSettings {
   const result: Record<string, unknown> = {};
@@ -38,6 +38,11 @@ function extractBreedingSettings(
 
   result.syncedAt = new Date().toISOString();
   return result as FarmBreedingSettings;
+}
+
+/** 응답에서 실제로 매핑된 설정 개수 (syncedAt 제외) */
+export function countMappedSettings(settings: FarmBreedingSettings): number {
+  return Object.keys(settings).filter((k) => k !== 'syncedAt').length;
 }
 
 /** 단일 목장의 smaXtec 설정 동기화 */
@@ -61,6 +66,15 @@ export async function syncFarmSettings(
     const rawSettings = await response.json() as Record<string, unknown>;
     const breedingSettings = extractBreedingSettings(rawSettings);
 
+    // DI-13: 응답 형식이 바뀌어 매핑된 값이 하나도 없으면 기존 목장 설정을 덮어쓰지 않는다
+    // (예전: {syncedAt} 만 남긴 채 저장 → 목장별 발정재귀일·임신감정 시기가 기본값으로 돌아가고, 새로 동기화된 것처럼 보였다)
+    const mappedKeys = countMappedSettings(breedingSettings);
+    if (mappedKeys === 0) {
+      logger.warn({ farmId, smaxtecOrgId, responseKeys: Object.keys(rawSettings).slice(0, 20) },
+        '[FarmSettingsSync] 매핑된 번식 설정 0개 — 응답 형식 변경 의심, 기존 설정 유지');
+      return null;
+    }
+
     // DB 저장
     const db = getDb();
     await db.update(farms)
@@ -70,6 +84,7 @@ export async function syncFarmSettings(
     logger.info({
       farmId,
       smaxtecOrgId,
+      mappedKeys,
       settings: breedingSettings,
     }, '[FarmSettingsSync] 목장 설정 동기화 완료');
 

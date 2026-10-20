@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, farmParamGuard } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { animalGroups, animalGroupMembers, animals, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, count, inArray, gte, desc, sql } from 'drizzle-orm';
@@ -13,6 +13,8 @@ import { requireGroupAccess } from '../middleware/resource-access.js';
 export const herdGroupRouter = Router();
 
 herdGroupRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+herdGroupRouter.param('farmId', farmParamGuard(false));
 
 // GET /herd-groups/farm/:farmId — 농장의 전체 그룹 목록 + 두수
 herdGroupRouter.get('/farm/:farmId', requirePermission('farm', 'read'), async (req: Request, res: Response, next: NextFunction) => {

@@ -5,23 +5,33 @@ import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { logger } from './lib/logger.js';
 import { closeDb } from './config/database.js';
+import { closeRedis } from './lib/redis.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
 import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
 import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
 import { startReportCleanup, stopReportCleanup } from './services/report/cleanup.js';
 import { seedSemenCatalog, seedFarmSemenInventory } from './services/breeding/semen-seed.service.js';
-import { createSocketServer } from './realtime/socket-server.js';
-import { runAutoMigrations } from './db/auto-migrate.js';
+import { createSocketServer, attachSocketAdapter } from './realtime/socket-server.js';
+import { runAutoMigrations, migrationsFailed } from './db/auto-migrate.js';
 import { warmAudioModels } from './services/audio/model-registry.js';
 
 // 서버 시작 전 마이그레이션 자동 실행 — 파일별 격리(한 파일 실패가 이후를 막지 않음).
-await runAutoMigrations();
+// OPS-13: AUTO_MIGRATE=false 면 건너뛴다 (배포 전 별도 단계 `npm run migrate` 로 실행할 때).
+//         MIGRATIONS_STRICT=true 면 실패 시 기동하지 않는다 (스키마 불일치 상태로 서비스하지 않음).
+if (config.AUTO_MIGRATE) {
+  const migrationStatus = await runAutoMigrations();
+  if (config.MIGRATIONS_STRICT && migrationsFailed(migrationStatus)) {
+    logger.fatal({ failed: migrationStatus.failed, error: migrationStatus.error }, '[Migrations] 실패 — MIGRATIONS_STRICT 로 기동 중단');
+    process.exit(1);
+  }
+}
 
 const app = createApp();
 const httpServer = createServer(app);
 
 // Socket.IO 서버 초기화
 createSocketServer(httpServer);
+await attachSocketAdapter(); // OPS-12: listen 전에 (최대 3초, 실패 시 인메모리)
 
 // Event loop lag 측정 시작 — 서버 가동 직후부터 누적 (서버 부팅 전에 시작해야 초기 히스토그램 포함)
 startEventLoopMonitor();
@@ -72,6 +82,7 @@ function shutdown(signal: string): void {
       await pipeline.stop();
       await closeDb();
       logger.info('Database connection closed');
+      await closeRedis().catch((err: unknown) => logger.warn({ err }, 'Redis close failed'));
     } catch (err) {
       logger.error({ err }, 'Error during shutdown');
     }

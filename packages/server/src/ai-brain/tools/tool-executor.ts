@@ -34,6 +34,7 @@ import {
   computeAdjustedThresholds,
   type DailyAggRow,
 } from './sensor-analysis.js';
+import { kstToday } from '../../lib/kst.js';
 
 const MAX_RESULT_LENGTH = 6000;
 
@@ -80,7 +81,7 @@ export async function executeTool(
         result = await handleRecordMilkYield(input, context);
         break;
       case 'query_farm_summary':
-        result = await queryFarmSummary(input);
+        result = await queryFarmSummary(input, context);
         break;
       case 'query_breeding_stats':
         result = await queryBreedingStats(input, context);
@@ -377,25 +378,36 @@ async function queryAnimalEvents(input: Record<string, unknown>): Promise<unknow
 // 3. 농장 요약
 // ===========================
 
-async function queryFarmSummary(input: Record<string, unknown>): Promise<unknown> {
+/** ILIKE 패턴의 와일드카드(% _)와 이스케이프 문자를 글자 그대로 취급하게 만든다 (SEC-10) */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+async function queryFarmSummary(input: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
   const db = getDb();
   const farmId = input.farmId as string | undefined;
-  const farmName = input.farmName as string | undefined;
+  const farmName = typeof input.farmName === 'string' ? input.farmName.trim() : undefined;
+  // SEC-10: 농장명 검색은 게이트웨이가 사전 검사할 수 없다 — 여기서 접근 가능 농장으로 거른다.
+  // 예전엔 전 농장을 대상으로 검색했고, '%' 한 글자로 모든 농장과 일치시킬 수 있었다.
+  const allowed = context?.allowedFarmIds;
+  if (allowed != null && allowed.length === 0) return { error: '접근 가능한 목장이 없습니다.' };
+  const scopeCond = allowed != null ? inArray(farms.farmId, [...allowed]) : undefined;
 
   let targetFarm: { farmId: string; name: string } | undefined;
 
   if (farmId) {
-    const rows = await db.select({ farmId: farms.farmId, name: farms.name }).from(farms).where(eq(farms.farmId, farmId)).limit(1);
+    const rows = await db.select({ farmId: farms.farmId, name: farms.name }).from(farms).where(and(eq(farms.farmId, farmId), scopeCond)).limit(1);
     targetFarm = rows[0];
   } else if (farmName) {
+    if (farmName.length < 2) return { error: '농장명을 두 글자 이상 입력하세요.' };
     // 한글 농장명이면 로마자 변환본도 함께 검색 ("술탄" → "sultan")
     const romanized = romanizeIfHangul(farmName);
     const variants = [farmName, ...(romanized ? [romanized] : [])];
-    const clauses = variants.map((v) => ilike(farms.name, `%${v}%`));
+    const clauses = variants.map((v) => ilike(farms.name, `%${escapeLikePattern(v)}%`));
     const rows = await db
       .select({ farmId: farms.farmId, name: farms.name })
       .from(farms)
-      .where(clauses.length === 1 ? clauses[0]! : or(...clauses))
+      .where(and(clauses.length === 1 ? clauses[0]! : or(...clauses), scopeCond))
       .limit(5);
     if (rows.length === 0) {
       const hint = romanized
@@ -593,7 +605,7 @@ async function querySensorData(input: Record<string, unknown>): Promise<unknown>
     .limit(168); // 7일 × 24시간
 
     if (hourlyRows.length > 0) {
-      const todayDate = new Date().toISOString().split('T')[0]!;
+      const todayDate = kstToday();
       timeOfDayAnalysis = computeTimeOfDayAnalysis(
         hourlyRows.map((r) => ({
           hour: typeof r.hour === 'string' ? r.hour : new Date(r.hour).toISOString(),

@@ -8,6 +8,7 @@ import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks } from '../../db/schema.js';
 import { eq, and, desc, gte, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { animalFarmCondition, type BreedingFarmScope } from './farm-scope.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -28,13 +29,15 @@ export interface BreedingInsights {
   readonly repeatBreeder: readonly BreedingInsightAnimal[];    // 수정 실패 반복우
 }
 
-export async function getBreedingInsights(farmId?: string): Promise<BreedingInsights> {
+export async function getBreedingInsights(farmScope?: BreedingFarmScope): Promise<BreedingInsights> {
+  const farmId = typeof farmScope === 'string' ? farmScope : undefined;
   const db = getDb();
   const now = new Date();
 
   // 활성 암소 조회
   const conditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
-  if (farmId) conditions.push(eq(animals.farmId, farmId));
+  const farmCond = animalFarmCondition(farmScope);
+  if (farmCond) conditions.push(farmCond);
 
   const allAnimals = await db.select({
     animalId: animals.animalId,

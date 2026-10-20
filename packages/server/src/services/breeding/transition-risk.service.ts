@@ -11,6 +11,7 @@ import { getDb } from '../../config/database.js';
 import { animals, farms, calvingEvents, dryOffRecords, smaxtecEvents } from '../../db/schema.js';
 import { eq, and, gte, lte, desc, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { animalFarmCondition, type BreedingFarmScope } from './farm-scope.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -39,13 +40,15 @@ export interface TransitionRiskData {
   readonly totalAtRisk: number;
 }
 
-export async function getTransitionRisk(farmId?: string): Promise<TransitionRiskData> {
+export async function getTransitionRisk(farmScope?: BreedingFarmScope): Promise<TransitionRiskData> {
+  const farmId = typeof farmScope === 'string' ? farmScope : undefined;
   const db = getDb();
   const now = new Date();
 
   // 활성 암소 조회
   const animalConditions = [eq(animals.status, 'active'), isNull(animals.deletedAt)];
-  if (farmId) animalConditions.push(eq(animals.farmId, farmId));
+  const farmCond = animalFarmCondition(farmScope);
+  if (farmCond) animalConditions.push(farmCond);
 
   const allAnimals = await db.select({
     animalId: animals.animalId,

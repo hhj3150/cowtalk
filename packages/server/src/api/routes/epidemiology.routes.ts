@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
-import { requireFarmAccess } from '../middleware/rbac.js';
+import { requireFarmAccess, requirePlatformAdmin } from '../middleware/rbac.js';
 import { analyzeRadius } from '../../services/epidemiology/radius-analyzer.js';
 import { runAndStoreSEIR, runSEIRFeedbackLoop, getCalibratedR0 } from '../../services/epidemiology/seir-feedback.service.js';
 import { buildContactNetwork } from '../../services/epidemiology/contact-tracer.js';
@@ -82,7 +82,8 @@ epidemiologyRouter.post('/simulate', async (req, res, next) => {
 // POST /feedback — SEIR 피드백 루프 배치 실행
 // ===========================
 
-epidemiologyRouter.post('/feedback', async (_req, res, next) => {
+// NEW-04: 모든 사용자의 방역 시뮬레이션에 쓰이는 R0 를 다시 보정한다 — 플랫폼 관리자만 (예전: 로그인한 누구나)
+epidemiologyRouter.post('/feedback', requirePlatformAdmin, async (_req, res, next) => {
   try {
     const days = 90;
     const result = await runSEIRFeedbackLoop(days);

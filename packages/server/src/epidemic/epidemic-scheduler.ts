@@ -24,6 +24,7 @@ import { buildEscalationPlan, shouldEscalate } from '../ai-brain/alert/epidemic-
 import type { FarmWithCoordinates } from './geo-utils.js';
 import type { EpidemicAlertLevel } from '@cowtalk/shared';
 import { logger } from '../lib/logger.js';
+import { kstToday } from '../lib/kst.js';
 
 // ======================================================================
 // 핵심: 전염병 스캔
@@ -270,7 +271,7 @@ async function saveDailySnapshot(
   warningLevel: string,
 ): Promise<void> {
   try {
-    const today = new Date().toISOString().split('T')[0] ?? '';
+    const today = kstToday();
     await upsertDailySnapshot(db, {
       date: today,
       clusterCount,

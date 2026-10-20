@@ -17,8 +17,25 @@ import { eq } from 'drizzle-orm';
 import { runEpidemicScan } from '../../epidemic/epidemic-scheduler.js';
 import { logger } from '../../lib/logger.js';
 import type { EpidemicAlertLevel } from '@cowtalk/shared';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole, scopedFarmIds } from '../middleware/rbac.js';
 
 export const epidemicRouter = Router();
+
+// SEC-04: 예전엔 인증 없이 전 농장 이름·좌표 조회, 경보 확인 처리, 전국 스캔 반복 실행이 가능했다.
+//   - 로그인 필수
+//   - 목장 단위 사용자(농장주·수의사)는 클러스터 집계(중심·반경·건수)는 보되, 개별 농장 이름·좌표는 자기 배정 목장만
+//   - 경보 확인은 방역·행정·수의 역할, 전국 스캔은 방역·행정 역할만 + 동시 실행·연속 실행 제한
+epidemicRouter.use(authenticate);
+
+/** 배정 스코프 밖 농장 항목을 뺀다. scope === null(무제한)이면 그대로. */
+export function filterFarmsToScope<T extends { readonly farmId: string }>(
+  list: readonly T[],
+  scope: readonly string[] | null,
+): T[] {
+  if (scope === null) return [...list];
+  return list.filter((f) => scope.includes(f.farmId));
+}
 
 // ======================================================================
 // GET /epidemic/warnings — 활성 경보 목록
@@ -53,6 +70,7 @@ epidemicRouter.get('/clusters', async (req: Request, res: Response) => {
   try {
     const db = getDb();
     const { regionId } = req.query;
+    const scope = scopedFarmIds(req);
 
     const clusters = await getActiveClusters(db, regionId as string | undefined);
 
@@ -63,7 +81,7 @@ epidemicRouter.get('/clusters', async (req: Request, res: Response) => {
         return {
           ...cluster,
           center: { lat: cluster.centerLat, lng: cluster.centerLng },
-          farms: clusterFarms.map((f) => ({
+          farms: filterFarmsToScope(clusterFarms, scope).map((f) => ({
             farmId: f.farmId,
             farmName: f.farmName,
             coordinates: { lat: f.lat, lng: f.lng },
@@ -111,7 +129,7 @@ epidemicRouter.get('/clusters/:clusterId', async (req: Request, res: Response) =
       data: {
         ...cluster,
         center: { lat: cluster.centerLat, lng: cluster.centerLng },
-        farms: clusterFarms,
+        farms: filterFarmsToScope(clusterFarms, scopedFarmIds(req)),
         warnings: clusterWarnings,
       },
     });
@@ -150,9 +168,10 @@ epidemicRouter.get('/clusters/:clusterId/trend', async (req: Request, res: Respo
 // GET /epidemic/risk-map — 전체 농장 위험도 지도
 // ======================================================================
 
-epidemicRouter.get('/risk-map', async (_req: Request, res: Response) => {
+epidemicRouter.get('/risk-map', async (req: Request, res: Response) => {
   try {
     const db = getDb();
+    const scope = scopedFarmIds(req);
 
     // 활성 클러스터
     const clusters = await getActiveClusters(db);
@@ -216,8 +235,8 @@ epidemicRouter.get('/risk-map', async (_req: Request, res: Response) => {
       data: {
         currentLevel: highestLevel,
         activeClusters: clusters.length,
-        riskMap: Array.from(riskByFarm.values()),
-        farms: farmCoordinates,
+        riskMap: filterFarmsToScope(Array.from(riskByFarm.values()), scope),
+        farms: filterFarmsToScope(farmCoordinates, scope),
       },
     });
   } catch (error) {
@@ -234,7 +253,12 @@ epidemicRouter.get('/nearby/:farmId', async (req: Request, res: Response) => {
   try {
     const db = getDb();
     const { farmId } = req.params;
-    const radiusKm = parseInt(req.query.radiusKm as string, 10) || 50;
+    const radiusKm = Math.min(parseInt(req.query.radiusKm as string, 10) || 50, 200);
+    const scope = scopedFarmIds(req);
+    if (scope !== null && !scope.includes(farmId as string)) {
+      res.status(403).json({ success: false, error: '담당하지 않는 농장입니다' });
+      return;
+    }
 
     const [farm] = await db
       .select()
@@ -282,11 +306,12 @@ epidemicRouter.get('/nearby/:farmId', async (req: Request, res: Response) => {
 // POST /epidemic/acknowledge/:warningId — 경보 확인
 // ======================================================================
 
-epidemicRouter.post('/acknowledge/:warningId', async (req: Request, res: Response) => {
+epidemicRouter.post('/acknowledge/:warningId', requireRole('quarantine_officer', 'government_admin', 'veterinarian'), async (req: Request, res: Response) => {
   try {
     const db = getDb();
     const { warningId } = req.params;
-    const userId = (req as unknown as Record<string, unknown>).userId as string ?? 'system';
+    // 예전엔 존재하지 않는 req.userId 를 읽어 항상 'system' 으로 기록됐다
+    const userId = req.user!.userId;
 
     await acknowledgeWarning(db, warningId as string, userId);
 
@@ -301,13 +326,31 @@ epidemicRouter.post('/acknowledge/:warningId', async (req: Request, res: Respons
 // POST /epidemic/scan — 수동 스캔 트리거
 // ======================================================================
 
-epidemicRouter.post('/scan', async (_req: Request, res: Response) => {
+/** 전국 스캔은 무겁다 — 한 번에 하나, 끝난 뒤 60초 안에는 다시 돌리지 않는다 */
+const SCAN_COOLDOWN_MS = 60_000;
+let scanRunning = false;
+let lastScanFinishedAt = 0;
+
+export function resetEpidemicScanGuardForTest(): void {
+  scanRunning = false;
+  lastScanFinishedAt = 0;
+}
+
+epidemicRouter.post('/scan', requireRole('quarantine_officer', 'government_admin'), async (_req: Request, res: Response) => {
+  if (scanRunning || Date.now() - lastScanFinishedAt < SCAN_COOLDOWN_MS) {
+    res.status(429).json({ success: false, error: '스캔이 이미 실행 중이거나 방금 끝났습니다. 잠시 후 다시 시도하세요.' });
+    return;
+  }
+  scanRunning = true;
   try {
     const result = await runEpidemicScan();
     res.json({ success: true, data: result });
   } catch (error) {
     logger.error({ error }, 'Failed to run manual epidemic scan');
     res.status(500).json({ success: false, error: 'Failed to run scan' });
+  } finally {
+    scanRunning = false;
+    lastScanFinishedAt = Date.now();
   }
 });
 

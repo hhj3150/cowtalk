@@ -25,6 +25,7 @@ export type {
 } from '@cowtalk/shared';
 
 import { findSimilarPatterns } from '../sovereign-alarm/pattern-mining.service.js';
+import { kstDateString } from '../../lib/kst.js';
 
 // ── 정상 범위 ──
 
@@ -84,14 +85,19 @@ const DISEASE_PROFILES: Readonly<Record<string, DiseaseProfile>> = {
 
 // ── 센서 데이터 로드 ──
 
+const SENSOR_WINDOW_DAYS = 7;
+
+/** DI-17: 감별진단이 보는 센서 구간 (KST 날짜) — 결과·이력에 함께 남겨 나중에 근거 구간을 재현할 수 있게 */
+export function sensorWindowFor(now: Date, days: number): { from: string; to: string } {
+  return { from: kstDateString(new Date(now.getTime() - days * 86_400_000)), to: kstDateString(now) };
+}
+
 async function loadSensorData(
   animalId: string,
   days: number = 7,
 ): Promise<Map<string, { avg: number; values: readonly number[] }>> {
   const db = getDb();
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const cutoffStr = sensorWindowFor(new Date(), days).from; // DI-17: KST 날짜 (일별 집계와 같은 기준)
 
   const rows = await db
     .select({ metricType: sensorDailyAgg.metricType, avg: sensorDailyAgg.avg })
@@ -184,7 +190,7 @@ async function loadTreatmentOutcomeWeights(
       JOIN animals a ON a.animal_id = he.animal_id
       LEFT JOIN treatments t ON t.health_event_id = he.event_id
       WHERE a.farm_id = ${farmId}
-        AND he.event_date >= ${cutoff}
+        AND he.event_date >= ${cutoff.toISOString()}::timestamptz
       GROUP BY he.diagnosis
       HAVING COUNT(*) >= 1
     `);
@@ -213,7 +219,7 @@ async function loadTreatmentOutcomeWeights(
       SELECT he.diagnosis, COUNT(*)::int AS cnt
       FROM health_events he
       WHERE he.animal_id = ${animalId}
-        AND he.event_date >= ${cutoff}
+        AND he.event_date >= ${cutoff.toISOString()}::timestamptz
       GROUP BY he.diagnosis
     `);
 
@@ -304,7 +310,8 @@ export async function getDifferentialDiagnosis(
   }
 
   // 센서 데이터
-  const sensorData = await loadSensorData(animalId);
+  const sensorWindow = sensorWindowFor(new Date(), SENSOR_WINDOW_DAYS);
+  const sensorData = await loadSensorData(animalId, SENSOR_WINDOW_DAYS);
   const dataQuality: DifferentialDiagnosisResult['dataQuality'] =
     sensorData.size >= 3 ? 'good' : sensorData.size >= 1 ? 'limited' : 'insufficient';
 
@@ -452,5 +459,6 @@ export async function getDifferentialDiagnosis(
     similarCases,
     urgencyLevel,
     dataQuality,
+    sensorWindow,
   };
 }

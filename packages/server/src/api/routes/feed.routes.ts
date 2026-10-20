@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requireFarmAccess } from '../middleware/rbac.js';
+import { requireFarmAccess, hasAllFarmScope } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { feedPrograms } from '../../db/schema.js';
 import { and, eq } from 'drizzle-orm';
@@ -25,7 +25,7 @@ const TARGET_GROUPS = new Set(['lactating', 'dry', 'heifer', 'calf']);
 /** 농장 쓰기 권한 — 배정 농장의 farmer/vet + 행정관리자 */
 function assertFarmWrite(req: Request, farmId: string): void {
   const user = req.user!;
-  if (user.role === 'government_admin' || user.isMaster) return;
+  if (user.role === 'government_admin' || hasAllFarmScope(user)) return;
   const farmIds = user.farmIds ?? [];
   if (!farmIds.includes(farmId)) {
     throw new ForbiddenError('접근 권한이 없는 농장입니다');

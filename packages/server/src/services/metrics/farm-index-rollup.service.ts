@@ -9,6 +9,7 @@ import { farms, farmIndexSnapshots, regions } from '../../db/schema.js';
 import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import { resolveFarmProvince } from '../epidemiology/province-mapper.js';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -156,7 +157,7 @@ export async function getNationalIndexRollup(): Promise<NationalIndexRollup> {
     snappedFarms,
     totalFarms: farmRows.length,
     provinces,
-    asOfDate: new Date().toISOString().slice(0, 10),
+    asOfDate: kstToday(),
     generatedAt: new Date().toISOString(),
   };
 }

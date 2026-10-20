@@ -4,7 +4,8 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
-import { notificationPreferences, userFarmAccess, alerts, farms } from '../../db/schema.js';
+import { notificationPreferences, userFarmAccess, alerts, farms, users } from '../../db/schema.js';
+import { requirePlatformAdmin, scopedFarmIds } from '../middleware/rbac.js';
 import { eq, inArray, desc } from 'drizzle-orm';
 import { addSubscription, removeSubscription, sendPushToFarm, getSubscriptionCount } from '../../realtime/push-service.js';
 import { invalidateNotificationGateCache } from '../../services/notification/notification-gate.service.js';
@@ -236,19 +237,15 @@ notificationRouter.post('/subscribe', async (req: Request, res: Response, next: 
       return;
     }
 
-    // 사용자의 farmIds 조회
-    const db = getDb();
-    const farmAccessRows = await db
-      .select({ farmId: userFarmAccess.farmId })
-      .from(userFarmAccess)
-      .where(eq(userFarmAccess.userId, userId));
-    const farmIds = farmAccessRows.map((r) => r.farmId);
-
-    addSubscription(userId, subscription, farmIds, (minSeverity as 'critical' | 'high') ?? 'high');
+    // OPS-12: 대상 농장은 발송 시점의 배정(user_farm_access)으로 판정. 전 농장은 농장 제한이 없는 계정만.
+    // (예전: 배정 0개 = '전체 구독' → 미배정 농장주가 모든 농장 알림을 받음)
+    const allFarms = scopedFarmIds(req) === null;
+    const severity = minSeverity === 'critical' ? 'critical' : 'high';
+    await addSubscription(userId, subscription, allFarms, severity);
 
     res.json({
       success: true,
-      data: { subscribed: true, subscriptionCount: getSubscriptionCount() },
+      data: { subscribed: true, subscriptionCount: await getSubscriptionCount() },
     });
   } catch (error) {
     next(error);
@@ -264,8 +261,9 @@ notificationRouter.post('/unsubscribe', async (req: Request, res: Response, next
       return;
     }
 
-    removeSubscription(endpoint);
-    res.json({ success: true, data: { unsubscribed: true } });
+    // 본인 구독만 해제 (예전: endpoint 만 알면 누구 것이든 삭제)
+    const removed = await removeSubscription(endpoint, req.user!.userId);
+    res.json({ success: true, data: { unsubscribed: removed } });
   } catch (error) {
     next(error);
   }
@@ -299,6 +297,27 @@ import {
   type AlimtalkTemplateId,
 } from '../../lib/kakao-alimtalk.js';
 
+// SEC-16: 유료 알림톡을 누구나 임의 번호로 보낼 수 있었다 (비용·스팸).
+//   - 테스트 발송: 본인 계정에 등록된 번호로만 (플랫폼 관리자는 예외), 사용자당 시간당 5건
+//   - 업무 알림(발정·분만·질병) 직접 발송 API: 플랫폼 관리자만 (일반 발송은 서버 잡이 수행)
+export function normalizePhone(phone: string): string {
+  return phone.replace(/[^0-9]/g, '');
+}
+
+const TEST_SEND_LIMIT_PER_HOUR = 5;
+const testSendLog = new Map<string, number[]>();
+
+/** 사용자별 최근 1시간 발송 횟수 제한 — 넘으면 false */
+export function allowTestSend(userId: string, now: number = Date.now()): boolean {
+  const recent = (testSendLog.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+  if (recent.length >= TEST_SEND_LIMIT_PER_HOUR) {
+    testSendLog.set(userId, recent);
+    return false;
+  }
+  testSendLog.set(userId, [...recent, now]);
+  return true;
+}
+
 // POST /notifications/alimtalk/test — 알림톡 테스트 발송
 notificationRouter.post('/alimtalk/test', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -313,6 +332,20 @@ notificationRouter.post('/alimtalk/test', async (req: Request, res: Response, ne
       return;
     }
 
+    const user = req.user!;
+    const platformAdmin = user.isMaster || (user.role === 'government_admin' && (user.farmIds ?? []).length === 0);
+    if (!platformAdmin) {
+      const [row] = await getDb().select({ phone: users.phone }).from(users).where(eq(users.userId, user.userId)).limit(1);
+      if (!row?.phone || normalizePhone(row.phone) !== normalizePhone(phone)) {
+        res.status(403).json({ success: false, error: '테스트 발송은 내 계정에 등록된 전화번호로만 할 수 있습니다' });
+        return;
+      }
+    }
+    if (!allowTestSend(user.userId)) {
+      res.status(429).json({ success: false, error: '테스트 발송은 시간당 5건까지입니다' });
+      return;
+    }
+
     const result = await sendAlimtalk({ to: phone, templateId, variables: variables ?? {} });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -321,7 +354,7 @@ notificationRouter.post('/alimtalk/test', async (req: Request, res: Response, ne
 });
 
 // POST /notifications/alimtalk/estrus — 발정 알림 발송 (수정사·농장주)
-notificationRouter.post('/alimtalk/estrus', async (req: Request, res: Response, next: NextFunction) => {
+notificationRouter.post('/alimtalk/estrus', requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { phone, farmName, earTag, detectedAt, optimalTime } = req.body as {
       phone: string;
@@ -344,7 +377,7 @@ notificationRouter.post('/alimtalk/estrus', async (req: Request, res: Response, 
 });
 
 // POST /notifications/alimtalk/calving — 분만 임박 알림
-notificationRouter.post('/alimtalk/calving', async (req: Request, res: Response, next: NextFunction) => {
+notificationRouter.post('/alimtalk/calving', requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { phone, farmName, earTag, parity, calvingDate } = req.body as {
       phone: string;
@@ -362,7 +395,7 @@ notificationRouter.post('/alimtalk/calving', async (req: Request, res: Response,
 });
 
 // POST /notifications/alimtalk/disease — 질병 의심 알림
-notificationRouter.post('/alimtalk/disease', async (req: Request, res: Response, next: NextFunction) => {
+notificationRouter.post('/alimtalk/disease', requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { phone, farmName, earTag, symptom, confidence } = req.body as {
       phone: string;

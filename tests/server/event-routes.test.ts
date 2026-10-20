@@ -63,18 +63,20 @@ describe('Event Routes', () => {
     expect(res.status).toBe(500);
   });
 
-  it('GET /events/:animalId — non-UUID animalId returns 500', async () => {
+  it('GET /events/:animalId — non-UUID animalId returns 404', async () => {
     const res = await request(app).get('/events/a-1');
-    // non-UUID ID causes DB validation error
-    expect(res.status).toBe(500);
+    // 예전엔 DB 형식 오류가 500 으로 새어 나왔다. 개체 접근 검사가 형식 오류를 '찾을 수 없음'(404)으로 처리한다
+    expect(res.status).toBe(404);
   });
 
-  it('POST /events/voice — 음성 이벤트 변환', async () => {
+  // NEW-04: 이 경로는 입력과 무관한 고정 결과(신뢰도 0.85)를 '변환 성공'으로 돌려주던 자리표시였다.
+  // 지어낸 데이터를 내지 않도록 미구현(501)을 알린다 — 예전 기대값(200 + parsed)은 그 가짜 응답을 굳혀 두고 있었다.
+  it('POST /events/voice — 미구현을 정직하게 알린다 (가짜 변환 결과 금지)', async () => {
     const res = await request(app)
       .post('/events/voice')
       .send({ farmId: 'f-1', animalId: 'a-1' });
-    expect(res.status).toBe(200);
-    expect(res.body.data.parsed).toHaveProperty('eventType');
-    expect(res.body.data.parsed).toHaveProperty('confidence');
+    expect(res.status).toBe(501);
+    expect(res.body.error.code).toBe('NOT_IMPLEMENTED');
+    expect(res.body.data).toBeUndefined();
   });
 });

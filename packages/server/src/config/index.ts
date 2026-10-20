@@ -12,6 +12,35 @@ const rootEnvPath = path.resolve(__dirname, '../../../../.env');
 // override: true → 환경에 빈 문자열로 존재해도 .env 값 우선
 dotenv.config({ path: rootEnvPath, override: true });
 
+// OPS-08: z.coerce.boolean 은 문자열 "false" 도 true 로 바꾼다 → 환경변수로 끌 수 없었다.
+// 'true'/'1'/'yes'/'on' → true, 'false'/'0'/'no'/'off' → false, 미설정·그 외 → 기본값
+export function envBool(defaultValue: boolean) {
+  return z.string().optional().transform((v) => {
+    const t = v?.trim().toLowerCase();
+    if (t === 'true' || t === '1' || t === 'yes' || t === 'on') return true;
+    if (t === 'false' || t === '0' || t === 'no' || t === 'off') return false;
+    return defaultValue;
+  });
+}
+
+// SEC-18: 공개 저장소에 있는 개발용 기본값 — 운영에서 이 값이면 누구나 토큰을 위조할 수 있다
+export const DEV_JWT_ACCESS_SECRET = 'dev-access-secret-change-in-production';
+export const DEV_JWT_REFRESH_SECRET = 'dev-refresh-secret-change-in-production';
+// 코드 기본값 + .env.example 예시값 (둘 다 공개 저장소에 있다) + 빈 값
+const PUBLIC_JWT_SECRETS: ReadonlySet<string> = new Set([
+  DEV_JWT_ACCESS_SECRET, DEV_JWT_REFRESH_SECRET,
+  'change-me-access-secret-min-32-chars', 'change-me-refresh-secret-min-32-chars', '',
+]);
+
+/** SEC-18: 운영인데 JWT 시크릿이 기본값이거나 두 시크릿이 같으면 문제 목록 (비어 있으면 통과) */
+export function jwtSecretProblems(env: { NODE_ENV: string; JWT_ACCESS_SECRET: string; JWT_REFRESH_SECRET: string }): string[] {
+  if (env.NODE_ENV !== 'production') return [];
+  const problems: string[] = [];
+  if (PUBLIC_JWT_SECRETS.has(env.JWT_ACCESS_SECRET)) problems.push('JWT_ACCESS_SECRET 이 공개된 기본값');
+  if (PUBLIC_JWT_SECRETS.has(env.JWT_REFRESH_SECRET)) problems.push('JWT_REFRESH_SECRET 이 공개된 기본값');
+  return problems;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -21,19 +50,30 @@ const envSchema = z.object({
   DB_NAME: z.string().default('cowtalk'),
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
+  // OPS-09: 쿼리 하나가 커넥션을 무한정 붙잡지 않게 (0 = 끔). 마이그레이션 연결에는 적용 안 함
+  // OPS-13: 부팅 시 마이그레이션 (기본 켜짐 — 기존 동작). 배포 파이프라인에 별도 단계가 생기면 false
+  AUTO_MIGRATE: envBool(true),
+  // OPS-13: 마이그레이션 실패 시 기동 중단. 기본 꺼짐 — 운영 DB 중복 데이터로 가드형 마이그레이션(0039·0042·0044)이
+  //         실패하면 서비스 전체가 멈추므로, 중복 정리 후 켠다
+  MIGRATIONS_STRICT: envBool(false),
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(60_000),
 
-  REDIS_ENABLED: z.coerce.boolean().default(true),
+  REDIS_ENABLED: envBool(true),
   // 데이터 전체 공개 스위치 — 소유자 단독 운영 단계용. "true"일 때만 켜진다.
   // 켜면 로그인한(=소유자가 승인한) 모든 계정이 목장 배정과 무관하게 전체 목장을 본다.
   // ⚠️ 다른 사용자(목장주·수의사)를 받기 전에 반드시 끈다 — 끄면 목장별 권한으로 즉시 복귀(재로그인·토큰 갱신 시)
   // (z.coerce.boolean은 "false"도 true로 바꾸므로 쓰지 않는다)
   OPEN_DATA_SCOPE: z.string().optional().transform((v) => v === 'true'),
+  // SEC-19: 추가 허용 출처 (쉼표 구분, 예: https://staging.example.com)
+  CORS_EXTRA_ORIGINS: z.string().optional(),
+  // OPS-12: Socket.IO Redis 어댑터 (REDIS_ENABLED 이고 Redis 연결 성공 시에만 붙는다)
+  SOCKET_IO_REDIS_ADAPTER: envBool(true),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(''),
 
-  JWT_ACCESS_SECRET: z.string().default('dev-access-secret-change-in-production'),
-  JWT_REFRESH_SECRET: z.string().default('dev-refresh-secret-change-in-production'),
+  JWT_ACCESS_SECRET: z.string().default(DEV_JWT_ACCESS_SECRET),
+  JWT_REFRESH_SECRET: z.string().default(DEV_JWT_REFRESH_SECRET),
   JWT_ACCESS_EXPIRES_IN: z.string().default('2h'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
@@ -53,8 +93,8 @@ const envSchema = z.object({
 
   // 젖소 정액추천 외부 데이터 연동 플래그 (데이터 거버넌스 확정 시 true로 전환 — 코드 변경 불필요)
   // 켜지면 dairy-sire-provider의 해당 공급원이 live가 되어 추천 신뢰도가 자동 상승한다.
-  DAIRY_DHI_ENABLED: z.coerce.boolean().default(false),        // 젖소 검정데이터(DHI) 연동
-  DAIRY_PEDIGREE_ENABLED: z.coerce.boolean().default(false),    // 한국종축개량협회 혈통 연동
+  DAIRY_DHI_ENABLED: envBool(false),        // 젖소 검정데이터(DHI) 연동
+  DAIRY_PEDIGREE_ENABLED: envBool(false),    // 한국종축개량협회 혈통 연동
 
   // Anthropic Claude API — 이중 모델 구성
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -83,6 +123,9 @@ const envSchema = z.object({
   ANTHROPIC_TEMPERATURE_CHAT_FINAL: z.coerce.number().min(0).max(1).default(0.3),
   // Extended Thinking — 감별진단·번식 추천 같은 복잡 질문에 활성화 (budget=0 비활성)
   // 1024~16000 토큰 권장. 비용 추가되므로 휴리스틱으로 일부 케이스만.
+  // OPS-11: SDK 기본값은 요청당 최대 10분 + 재시도 2회 → 채팅·브리핑 잡이 수십 분 멈출 수 있었다
+  ANTHROPIC_TIMEOUT_MS: z.coerce.number().int().min(5_000).default(180_000),
+  ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   ANTHROPIC_THINKING_BUDGET: z.coerce.number().int().min(0).max(16000).default(2048),
 
   // OpenWeatherMap API
@@ -110,6 +153,9 @@ const envSchema = z.object({
       '숫자와 개체번호는 특히 정확하고 천천히 발음하세요. 축사 소음 속에서도 알아들을 수 있도록 발음을 분명히 하세요.',
     ),
   OPENAI_TTS_MAX_CHARS: z.coerce.number().int().min(50).max(4000).default(800),
+  // VO-09: 계정별 시간당 음성 요청 한도
+  TTS_HOURLY_LIMIT_PER_USER: z.coerce.number().int().min(1).default(300),
+  STT_HOURLY_LIMIT_PER_USER: z.coerce.number().int().min(1).default(120),
   OPENAI_TTS_FORMAT: z.enum(['mp3', 'opus', 'aac', 'flac']).default('mp3'),
   // TTS 속도: 1.0=기본, 0.85=차분, 1.1=빠름. 자연 대화에는 0.95~1.05 권장
   // (gpt-4o-mini-tts는 speed를 받지 않음 — OPENAI_TTS_INSTRUCTIONS로 속도를 지시한다)
@@ -132,7 +178,7 @@ const envSchema = z.object({
   KAKAO_ALIMTALK_API_SECRET: z.string().optional(),
   KAKAO_ALIMTALK_PFID: z.string().optional(),       // 카카오 플러스친구 채널 ID
   KAKAO_ALIMTALK_FROM: z.string().optional(),        // 발신번호 (Solapi 등록 번호)
-  KAKAO_ALIMTALK_TEST_MODE: z.coerce.boolean().default(true), // true=로그만, false=실발송
+  KAKAO_ALIMTALK_TEST_MODE: envBool(true), // true=로그만, false=실발송
 
   // 토스페이먼츠 구독 결제
   // https://console.tosspayments.com 에서 발급
@@ -145,6 +191,16 @@ const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error('Invalid environment variables:', parsed.error.flatten().fieldErrors);
   throw new Error('Invalid environment configuration');
+}
+
+// SEC-18: 운영에서 공개 기본 시크릿이면 기동하지 않는다 (누구나 관리자 토큰을 만들 수 있는 상태로 서비스하지 않음)
+const jwtProblems = jwtSecretProblems(parsed.data);
+if (jwtProblems.length > 0) {
+  console.error('[config] 안전하지 않은 JWT 설정:', jwtProblems.join(', '));
+  throw new Error('Insecure JWT configuration');
+}
+if (parsed.data.NODE_ENV === 'production' && parsed.data.JWT_ACCESS_SECRET === parsed.data.JWT_REFRESH_SECRET) {
+  console.warn('[config] JWT_ACCESS_SECRET 과 JWT_REFRESH_SECRET 이 같습니다 — 서로 다른 값으로 바꾸세요');
 }
 
 export const config = parsed.data;

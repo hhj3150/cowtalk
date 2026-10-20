@@ -63,7 +63,7 @@ describe('Economics Routes', () => {
   it('GET /economics/roi-calculator — ROI 계산', async () => {
     const res = await request(app).get('/economics/roi-calculator?headCount=50');
     expect(res.status).toBe(200);
-    expect(res.body.data).toHaveProperty('initialCost');
+    expect(res.body.data).toHaveProperty('initialCostKrw'); // #129 에서 원 단위 명시로 이름 변경
     expect(res.body.data).toHaveProperty('paybackMonths');
     expect(res.body.data.headCount).toBe(50);
   });

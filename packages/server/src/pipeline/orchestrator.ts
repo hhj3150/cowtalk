@@ -16,7 +16,7 @@ import { runTreatmentOutcomeCheck } from '../services/vet/treatment-outcome.serv
 import { completeAfterSnapshots } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
 import { getDb } from '../config/database.js';
 import { animals, sensorMeasurements } from '../db/schema.js';
-import { eq, and, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { SmaxtecConnector } from './connectors/smaxtec.connector.js';
 import {
   TraceabilityConnector,
@@ -41,6 +41,59 @@ interface PipelineState {
   lastRealtimeRun: Date | null;
   lastBatchRun: Date | null;
   connectorHealth: ReadonlyMap<string, ConnectorHealth>;
+}
+
+/** OPS-05: 센서 저장 시작 시각의 최대 과거 범위 — 요청 범위(어제~내일 UTC) 안 */
+export const SENSOR_MAX_BACKFILL_MS = 48 * 60 * 60 * 1000;
+
+/** OPS-05: 개체별 저장 시작 시각 — 마지막 저장 이후, 단 최대 48시간 전까지 */
+export function sensorFromFor(lastStored: Date | undefined, defaultFrom: Date): Date {
+  if (!lastStored || Number.isNaN(lastStored.getTime())) return defaultFrom;
+  return lastStored.getTime() > defaultFrom.getTime() ? lastStored : defaultFrom;
+}
+
+/** OPS-01: 소버린 알람 순회 페이지 크기 (상한이 아니라 한 번에 읽는 단위) */
+export const SOVEREIGN_SWEEP_PAGE_SIZE = 100;
+
+/** OPS-01: 키셋 페이지로 모든 농장을 순회 — 상한 없음, 한 농장 실패가 나머지를 막지 않음 */
+export async function forEachFarmPaged(
+  fetchPage: (afterFarmId: string) => Promise<readonly string[]>,
+  handle: (farmId: string) => Promise<void>,
+  onError: (err: unknown, farmId: string) => void,
+  pageSize: number = SOVEREIGN_SWEEP_PAGE_SIZE,
+): Promise<{ scanned: number; failed: number }> {
+  let scanned = 0;
+  let failed = 0;
+  let after = '';
+  for (;;) {
+    const page = await fetchPage(after);
+    if (page.length === 0) break;
+    for (const farmId of page) {
+      scanned++;
+      try {
+        await handle(farmId);
+      } catch (err) {
+        failed++;
+        onError(err, farmId);
+      }
+    }
+    after = page[page.length - 1]!;
+    if (page.length < pageSize) break;
+  }
+  return { scanned, failed };
+}
+
+/** DI-09: 이미 저장된 시각(같은 개체·메트릭)과 한 배치 안의 중복을 걸러낸다 */
+export function filterNewMeasurements<T extends { timestamp: Date }>(values: readonly T[], existing: readonly Date[]): T[] {
+  const seen = new Set(existing.map((d) => d.getTime()));
+  const out: T[] = [];
+  for (const v of values) {
+    const t = v.timestamp.getTime();
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(v);
+  }
+  return out;
 }
 
 export class PipelineOrchestrator {
@@ -238,6 +291,8 @@ export class PipelineOrchestrator {
       const fetchData = result.data.data[0] as unknown as SmaxtecFetchData | undefined;
       if (fetchData) {
         const syncResult = await syncSmaxtecData(fetchData);
+        // DI-04: DB 반영이 끝난 조직만 기준점 전진 (수집 실패 조직·반영 실패 시에는 다음 사이클에 다시 본다)
+        this.smaxtec.commitOrgCursors(fetchData.orgCursors);
         logger.info(
           {
             farmsCreated: syncResult.farmsCreated,
@@ -282,7 +337,9 @@ export class PipelineOrchestrator {
   // 센서 데이터 배치 수집
   // ===========================
 
-  private sensorOffset = 0;
+  /** OPS-05: 센서 배치 키셋 커서(마지막으로 처리한 animal_id) */
+  private sensorCursor = '';
+  private sensorBatchRunning = false;
 
   private async collectSensorBatch(): Promise<void> {
     // 끊겨 있으면 재연결을 시도한다 — 부팅 시 한 번 실패했다고 센서 수집이 영영 멈추면 안 된다
@@ -291,27 +348,52 @@ export class PipelineOrchestrator {
       return;
     }
 
+    // OPS-05: 사이클마다 void 로 띄우므로 이전 배치가 끝나기 전에 다음 배치가 겹칠 수 있었다
+    if (this.sensorBatchRunning) {
+      logger.warn('[Pipeline] Sensor batch still running — skipping');
+      return;
+    }
+    this.sensorBatchRunning = true;
+    try {
+      await this.collectSensorBatchOnce();
+    } finally {
+      this.sensorBatchRunning = false;
+    }
+  }
+
+  private async collectSensorBatchOnce(): Promise<void> {
     const db = getDb();
     const BATCH_SIZE = 30;
 
-    // 활성 동물 중 센서 있는 것만 (offset으로 순환)
+    // OPS-05: 정렬 없는 OFFSET 은 행 순서가 바뀌면 개체를 건너뛰거나 반복했다 → animal_id 키셋 순환
     const activeAnimals = await db
       .select({ animalId: animals.animalId, externalId: animals.externalId })
       .from(animals)
-      .where(and(isNotNull(animals.externalId), eq(animals.status, 'active')))
-      .limit(BATCH_SIZE)
-      .offset(this.sensorOffset);
+      .where(and(
+        isNotNull(animals.externalId),
+        eq(animals.status, 'active'),
+        sql`${animals.animalId}::text > ${this.sensorCursor}`,
+      ))
+      .orderBy(sql`${animals.animalId}::text`)
+      .limit(BATCH_SIZE);
 
     if (activeAnimals.length === 0) {
-      this.sensorOffset = 0; // 끝까지 갔으면 처음부터
+      this.sensorCursor = ''; // 끝까지 갔으면 처음부터
       return;
     }
-    this.sensorOffset += BATCH_SIZE;
+    this.sensorCursor = activeAnimals[activeAnimals.length - 1]!.animalId;
 
     const now = new Date();
-    // 6시간 윈도우: 30마리 배치가 7000마리를 ~20시간에 순환하므로
-    // 넉넉한 범위로 수집하고 unique index가 중복 방지
-    const from = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+    // OPS-05: 예전엔 최근 6시간만 저장했는데, 30두씩 전체를 도는 데 ~20시간이 걸려 개체당 하루 데이터의
+    // 대부분(추정 ~81%)이 버려졌다. 요청 범위(어제~내일, 약 48시간) 안에서 개체별 마지막 저장 시각 이후를
+    // 모두 저장한다. 겹치는 구간은 저장 전 중복 제거(DI-09)가 걸러낸다.
+    const lastStored = await db
+      .select({ animalId: sensorMeasurements.animalId, last: sql<string>`max(${sensorMeasurements.timestamp})` })
+      .from(sensorMeasurements)
+      .where(inArray(sensorMeasurements.animalId, activeAnimals.map((a) => a.animalId)))
+      .groupBy(sensorMeasurements.animalId);
+    const lastByAnimal = new Map(lastStored.map((r) => [r.animalId, new Date(r.last)]));
+    const defaultFrom = new Date(now.getTime() - SENSOR_MAX_BACKFILL_MS);
     // smaXtec API: from_date < to_date 필수 (같으면 422)
     // UTC 날짜 기반이라 어제~내일 범위로 요청
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -347,7 +429,7 @@ export class PipelineOrchestrator {
               d.value !== null &&
               d.value !== undefined &&
               Number.isFinite(d.value) &&
-              d.ts * 1000 > from.getTime(),
+              d.ts * 1000 > sensorFromFor(lastByAnimal.get(animal.animalId), defaultFrom).getTime(),
           );
           if (recentData.length === 0) continue;
 
@@ -360,8 +442,23 @@ export class PipelineOrchestrator {
             qualityFlag: 'good' as const,
           }));
 
-          await db.insert(sensorMeasurements).values(values).onConflictDoNothing();
-          totalStored += values.length;
+          // DI-09: 운영 DB 에는 (animal_id, timestamp, metric_type) 유니크 인덱스가 마이그레이션으로 만들어지지 않아
+          // onConflictDoNothing 이 아무것도 막지 못했다 — 겹치는 구간을 다시 받으면 그대로 중복 저장됐다.
+          // 인덱스는 기존 중복 정리(운영 데이터 변경, 별도 승인) 뒤에 만든다. 그 전까지 저장 전에 직접 걸러낸다.
+          const tsList = values.map((v) => v.timestamp);
+          const existing = await db
+            .select({ timestamp: sensorMeasurements.timestamp })
+            .from(sensorMeasurements)
+            .where(and(
+              eq(sensorMeasurements.animalId, animal.animalId),
+              eq(sensorMeasurements.metricType, values[0]!.metricType),
+              gte(sensorMeasurements.timestamp, new Date(Math.min(...tsList.map((t) => t.getTime())))),
+              lte(sensorMeasurements.timestamp, new Date(Math.max(...tsList.map((t) => t.getTime())))),
+            ));
+          const fresh = filterNewMeasurements(values, existing.map((e) => e.timestamp));
+          if (fresh.length === 0) continue;
+          await db.insert(sensorMeasurements).values(fresh).onConflictDoNothing();
+          totalStored += fresh.length;
         }
       } catch (err) {
         logger.warn({ err, animalId: animal.animalId }, '[Pipeline] Sensor fetch failed for animal');
@@ -370,7 +467,7 @@ export class PipelineOrchestrator {
 
     if (totalStored > 0) {
       logger.info(
-        { stored: totalStored, animals: activeAnimals.length, offset: this.sensorOffset },
+        { stored: totalStored, animals: activeAnimals.length, cursor: this.sensorCursor },
         '[Pipeline] Sensor batch collected',
       );
     }
@@ -497,7 +594,7 @@ export class PipelineOrchestrator {
       INSERT INTO sensor_daily_agg (animal_id, date, metric_type, avg, min, max, stddev, count)
       SELECT
         animal_id,
-        date_trunc('day', timestamp)::date AS date,
+        (timestamp AT TIME ZONE 'Asia/Seoul')::date AS date, -- DI-11: 한국 날짜 기준 일별 집계
         metric_type,
         avg(value),
         min(value),
@@ -506,7 +603,7 @@ export class PipelineOrchestrator {
         count(*)::int
       FROM sensor_measurements
       WHERE timestamp >= ${sinceDate}::timestamptz
-      GROUP BY animal_id, date_trunc('day', timestamp)::date, metric_type
+      GROUP BY animal_id, (timestamp AT TIME ZONE 'Asia/Seoul')::date, metric_type
       ON CONFLICT (animal_id, date, metric_type)
       DO UPDATE SET
         avg = EXCLUDED.avg,
@@ -626,23 +723,29 @@ export class PipelineOrchestrator {
       const db = getDb();
       const { generateSovereignAlarms } = await import('../services/sovereign-alarm/orchestrator.js');
 
-      // 활성 농장 ID 목록
-      const farmRows = await db.execute(sql`
-        SELECT farm_id FROM farms WHERE status = 'active' LIMIT 200
-      `) as unknown as Array<{ farm_id: string }>;
-
+      // OPS-01: 예전엔 정렬 없는 LIMIT 200 — 농장이 201곳이 되면서 매번 임의의 농장이 알람 분석에서 빠졌다.
+      // 이제 전체 활성 농장을 id 순 페이지로 끝까지 돈다. 개별 실패는 기록하고 다음 농장으로 진행.
       let totalAlarms = 0;
-      for (const row of farmRows) {
-        try {
-          const alarms = await generateSovereignAlarms(row.farm_id, 10);
+      const { scanned, failed } = await forEachFarmPaged(
+        async (after) => {
+          const page = await db.execute(sql`
+            SELECT farm_id FROM farms
+            WHERE status = 'active' AND farm_id::text > ${after}
+            ORDER BY farm_id::text
+            LIMIT ${SOVEREIGN_SWEEP_PAGE_SIZE}
+          `) as unknown as Array<{ farm_id: string }>;
+          return page.map((r) => r.farm_id);
+        },
+        async (farmId) => {
+          const alarms = await generateSovereignAlarms(farmId, 10);
           totalAlarms += alarms.length;
-        } catch {
-          // 개별 농장 실패 무시
-        }
-      }
+        },
+        (err, farmId) => logger.warn({ err, farmId }, '[Pipeline] Sovereign alarm sweep — 농장 실패, 다음 농장 진행'),
+      );
 
       logger.info({
-        farms: farmRows.length,
+        farms: scanned,
+        failed,
         totalAlarms,
       }, '[Pipeline] Sovereign alarm sweep completed');
     } catch (error) {

@@ -4,6 +4,51 @@ import type { Request, Response, NextFunction } from 'express';
 import { ForbiddenError, UnauthorizedError } from '../../lib/errors.js';
 import { hasPermission } from '@cowtalk/shared';
 import type { Role, ResourceType, ActionType } from '@cowtalk/shared';
+import { eq, inArray, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+
+/**
+ * SEC-21: 목장 범위 제한이 없는 토큰인가 — 마스터(소유자) 또는 OPEN_DATA_SCOPE 열람 토큰.
+ * 데이터 범위 판정에만 쓴다. 관리 권한 판정(requirePlatformAdmin·requireRoleOrMaster)에는 isMaster 만.
+ */
+export function hasAllFarmScope(user: { readonly isMaster?: boolean; readonly openScope?: boolean } | undefined): boolean {
+  return Boolean(user?.isMaster || user?.openScope);
+}
+
+/** 특정 역할 또는 마스터(소유자) 토큰 허용 — 방역·행정 업무 화면용 (SEC-12) */
+export function requireRoleOrMaster(...roles: readonly Role[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) throw new UnauthorizedError();
+    if (req.user.isMaster || roles.includes(req.user.role)) {
+      next();
+      return;
+    }
+    throw new ForbiddenError(`이 작업은 ${roles.join('/')} 역할만 수행할 수 있습니다`);
+  };
+}
+
+const FARM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * SEC-13: 경로 파라미터 :farmId 범위 검사 — `router.param('farmId', farmParamGuard())` 로 라우터 전체에 건다.
+ * 예전엔 쿼리의 farmId 만 검사하고 경로 파라미터는 보지 않아 남의 목장 프로필·센서·기상·드릴다운이 열렸다.
+ * @param hideExistence true 면 범위 밖도 404 (존재 자체를 숨김), false 면 403
+ */
+export function farmParamGuard(hideExistence = false) {
+  return (req: Request, res: Response, next: NextFunction, value: unknown): void => {
+    const farmId = typeof value === 'string' ? value : '';
+    if (!FARM_UUID_RE.test(farmId)) {
+      res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      return;
+    }
+    const scope = scopedFarmIds(req);
+    if (scope !== null && !scope.includes(farmId)) {
+      if (hideExistence) res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      else res.status(403).json({ success: false, error: '접근 권한이 없는 농장입니다' });
+      return;
+    }
+    next();
+  };
+}
 
 /** 특정 역할만 허용 */
 export function requireRole(...roles: readonly Role[]) {
@@ -33,6 +78,55 @@ export function requirePermission(resource: ResourceType, action: ActionType) {
   };
 }
 
+/**
+ * 플랫폼 관리 권한 — 마스터(소유자) 토큰, 또는 배정 없는(전국) 행정관만.
+ * 배정이 걸린 행정관·농장주·수의사·방역관은 사용자 목록·감사 로그·시스템 작업에 접근할 수 없다. (SEC-05)
+ */
+export function requirePlatformAdmin(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) {
+    throw new UnauthorizedError();
+  }
+  const unrestrictedAdmin = req.user.role === 'government_admin' && (req.user.farmIds ?? []).length === 0;
+  if (!req.user.isMaster && !unrestrictedAdmin) {
+    throw new ForbiddenError('플랫폼 관리자만 사용할 수 있습니다');
+  }
+  next();
+}
+
+/**
+ * 단일 farmId 를 받는 조회 API 용 범위 계산 (SEC-08).
+ * - farmId 를 지정했으면 배정 스코프 안이어야 한다 (밖이면 403)
+ * - 지정하지 않았으면 무제한 사용자는 전체(undefined), 제한 사용자는 자기 배정 목록
+ *   (미배정 농장주·수의사는 NO_FARM_SENTINEL → 빈 결과)
+ */
+export function farmScopeForRequest(req: Request, requestedFarmId?: string): string | readonly string[] | undefined {
+  const scope = scopedFarmIds(req);
+  if (requestedFarmId) {
+    if (scope !== null && !scope.includes(requestedFarmId)) {
+      throw new ForbiddenError('접근 권한이 없는 농장입니다');
+    }
+    return requestedFarmId;
+  }
+  return scope === null ? undefined : scope;
+}
+
+/**
+ * 요청 스코프를 쿼리 조건으로 — farmScopeForRequest 결과(단일 farmId·배정 목록·무제한)를 그대로 받는다.
+ * 무제한(undefined)이면 조건 없음.
+ */
+export function farmScopeWhere(column: AnyColumn, scope: string | readonly string[] | undefined): SQL | undefined {
+  if (scope === undefined) return undefined;
+  if (typeof scope === 'string') return eq(column, scope);
+  return inArray(column, [...scope]);
+}
+
+/** 원시 SQL 용 — `AND <컬럼> IN (...)` 조각 (무제한이면 빈 조각) */
+export function farmScopeSqlFragment(columnSql: SQL, scope: string | readonly string[] | undefined): SQL {
+  if (scope === undefined) return sql``;
+  const ids = typeof scope === 'string' ? [scope] : [...scope];
+  return sql`AND ${columnSql} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`;
+}
+
 /** 농장 단위 역할 — 배정된 목장 밖은 절대 볼 수 없다 */
 const FARM_SCOPED_ROLES: readonly string[] = ['farmer', 'veterinarian'];
 
@@ -58,7 +152,7 @@ export function requireFarmAccess(
   // 관리 역할(행정·방역관)은 **배정이 없을 때만** 전체 — 배정된 관리 계정은
   // 배정 목장으로 제한된다 (배정 우선 규칙, 목록뿐 아니라 직접 조회도 동일).
   const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (req.user.isMaster || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
+  if (hasAllFarmScope(req.user) || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
     next();
     return;
   }
@@ -128,7 +222,7 @@ export function scopedFarmIds(req: Request): readonly string[] | null {
     return farmIds;
   }
   // 마스터 토큰(역할 전환 시뮬레이션 포함)은 전체 유지
-  if (FARM_SCOPED_ROLES.includes(req.user.role) && !req.user.isMaster) {
+  if (FARM_SCOPED_ROLES.includes(req.user.role) && !hasAllFarmScope(req.user)) {
     return [NO_FARM_SENTINEL];
   }
   return null;
@@ -176,7 +270,7 @@ export function enforceFarmScope(
   }
 
   const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (req.user.isMaster || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
+  if (hasAllFarmScope(req.user) || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
     next();
     return;
   }

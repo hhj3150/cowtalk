@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requireFarmAccess, scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
+import { requireFarmAccess, scopedFarmIds, resolveScopedFarmIds, farmScopeForRequest, requirePlatformAdmin } from '../middleware/rbac.js';
 import { ForbiddenError } from '../../lib/errors.js';
 import { getDb } from '../../config/database.js';
 import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, farmSemenInventory } from '../../db/schema.js';
@@ -18,7 +18,14 @@ import { getTransitionRisk } from '../../services/breeding/transition-risk.servi
 import { getMonthlyTrends, getFarmComparison, getParityAnalysis } from '../../services/breeding/breeding-performance.service.js';
 import { createSyncSchedule, getTodaySyncTasks, completeSyncTask, getAvailableProtocols } from '../../services/breeding/sync-protocol.service.js';
 import { computeCR, decisionsFromPregnancyChecks } from '../../services/metrics/fertility-service.js';
-import { requireAnimalAccess } from '../middleware/animal-access.js';
+import { requireAnimalAccess, requireScopedIds, requireScopedAnimalAndFarmBody } from '../middleware/animal-access.js';
+import { breedingEvents as breedingEventsTable } from '../../db/schema.js';
+
+// SEC-08: 예전엔 farmId·animalId 를 검사하지 않아 번식 캘린더·정액 재고·설정·인사이트를 남의 목장 것까지 조회하고,
+// 수정·임신감정·발정동기화·재고를 남의 목장에 기록할 수 있었다. farmId 를 빼면 전 농장 데이터가 나왔다.
+
+const scopedAnimalAndFarmBody = requireScopedAnimalAndFarmBody;
+const scopedFarmParam = requireScopedIds([{ source: 'params', field: 'farmId', kind: 'farm', required: true }]);
 
 export const breedingRouter = Router();
 
@@ -68,7 +75,7 @@ breedingRouter.get('/calendar', async (req: Request, res: Response, next: NextFu
       return;
     }
 
-    const events = await getBreedingCalendarEvents(startDate, endDate, farmId || undefined);
+    const events = await getBreedingCalendarEvents(startDate, endDate, farmScopeForRequest(req, farmId || undefined));
     res.json({ success: true, data: events });
   } catch (error) {
     next(error);
@@ -136,7 +143,7 @@ breedingRouter.get('/recommend/:animalId', requireAnimalAccess(), async (req: Re
 });
 
 // POST /breeding/inseminate — 수정 기록 저장
-breedingRouter.post('/inseminate', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.post('/inseminate', ...scopedAnimalAndFarmBody, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { animalId, farmId, semenId, semenInfo, technicianName, recommendedSemenId, optimalTime, notes } = req.body as {
       animalId: string;
@@ -165,7 +172,7 @@ breedingRouter.post('/inseminate', async (req: Request, res: Response, next: Nex
 });
 
 // GET /breeding/farm/:farmId/inventory — 목장 보유 정액 목록
-breedingRouter.get('/farm/:farmId/inventory', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.get('/farm/:farmId/inventory', scopedFarmParam, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const farmId = req.params.farmId as string;
@@ -196,7 +203,7 @@ breedingRouter.get('/farm/:farmId/inventory', async (req: Request, res: Response
 });
 
 // POST /breeding/farm/:farmId/inventory — 목장 보유 정액 추가
-breedingRouter.post('/farm/:farmId/inventory', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.post('/farm/:farmId/inventory', scopedFarmParam, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
     const farmId = req.params.farmId as string;
@@ -344,7 +351,7 @@ breedingRouter.get('/stats/:farmId', requireFarmAccess, async (req: Request, res
 });
 
 // POST /breeding/pregnancy-check — 임신감정 결과 저장
-breedingRouter.post('/pregnancy-check', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.post('/pregnancy-check', requireScopedIds([{ source: 'body', field: 'animalId', kind: 'animal', required: true }]), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { animalId, checkDate, result, method, daysPostInsemination, notes } = req.body as {
       animalId: string;
@@ -379,7 +386,7 @@ breedingRouter.get('/feedback/:animalId', requireAnimalAccess(), async (req: Req
 });
 
 // GET /breeding/farm/:farmId/settings — 목장별 번식 설정 조회
-breedingRouter.get('/farm/:farmId/settings', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.get('/farm/:farmId/settings', scopedFarmParam, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.params.farmId as string;
     const settings = await getFarmBreedingSettings(farmId);
@@ -393,7 +400,7 @@ breedingRouter.get('/farm/:farmId/settings', async (req: Request, res: Response,
 breedingRouter.get('/insights', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.query.farmId as string | undefined;
-    const data = await getBreedingInsights(farmId);
+    const data = await getBreedingInsights(farmScopeForRequest(req, farmId || undefined));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -404,7 +411,7 @@ breedingRouter.get('/insights', async (req: Request, res: Response, next: NextFu
 breedingRouter.get('/insights/:farmId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.params.farmId as string;
-    const data = await getBreedingInsights(farmId);
+    const data = await getBreedingInsights(farmScopeForRequest(req, farmId));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -415,7 +422,7 @@ breedingRouter.get('/insights/:farmId', async (req: Request, res: Response, next
 breedingRouter.get('/transition-risk', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.query.farmId as string | undefined;
-    const data = await getTransitionRisk(farmId);
+    const data = await getTransitionRisk(farmScopeForRequest(req, farmId || undefined));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -426,7 +433,7 @@ breedingRouter.get('/transition-risk', async (req: Request, res: Response, next:
 breedingRouter.get('/transition-risk/:farmId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.params.farmId as string;
-    const data = await getTransitionRisk(farmId);
+    const data = await getTransitionRisk(farmScopeForRequest(req, farmId));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -442,7 +449,7 @@ breedingRouter.get('/performance/trends', async (req: Request, res: Response, ne
   try {
     const farmId = req.query.farmId as string | undefined;
     const months = req.query.months ? parseInt(req.query.months as string, 10) : 6;
-    const data = await getMonthlyTrends(farmId || undefined, months);
+    const data = await getMonthlyTrends(farmScopeForRequest(req, farmId || undefined), Math.min(Math.max(months || 6, 1), 36));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -453,7 +460,7 @@ breedingRouter.get('/performance/trends', async (req: Request, res: Response, ne
 breedingRouter.get('/performance/farm-comparison', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
-    const data = await getFarmComparison(limit);
+    const data = await getFarmComparison(Math.min(Math.max(limit || 10, 1), 200), farmScopeForRequest(req));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -464,7 +471,7 @@ breedingRouter.get('/performance/farm-comparison', async (req: Request, res: Res
 breedingRouter.get('/performance/by-parity', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.query.farmId as string | undefined;
-    const data = await getParityAnalysis(farmId || undefined);
+    const data = await getParityAnalysis(farmScopeForRequest(req, farmId || undefined));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -472,7 +479,7 @@ breedingRouter.get('/performance/by-parity', async (req: Request, res: Response,
 });
 
 // POST /breeding/semen/seed — 씨수소 카탈로그 수동 시딩 (어드민/시연용)
-breedingRouter.post('/semen/seed', async (_req: Request, res: Response, next: NextFunction) => {
+breedingRouter.post('/semen/seed', requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await seedSemenCatalog();
     res.json({ success: true, data: result });
@@ -482,7 +489,7 @@ breedingRouter.post('/semen/seed', async (_req: Request, res: Response, next: Ne
 });
 
 // POST /breeding/semen/sync-hanwoo — 한우 씨수소 공공API 즉시 동기화 (어드민/시연용)
-breedingRouter.post('/semen/sync-hanwoo', async (_req: Request, res: Response, next: NextFunction) => {
+breedingRouter.post('/semen/sync-hanwoo', requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await syncHanwooSemenFromPublicApi();
     res.json({ success: true, data: result });
@@ -501,7 +508,7 @@ breedingRouter.get('/sync/protocols', (_req: Request, res: Response) => {
 });
 
 // POST /breeding/sync/schedule — 발정동기화 스케줄 생성
-breedingRouter.post('/sync/schedule', async (req: Request, res: Response, next: NextFunction) => {
+breedingRouter.post('/sync/schedule', ...scopedAnimalAndFarmBody, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { animalId, farmId, protocol, startDate, prescribedBy, notes } = req.body as {
       animalId: string;
@@ -536,7 +543,10 @@ breedingRouter.post('/sync/schedule', async (req: Request, res: Response, next: 
 breedingRouter.get('/sync/today', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.query.farmId as string | undefined;
-    const tasks = await getTodaySyncTasks(farmId);
+    const range = farmScopeForRequest(req, farmId || undefined);
+    const tasks = typeof range === 'string' || range === undefined
+      ? await getTodaySyncTasks(range)
+      : await getTodaySyncTasks(undefined, range);
     res.json({ success: true, data: tasks });
   } catch (error) {
     next(error);
@@ -548,6 +558,18 @@ breedingRouter.post('/sync/complete/:eventId', async (req: Request, res: Respons
   try {
     const eventId = req.params.eventId as string;
     const completedBy = req.body?.completedBy as string | undefined;
+    // 처치 일정의 소속 목장이 스코프 안인지 (남의 목장 일정 완료 처리 차단)
+    const scope = scopedFarmIds(req);
+    if (scope !== null) {
+      if (!/^[0-9a-f-]{36}$/i.test(eventId)) { res.status(404).json({ success: false, error: '일정을 찾을 수 없습니다' }); return; }
+      const [row] = await getDb()
+        .select({ farmId: breedingEventsTable.farmId })
+        .from(breedingEventsTable)
+        .where(eq(breedingEventsTable.eventId, eventId))
+        .limit(1);
+      if (!row) { res.status(404).json({ success: false, error: '일정을 찾을 수 없습니다' }); return; }
+      if (!row.farmId || !scope.includes(row.farmId)) throw new ForbiddenError('접근 권한이 없는 농장입니다');
+    }
     await completeSyncTask(eventId, completedBy);
     res.json({ success: true });
   } catch (error) {

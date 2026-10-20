@@ -3,14 +3,15 @@
 // Upsert 패턴: external_id로 조회 → 있으면 UPDATE, 없으면 INSERT
 
 import { getDb } from '../config/database.js';
-import { farms, animals, regions, smaxtecEvents } from '../db/schema.js';
+import { farms, animals, regions, smaxtecEvents, animalTransfers } from '../db/schema.js';
 import { captureBeforeSnapshot } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './connectors/smaxtec.connector.js';
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
 import { normalizeSmaxtecEvent } from './normalization.js';
 import { emitNewAlarm } from '../realtime/alarm-emitter.js';
+import { pickCurrentRecords, decideAffiliation, mergeSyncStatus, nonEmpty, diffAnimalPatch, type ExistingAnimalRow } from './animal-affiliation.js';
 
 // ===========================
 // 동기화 결과
@@ -147,7 +148,7 @@ async function syncFarms(
 // 동물 동기화 (smaXtec animal → animal)
 // ===========================
 
-async function syncAnimals(
+export async function syncAnimals(
   smaxtecAnimals: readonly SmaxtecAnimal[],
   farmMap: ReadonlyMap<string, string>,
 ): Promise<{ created: number; updated: number; animalMap: ReadonlyMap<string, string> }> {
@@ -155,57 +156,128 @@ async function syncAnimals(
   const animalMap = new Map<string, string>();
   let created = 0;
   let updated = 0;
+  let movedCount = 0;
 
   // 기존 animals에서 external_id 매핑 로드
   const externalIds = smaxtecAnimals.map((a) => a._id ?? a.animal_id ?? '');
 
   // 배치로 로드 (500개씩)
   const LOAD_BATCH = 500;
-  const existingMap = new Map<string, string>();
+  const existingMap = new Map<string, ExistingAnimalRow>();
   for (let i = 0; i < externalIds.length; i += LOAD_BATCH) {
     const batch = externalIds.slice(i, i + LOAD_BATCH);
     const existing = await db
-      .select({ animalId: animals.animalId, externalId: animals.externalId })
+      .select({
+        animalId: animals.animalId, externalId: animals.externalId, farmId: animals.farmId, status: animals.status,
+        deletedAt: animals.deletedAt, name: animals.name, earTag: animals.earTag, traceId: animals.traceId,
+        currentDeviceId: animals.currentDeviceId, lactationStatus: animals.lactationStatus,
+      })
       .from(animals)
       .where(inArray(animals.externalId, batch));
 
     for (const a of existing) {
       if (a.externalId) {
-        existingMap.set(a.externalId, a.animalId);
+        existingMap.set(a.externalId, {
+          animalId: a.animalId, farmId: a.farmId, status: a.status, deleted: a.deletedAt != null,
+          current: { name: a.name, earTag: a.earTag, traceId: a.traceId, currentDeviceId: a.currentDeviceId, lactationStatus: a.lactationStatus },
+        });
       }
+    }
+  }
+
+  // DI-02: 같은 개체가 옛 목장(비활성)·새 목장(활성) 목록에 함께 나오면 활성 기록 하나만 처리
+  const current = pickCurrentRecords(
+    smaxtecAnimals.flatMap((sa) => {
+      const targetFarmId = farmMap.get(sa.organisation_id);
+      if (!targetFarmId) return []; // 매핑되지 않은 org
+      return [{ sa, extId: sa._id ?? sa.animal_id ?? '', active: Boolean(sa.active), targetFarmId }];
+    }),
+  );
+
+  // DI-08: externalId 로 못 찾은 개체는 이력번호로 한 번 더 찾는다 — 수동 등록한 소(externalId 없음)를
+  // 동기화가 새로 만들어 같은 소가 두 마리가 되던 문제. 찾으면 그 행에 externalId 를 연결한다.
+  const linkByTrace = new Set<string>();
+  const unmatchedTraceIds = [...new Set(current
+    .filter((c) => !existingMap.has(c.extId) && nonEmpty(c.sa.official_id))
+    .map((c) => c.sa.official_id as string))];
+  for (let i = 0; i < unmatchedTraceIds.length; i += LOAD_BATCH) {
+    const batch = unmatchedTraceIds.slice(i, i + LOAD_BATCH);
+    const rows = await db
+      .select({ animalId: animals.animalId, traceId: animals.traceId, farmId: animals.farmId, status: animals.status })
+      .from(animals)
+      .where(and(inArray(animals.traceId, batch), isNull(animals.externalId), isNull(animals.deletedAt)));
+    const byTrace = new Map<string, typeof rows>();
+    for (const r of rows) {
+      if (!r.traceId) continue;
+      byTrace.set(r.traceId, [...(byTrace.get(r.traceId) ?? []), r]);
+    }
+    for (const c of current) {
+      const matches = byTrace.get(c.sa.official_id ?? '');
+      // 이력번호가 같은 행이 둘 이상이면 어느 쪽인지 모르므로 연결하지 않는다 (사람이 정리)
+      if (existingMap.has(c.extId) || !matches || matches.length !== 1) continue;
+      const m = matches[0]!;
+      existingMap.set(c.extId, { animalId: m.animalId, farmId: m.farmId, status: m.status, deleted: false, current: {} });
+      linkByTrace.add(c.extId);
     }
   }
 
   // 배치 처리 (100개씩)
   const BATCH_SIZE = 100;
-  for (let i = 0; i < smaxtecAnimals.length; i += BATCH_SIZE) {
-    const batch = smaxtecAnimals.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < current.length; i += BATCH_SIZE) {
+    const batch = current.slice(i, i + BATCH_SIZE);
 
-    for (const sa of batch) {
-      const extId = sa._id ?? sa.animal_id ?? '';
-      const farmId = farmMap.get(sa.organisation_id);
-
-      if (!farmId) {
-        continue; // 매핑되지 않은 org
-      }
-
+    for (const { sa, extId, targetFarmId: farmId } of batch) {
       try {
-        const existingAnimalId = existingMap.get(extId);
+        const existingRow = existingMap.get(extId);
+        const existingAnimalId = existingRow?.animalId;
 
-        if (existingAnimalId) {
-          // Update
-          await db
-            .update(animals)
-            .set({
-              name: sa.name ?? sa.display_name,
-              earTag: sa.mark ?? sa.official_id ?? extId.slice(0, 8),
-              traceId: sa.official_id,
+        if (existingRow && existingAnimalId && existingRow.deleted) {
+          // DI-05: 소프트 삭제한 개체는 갱신하지 않는다 (이벤트 연결용 매핑만 유지)
+          animalMap.set(extId, existingAnimalId);
+          if (sa.animal_id && sa.animal_id !== extId) animalMap.set(sa.animal_id, existingAnimalId);
+        } else if (existingRow && existingAnimalId) {
+          // Update — 소속 목장 변경 반영 (DI-02). 과거 기록의 farm_id 는 건드리지 않는다.
+          const decision = decideAffiliation(existingRow.farmId, farmId, Boolean(sa.active));
+          // OPS-07: 바뀐 값만 UPDATE — 예전엔 매 사이클 개체마다(약 11,000건) 무조건 UPDATE 했다
+          const patch = diffAnimalPatch(
+            { ...existingRow.current, farmId: existingRow.farmId, status: existingRow.status },
+            {
+              externalId: linkByTrace.has(extId) ? extId : undefined,
+              farmId: decision.farmId,
+              // DI-05: 비어 올라온 값으로 수동 입력한 이름·관리번호·이력번호를 지우거나
+              //        임시 값(extId 앞 8자리)으로 바꾸지 않는다
+              name: nonEmpty(sa.name) ?? nonEmpty(sa.display_name),
+              earTag: nonEmpty(sa.mark),
+              traceId: nonEmpty(sa.official_id),
               currentDeviceId: sa.current_device_id ?? sa.sensor,
-              lactationStatus: sa.lactation_status ?? 'unknown',
-              status: sa.active ? 'active' : 'inactive',
-              updatedAt: new Date(),
-            })
-            .where(eq(animals.animalId, existingAnimalId));
+              lactationStatus: nonEmpty(sa.lactation_status),
+              // DI-05: 목장에서 확정한 폐사·도태·매각 상태는 되살리지 않는다
+              status: mergeSyncStatus(existingRow.status, Boolean(sa.active), decision.applyStatus),
+            },
+          );
+          if (Object.keys(patch).length > 0) {
+            await db
+              .update(animals)
+              .set({ ...patch, updatedAt: new Date() })
+              .where(eq(animals.animalId, existingAnimalId));
+          }
+
+          if (decision.moved) {
+            await db.insert(animalTransfers).values({
+              animalId: existingAnimalId,
+              sourceFarmId: existingRow.farmId,
+              destinationFarmId: decision.farmId,
+              transferDate: new Date(),
+              reason: 'smaxtec_sync',
+              traceNo: sa.official_id ?? null,
+            });
+            existingMap.set(extId, { ...existingRow, farmId: decision.farmId });
+            movedCount++;
+            logger.info(
+              { animalId: existingAnimalId, from: existingRow.farmId, to: decision.farmId },
+              '[Sync] 개체 소속 목장 변경 — 이동 이력 기록',
+            );
+          }
 
           animalMap.set(extId, existingAnimalId);
           if (sa.animal_id && sa.animal_id !== extId) {
@@ -249,11 +321,11 @@ async function syncAnimals(
     }
 
     if (i % 500 === 0 && i > 0) {
-      logger.info({ processed: i, total: smaxtecAnimals.length }, '[Sync] Animals progress');
+      logger.info({ processed: i, total: current.length }, '[Sync] Animals progress');
     }
   }
 
-  logger.info({ created, updated }, `[Sync] Animals: ${String(created)} created, ${String(updated)} updated`);
+  logger.info({ created, updated, moved: movedCount }, `[Sync] Animals: ${String(created)} created, ${String(updated)} updated, ${String(movedCount)} moved`);
   return { created, updated, animalMap };
 }
 
@@ -332,16 +404,24 @@ async function syncEvents(
         const rows = await db
           .insert(smaxtecEvents)
           .values(values)
-          .returning({ eventId: smaxtecEvents.eventId });
+          // DI-10: 조회 후 삽입 사이에 다른 인스턴스가 같은 이벤트를 넣었으면 건너뛴다
+          // (유니크 인덱스 0042 와 함께 동작 — 건너뛴 행은 returning 에 없어 알람도 다시 방송되지 않는다)
+          .onConflictDoNothing()
+          .returning({ eventId: smaxtecEvents.eventId, externalEventId: smaxtecEvents.externalEventId });
 
         stored += rows.length;
+        // 충돌로 건너뛴 행은 returning 에 없다 → 인덱스(values[i])가 아니라 외부 이벤트 ID 로 짝지어야
+        // 다른 이벤트의 개체·유형이 알람에 붙지 않는다
+        const inserted = pairInsertedRows(rows, values);
 
         // 실시간 push — 방금 저장된 알람을 farm room + 전체 room에 즉시 전파.
         // (이 배선이 없으면 화면은 60초 폴링까지 대기 — 조기경보의 마지막 구간 지연 제거)
         try {
-          const animalIdSet = [...new Set(values.map((v) => v.animalId))];
-          const farmIdSet = [...new Set(values.map((v) => v.farmId))];
-          const [animalRows, farmRows] = await Promise.all([
+          // OPS-14: 신규 농장 온보딩·백필 때 과거 이벤트 수천 건을 '새 알람'으로 방송하지 않는다
+          const live = selectBroadcastable(inserted, Date.now());
+          const animalIdSet = [...new Set(live.map(({ v }) => v.animalId))];
+          const farmIdSet = [...new Set(live.map(({ v }) => v.farmId))];
+          const [animalRows, farmRows] = live.length === 0 ? [[], []] : await Promise.all([
             db.select({ animalId: animals.animalId, earTag: animals.earTag })
               .from(animals).where(inArray(animals.animalId, animalIdSet)),
             db.select({ farmId: farms.farmId, name: farms.name })
@@ -350,9 +430,7 @@ async function syncEvents(
           const earTagMap = new Map(animalRows.map((r) => [r.animalId, r.earTag]));
           const farmNameMap = new Map(farmRows.map((r) => [r.farmId, r.name]));
 
-          rows.forEach((row, i) => {
-            const v = values[i];
-            if (!v) return;
+          live.forEach(({ row, v }) => {
             emitNewAlarm({
               eventId: row.eventId,
               eventType: v.eventType,
@@ -372,15 +450,16 @@ async function syncEvents(
         }
 
         // 알람 패턴 스냅샷 캡처 — 이벤트 전 48h 센서 데이터 저장
-        for (const v of values) {
-          captureBeforeSnapshot(
+        // OPS-14: 실제로 새로 저장된 이벤트만, 동시 SNAPSHOT_CONCURRENCY 개씩 (예전: 배치 전체를 한꺼번에)
+        void runWithConcurrency(inserted, SNAPSHOT_CONCURRENCY, async ({ v }) => {
+          await captureBeforeSnapshot(
             v.animalId,
             v.farmId,
             v.eventType,
             v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt),
             v.externalEventId ?? undefined,
           ).catch(err => logger.debug({ err, eventType: v.eventType }, '[Snapshot] capture skipped'));
-        }
+        }).catch((err: unknown) => logger.warn({ err }, '[Snapshot] batch capture failed'));
       } catch (error) {
         logger.error({ err: error, batchSize: values.length }, '[Sync] Failed to store event batch');
       }
@@ -392,6 +471,57 @@ async function syncEvents(
     `[Sync] Events: ${String(stored)} stored (${String(events.length - newEvents.length)} duplicates skipped)`,
   );
   return stored;
+}
+
+// ===========================
+// 삽입 결과 짝짓기 · 방송 범위 (DI-10 후속, OPS-14)
+// ===========================
+
+export const BROADCAST_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const SNAPSHOT_CONCURRENCY = 4;
+
+interface InsertedValue {
+  readonly externalEventId?: string | null;
+  readonly detectedAt: Date | string;
+}
+
+/** returning 행을 외부 이벤트 ID 로 원래 값과 짝짓는다 (충돌로 빠진 행이 있어도 어긋나지 않게) */
+export function pairInsertedRows<R extends { externalEventId: string | null }, V extends InsertedValue>(
+  rows: readonly R[],
+  values: readonly V[],
+): Array<{ row: R; v: V }> {
+  const byExt = new Map<string, V>();
+  for (const v of values) if (v.externalEventId) byExt.set(v.externalEventId, v);
+  const out: Array<{ row: R; v: V }> = [];
+  for (const row of rows) {
+    const v = row.externalEventId ? byExt.get(row.externalEventId) : undefined;
+    if (v) out.push({ row, v });
+  }
+  return out;
+}
+
+/** 최근 24시간 안에 감지된 이벤트만 실시간 '새 알람'으로 방송 */
+export function selectBroadcastable<T extends { v: InsertedValue }>(items: readonly T[], now: number): T[] {
+  return items.filter(({ v }) => {
+    const t = (v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt)).getTime();
+    return Number.isFinite(t) && now - t <= BROADCAST_WINDOW_MS;
+  });
+}
+
+/** 동시에 limit 개까지만 실행 */
+export async function runWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const item = items[next++] as T;
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 // ===========================
@@ -428,7 +558,8 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
   );
 
   // 5. DIM/parity 이벤트 기반 업데이트 (calving_confirmation 기반)
-  const dimUpdated = await updateDimAndParity();
+  // OPS-10: DIM 은 하루 단위로만 바뀐다 — 5분마다 분만 이벤트 전체를 다시 읽지 않고 1시간에 한 번
+  const dimUpdated = shouldRecomputeDim(Date.now(), lastDimRecomputeAt) ? await runDimRecompute() : 0;
 
   // 6. 번식 이벤트 동기화 (smaxtec_events → breeding_events + pregnancy_checks)
   const breedingSynced = await syncBreedingFromEvents();
@@ -467,22 +598,26 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
 async function updateFarmHeadCounts(
   farmMap: ReadonlyMap<string, string>,
 ): Promise<void> {
-  const db = getDb();
-
-  for (const [, farmId] of farmMap) {
-    try {
-      const countResult = await db
-        .select({ animalId: animals.animalId })
-        .from(animals)
-        .where(and(eq(animals.farmId, farmId), eq(animals.status, 'active')));
-
-      await db
-        .update(farms)
-        .set({ currentHeadCount: countResult.length, updatedAt: new Date() })
-        .where(eq(farms.farmId, farmId));
-    } catch {
-      // non-critical, continue
-    }
+  // OPS-07: 예전엔 농장마다 개체 id 전체를 메모리로 읽어 길이를 세고 매번 UPDATE 했다.
+  // 이제 한 번의 집계 UPDATE — 값이 바뀐 농장만 갱신한다.
+  const farmIds = [...new Set(farmMap.values())];
+  if (farmIds.length === 0) return;
+  try {
+    await getDb().execute(sql`
+      WITH counts AS (
+        SELECT f.farm_id, count(a.animal_id)::int AS cnt
+        FROM farms f
+        LEFT JOIN animals a ON a.farm_id = f.farm_id AND a.status = 'active'
+        WHERE f.farm_id IN (${sql.join(farmIds.map((id) => sql`${id}::uuid`), sql`, `)})
+        GROUP BY f.farm_id
+      )
+      UPDATE farms f
+      SET current_head_count = c.cnt, updated_at = now()
+      FROM counts c
+      WHERE f.farm_id = c.farm_id AND f.current_head_count IS DISTINCT FROM c.cnt
+    `);
+  } catch (err) {
+    logger.warn({ err }, '[Sync] 농장 두수 갱신 실패 — 다음 사이클에 재시도');
   }
 }
 
@@ -530,7 +665,7 @@ function findFarmForAnimal(
  * 중복 방지: smaxtec_events.external_event_id 기반 존재 여부 체크.
  * 매 sync 주기마다 증분 동기화 (새 이벤트만 처리).
  */
-async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregnancies: number }> {
+export async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregnancies: number }> {
   const db = getDb();
   let inseminations = 0;
   let pregnancies = 0;
@@ -539,7 +674,7 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
     // --- 1. insemination / no_insemination → breeding_events ---
     // breeding_events.notes에 smaxtec event_id를 기록하여 중복 방지
     const insemResult = await db.execute(sql`
-      INSERT INTO breeding_events (animal_id, farm_id, event_date, type, no_insemination_reason, notes, status)
+      INSERT INTO breeding_events (animal_id, farm_id, event_date, type, no_insemination_reason, notes, status, source_event_id)
       SELECT
         se.animal_id,
         se.farm_id,
@@ -551,14 +686,20 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
           ELSE NULL
         END,
         'smaxtec:' || se.external_event_id,
-        'completed'
+        'completed',
+        se.external_event_id -- DI-14: 출처는 수정 불가 컬럼으로
       FROM smaxtec_events se
       WHERE se.event_type IN ('insemination', 'no_insemination')
         AND se.animal_id IS NOT NULL
         AND se.farm_id IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM breeding_events be
+          WHERE be.source_event_id = se.external_event_id
+        )
+        AND NOT EXISTS ( -- 0043 이전에 들어온 기록 (source_event_id 비어 있음)
+          SELECT 1 FROM breeding_events be
           WHERE be.notes = 'smaxtec:' || se.external_event_id
+            AND be.notes LIKE 'smaxtec:%' -- OPS-06: 부분 인덱스(breeding_events_smaxtec_notes_idx) 사용 조건
         )
       ON CONFLICT DO NOTHING
     `);
@@ -570,7 +711,7 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
     // --- 2. pregnancy_check → pregnancy_checks ---
     // notes에 smaxtec event_id 기록하여 중복 방지
     const pregResult = await db.execute(sql`
-      INSERT INTO pregnancy_checks (animal_id, check_date, result, method, days_post_insemination, notes)
+      INSERT INTO pregnancy_checks (animal_id, check_date, result, method, days_post_insemination, notes, source_event_id)
       SELECT
         se.animal_id,
         se.detected_at,
@@ -584,14 +725,20 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
             THEN EXTRACT(DAY FROM se.detected_at - (se.details->>'insemination_date')::timestamp)::int
           ELSE NULL
         END,
-        'smaxtec:' || se.external_event_id
+        'smaxtec:' || se.external_event_id,
+        se.external_event_id -- DI-14
       FROM smaxtec_events se
       WHERE se.event_type = 'pregnancy_check'
         AND se.animal_id IS NOT NULL
         AND se.details->>'pregnant' IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM pregnancy_checks pc
+          WHERE pc.source_event_id = se.external_event_id
+        )
+        AND NOT EXISTS ( -- 0043 이전에 들어온 기록
+          SELECT 1 FROM pregnancy_checks pc
           WHERE pc.notes = 'smaxtec:' || se.external_event_id
+            AND pc.notes LIKE 'smaxtec:%' -- OPS-06: 부분 인덱스(pregnancy_checks_smaxtec_notes_idx) 사용 조건
         )
       ON CONFLICT DO NOTHING
     `);
@@ -640,13 +787,42 @@ async function normalizeLactationStatus(): Promise<void> {
 }
 
 // ===========================
+/** 같은 분만으로 묶는 간격 — 분만 간격은 생물학적으로 이보다 짧을 수 없다 */
+export const CALVING_EPISODE_GAP_DAYS = 120;
+
+/** DI-06: 분만 이벤트 시각 목록 → 분만 횟수 (SQL 갱신과 같은 규칙, 검증용 순수 함수) */
+export function countCalvingEpisodes(dates: readonly Date[], gapDays: number = CALVING_EPISODE_GAP_DAYS): number {
+  const sorted = [...dates].map((d) => d.getTime()).sort((a, b) => a - b);
+  let count = 0;
+  let prev: number | null = null;
+  for (const t of sorted) {
+    if (prev === null || t - prev > gapDays * 86_400_000) count++;
+    prev = t;
+  }
+  return count;
+}
+
 // DIM/parity 이벤트 기반 업데이트
 // ===========================
+
+export const DIM_RECOMPUTE_INTERVAL_MS = 60 * 60 * 1000;
+let lastDimRecomputeAt = 0;
+
+/** OPS-10: 직전 재계산 후 1시간이 지났을 때만 (실패하면 다음 주기에 다시 시도) */
+export function shouldRecomputeDim(now: number, lastAt: number): boolean {
+  return now - lastAt >= DIM_RECOMPUTE_INTERVAL_MS;
+}
+
+async function runDimRecompute(): Promise<number> {
+  const updated = await updateDimAndParity();
+  if (updated > 0) lastDimRecomputeAt = Date.now();
+  return updated;
+}
 
 /**
  * smaXtec calving_confirmation/calving_detection 이벤트로부터
  * DIM(착유일수)과 parity(산차)를 자동 계산하여 animals 테이블 업데이트.
- * 5분 주기 sync마다 실행.
+ * sync 주기마다 호출되지만 1시간에 한 번만 실제 실행 (OPS-10).
  */
 async function updateDimAndParity(): Promise<number> {
   const db = getDb();
@@ -669,20 +845,31 @@ async function updateDimAndParity(): Promise<number> {
         AND (a.days_in_milk IS NULL OR a.days_in_milk != lc.dim)
     `);
 
-    // Parity 업데이트: 분만 횟수
+    // Parity 업데이트: 분만 횟수 (DI-06)
+    //  - 한 번의 분만에 감지(calving_detection)·확인(calving_confirmation) 두 이벤트가 오면 예전엔 2로 셌다
+    //    → CALVING_EPISODE_GAP_DAYS 안의 이벤트는 같은 분만으로 묶는다 (countCalvingEpisodes 와 같은 규칙)
+    //  - 센서 장착 전 분만은 이벤트가 없다 → 기존 산차보다 작아지지 않게 GREATEST
     await db.execute(sql`
-      WITH calving_count AS (
-        SELECT animal_id, count(*)::int AS parity
+      WITH ordered AS (
+        SELECT animal_id, detected_at,
+               LAG(detected_at) OVER (PARTITION BY animal_id ORDER BY detected_at) AS prev_at
         FROM smaxtec_events
         WHERE event_type IN ('calving_confirmation', 'calving_detection')
+      ),
+      calving_count AS (
+        SELECT animal_id,
+               count(*) FILTER (
+                 WHERE prev_at IS NULL OR detected_at - prev_at > make_interval(days => ${CALVING_EPISODE_GAP_DAYS}::int)
+               )::int AS parity
+        FROM ordered
         GROUP BY animal_id
       )
       UPDATE animals a
-      SET parity = cc.parity, updated_at = now()
+      SET parity = GREATEST(COALESCE(a.parity, 0), cc.parity), updated_at = now()
       FROM calving_count cc
       WHERE a.animal_id = cc.animal_id
         AND a.status = 'active'
-        AND (a.parity IS NULL OR a.parity != cc.parity)
+        AND (a.parity IS NULL OR a.parity < cc.parity)
     `);
 
     // 간단한 카운트 추정 (정확한 rowCount 접근이 드라이버마다 다름)

@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, farmScopeForRequest, farmScopeWhere } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { paginationSchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
@@ -27,9 +27,9 @@ alertRouter.get('/', requirePermission('alert', 'read'), validate({ query: pagin
     const acknowledged = req.query.acknowledged as string | undefined;
 
     const conditions = [];
-    if (farmId) {
-      conditions.push(eq(smaxtecEvents.farmId, farmId));
-    }
+    // 배정 범위 밖 farmId 는 403, 지정 없으면 배정 목장만 (예전: 범위 검사 없이 전 농장 알림 목록)
+    const scopeCond = farmScopeWhere(smaxtecEvents.farmId, farmScopeForRequest(req, farmId));
+    if (scopeCond) conditions.push(scopeCond);
     if (severity) {
       conditions.push(eq(smaxtecEvents.severity, severity));
     }

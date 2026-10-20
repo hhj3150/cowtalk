@@ -9,6 +9,7 @@ import {
 import { eq, and, desc, gte, sql, isNull } from 'drizzle-orm';
 import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
 import { logger } from '../../lib/logger.js';
+import { kstToday, kstDateString } from '../../lib/kst.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -30,6 +31,11 @@ interface PendingCheck {
  * 수정 후 N일(목장설정 pregnancyCheckDays) 경과했지만
  * 아직 임신감정이 등록되지 않은 개체를 찾아 알림 생성
  */
+/** DI-16: 장기공태 알림 월 단위 dedup 키 — KST 달 기준 (UTC 달이면 매월 1일 0~9시에 전월 키가 된다) */
+export function longOpenDedupKey(animalId: string, now: Date): string {
+  return `long-open-${animalId}-${kstDateString(now).slice(0, 7)}`;
+}
+
 export async function checkPendingPregnancyTests(): Promise<readonly PendingCheck[]> {
   const db = getDb();
   const now = new Date();
@@ -167,14 +173,14 @@ export async function checkRepeatBreeders(): Promise<readonly RepeatBreeder[]> {
           (SELECT COUNT(*)::int FROM pregnancy_checks pc
            WHERE pc.animal_id = be.animal_id
              AND pc.result = 'pregnant'
-             AND pc.check_date >= ${cutoff}),
+             AND pc.check_date >= ${cutoff.toISOString()}::timestamptz),
           0
         ) as pregnant_count
       FROM breeding_events be
       JOIN animals a ON a.animal_id = be.animal_id
       JOIN farms f ON f.farm_id = be.farm_id
       WHERE be.type = 'insemination'
-        AND be.event_date >= ${cutoff}
+        AND be.event_date >= ${cutoff.toISOString()}::timestamptz
         AND a.status = 'active'
         AND a.deleted_at IS NULL
       GROUP BY be.animal_id, a.ear_tag, be.farm_id, f.name
@@ -202,7 +208,7 @@ export async function checkRepeatBreeders(): Promise<readonly RepeatBreeder[]> {
         pregnantCount: row.pregnant_count,
       });
 
-      const dedupKey = `repeat-breeder-${row.animal_id}-${new Date().toISOString().split('T')[0]}`;
+      const dedupKey = `repeat-breeder-${row.animal_id}-${kstToday()}`;
 
       try {
         await db.insert(alerts).values({
@@ -460,7 +466,7 @@ async function checkLongOpenDays(): Promise<number> {
 
       if (recentPreg.length > 0) continue;
 
-      const dedupKey = `long-open-${animal.animalId}-${now.toISOString().split('T')[0]?.slice(0, 7)}`; // 월 단위 dedup
+      const dedupKey = longOpenDedupKey(animal.animalId, now);
 
       try {
         const [inserted] = await db.insert(alerts).values({
@@ -564,7 +570,7 @@ async function checkPostCalvingChecklist(): Promise<number> {
         title: `분만 후 ${dim}일 체크리스트 — #${cow.ear_tag}`,
         explanation: message,
         recommendedAction: message,
-        dedupKey: `post_calving:${cow.animal_id}:${dim}:${new Date().toISOString().slice(0, 10)}`,
+        dedupKey: `post_calving:${cow.animal_id}:${dim}:${kstToday()}`,
         status: 'new',
       });
       created++;
@@ -585,7 +591,7 @@ async function checkSyncProtocolTasks(): Promise<number> {
   let created = 0;
 
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = kstToday();
 
     const scheduled = await db.execute(sql`
       SELECT be.event_id, be.animal_id, be.farm_id, be.semen_info, be.notes,
@@ -621,7 +627,7 @@ async function checkSyncProtocolTasks(): Promise<number> {
         title: `발정동기화 — #${task.ear_tag} ${task.semen_info ?? '처치'}`,
         explanation: `${task.farm_name} #${task.ear_tag}: ${cleanNote}`,
         recommendedAction: task.semen_info ?? '처치 실시',
-        dedupKey: `sync:${task.event_id}:${new Date().toISOString().slice(0, 10)}`,
+        dedupKey: `sync:${task.event_id}:${kstToday()}`,
         status: 'new',
       });
       created++;

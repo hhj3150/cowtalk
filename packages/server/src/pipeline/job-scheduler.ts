@@ -16,6 +16,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
+import { tryAcquireJobLease, leaseTtlFor } from '../services/ops/job-lease.js';
 
 export interface RepeatableJob {
   readonly name: string;
@@ -39,8 +40,27 @@ export interface JobScheduler {
 // in-process 폴백 (기존 의미론 재현)
 // ===========================
 
+/**
+ * OPS-04: in-process 모드에서는 레플리카마다 같은 잡이 돈다 — DB 임대를 잡은 인스턴스만 실행.
+ * 임대 판단이 불가하면(테이블 없음·DB 오류) 기존처럼 실행한다.
+ */
+export async function runWithLease(
+  job: Pick<RepeatableJob, 'name' | 'everyMs' | 'handler'>,
+  acquire: (name: string, ttlMs: number) => Promise<boolean | null> = tryAcquireJobLease,
+): Promise<'ran' | 'skipped'> {
+  const got = await acquire(job.name, leaseTtlFor(job.everyMs));
+  if (got === false) return 'skipped';
+  await job.handler();
+  return 'ran';
+}
+
+type LeaseAcquirer = (name: string, ttlMs: number) => Promise<boolean | null>;
+
 export class InProcessScheduler implements JobScheduler {
   readonly mode = 'in-process' as const;
+
+  /** @param acquireLease 잡 임대 판단 (기본: DB 임대). 테스트는 스케줄 타이밍만 보도록 주입한다 */
+  constructor(private readonly acquireLease: LeaseAcquirer = tryAcquireJobLease) {}
   private handles: Array<ReturnType<typeof setTimeout>> = [];
   private running = false;
 
@@ -51,13 +71,13 @@ export class InProcessScheduler implements JobScheduler {
         this.scheduleCompletionBased(job, job.runOnStart ? 0 : job.everyMs);
       } else {
         const handle = setInterval(() => {
-          void job.handler().catch((err) => {
+          void runWithLease(job, this.acquireLease).catch((err) => {
             logger.error({ err, job: job.name }, '[Scheduler] 잡 실행 실패 — 다음 주기에 재시도');
           });
         }, job.everyMs);
         this.handles.push(handle as unknown as ReturnType<typeof setTimeout>);
         if (job.runOnStart) {
-          void job.handler().catch((err) => {
+          void runWithLease(job, this.acquireLease).catch((err) => {
             logger.error({ err, job: job.name }, '[Scheduler] 초기 실행 실패');
           });
         }
@@ -72,7 +92,7 @@ export class InProcessScheduler implements JobScheduler {
       void (async () => {
         const started = Date.now();
         try {
-          await job.handler();
+          await runWithLease(job, this.acquireLease);
         } catch (err) {
           logger.error({ err, job: job.name }, '[Scheduler] 잡 실행 실패 — 다음 주기에 재시도');
         }

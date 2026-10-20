@@ -5,6 +5,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { InProcessScheduler, BullMqScheduler } from './job-scheduler.js';
 
+// 이 테스트는 스케줄 타이밍만 본다 — 잡 임대(OPS-04)는 항상 획득으로 주입 (임대 동작은 job-lease 테스트 담당)
+const alwaysLease = (): Promise<boolean> => Promise.resolve(true);
+
 describe('InProcessScheduler', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -12,7 +15,7 @@ describe('InProcessScheduler', () => {
 
   it('interval 잡: 주기마다 실행되고 runOnStart면 즉시 1회', async () => {
     vi.useFakeTimers();
-    const s = new InProcessScheduler();
+    const s = new InProcessScheduler(alwaysLease);
     let runs = 0;
     await s.start([{ name: 'j', everyMs: 1000, runOnStart: true, handler: async () => { runs++; } }]);
     await vi.advanceTimersByTimeAsync(0);
@@ -26,7 +29,7 @@ describe('InProcessScheduler', () => {
 
   it('completion-based 잡: 완료 후 (주기-소요, 최소 minGap) 대기 뒤 재실행', async () => {
     vi.useFakeTimers();
-    const s = new InProcessScheduler();
+    const s = new InProcessScheduler(alwaysLease);
     const startedAt: number[] = [];
     // 핸들러 소요 400ms, 주기 1000ms → 실행 간격은 1000ms (완료 후 600ms 대기)
     await s.start([{
@@ -46,7 +49,7 @@ describe('InProcessScheduler', () => {
 
   it('소요가 주기를 넘으면 minGap 뒤 즉시 이어진다 (스킵 없음)', async () => {
     vi.useFakeTimers();
-    const s = new InProcessScheduler();
+    const s = new InProcessScheduler(alwaysLease);
     const startedAt: number[] = [];
     // 소요 1500ms > 주기 1000ms → 다음 시작은 완료 후 minGap(200ms)
     await s.start([{
@@ -66,7 +69,7 @@ describe('InProcessScheduler', () => {
 
   it('핸들러가 던져도 루프가 죽지 않는다', async () => {
     vi.useFakeTimers();
-    const s = new InProcessScheduler();
+    const s = new InProcessScheduler(alwaysLease);
     let runs = 0;
     await s.start([{
       name: 'err', everyMs: 500, completionBased: true, minGapMs: 100, runOnStart: true,

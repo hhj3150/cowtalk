@@ -9,13 +9,30 @@
 //   GET /api/smaxtec-notes/integration-events — Integration Events 목록
 //   GET /api/smaxtec-notes/note/:noteId    — 개별 노트 상세
 
+//
+// SEC-02: 과거엔 인증 없이 열려 있어 누구나 smaXtec 계정 권한으로 목장 할일·이벤트·노트를 읽었다.
+// 이제 ① 개발 환경에서만 존재(production·test 404) ② 로그인 필수 ③ 마스터(소유자) 토큰만 허용.
+
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import { authenticate } from '../middleware/auth.js';
+import { devOnly } from '../middleware/dev-only.js';
+import { ForbiddenError } from '../../lib/errors.js';
 import { SmaxtecApiClient } from '../../pipeline/connectors/smaxtec.connector.js';
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 
 export const smaxtecNotesRouter = Router();
+
+/** smaXtec 계정 전체 권한으로 원본을 읽는 탐색 도구 — 소유자(마스터 토큰)만 */
+export function requireMasterUser(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user?.isMaster) {
+    throw new ForbiddenError('smaXtec 디버그 API는 소유자 계정만 사용할 수 있습니다');
+  }
+  next();
+}
+
+smaxtecNotesRouter.use(devOnly, authenticate, requireMasterUser);
 
 // org_id — smaXtec 조직 ID (환경변수 or 기본값)
 const ORG_ID = process.env.SMAXTEC_ORG_ID ?? '58ae7d8098873db8993c5853';

@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { farmParamGuard } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { farms } from '../../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
@@ -15,6 +16,8 @@ import { logger } from '../../lib/logger.js';
 export const weatherRouter = Router();
 
 weatherRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+weatherRouter.param('farmId', farmParamGuard(false));
 
 // ── 인메모리 캐시 (10분 TTL) ──
 
@@ -86,7 +89,7 @@ async function fetchWeatherFromAPI(
 
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${String(lat)}&lon=${String(lng)}&appid=${apiKey}&units=metric&lang=kr`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(8_000) }); // OPS-11
   if (!response.ok) {
     throw new Error(`OpenWeatherMap API error: ${String(response.status)}`);
   }

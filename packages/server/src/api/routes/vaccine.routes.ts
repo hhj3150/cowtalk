@@ -13,6 +13,8 @@ import {
   calculateVaccinationRate,
 } from '../../services/vaccine/vaccine-scheduler.service.js';
 
+import { requireScopedIds, requireAnimalInBodyFarm } from '../middleware/animal-access.js';
+
 export const vaccineRouter = Router();
 
 vaccineRouter.use(authenticate);
@@ -46,10 +48,20 @@ vaccineRouter.get('/schedule/:farmId', requireFarmAccess, async (req: Request, r
 });
 
 // POST /vaccines/record — 접종 기록
-vaccineRouter.post('/record', async (req: Request, res: Response, next: NextFunction) => {
+// SEC-09: 접종 기록은 본인 스코프의 개체·목장만
+vaccineRouter.post('/record', requireScopedIds([
+  { source: 'body', field: 'animalId', kind: 'animal', required: true },
+  { source: 'body', field: 'farmId', kind: 'farm' },
+]), requireAnimalInBodyFarm(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getDb();
-    const { scheduleId, animalId, farmId, vaccineName, batchNumber, notes } = req.body;
+    const { scheduleId, animalId, vaccineName, batchNumber, notes } = req.body;
+    // 웹 접종 기록은 farmId 를 보내지 않는다 — 개체의 실제 소속 목장으로 채운다
+    const farmId = (req.body as { farmId?: string }).farmId ?? req.animalFarmId;
+    if (!farmId) {
+      res.status(400).json({ success: false, error: '개체의 소속 목장을 확인할 수 없습니다' });
+      return;
+    }
     const administeredBy = req.user!.userId;
 
     const [record] = await db

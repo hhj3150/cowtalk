@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
+import { requireRoleOrMaster } from '../middleware/rbac.js';
 import {
   createKahisReport,
   getKahisReport,
@@ -19,7 +20,8 @@ import { logger } from '../../lib/logger.js';
 
 export const kahisReportRouter = Router();
 
-kahisReportRouter.use(authenticate);
+// SEC-12: KAHIS 보고(제출 상태 포함)는 방역·행정 역할만 — 예전엔 모든 역할이 kahis_submitted 를 설정할 수 있었다
+kahisReportRouter.use(authenticate, requireRoleOrMaster('quarantine_officer', 'government_admin'));
 
 // ===========================
 // POST /kahis-report — 보고서 생성

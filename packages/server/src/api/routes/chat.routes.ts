@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { scopedFarmIds } from '../middleware/rbac.js';
+import { scopedFarmIds, hasAllFarmScope } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { chatMessageSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
@@ -16,6 +16,8 @@ import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { chatConversations } from '../../db/schema.js';
 import { and, eq, desc } from 'drizzle-orm';
+import { claimInFlight, releaseInFlight } from '../../lib/inflight-dedupe.js';
+import { getRedis } from '../../lib/redis.js';
 
 export const chatRouter = Router();
 
@@ -63,6 +65,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
   try {
     const body = req.body as {
       question: string;
+      userText?: string;
       farmId?: string;
       animalId?: string;
       conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -82,12 +85,13 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
     }
     const result = await handleChatMessage({
       question: sanitizeQuestion(body.question),
+      userText: body.userText !== undefined ? sanitizeQuestion(body.userText) : undefined,
       role: req.user?.role as Role,
       farmId: scoped.farmId,
       animalId: scoped.animalId,
       userId: req.user?.userId,
       assignedFarmIds: req.user?.farmIds,
-      isMaster: req.user?.isMaster,
+      isMaster: hasAllFarmScope(req.user), // 도구 데이터 범위 판정용 (SEC-21: 열람 토큰 포함)
       // 계정의 실제 권한 범위 — 장기기억 회상이 클라이언트가 보낸 farmId를 그대로 믿지 않게 한다
       permittedFarmIds: scopedFarmIds(req),
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
@@ -103,10 +107,14 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
   }
 });
 
+// VO-07: 처리 중 표시 최대 유지 시간 — 정상 종료 시 즉시 해제, 비정상 종료 대비 상한
+const INFLIGHT_TTL_MS = 3 * 60 * 1000;
+
 // SSE 스트리밍
 chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Request, res: Response) => {
   const body = req.body as {
     question: string;
+    userText?: string;
     farmId?: string;
     farmIds?: string[];
     animalId?: string;
@@ -115,7 +123,15 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
     images?: Array<{ data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }>;
     documents?: Array<{ data: string; mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv'; filename?: string }>;
+    clientRequestId?: string;
   };
+
+  // VO-07: 같은 발화(clientRequestId)가 처리 중이면 두 번째는 실행하지 않는다
+  const inflightKey = body.clientRequestId && req.user ? `${req.user.userId}:${body.clientRequestId}` : null;
+  if (inflightKey && !(await claimInFlight(inflightKey, INFLIGHT_TTL_MS, getRedis()))) {
+    res.status(409).json({ success: false, error: { code: 'DUPLICATE_REQUEST', message: '같은 질문을 이미 처리하고 있습니다.' } });
+    return;
+  }
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform, must-revalidate');
@@ -130,7 +146,14 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
 
   // SSE keep-alive (프록시 타임아웃 방지 — 5초 간격, 기존 10초는 일부 CDN에서 부족)
   const keepAlive = setInterval(() => { res.write(':\n\n'); }, 5000);
-  req.on('close', () => { clearInterval(keepAlive); });
+  // AI-04: 응답을 끝내기 전에 클라이언트가 끊으면 서버의 Claude·도구 루프도 멈춘다
+  // (예전: 계속 돌며 비용을 쓰고, 사용자가 취소한 답변을 대화로 저장·학습·기억 추출까지 했다)
+  const abort = new AbortController();
+  res.on('close', () => {
+    clearInterval(keepAlive);
+    if (!res.writableEnded) abort.abort();
+    if (inflightKey) void releaseInFlight(inflightKey, getRedis());
+  });
 
   // 클라이언트의 farmId/farmIds/animalId는 "요청"일 뿐 권한이 아니다.
   // 맥락(개체·농장 프로필, 농장 펄스, 보고서 데이터)을 만들기 전에 권한과 대조한다.
@@ -153,6 +176,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
 
   const chatRequest = {
     question: sanitizeQuestion(body.question),
+    userText: body.userText !== undefined ? sanitizeQuestion(body.userText) : undefined,
     role: req.user?.role as Role,
     farmId: scoped.farmId,
     farmIds: scoped.farmIds,
@@ -162,27 +186,33 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     // 권한은 JWT에서만 온다. body.farmId는 "요청"일 뿐 권한이 아니다 —
     // 예전에는 이 구분이 없어 남의 farmId를 넣으면 그 농장 데이터가 나왔다.
     assignedFarmIds: req.user?.farmIds,
-    isMaster: req.user?.isMaster,
+    isMaster: hasAllFarmScope(req.user), // 도구 데이터 범위 판정용 (SEC-21: 열람 토큰 포함)
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,
     images: body.images,
     documents: body.documents,
+    signal: abort.signal,
   };
+
+  // 규칙 7(Fallback 보장): Claude 를 쓸 수 없으면 데이터 기반(v4) 요약으로 답한다
+  const ruleBasedAnswer = async (notice: string): Promise<string> => {
+    try {
+      const { context } = await resolveContext(
+        chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
+        chatRequest.permittedFarmIds,
+      );
+      return `${notice}${buildStreamFallback(chatRequest.question, chatRequest.role, context)}`;
+    } catch {
+      return 'AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.\n\n💡 잠시 후 다시 시도해 주세요.';
+    }
+  };
+  let textSent = false;
 
   try {
     // API 키 없으면 데이터 기반 fallback 응답 생성
     if (!isClaudeAvailable()) {
-      let fallbackText: string;
-      try {
-        const { context } = await resolveContext(
-          chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
-          chatRequest.permittedFarmIds,
-        );
-        fallbackText = buildStreamFallback(chatRequest.question, chatRequest.role, context);
-      } catch {
-        fallbackText = 'AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.\n\n💡 잠시 후 다시 시도해 주세요.';
-      }
+      const fallbackText = await ruleBasedAnswer('');
       res.write(`data: ${JSON.stringify({ type: 'text', content: fallbackText })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done', content: fallbackText })}\n\n`);
       clearInterval(keepAlive);
@@ -194,6 +224,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
       chatRequest,
       {
         onText: (text) => {
+          textSent = true;
           res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
         },
         onDone: (fullText) => {
@@ -202,21 +233,52 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
           res.end();
         },
         onError: (error) => {
-          clearInterval(keepAlive);
-          // error.message가 이미 상세 정보(status, model 등)를 포함 — 그대로 노출
-          const errorMsg = error.message || 'AI 서비스 오류';
-          res.write(`data: ${JSON.stringify({ type: 'error', content: errorMsg })}\n\n`);
-          res.end();
+          // AI-10: 실행 중 Claude 오류(과부하 529·타임아웃 등)에도 v4 규칙 기반 답으로 대체한다.
+          // 예전엔 API 키가 없을 때만 대체하고, 실행 중 오류는 원문(상태코드·모델명)을 그대로 보여 줬다.
+          // 이미 답변 일부가 나간 뒤라면 섞을 수 없으므로 짧은 오류 안내만 보낸다.
+          logger.warn({ err: error }, '[chat] Claude 실행 중 오류 — 규칙 기반 답변으로 대체');
+          if (res.writableEnded || abort.signal.aborted) return;
+          if (textSent) {
+            clearInterval(keepAlive);
+            res.write(`data: ${JSON.stringify({ type: 'error', content: 'AI 응답이 중간에 끊겼습니다. 잠시 후 다시 질문해 주세요.' })}\n\n`);
+            res.end();
+            return;
+          }
+          void ruleBasedAnswer('⚠️ AI 엔진이 잠시 응답하지 않아 데이터 기반 요약으로 답합니다.\n\n').then((text) => {
+            clearInterval(keepAlive);
+            if (res.writableEnded) return;
+            res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'done', content: text })}\n\n`);
+            res.end();
+          });
         },
         onToolEvent: (event) => {
           res.write(`data: ${JSON.stringify({ type: 'tool_event', ...event })}\n\n`);
         },
+        // AI-07: 근거에서 확인되지 않은 개체번호·체온 — 화면이 답변 아래에 표시한다
+        onVerification: (unverified) => {
+          res.write(`data: ${JSON.stringify({ type: 'verification', content: '', unverified })}\n\n`);
+        },
       },
     );
   } catch (error) {
+    logger.warn({ err: error }, '[chat] 스트림 처리 실패');
+    if (res.writableEnded || abort.signal.aborted) {
+      clearInterval(keepAlive);
+      return;
+    }
+    // AI-10: 아직 아무것도 보내지 않았으면 규칙 기반 답으로 대체 (원문 오류 노출 금지)
+    const text = textSent
+      ? null
+      : await ruleBasedAnswer('⚠️ AI 엔진이 잠시 응답하지 않아 데이터 기반 요약으로 답합니다.\n\n');
     clearInterval(keepAlive);
-    const msg = error instanceof Error ? error.message : 'AI 서비스 오류가 발생했습니다';
-    res.write(`data: ${JSON.stringify({ type: 'error', content: msg })}\n\n`);
+    if (res.writableEnded) return;
+    if (text) {
+      res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done', content: text })}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'error', content: 'AI 응답이 중간에 끊겼습니다. 잠시 후 다시 질문해 주세요.' })}\n\n`);
+    }
     res.end();
   }
 });

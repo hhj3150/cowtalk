@@ -86,6 +86,8 @@ export function streamLabelChat(
         '/api/chat/stream',
         {
           question: wrappedQuestion,
+          // VO-01: 승인 판정·학습은 맥락이 아닌 사용자 원문으로
+          userText: data.question,
           role: 'veterinarian',
           farmId: data.farmId ?? undefined,
           animalId: data.animalId ?? undefined,

@@ -3,14 +3,15 @@
 // 해돋이목장만이 아니라 모든 농장의 레이블이 자산이다.
 //
 // 원리:
-// smaXtec 이벤트(현장 사실) → 같은 개체의 최근 소버린 알람과 매칭
-// → confirmed/false_positive 자동 판정 → sovereignAlarmLabels + outcomeEvaluations 저장
+// smaXtec 이벤트(현장 사실) → 같은 개체에 **실제로 발사된** 최근 소버린 알람(predictions)과 매칭
+// → confirmed 판정 → sovereignAlarmLabels + outcomeEvaluations 저장 (AI-02: 알람 없는 레이블 생성 금지)
 
 import { getDb } from '../config/database.js';
 import { smaxtecEvents, sovereignAlarmLabels } from '../db/schema.js';
 import { sql, desc, gte } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import { recordOutcome } from './outcome-recorder.js';
+import { MATCHED_AUTO_LABEL_PREFIX } from './label-source.js';
 
 // smaXtec 이벤트 → 소버린 알람 타입 매핑
 // smaXtec 이벤트가 발생하면, 해당 알람 타입의 소버린 알람을 confirmed로 레이블링
@@ -100,45 +101,12 @@ export async function runAutoLabeling(days: number = 3): Promise<AutoLabelResult
       const eventDate = evt.detectedAt;
       const windowStart = new Date(eventDate.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-      // 3. 이 개체의 최근 7일 소버린 알람 시그니처 조회 (아직 레이블 안 된 것)
+      // 3. AI-02: 실제로 발사된 소버린 알람(predictions)과 매칭될 때만 확진 레이블을 만든다.
+      //    예전엔 알람 실재를 보지 않고 (알람 유형 × 7일) 시그니처를 전부 'confirmed' 로 넣었다.
       for (const alarmType of alarmTypes) {
         try {
-          // 소버린 알람 시그니처 패턴으로 직접 레이블 삽입
-          // 시그니처: "animalId:type:YYYY-MM-DD"
-          const possibleDates: string[] = [];
-          for (let d = 0; d < 7; d++) {
-            const date = new Date(eventDate.getTime() - d * 24 * 60 * 60 * 1000);
-            possibleDates.push(date.toISOString().slice(0, 10));
-          }
-
-          for (const dateStr of possibleDates) {
-            const signature = `${evt.animalId}:${alarmType}:${dateStr}`;
-
-            // 이미 레이블 있으면 스킵
-            const existingLabel = await db.execute(sql`
-              SELECT 1 FROM sovereign_alarm_labels
-              WHERE alarm_signature = ${signature}
-              LIMIT 1
-            `);
-            if ((existingLabel as unknown[]).length > 0) continue;
-
-            // 레이블 삽입 (confirmed — smaXtec 이벤트가 발생했으므로 알람이 정확했음)
-            await db.insert(sovereignAlarmLabels).values({
-              alarmSignature: signature,
-              animalId: evt.animalId,
-              farmId: evt.farmId,
-              alarmType,
-              predictedSeverity: 'warning',
-              verdict: 'confirmed',
-              notes: `자동 레이블: smaXtec ${evt.eventType} 이벤트 (${eventDate.toISOString().slice(0, 10)})`,
-            }).onConflictDoNothing();
-
-            labelsCreated++;
-          }
-
-          // 4. predictions 테이블의 해당 예측도 매칭 (outcome_evaluations)
           const matchedPreds = await db.execute(sql`
-            SELECT prediction_id FROM predictions
+            SELECT prediction_id, created_at FROM predictions
             WHERE engine_type = 'sovereign_v1'
               AND animal_id = ${evt.animalId}
               AND prediction_label = ${alarmType}
@@ -151,7 +119,19 @@ export async function runAutoLabeling(days: number = 3): Promise<AutoLabelResult
             LIMIT 1
           `);
 
-          for (const pred of matchedPreds as unknown as Array<{ prediction_id: string }>) {
+          for (const pred of matchedPreds as unknown as Array<{ prediction_id: string; created_at: string | Date }>) {
+            const firedAt = new Date(pred.created_at);
+            const inserted = await db.insert(sovereignAlarmLabels).values({
+              alarmSignature: fpSignature(evt.animalId, alarmType, firedAt),
+              animalId: evt.animalId,
+              farmId: evt.farmId,
+              alarmType,
+              predictedSeverity: 'warning',
+              verdict: 'confirmed',
+              notes: `${MATCHED_AUTO_LABEL_PREFIX} ${firedAt.toISOString().slice(0, 10)} 알람 → smaXtec ${evt.eventType} (${eventDate.toISOString().slice(0, 10)})`,
+            }).onConflictDoNothing().returning({ labelId: sovereignAlarmLabels.labelId });
+            labelsCreated += inserted.length;
+
             try {
               await recordOutcome({
                 predictionId: pred.prediction_id,

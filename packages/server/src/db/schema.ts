@@ -15,8 +15,9 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import type { AutomationTrigger, AutomationAction } from '@cowtalk/shared';
 
 // ======================================================================
@@ -133,6 +134,12 @@ export const animals = pgTable('animals', {
   index('animals_farm_id_idx').on(table.farmId),
   index('animals_status_idx').on(table.status),
   index('animals_ear_tag_idx').on(table.earTag),
+  index('animals_external_id_idx').on(table.externalId), // OPS-06 (0041)
+  // DI-08: 살아 있는 행 기준 식별자 유니크 (마이그레이션 0039 — 중복이 없을 때만 생성)
+  uniqueIndex('animals_external_id_live_uidx').on(table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+  uniqueIndex('animals_trace_id_live_uidx').on(table.traceId)
+    .where(sql`${table.traceId} IS NOT NULL AND ${table.traceId} <> '' AND ${table.deletedAt} IS NULL`),
 ]);
 
 export const animalStatusHistory = pgTable('animal_status_history', {
@@ -230,6 +237,9 @@ export const smaxtecEvents = pgTable('smaxtec_events', {
   // 드릴다운 가속 (event_type + detected_at DESC) — 0019 migration
   index('smaxtec_events_event_type_detected_at_idx').on(table.eventType, table.detectedAt),
   index('smaxtec_events_farm_event_detected_idx').on(table.farmId, table.eventType, table.detectedAt),
+  index('smaxtec_events_external_event_id_idx').on(table.externalEventId), // OPS-06 (0041)
+  uniqueIndex('smaxtec_events_external_event_id_uidx').on(table.externalEventId)
+    .where(sql`${table.externalEventId} IS NOT NULL`), // DI-10 (0042, 중복 시 보류)
 ]);
 
 // ======================================================================
@@ -242,6 +252,7 @@ export const breedingEvents = pgTable('breeding_events', {
   farmId: uuid('farm_id').references(() => farms.farmId),
   eventDate: timestamp('event_date', { withTimezone: true }).notNull(),
   type: varchar('type', { length: 20 }).notNull(), // insemination, heat, pregnancy_check, no_insemination, abort, dry_off
+  sourceEventId: varchar('source_event_id', { length: 200 }), // DI-14: smaXtec 원본 이벤트 id (0043)
   semenInfo: text('semen_info'),                    // 자유 텍스트 (레거시)
   semenId: uuid('semen_id').references(() => semenCatalog.semenId), // 정액 카탈로그 FK (신규)
   technicianId: uuid('technician_id'),
@@ -256,11 +267,13 @@ export const breedingEvents = pgTable('breeding_events', {
   index('breeding_events_animal_id_idx').on(table.animalId),
   index('breeding_events_farm_id_idx').on(table.farmId),
   index('breeding_events_status_idx').on(table.status),
+  index('breeding_events_smaxtec_notes_idx').on(table.notes).where(sql`${table.notes} LIKE 'smaxtec:%'`), // OPS-06 (0041)
 ]);
 
 export const pregnancyChecks = pgTable('pregnancy_checks', {
   checkId: uuid('check_id').primaryKey().defaultRandom(),
   animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  sourceEventId: varchar('source_event_id', { length: 200 }), // DI-14 (0043)
   checkDate: timestamp('check_date', { withTimezone: true }).notNull(),
   result: varchar('result', { length: 20 }).notNull(),
   method: varchar('method', { length: 30 }).notNull(),
@@ -269,6 +282,7 @@ export const pregnancyChecks = pgTable('pregnancy_checks', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('pregnancy_checks_animal_id_idx').on(table.animalId),
+  index('pregnancy_checks_smaxtec_notes_idx').on(table.notes).where(sql`${table.notes} LIKE 'smaxtec:%'`), // OPS-06 (0041)
 ]);
 
 export const calvingEvents = pgTable('calving_events', {
@@ -346,7 +360,16 @@ export interface TreatmentDetails {
   readonly route?: 'IM' | 'IV' | 'SC' | 'PO' | 'topical' | 'intramammary';
   readonly frequency?: string;          // BID, SID, q12h
   readonly durationDays?: number;
-  readonly withdrawalEndDate?: string;  // ISO date, 자동계산
+  readonly withdrawalEndDate?: string;  // KST 날짜, 자동계산 (원유·식육 중 늦은 쪽)
+  /** DI-01: 원유·식육 별도 휴약 (KST 기준, 종료 시각 이후 출하) */
+  readonly withdrawal?: {
+    readonly milkDays: number;
+    readonly meatDays: number;
+    readonly milkEndAt: string;         // ISO instant
+    readonly meatEndAt: string;         // ISO instant
+    readonly basis: 'entered' | 'drug_database' | 'entered_and_drug_database';
+    readonly enteredDays?: number;
+  };
   readonly clinicalFindings?: {
     readonly bcs?: number;              // 1-5
     readonly rectalTemp?: number;       // °C
@@ -579,6 +602,11 @@ export const predictions = pgTable('predictions', {
   roleSpecific: jsonb('role_specific').notNull(),
   dataQuality: jsonb('data_quality'),
   featureSnapshotId: uuid('feature_snapshot_id'),
+  // AI-08: 판단 입력(contributingFeatures·dataQuality) 지문 (마이그레이션 0045)
+  inputHash: varchar('input_hash', { length: 64 }),
+  // DI-17: 원천 smaXtec 이벤트·원천 참조(예: sovereign 알람 서명) (마이그레이션 0047)
+  sourceEventId: uuid('source_event_id'),
+  sourceRef: varchar('source_ref', { length: 200 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('predictions_engine_type_idx').on(table.engineType),
@@ -954,6 +982,9 @@ export const chatConversations = pgTable('chat_conversations', {
   answer: text('answer').notNull(),
   contextType: varchar('context_type', { length: 20 }),
   learningSignals: jsonb('learning_signals').notNull().default('[]'),
+  // AI-08: 답변을 만든 모델·시스템 프롬프트 지문 (마이그레이션 0045)
+  model: varchar('model', { length: 100 }),
+  promptHash: varchar('prompt_hash', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('chat_conversations_user_id_idx').on(table.userId),
@@ -1954,4 +1985,51 @@ export const regionalInterpretations = pgTable('regional_interpretations', {
   updatedAt:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('regional_interpretations_key_idx').on(table.regionId, table.role, table.model),
+]);
+
+// ======================================================================
+// OPS-04: 잡 임대 · 아침 브리핑 발송 원장 (마이그레이션 0040)
+// ======================================================================
+
+export const jobLeases = pgTable('job_leases', {
+  name: varchar('name', { length: 100 }).primaryKey(),
+  holder: varchar('holder', { length: 100 }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+// OPS-12: 브라우저 푸시 구독 (마이그레이션 0046)
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  endpoint: text('endpoint').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.userId, { onDelete: 'cascade' }),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  allFarms: boolean('all_farms').notNull().default(false),
+  minSeverity: varchar('min_severity', { length: 10 }).notNull().default('high'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('push_subscriptions_user_id_idx').on(table.userId),
+]);
+
+// AI-08: 생성 브리핑 보존 — 근거 집계(facts)와 함께 (마이그레이션 0045)
+export const aiBriefingLog = pgTable('ai_briefing_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  role: varchar('role', { length: 30 }).notNull(),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  facts: jsonb('facts').notNull(),
+  summary: text('summary').notNull(),
+  recommendations: jsonb('recommendations').notNull().default('[]'),
+  model: varchar('model', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('ai_briefing_log_created_at_idx').on(table.createdAt),
+]);
+
+export const briefingDeliveries = pgTable('briefing_deliveries', {
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  briefingDate: date('briefing_date').notNull(),
+  claimedBy: varchar('claimed_by', { length: 100 }).notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.farmId, table.briefingDate] }),
 ]);

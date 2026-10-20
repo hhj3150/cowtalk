@@ -41,7 +41,8 @@ describe('소유자 계정 — 배정과 무관하게 전체 목장', () => {
 describe('OPEN_DATA_SCOPE — 소유자 단독 운영 단계 전체 공개 스위치', () => {
   it('켜면 일반 계정도 전체 목장', () => {
     flags.OPEN_DATA_SCOPE = true;
-    expect(tokenScopeFor('vet@test.kr', [SONGYEONGSIN])).toEqual({ farmIds: [], isMaster: true });
+    // SEC-21: 전체 목장 '열람'만 연다 — 관리 권한(isMaster)은 주지 않는다 (예전 기대값이 권한 상승을 굳혀 두고 있었다)
+    expect(tokenScopeFor('vet@test.kr', [SONGYEONGSIN])).toEqual({ farmIds: [], openScope: true });
     flags.OPEN_DATA_SCOPE = false;
   });
   it('끄면(기본) 일반 계정은 배정 목장으로 복귀', () => {

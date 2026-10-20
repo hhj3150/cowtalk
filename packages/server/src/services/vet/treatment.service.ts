@@ -1,10 +1,14 @@
 // 치료 기록 서비스 — tool-executor에서 추출 + 강화
 // 기존 healthEvent + treatment 생성 + details jsonb + 휴약 계산 + 센서 스냅샷
 
-import { eq, and, desc, gte } from 'drizzle-orm';
+import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
-import { animals, healthEvents, treatments, sensorDailyAgg, type TreatmentDetails } from '../../db/schema.js';
-import { calculateWithdrawal } from './withdrawal-calculator.js';
+import { animals, healthEvents, treatments, sensorDailyAgg, drugDatabase, type TreatmentDetails } from '../../db/schema.js';
+import {
+  calculateWithdrawal, resolveWithdrawalDays, kstTimeString,
+  type DrugWithdrawalReference,
+} from './withdrawal-calculator.js';
+import { logger } from '../../lib/logger.js';
 
 // ── 입력 타입 ──
 
@@ -39,6 +43,27 @@ export interface RecordTreatmentResult {
   readonly withdrawalEndDate?: string;
   readonly message: string;
   readonly error?: string;
+}
+
+// ── 약품 DB 휴약 기준 (이름 정확 일치, 대소문자·앞뒤 공백 무시) ──
+
+async function findDrugWithdrawal(drugName: string): Promise<DrugWithdrawalReference | null> {
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ milkDays: drugDatabase.withdrawalMilkDays, meatDays: drugDatabase.withdrawalMeatDays })
+      .from(drugDatabase)
+      .where(and(
+        eq(drugDatabase.isActive, true),
+        sql`lower(trim(${drugDatabase.name})) = lower(trim(${drugName}))`,
+      ))
+      .limit(1);
+    return row ?? null;
+  } catch (err) {
+    // 조회 실패 시 입력값만으로 계산 — 기록 자체는 막지 않는다 (로그로 드러냄)
+    logger.warn({ err, drugName }, '[treatment] 약품 DB 휴약 기준 조회 실패 — 입력값만 사용');
+    return null;
+  }
 }
 
 // ── 센서 스냅샷 ──
@@ -108,23 +133,12 @@ export async function recordTreatment(input: RecordTreatmentInput): Promise<Reco
   try {
     const severity = input.severity ?? 'medium';
 
-    // 1. healthEvent 생성
-    const [healthEvent] = await db.insert(healthEvents).values({
-      animalId,
-      eventDate: new Date(),
-      diagnosis,
-      severity,
-      notes: input.notes,
-    }).returning({ eventId: healthEvents.eventId });
-
-    if (!healthEvent) {
-      return { success: false, diagnosis, severity, drug: '', message: '', error: '건강 이벤트 생성 실패' };
-    }
-
-    // 2. treatment 기록 (약물 정보가 있는 경우)
+    // DI-07: 조회·계산(약품 DB·센서 스냅샷)을 먼저 끝내고, health_events·treatments 두 쓰기는 한 트랜잭션으로.
+    // 예전엔 두 번째 쓰기가 실패하면 치료 없는 고아 health_event 가 남고, 재시도하면 중복됐다.
     const drug = input.drug;
-    let treatmentId: string | undefined;
+    let treatmentValues: Omit<typeof treatments.$inferInsert, 'healthEventId'> | undefined;
     let withdrawalEndDate: string | undefined;
+    let withdrawalNotes: string[] = [];
 
     if (drug) {
       // 임상소견 조합
@@ -139,11 +153,22 @@ export async function recordTreatment(input: RecordTreatmentInput): Promise<Reco
             }
           : undefined;
 
-      // 휴약 계산
-      const wdDays = input.withdrawalDays ?? 0;
+      // 휴약 계산 (DI-01) — KST 기준, 원유·식육 별도, 입력값과 약품 DB 기준 중 긴 쪽
+      const administeredAt = new Date();
       const durDays = input.durationDays ?? 1;
-      const withdrawal = wdDays > 0 ? calculateWithdrawal(new Date(), wdDays, durDays) : undefined;
-      withdrawalEndDate = withdrawal?.withdrawalEndDate;
+      const resolved = resolveWithdrawalDays(input.withdrawalDays, await findDrugWithdrawal(drug));
+      const wdDays = Math.max(resolved.milkDays, resolved.meatDays);
+      const milk = calculateWithdrawal(administeredAt, resolved.milkDays, durDays);
+      const meat = calculateWithdrawal(administeredAt, resolved.meatDays, durDays);
+      const later = milk.withdrawalEndAt >= meat.withdrawalEndAt ? milk : meat;
+      withdrawalEndDate = wdDays > 0 ? later.withdrawalEndDate : undefined;
+      const endLine = (label: string, days: number, w: typeof milk): string[] =>
+        days > 0 ? [`${label} 휴약 종료: ${w.withdrawalEndDate} ${kstTimeString(new Date(w.withdrawalEndAt))} (KST) 이후 출하`] : [];
+      withdrawalNotes = [
+        ...resolved.warnings,
+        ...endLine('원유', resolved.milkDays, milk),
+        ...endLine('식육', resolved.meatDays, meat),
+      ];
 
       // 센서 스냅샷
       const sensorEvidencePre = await getSensorSnapshot(animalId, new Date());
@@ -153,34 +178,61 @@ export async function recordTreatment(input: RecordTreatmentInput): Promise<Reco
         frequency: input.frequency,
         durationDays: input.durationDays,
         withdrawalEndDate,
+        withdrawal: wdDays > 0 ? {
+          milkDays: resolved.milkDays,
+          meatDays: resolved.meatDays,
+          milkEndAt: milk.withdrawalEndAt,
+          meatEndAt: meat.withdrawalEndAt,
+          basis: resolved.basis,
+          enteredDays: input.withdrawalDays,
+        } : undefined,
         clinicalFindings,
         outcomeStatus: 'pending',
         sensorEvidencePre,
       };
 
-      const [treatment] = await db.insert(treatments).values({
-        healthEventId: healthEvent.eventId,
+      treatmentValues = {
         drug,
         dosage: input.dosage ?? null,
         withdrawalDays: wdDays,
-        administeredAt: new Date(),
+        administeredAt,
         details,
-      }).returning({ treatmentId: treatments.treatmentId });
-
-      treatmentId = treatment?.treatmentId;
+      };
     }
+
+    const written = await db.transaction(async (tx) => {
+      const [healthEvent] = await tx.insert(healthEvents).values({
+        animalId,
+        eventDate: new Date(),
+        diagnosis,
+        severity,
+        notes: input.notes,
+      }).returning({ eventId: healthEvents.eventId });
+      if (!healthEvent) throw new Error('건강 이벤트 생성 실패');
+
+      let treatmentId: string | undefined;
+      if (treatmentValues) {
+        const [treatment] = await tx.insert(treatments)
+          .values({ ...treatmentValues, healthEventId: healthEvent.eventId })
+          .returning({ treatmentId: treatments.treatmentId });
+        if (!treatment) throw new Error('치료 기록 생성 실패');
+        treatmentId = treatment.treatmentId;
+      }
+      return { healthEventId: healthEvent.eventId, treatmentId };
+    });
 
     const parts: string[] = [`치료 기록 완료: ${diagnosis}`];
     if (drug) parts.push(`약물: ${drug}`);
     if (input.route) parts.push(`경로: ${input.route}`);
     if (input.frequency) parts.push(`빈도: ${input.frequency}`);
     if (input.durationDays) parts.push(`기간: ${String(input.durationDays)}일`);
-    if (withdrawalEndDate) parts.push(`휴약 종료: ${withdrawalEndDate}`);
+    if (withdrawalNotes.length > 0) parts.push(...withdrawalNotes);
+    else if (withdrawalEndDate) parts.push(`휴약 종료: ${withdrawalEndDate}`);
 
     return {
       success: true,
-      healthEventId: healthEvent.eventId,
-      treatmentId,
+      healthEventId: written.healthEventId,
+      treatmentId: written.treatmentId,
       diagnosis,
       severity,
       drug: drug ?? '미투약',

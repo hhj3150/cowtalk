@@ -112,7 +112,16 @@ async function farmExists(farmId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * SEC-11: Postgres 는 하이픈 없는 32자리·중괄호 감싼·대문자 UUID 도 같은 값으로 받는다.
+ * 예전 검사는 표준 형식이 아니면 "도구가 처리하게" 건너뛰어, 그 형식으로 남의 목장 id 를 넣으면 통과됐다.
+ * 이제 같은 규칙으로 정규화해 검사하고, UUID 로 해석되지 않는 값은 제한 사용자에게 실패 시 닫힘으로 거부한다.
+ */
+export function canonicalUuid(value: string): string | null {
+  const hex = value.trim().replace(/^\{|\}$/g, '').replace(/-/g, '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hex)) return null;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 /**
  * 도구 입력에 담긴 농장·개체 식별자가 사용자 스코프 안인지 검사한다.
@@ -128,16 +137,24 @@ export async function findScopeViolations(
 
   const violations: ScopeViolation[] = [];
 
-  const checkFarm = async (key: string, value: string): Promise<void> => {
-    if (!UUID_RE.test(value)) return; // 형식이 아니면 도구 자체가 처리하게 둔다
+  const checkFarm = async (key: string, raw: string): Promise<void> => {
+    const value = canonicalUuid(raw);
+    if (value === null) {
+      if (allowed !== null) violations.push({ key, value: raw, reason: 'not-found' });
+      return;
+    }
     if (isFarmAllowed(value, allowed)) return;
     // 존재 여부와 무관하게 스코프 밖이면 거부 (존재 확인은 진단 문구용)
     const exists = await farmExists(value);
     violations.push({ key, value, reason: exists ? 'out-of-scope' : 'not-found' });
   };
 
-  const checkAnimal = async (key: string, value: string): Promise<void> => {
-    if (!UUID_RE.test(value)) return;
+  const checkAnimal = async (key: string, raw: string): Promise<void> => {
+    const value = canonicalUuid(raw);
+    if (value === null) {
+      if (allowed !== null) violations.push({ key, value: raw, reason: 'not-found' });
+      return;
+    }
     const farmId = await farmIdOfAnimal(value);
     if (farmId === null) {
       violations.push({ key, value, reason: 'not-found' });
@@ -159,8 +176,9 @@ export async function findScopeViolations(
 
   // 치료 기록 id (confirm_treatment_outcome) — 남의 목장 치료결과를 바꾸지 못하게
   const treatmentId = input.treatmentId;
-  if (typeof treatmentId === 'string' && treatmentId && UUID_RE.test(treatmentId)) {
-    const farmId = await farmIdOfTreatment(treatmentId);
+  if (typeof treatmentId === 'string' && treatmentId) {
+    const canonical = canonicalUuid(treatmentId);
+    const farmId = canonical === null ? null : await farmIdOfTreatment(canonical);
     if (farmId === null) violations.push({ key: 'treatmentId', value: treatmentId, reason: 'not-found' });
     else if (!isFarmAllowed(farmId, allowed)) violations.push({ key: 'treatmentId', value: treatmentId, reason: 'out-of-scope' });
   }

@@ -78,6 +78,8 @@ async function tossPost<T>(path: string, body: Record<string, unknown>): Promise
       Authorization: buildAuthHeader(),
     },
     body: JSON.stringify(body),
+    // OPS-11: 응답이 없으면 요청이 무한정 걸려 있었다. 승인 API 는 같은 paymentKey·orderId 로 재시도해도 안전
+    signal: AbortSignal.timeout(30_000),
   });
 
   const data = await response.json() as T | TossErrorBody;

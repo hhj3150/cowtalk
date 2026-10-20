@@ -4,25 +4,25 @@
 // - approved 만 통과. pending/revoked 는 로그인·API 전부 차단.
 // - 조회는 60초 캐시 (매 요청 DB 왕복 방지). 승인 변경 시 즉시 무효화.
 // - DB 조회 실패 시 차단(fail-closed) — 접근 통제가 목적이므로 열어두지 않는다.
-// - 승인 관리 권한은 소유자 본인뿐: government_admin 역할 + 'Master Admin' 명칭
-//   또는 소유자 이메일 (기존 master-essence 판정 관례와 동일).
+// - 승인 관리 권한은 소유자 본인뿐: 소유자 이메일로만 판정한다.
+//   (SEC-03: 예전엔 government_admin + 이름에 'Master Admin' 이면 소유자로 봤다 —
+//    행정관 계정이 자기 이름을 바꾸는 것만으로 승인 관리 권한을 얻을 수 있었다)
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { users } from '../../db/schema.js';
 import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
 import { logger } from '../../lib/logger.js';
+import { setBounded } from '../../lib/bounded-map.js';
 import { config } from '../../config/index.js';
 import type { ApprovalStatus } from '@cowtalk/shared';
 
 /** 소유자 식별 — 마이그레이션 0032의 승인 조건과 동일해야 한다 */
 export const OWNER_EMAILS: readonly string[] = ['ha@d2o.kr', 'hhj3150@hanmail.net'];
 
-export function isOwnerAccount(user: { readonly role: string; readonly name: string; readonly email: string }): boolean {
-  return (
-    (user.role === 'government_admin' && user.name.includes('Master Admin')) ||
-    OWNER_EMAILS.includes(user.email)
-  );
+/** 소유자 판정 — 이메일만 본다. 이름·역할은 사용자 수정 API로 바뀔 수 있는 값이라 근거가 될 수 없다. */
+export function isOwnerAccount(user: { readonly email: string | null | undefined }): boolean {
+  return isOwnerEmail(user.email);
 }
 
 /**
@@ -35,11 +35,12 @@ export function isOwnerAccount(user: { readonly role: string; readonly name: str
 export function tokenScopeFor(
   email: string | null | undefined,
   assignedFarmIds: readonly string[],
-): { readonly farmIds: string[]; readonly isMaster?: true } {
+): { readonly farmIds: string[]; readonly isMaster?: true; readonly openScope?: true } {
   const normalized = (email ?? '').trim().toLowerCase();
   if (OWNER_EMAILS.includes(normalized)) return { farmIds: [], isMaster: true };
-  // 소유자 단독 운영 단계 — 승인된 모든 계정에 전체 공개 (Railway OPEN_DATA_SCOPE=true)
-  if (config.OPEN_DATA_SCOPE) return { farmIds: [], isMaster: true };
+  // 소유자 단독 운영 단계 — 승인된 모든 계정에 전체 '데이터' 공개 (Railway OPEN_DATA_SCOPE=true)
+  // SEC-21: 데이터 범위만 연다. 관리 권한(isMaster)은 주지 않는다
+  if (config.OPEN_DATA_SCOPE) return { farmIds: [], openScope: true };
   return { farmIds: [...assignedFarmIds] };
 }
 
@@ -68,7 +69,7 @@ export async function isUserApproved(userId: string): Promise<boolean> {
       .where(eq(users.userId, userId))
       .limit(1);
     const approved = row?.approvalStatus === 'approved';
-    approvalCache.set(userId, { at: Date.now(), approved });
+    setBounded(approvalCache, userId, { at: Date.now(), approved }, 10_000); // OPS-16
     return approved;
   } catch (err) {
     logger.error({ err, userId }, '[Approval] 승인 조회 실패 — 차단(fail-closed)');
@@ -80,7 +81,7 @@ export async function isUserApproved(userId: string): Promise<boolean> {
 export async function isOwnerUserId(userId: string): Promise<boolean> {
   const db = getDb();
   const [row] = await db
-    .select({ role: users.role, name: users.name, email: users.email })
+    .select({ email: users.email })
     .from(users)
     .where(eq(users.userId, userId))
     .limit(1);
@@ -101,6 +102,13 @@ export async function setUserApproval(
 
   if (status !== 'approved') {
     await revokeAllUserRefreshTokens(targetUserId);
+  } else {
+    // SEC-17: 자가 가입 때 'pending' 으로 만든 농장을 승인과 함께 활성화
+    await db.execute(sql`
+      UPDATE farms SET status = 'active', updated_at = now()
+      WHERE status = 'pending'
+        AND farm_id IN (SELECT farm_id FROM user_farm_access WHERE user_id = ${targetUserId})
+    `);
   }
   invalidateApprovalCache(targetUserId);
   logger.info({ targetUserId, status, changedBy }, '[Approval] 계정 승인 상태 변경');

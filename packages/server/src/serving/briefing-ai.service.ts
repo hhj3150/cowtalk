@@ -4,6 +4,8 @@
 
 import { callClaudeForChatJson, isClaudeAvailable } from '../ai-brain/claude-client.js';
 import { logger } from '../lib/logger.js';
+import { getDb } from '../config/database.js';
+import { aiBriefingLog } from '../db/schema.js';
 
 export interface BriefingFacts {
   readonly role: string;
@@ -128,11 +130,32 @@ export async function generateBriefingNarrative(
 
     const value: GenerativeBriefing = { summary, recommendations };
     cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+    void persistBriefing(facts, value, result.model);
     logger.info({ role: facts.role, durationMs: result.durationMs }, '[Briefing] Claude 생성 브리핑 사용');
     return value;
   } catch (err) {
     logger.warn({ err }, '[Briefing] Claude 브리핑 생성 실패 — 템플릿 유지');
     return null;
+  }
+}
+
+/**
+ * AI-08: 생성 브리핑을 근거 집계와 함께 보존 — 예전엔 메모리 캐시에만 있어
+ * "그날 무엇을 근거로 무엇을 권했는가"를 사후에 확인할 수 없었다.
+ * 응답 경로를 막지 않으며, 실패는 경고만 남긴다 (0045 미적용 환경 포함).
+ */
+async function persistBriefing(facts: BriefingFacts, value: GenerativeBriefing, model: string): Promise<void> {
+  try {
+    await getDb().insert(aiBriefingLog).values({
+      role: facts.role,
+      farmId: facts.farmId,
+      facts: facts as unknown as Record<string, unknown>,
+      summary: value.summary,
+      recommendations: [...value.recommendations],
+      model,
+    });
+  } catch (err) {
+    logger.warn({ err }, '[Briefing] 생성 브리핑 보존 실패 — 응답에는 영향 없음');
   }
 }
 

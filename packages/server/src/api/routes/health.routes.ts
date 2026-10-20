@@ -7,6 +7,7 @@ import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { getMigrationStatus, type MigrationRunStatus } from '../../db/auto-migrate.js';
 
 export const healthRouter = Router();
 
@@ -22,9 +23,68 @@ healthRouter.get('/', (_req, res) => {
   });
 });
 
+// OPS-02: 공개 엔드포인트인데 요청마다 새 Redis 클라이언트를 만들어 재시도로 ~10초 막히고, 실패 시 닫지 않아
+// 연결이 누수됐다 (요청을 반복하면 서버 자원이 고갈되는 증폭 경로).
+//   - Redis 핑은 재시도 없이 1초 상한, 성공·실패 모두 연결 해제
+//   - 결과를 15초 캐시 + 동시 요청 합류 — 요청이 몰려도 실제 점검은 한 번
+const DEEP_HEALTH_TTL_MS = 15_000;
+const REDIS_PING_TIMEOUT_MS = 1_000;
+let deepHealthCache: { at: number; result: Promise<DeepHealthResult> } | null = null;
+
+interface DeepHealthResult {
+  readonly httpStatus: number;
+  readonly body: unknown;
+}
+
+/** Redis 핑 — 재시도 없음, 상한 시간, 항상 연결 해제 */
+export async function pingRedisOnce(
+  createClient: () => { ping: () => Promise<string>; disconnect: () => void },
+  timeoutMs: number = REDIS_PING_TIMEOUT_MS,
+): Promise<'PONG' | 'timeout' | 'error'> {
+  const client = createClient();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), timeoutMs); });
+    const result = await Promise.race([client.ping().then((p) => (p === 'PONG' ? 'PONG' as const : 'error' as const)), timeout]);
+    return result;
+  } catch {
+    return 'error';
+  } finally {
+    if (timer) clearTimeout(timer);
+    client.disconnect();
+  }
+}
+
+export function describeMigrationHealth(
+  status: MigrationRunStatus | null,
+  autoMigrate: boolean,
+): { status: 'healthy' | 'degraded'; detail: string } {
+  if (!status) {
+    return autoMigrate
+      ? { status: 'degraded', detail: 'Not run yet' }
+      : { status: 'healthy', detail: 'Boot migration disabled (run separately)' };
+  }
+  if (status.error) return { status: 'degraded', detail: 'Migration run failed' };
+  if (status.failed.length > 0) return { status: 'degraded', detail: `${String(status.failed.length)} migration(s) failed` };
+  return { status: 'healthy', detail: `${String(status.total)} files, ${String(status.applied)} applied` };
+}
+
+export function resetDeepHealthCacheForTest(): void {
+  deepHealthCache = null;
+}
+
 // GET /health/deep — 전체 의존성 검증 (배포 후 확인용)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFunction) => {
+  const now = Date.now();
+  if (!deepHealthCache || now - deepHealthCache.at > DEEP_HEALTH_TTL_MS) {
+    deepHealthCache = { at: now, result: computeDeepHealth() };
+  }
+  const { httpStatus, body } = await deepHealthCache.result;
+  res.status(httpStatus).json(body);
+});
+
+async function computeDeepHealth(): Promise<DeepHealthResult> {
   const startTime = Date.now();
   const checks: Array<{
     name: string;
@@ -44,23 +104,26 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     checks.push({ name: 'PostgreSQL', status: 'down', latencyMs: Date.now() - dbStart, detail: 'Connection refused' });
   }
 
-  // 2. Redis 연결 확인 (ioredis ping)
+  // 2. Redis 연결 확인 (ioredis ping — 재시도 없음, 1초 상한, 항상 해제)
   const redisStart = Date.now();
   try {
     const IORedis = await import('ioredis');
     const Redis = IORedis.default;
-    const redis = new Redis({
+    const result = await pingRedisOnce(() => new Redis({
       host: config.REDIS_HOST,
       port: config.REDIS_PORT,
       password: config.REDIS_PASSWORD || undefined,
-      connectTimeout: 3000,
-    });
-    const pong = await redis.ping();
-    await redis.quit();
+      connectTimeout: REDIS_PING_TIMEOUT_MS,
+      maxRetriesPerRequest: 0,
+      enableOfflineQueue: false,
+      retryStrategy: () => null,
+      lazyConnect: false,
+    }));
     checks.push({
       name: 'Redis',
-      status: pong === 'PONG' ? 'healthy' : 'degraded',
+      status: result === 'PONG' ? 'healthy' : 'down',
       latencyMs: Date.now() - redisStart,
+      detail: result === 'PONG' ? undefined : result === 'timeout' ? 'Ping timeout' : 'Connection failed',
     });
   } catch {
     checks.push({ name: 'Redis', status: 'down', latencyMs: Date.now() - redisStart, detail: 'Connection failed' });
@@ -110,6 +173,10 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     detail: smaxtecDetail,
   });
 
+  // 5. OPS-13: 마이그레이션 — 실패가 로그에만 남아 스키마 불일치를 모르던 문제
+  //    공개 엔드포인트라 파일 이름은 노출하지 않고 개수만. 서비스는 동작하므로 down 이 아닌 degraded
+  checks.push({ name: 'Migrations', latencyMs: 0, ...describeMigrationHealth(getMigrationStatus(), config.AUTO_MIGRATE) });
+
   const overallStatus = checks.every((c) => c.status === 'healthy')
     ? 'healthy'
     : checks.some((c) => c.status === 'down')
@@ -118,17 +185,20 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
 
   const httpStatus = overallStatus === 'down' ? 503 : 200;
 
-  res.status(httpStatus).json({
-    success: overallStatus !== 'down',
-    data: {
-      status: overallStatus,
-      version: COWTALK_VERSION,
-      timestamp: new Date().toISOString(),
-      totalLatencyMs: Date.now() - startTime,
-      checks,
+  return {
+    httpStatus,
+    body: {
+      success: overallStatus !== 'down',
+      data: {
+        status: overallStatus,
+        version: COWTALK_VERSION,
+        timestamp: new Date().toISOString(),
+        totalLatencyMs: Date.now() - startTime,
+        checks,
+      },
     },
-  });
-});
+  };
+}
 
 /** 공개 헬스 응답용 smaXtec 상태 문구 — 원문 오류 대신 원인 분류 */
 export function describeSmaxtecHealth(h: {

@@ -19,11 +19,14 @@ import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync
 import { getDataFreshness, formatFreshnessLine } from '../services/metrics/data-freshness.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
+import { config } from '../config/index.js';
+import { sha256Hex } from '../lib/provenance.js';
 import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
 import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
 import { detectSkill } from '../services/skills/skills-registry.js';
 import { saveChatConversation, getFarmLearningSnapshot, formatFarmLearningContext } from './chat-learner.js';
 import { buildMemoryContext } from './memory/memory.service.js';
+import { extractUserUtterance } from '../services/approval/write-confirmation.js';
 import { getActivePromptGuidances, formatPromptGuidances, type PromptGuidanceRow } from '../intelligence-loop/prompt-improver.service.js';
 import { detectReportIntent } from '../services/report/intentDetector.js';
 import { collectReportData } from '../services/report/dataCollector.js';
@@ -33,6 +36,7 @@ import { generateReportContent } from '../services/report/aiContentGenerator.js'
 import { generateDocx } from '../services/report/generators/docxGenerator.js';
 import { generateXlsx } from '../services/report/generators/xlsxGenerator.js';
 import { generatePptx } from '../services/report/generators/pptxGenerator.js';
+import { writeReportOwner } from '../services/report/report-owner.js';
 import { generatePdf } from '../services/report/generators/pdfGenerator.js';
 import { REPORT_CONFIG } from '../services/report/config.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -58,6 +62,10 @@ export interface ChatDocument {
 
 export interface ChatMessageRequest {
   readonly question: string;
+  /** VO-01: 사용자가 실제로 한 말 (맥락이 덧붙지 않은 원문). 없으면 question 에서 추출한다. */
+  readonly userText?: string;
+  /** AI-04: 클라이언트 연결 종료 시 abort — 생성 중단, 대화 저장·학습 생략 */
+  readonly signal?: AbortSignal;
   readonly role: Role;
   readonly farmId: string | null;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
@@ -191,10 +199,12 @@ export async function handleChatMessage(
         role,
         animalId,
         farmId,
-        question,
+        question: extractUserUtterance(question, request.userText),
         answer,
         contextType: detectedType,
         permittedFarmIds: request.permittedFarmIds ?? null,
+        model: result.model,
+        promptHash: sha256Hex(systemPrompt),
       });
     }
 
@@ -334,7 +344,7 @@ export async function handleChatStream(
       }
 
       const fileId = uuidv4();
-      const dateStr = new Date().toISOString().split('T')[0]!.replace(/-/g, '');
+      const dateStr = kstToday().replace(/-/g, '');
       const safeType = (reportIntent.reportType ?? 'custom').replace(/[^a-zA-Z0-9_]/g, '');
       const fmt = reportIntent.format ?? 'docx';
       const fileName = `cowtalk_${safeType}_${dateStr}.${fmt}`;
@@ -345,6 +355,7 @@ export async function handleChatStream(
       };
       const gen = generators[fmt];
       if (gen) await gen(reportContent, outputPath);
+      if (request.userId) writeReportOwner(fileId, request.userId); // SEC-20: 만든 사람만 내려받는다
 
       const title = String(reportContent['title'] ?? fileName);
       const downloadUrl = `/api/report-generate/download/${fileId}`;
@@ -512,22 +523,25 @@ export async function handleChatStream(
     },
     onDone: (fullText: string) => {
       callbacks.onDone(fullText);
-      // 대화 저장 + 학습 (비동기, fire-and-forget)
-      if (request.userId) {
+      // 대화 저장 + 학습 (비동기, fire-and-forget) — 사용자가 받지 못한(끊긴) 답변은 저장·학습하지 않는다 (AI-04)
+      if (request.userId && !request.signal?.aborted) {
         void saveChatConversation({
           userId: request.userId,
           role,
           animalId,
           farmId,
-          question,
+          question: extractUserUtterance(question, request.userText),
           answer: fullText,
           contextType: context.type,
           permittedFarmIds: request.permittedFarmIds ?? null,
+          model: config.ANTHROPIC_MODEL,
+          promptHash: sha256Hex(systemPrompt),
         });
       }
     },
     onError: callbacks.onError,
     onToolEvent: callbacks.onToolEvent,
+    onVerification: callbacks.onVerification,
   };
 
   // Extended Thinking — 감별진단·번식 추천·복잡 추론 케이스에 자동 활성화
@@ -558,9 +572,9 @@ export async function handleChatStream(
       assignedFarmIds: request.assignedFarmIds,
       isMaster: request.isMaster,
       // 사용자 발화 하나 = 턴 하나. 기록 도구는 제안 턴과 다른 턴의 명시적 승인으로만 실행된다
-      confirmationTurn: { turnId: uuidv4(), userUtterance: question },
+      confirmationTurn: { turnId: uuidv4(), userUtterance: extractUserUtterance(question, request.userText) },
     },
-    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
+    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined, signal: request.signal },
   );
 }
 
@@ -612,6 +626,7 @@ function buildFallbackResponse(
 // ===========================
 
 import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
+import { kstToday } from '../lib/kst.js';
 
 export function buildStreamFallback(
   _question: string,

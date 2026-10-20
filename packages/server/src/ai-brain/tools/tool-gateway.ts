@@ -14,6 +14,7 @@ import {
   claimWriteProposal,
   finishWriteProposal,
   cancelWriteProposal,
+  getProposalTurnId,
   describeAnimal,
 } from '../../services/approval/write-confirmation.service.js';
 import { toolAuditLog } from '../../db/schema.js';
@@ -478,9 +479,22 @@ async function runWriteConfirmationGate(
   }
 
   // 2차 호출 — 사용자의 이번 발화가 승인인가
+  // NEW-05: 같은 턴에서 AI 가 스스로 확인 호출 — 이번 발화는 제안을 부른 요청이지 제안에 대한 대답이 아니다.
+  // 예전엔 이 발화를 승인/거부로 판정해 "다시 기록해줘"의 '다시'가 거부로 읽혀 제안이 취소됐고,
+  // 다음 턴에 사용자가 "저장해"라고 해도 저장되지 않았다. 판정하지 않고 사용자에게 물으라고 돌려준다.
+  if ((await getProposalTurnId(confirmationId, context.userId).catch(() => null)) === turn.turnId) {
+    return {
+      kind: 'respond',
+      auditStatus: 'awaiting_user',
+      result: JSON.stringify({
+        error: '아직 사용자가 답하지 않았습니다. 같은 턴에서 확인하지 말고, 요약을 보여준 뒤 "저장할까요?"라고 물어보세요.',
+      }),
+    };
+  }
+
   const intent = classifyConfirmationUtterance(turn.userUtterance);
   if (intent === 'deny') {
-    await cancelWriteProposal(confirmationId, context.userId);
+    await cancelWriteProposal(confirmationId, context.userId, turn.turnId);
     return {
       kind: 'respond',
       auditStatus: 'cancelled',

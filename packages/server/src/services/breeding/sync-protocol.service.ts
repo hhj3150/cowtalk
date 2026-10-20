@@ -15,6 +15,7 @@ import { getDb } from '../../config/database.js';
 import { breedingEvents } from '../../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 // ─── 프로토콜 정의 ──────────────────────────────────────────────
 
@@ -219,7 +220,7 @@ export interface TodaySyncTask {
  */
 export async function getTodaySyncTasks(farmId?: string, farmIds?: readonly string[]): Promise<readonly TodaySyncTask[]> {
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kstToday();
 
   // 데이터 레벨 스코프: farmIds(다중) 우선 → farmId(단일) → 전체
   const farmFilter = (farmIds && farmIds.length > 0)
