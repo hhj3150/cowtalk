@@ -16,7 +16,7 @@ import {
 } from './claude-interpreter.js';
 import {
   extractAlertsFromAnimal, extractAlertsFromFarm,
-  filterByCooldown, sortByPriority, markAlertSent,
+  filterByCooldown, sortByPriority, markAlertSent, primeCooldownFromDb,
 } from './alert/alert-manager.js';
 import { sendBatchNotifications } from './alert/notification.js';
 import { logger } from '../lib/logger.js';
@@ -52,6 +52,7 @@ export async function analyzeAnimalProfile(
   // 알림 처리
   const rawAlerts = extractAlertsFromAnimal(interpretation)
     .map((a) => ({ ...a, farmId: profile.farmId }));
+  await primeCooldownFromDb(rawAlerts); // OPS-12: 재시작·다른 레플리카 발송분 반영
   const filtered = filterByCooldown(rawAlerts);
   const sorted = sortByPriority(filtered);
 
@@ -98,6 +99,7 @@ export async function analyzeFarm(
 
   // 알림 처리
   const rawAlerts = extractAlertsFromFarm(interpretation);
+  await primeCooldownFromDb(rawAlerts); // OPS-12: 재시작·다른 레플리카 발송분 반영
   const filtered = filterByCooldown(rawAlerts);
   const sorted = sortByPriority(filtered);
 
