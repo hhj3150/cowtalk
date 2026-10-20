@@ -65,7 +65,7 @@ const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-quarantineActionRouter.get('/list', async (req, res, next) => {
+quarantineActionRouter.get('/list', canIssueAction, async (req, res, next) => {
   try {
     const filters = listSchema.parse(req.query);
     const data = await listQuarantineActions(filters);
@@ -79,9 +79,9 @@ quarantineActionRouter.get('/list', async (req, res, next) => {
 // GET /quarantine-action/:id — 상세 조회
 // ===========================
 
-quarantineActionRouter.get('/:id', async (req, res, next) => {
+quarantineActionRouter.get('/:id', canIssueAction, async (req, res, next) => {
   try {
-    const id = req.params.id ?? '';
+    const id = String(req.params.id ?? '');
     const data = await getQuarantineAction(id);
 
     if (!data) {

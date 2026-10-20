@@ -5,6 +5,18 @@ import { ForbiddenError, UnauthorizedError } from '../../lib/errors.js';
 import { hasPermission } from '@cowtalk/shared';
 import type { Role, ResourceType, ActionType } from '@cowtalk/shared';
 
+/** 특정 역할 또는 마스터(소유자) 토큰 허용 — 방역·행정 업무 화면용 (SEC-12) */
+export function requireRoleOrMaster(...roles: readonly Role[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) throw new UnauthorizedError();
+    if (req.user.isMaster || roles.includes(req.user.role)) {
+      next();
+      return;
+    }
+    throw new ForbiddenError(`이 작업은 ${roles.join('/')} 역할만 수행할 수 있습니다`);
+  };
+}
+
 /** 특정 역할만 허용 */
 export function requireRole(...roles: readonly Role[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
