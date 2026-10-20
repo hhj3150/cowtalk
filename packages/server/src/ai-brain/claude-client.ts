@@ -3,6 +3,7 @@
 // 에러 시 null 반환 → fallback 트리거
 
 import Anthropic from '@anthropic-ai/sdk';
+import { findUnverifiedClaims, hasUnverified, type UnverifiedClaims } from './answer-verifier.js';
 import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
@@ -178,6 +179,8 @@ export interface StreamCallbacks {
   readonly onDone: (fullText: string) => void;
   readonly onError: (error: Error) => void;
   readonly onToolEvent?: (event: ToolEvent) => void;
+  /** AI-07: 답변 속 개체번호·체온 중 근거(도구 결과·맥락)에서 확인되지 않은 값 — onDone 직전에 호출 */
+  readonly onVerification?: (unverified: UnverifiedClaims) => void;
 }
 
 export async function callClaudeForChat(
@@ -356,6 +359,16 @@ export async function callClaudeForChatWithTools(
     const requestStart = Date.now();
     let firstTokenLogged = false;
 
+    // AI-07: 사후 검증용 근거 — 사용자 프롬프트(맥락 포함) + 이번 대화의 도구 결과
+    const evidenceParts: string[] = [prompt];
+    const verifyAndFinish = (text: string): void => {
+      const unverified = findUnverifiedClaims(text, evidenceParts.join('\n'));
+      if (hasUnverified(unverified)) {
+        logger.warn({ unverified }, '[ToolUse] 답변 사후 검증 — 근거에 없는 개체번호·체온');
+        callbacks.onVerification?.(unverified);
+      }
+      callbacks.onDone(text);
+    };
     const signal = options?.signal;
     const aborted = (): boolean => {
       if (!signal?.aborted) return false;
@@ -443,7 +456,7 @@ export async function callClaudeForChatWithTools(
           return;
         }
         if (aborted()) return;
-        callbacks.onDone(fullText);
+        verifyAndFinish(fullText);
         return;
       }
 
@@ -494,6 +507,7 @@ export async function callClaudeForChatWithTools(
           tool_use_id: toolBlock.id,
           content: gatewayResult.result,
         });
+        evidenceParts.push(gatewayResult.result);
       }
 
       messages.push({ role: 'user', content: toolResults });
@@ -546,7 +560,7 @@ export async function callClaudeForChatWithTools(
       callbacks.onError(new Error(`도구 호출 ${MAX_TOOL_ROUNDS}회 + final round 후에도 답변이 생성되지 않았습니다. 질문을 단순화해 주세요.`));
       return;
     }
-    callbacks.onDone(fullText);
+    verifyAndFinish(fullText);
   } catch (error) {
     // Anthropic SDK 에러는 status/message 상세 포함
     const errObj = error as { status?: number; message?: string; name?: string; error?: unknown };

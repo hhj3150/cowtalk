@@ -533,6 +533,7 @@ export async function handleChatStream(
     },
     onError: callbacks.onError,
     onToolEvent: callbacks.onToolEvent,
+    onVerification: callbacks.onVerification,
   };
 
   // Extended Thinking — 감별진단·번식 추천·복잡 추론 케이스에 자동 활성화

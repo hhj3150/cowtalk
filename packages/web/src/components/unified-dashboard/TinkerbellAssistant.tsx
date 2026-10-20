@@ -215,7 +215,19 @@ interface StreamChunk {
   readonly toolDomain?: string;
   readonly success?: boolean;
   readonly executionMs?: number;
+  // verification 전용 (AI-07) — 근거(도구 결과·맥락)에서 확인되지 않은 값
+  readonly unverified?: { readonly earTags: readonly string[]; readonly temperatures: readonly string[] };
 }
+
+/** AI-07: 확인되지 않은 값 안내 문구 (없으면 빈 문자열) */
+export function buildVerificationNote(u: StreamChunk['unverified']): string {
+  if (!u) return '';
+  const items = [...u.earTags, ...u.temperatures];
+  return items.length > 0 ? `\n\n⚠️ 자료에서 확인되지 않은 값: ${items.join(', ')} — 개체 화면에서 직접 확인하세요.` : '';
+}
+
+/** VO-04: done 없이 끊긴 일부 답변 표시 */
+export const INTERRUPTED_NOTE = '\n\n⚠️ 응답이 중간에 끊겼습니다 — 위 내용은 일부입니다. 다시 질문해 주세요.';
 
 interface ToolActivity {
   readonly toolName: string;
@@ -1008,6 +1020,7 @@ export function TinkerbellAssistant({
       let textEventCount = 0;
       let toolEventCount = 0;
       let doneReceived = false;
+      let verificationNote = '';
       let rawBytes = 0;
       let firstByteChecked = false;
 
@@ -1057,6 +1070,9 @@ export function TinkerbellAssistant({
             if (parsed.type === 'error') {
               errorText = parsed.content;
             }
+            if (parsed.type === 'verification') {
+              verificationNote = buildVerificationNote(parsed.unverified);
+            }
             if (parsed.type === 'tool_event' && parsed.toolName && parsed.phase) {
               toolEventCount++;
               setToolActivities((prev) => {
@@ -1093,8 +1109,11 @@ export function TinkerbellAssistant({
         console.warn('[Tinkerbell] 빈 응답:', emptyDiag);
       }
 
+      // VO-04: done 없이 끊긴 스트림은 일부만 받은 것 — 완성본처럼 기록하지 않고 표시하며, 남은 문장은 읽지 않는다
+      const interrupted = !doneReceived && fullText.length > 0 && !errorText;
       const answer = fullText
-        || (errorText ? `⚠️ ${t('common.error')}: ${errorText}` : `${t('tb.err.no_response')}\n(${emptyDiag})`);
+        ? `${fullText}${interrupted ? INTERRUPTED_NOTE : ''}${verificationNote}`
+        : (errorText ? `⚠️ ${t('common.error')}: ${errorText}` : `${t('tb.err.no_response')}\n(${emptyDiag})`);
       setStreamText('');
       setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
@@ -1105,7 +1124,9 @@ export function TinkerbellAssistant({
       } else if (streamedChunkCount > 0) {
         // 스트리밍으로 이미 말하는 중 — 남은 꼬리만 큐에 넣고 종료를 알린다.
         // 재생이 다 끝나면 onDrained가 state를 idle로 돌리고 핸즈프리 재청취를 건다.
-        for (const chunk of chunkerRef.current.flush()) enqueueSpeech(chunk);
+        // VO-04: 끊긴 답변의 미완성 꼬리 문장은 읽지 않는다
+        if (interrupted) chunkerRef.current.flush();
+        else for (const chunk of chunkerRef.current.flush()) enqueueSpeech(chunk);
         endSpeech();
       } else if (answer.trim()) {
         // 스트리밍 중 청크가 안 나온 경우(done 이벤트로만 도착 등).

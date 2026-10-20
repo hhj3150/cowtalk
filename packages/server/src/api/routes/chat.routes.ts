@@ -222,6 +222,10 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
         onToolEvent: (event) => {
           res.write(`data: ${JSON.stringify({ type: 'tool_event', ...event })}\n\n`);
         },
+        // AI-07: 근거에서 확인되지 않은 개체번호·체온 — 화면이 답변 아래에 표시한다
+        onVerification: (unverified) => {
+          res.write(`data: ${JSON.stringify({ type: 'verification', content: '', unverified })}\n\n`);
+        },
       },
     );
   } catch (error) {
