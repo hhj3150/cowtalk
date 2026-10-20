@@ -3,6 +3,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { ZodError } from 'zod';
 
 /**
  * Postgres 22P02(invalid_text_representation) — 형식이 잘못된 UUID·숫자가 쿼리에 들어간 경우.
@@ -45,6 +46,20 @@ export function errorHandler(
     res.status(400).json({
       success: false,
       error: { code: 'INVALID_IDENTIFIER', message: '요청한 식별자의 형식이 올바르지 않습니다' },
+    });
+    return;
+  }
+
+  // 핸들러 안에서 schema.parse() 가 던진 검증 오류 — 사용자 입력 문제다 (예전: 500 '예상치 못한 오류')
+  if (err instanceof ZodError) {
+    logger.warn({ path: req.path, issues: err.issues.length }, '[errorHandler] 입력 검증 실패 — 400');
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: '요청 값이 올바르지 않습니다',
+        details: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
     });
     return;
   }
