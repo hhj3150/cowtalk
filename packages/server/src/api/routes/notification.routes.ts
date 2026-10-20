@@ -5,7 +5,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { getDb } from '../../config/database.js';
 import { notificationPreferences, userFarmAccess, alerts, farms, users } from '../../db/schema.js';
-import { requirePlatformAdmin } from '../middleware/rbac.js';
+import { requirePlatformAdmin, scopedFarmIds } from '../middleware/rbac.js';
 import { eq, inArray, desc } from 'drizzle-orm';
 import { addSubscription, removeSubscription, sendPushToFarm, getSubscriptionCount } from '../../realtime/push-service.js';
 import { invalidateNotificationGateCache } from '../../services/notification/notification-gate.service.js';
@@ -237,19 +237,15 @@ notificationRouter.post('/subscribe', async (req: Request, res: Response, next: 
       return;
     }
 
-    // 사용자의 farmIds 조회
-    const db = getDb();
-    const farmAccessRows = await db
-      .select({ farmId: userFarmAccess.farmId })
-      .from(userFarmAccess)
-      .where(eq(userFarmAccess.userId, userId));
-    const farmIds = farmAccessRows.map((r) => r.farmId);
-
-    addSubscription(userId, subscription, farmIds, (minSeverity as 'critical' | 'high') ?? 'high');
+    // OPS-12: 대상 농장은 발송 시점의 배정(user_farm_access)으로 판정. 전 농장은 농장 제한이 없는 계정만.
+    // (예전: 배정 0개 = '전체 구독' → 미배정 농장주가 모든 농장 알림을 받음)
+    const allFarms = scopedFarmIds(req) === null;
+    const severity = minSeverity === 'critical' ? 'critical' : 'high';
+    await addSubscription(userId, subscription, allFarms, severity);
 
     res.json({
       success: true,
-      data: { subscribed: true, subscriptionCount: getSubscriptionCount() },
+      data: { subscribed: true, subscriptionCount: await getSubscriptionCount() },
     });
   } catch (error) {
     next(error);
@@ -265,8 +261,9 @@ notificationRouter.post('/unsubscribe', async (req: Request, res: Response, next
       return;
     }
 
-    removeSubscription(endpoint);
-    res.json({ success: true, data: { unsubscribed: true } });
+    // 본인 구독만 해제 (예전: endpoint 만 알면 누구 것이든 삭제)
+    const removed = await removeSubscription(endpoint, req.user!.userId);
+    res.json({ success: true, data: { unsubscribed: removed } });
   } catch (error) {
     next(error);
   }

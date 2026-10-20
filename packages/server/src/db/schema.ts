@@ -1994,6 +1994,20 @@ export const jobLeases = pgTable('job_leases', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
 
+// OPS-12: 브라우저 푸시 구독 (마이그레이션 0046)
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  endpoint: text('endpoint').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.userId, { onDelete: 'cascade' }),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  allFarms: boolean('all_farms').notNull().default(false),
+  minSeverity: varchar('min_severity', { length: 10 }).notNull().default('high'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('push_subscriptions_user_id_idx').on(table.userId),
+]);
+
 // AI-08: 생성 브리핑 보존 — 근거 집계(facts)와 함께 (마이그레이션 0045)
 export const aiBriefingLog = pgTable('ai_briefing_log', {
   id: uuid('id').primaryKey().defaultRandom(),
