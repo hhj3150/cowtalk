@@ -48,8 +48,27 @@
 | OPS-07 매 사이클 전수 UPDATE | ✅ | 45841dd | animal-affiliation.test.ts |
 | (기존 실패 16건) | ✅ | f159178 | 8건 DB 필요, 7건 옛 계약, 1건 mock — npm test 1360 통과 |
 
+## P2
+| ID | 상태 | 커밋 | 비고 |
+|---|---|---|---|
+| SEC-12 역학조사·KAHIS 권한 | ✅ | 50b4315 | quarantine-roles.guard.test.ts |
+| SEC-13 경로 :farmId | ✅ | 6abdb1f | farm-param.guard.test.ts |
+| SEC-14 Socket.IO | ✅ | 1f7a612 | socket-rooms.test.ts |
+| SEC-15 SVG·CSP | ✅(부분) | 86cc8d9 | unsafe-eval 유지(Google Maps), 토큰 localStorage 는 별도 과제 |
+| SEC-16 알림톡 남용 | ✅ | 6e77c7c | alimtalk.guard.test.ts |
+| SEC-17 공개 가입 | ✅ | ba92e77 | onboarding.guard.test.ts |
+| DI-10 이벤트 유니크 | ✅ | 2573b33 | 0042(중복 시 보류) |
+| DI-11 KST 날짜 | ✅ | 4e7dbe6 | kst.test.ts |
+| DI-12 수정·재고 트랜잭션 | ✅ | 87a1388 | insemination-tx.test.ts |
+| DI-13 번식 설정 덮어쓰기 | ✅ | 5c438d1 | farm-settings-sync.test.ts |
+| DI-14 출처 컬럼·유량 유니크 | ✅ | 5488d49 | 0043·0044 |
+| DI-15 estrus-action | ✅ | 6112b51 | estrus-action.test.ts |
+| AI-04 ~ AI-08 | ⬜ | | |
+| VO-04 ~ VO-09 | ⬜ | | |
+| OPS-08 ~ OPS-15 | ⬜ | | |
+
 ## 승인·정책 대기 (코드로 해결 불가)
-- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스
+- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스, 0042 이벤트 유니크(중복 시 보류), 0043 source_event_id 컬럼, 0044 유량 유니크(중복 시 보류)
 - 배포 시 `schema_migrations` 테이블 생성 (SEC-03)
 - 기존 진료 기록 휴약 종료일 보정 (DI-01)
 - 이동 개체 과거 기록 귀속 정책 (DI-02)
