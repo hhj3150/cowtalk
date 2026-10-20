@@ -129,3 +129,23 @@ describe('synthesize — 모델별 요청 파라미터', () => {
     await expect(synthesize({ text: '테스트' })).rejects.toThrow(/OPENAI_API_KEY/);
   });
 });
+
+describe('VO-11 AI 발음', () => {
+  it.each([
+    ['AI 분석 결과입니다', '에이아이 분석'],
+    ['AI가 판단했어요', '에이아이가'],
+    ['팅커벨 AI', '에이아이'],
+  ])('일반 맥락: %s', (input, expected) => {
+    const out = stripMarkdownForTts(input);
+    expect(out).toContain(expected);
+    expect(out).not.toContain('인공 수정');
+  });
+  it.each([
+    ['AI 수정 적기는 내일 오전', '인공 수정 적기'],
+    ['AI 2회 후 임신감정', '인공 수정 2회'],
+    ['발정 확인 후 AI 실시', '인공 수정 실시'],
+    ['정액 KPN1234로 AI', '인공 수정'],
+  ])('번식 맥락: %s', (input, expected) => {
+    expect(stripMarkdownForTts(input)).toContain(expected);
+  });
+});
