@@ -4,6 +4,8 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { RedisFallbackStore } from './lib/rate-limit-store.js';
+import { getRedis } from './serving/cache.service.js';
 import { createApiRouter } from './api/index.js';
 import { errorHandler, notFoundHandler } from './api/middleware/error.js';
 import { requestLogger } from './api/middleware/request-logger.js';
@@ -34,6 +36,7 @@ export function createApp(): express.Express {
   app.use(rateLimit({
     windowMs: 30 * 60 * 1000, // 30분
     max: 1000,
+    store: new RedisFallbackStore('global', getRedis), // OPS-12: 레플리카·재시작 공유 카운터
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },
@@ -43,6 +46,7 @@ export function createApp(): express.Express {
   const authRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000, // 15분
     max: 10,
+    store: new RedisFallbackStore('auth', getRedis),
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '인증 시도가 너무 많습니다. 15분 후 다시 시도해주세요.' } },
@@ -54,6 +58,7 @@ export function createApp(): express.Express {
   app.use('/api/auth/onboarding', rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 5,
+    store: new RedisFallbackStore('onboarding', getRedis),
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '가입 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.' } },
@@ -61,6 +66,7 @@ export function createApp(): express.Express {
   app.use('/api/auth/refresh', rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 60,
+    store: new RedisFallbackStore('refresh', getRedis),
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' } },
