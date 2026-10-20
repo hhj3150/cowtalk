@@ -50,6 +50,22 @@ export function createApp(): express.Express {
   app.use('/api/auth/login', authRateLimit);
   app.use('/api/auth/register', authRateLimit);
 
+  // SEC-17: 공개 가입·토큰 갱신도 속도 제한 (예전: 제한 없음 → 농장 행 무제한 생성, 이메일 존재 확인 반복)
+  app.use('/api/auth/onboarding', rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '가입 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.' } },
+  }));
+  app.use('/api/auth/refresh', rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: { code: 'AUTH_RATE_LIMITED', message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' } },
+  }));
+
   // --- Body Parsing ---
   // 50mb — Vision 첨부 이미지(최대 5장 × base64 ~7.5MB) 수용
   app.use(express.json({ limit: '50mb' }));

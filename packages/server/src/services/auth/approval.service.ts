@@ -8,7 +8,7 @@
 //   (SEC-03: 예전엔 government_admin + 이름에 'Master Admin' 이면 소유자로 봤다 —
 //    행정관 계정이 자기 이름을 바꾸는 것만으로 승인 관리 권한을 얻을 수 있었다)
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { users } from '../../db/schema.js';
 import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
@@ -100,6 +100,13 @@ export async function setUserApproval(
 
   if (status !== 'approved') {
     await revokeAllUserRefreshTokens(targetUserId);
+  } else {
+    // SEC-17: 자가 가입 때 'pending' 으로 만든 농장을 승인과 함께 활성화
+    await db.execute(sql`
+      UPDATE farms SET status = 'active', updated_at = now()
+      WHERE status = 'pending'
+        AND farm_id IN (SELECT farm_id FROM user_farm_access WHERE user_id = ${targetUserId})
+    `);
   }
   invalidateApprovalCache(targetUserId);
   logger.info({ targetUserId, status, changedBy }, '[Approval] 계정 승인 상태 변경');

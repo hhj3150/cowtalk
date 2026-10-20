@@ -51,6 +51,21 @@ export const registerSchema = z.object({
   farmIds: z.array(z.string().uuid()).optional(),
 });
 
+// 공개 자가 가입 (SEC-17) — 예전엔 검증 없이 받아 농장 행을 무제한 만들 수 있었다
+export const onboardingSchema = z.object({
+  name: z.string().trim().min(2).max(50),
+  email: z.string().trim().email().max(200),
+  password: z.string().min(8).max(128),
+  role: z.string().max(30).optional(), // 서버는 farmer 로 강제 (클라이언트 값 무시)
+  farm: z.object({
+    name: z.string().trim().min(2).max(100),
+    address: z.string().trim().max(200).optional(),
+    ownerName: z.string().trim().max(50).optional(),
+    phone: z.string().trim().regex(/^[0-9-]{9,20}$/).optional(),
+    capacity: z.number().int().min(0).max(100000).optional(),
+  }).optional(),
+});
+
 // === 농장 ===
 
 export const farmQuerySchema = paginationSchema.extend({

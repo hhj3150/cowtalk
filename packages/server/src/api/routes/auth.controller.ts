@@ -388,7 +388,8 @@ export async function onboarding(req: Request, res: Response): Promise<void> {
           ownerName: input.farm.ownerName ?? input.name,
           phone: input.farm.phone ?? null,
           regionId: defaultRegion.regionId,
-          status: 'active',
+          // SEC-17: 승인 전 농장은 'pending' — 전국 통계·목록에 잡히지 않고, 소유자가 계정을 승인하면 활성화된다
+          status: 'pending',
         })
         .returning({ farmId: farms.farmId });
 
