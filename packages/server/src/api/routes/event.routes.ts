@@ -280,20 +280,8 @@ eventRouter.get('/farm/:farmId', requireFarmAccess, async (req: Request, res: Re
 });
 
 // POST /events/voice — 음성 이벤트 변환
-eventRouter.post('/voice', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { farmId, animalId } = req.body;
-
-    const parsed = {
-      eventType: 'observation',
-      subType: '기타',
-      description: '음성 입력에서 변환된 이벤트',
-      confidence: 0.85,
-      rawTranscript: '(음성 텍스트 변환 결과)',
-    };
-
-    res.json({ success: true, data: { parsed, farmId, animalId } });
-  } catch (error) {
-    next(error);
-  }
+// NEW-04: 구현되지 않은 자리표시 — 예전엔 입력과 무관한 고정 결과(신뢰도 0.85)를 '변환 성공'처럼 돌려줬다.
+// 화면에서 쓰지 않으며, 음성 기록은 팅커벨 대화(확인 후 저장) 경로를 쓴다. 지어낸 결과 대신 미구현을 알린다.
+eventRouter.post('/voice', (_req: Request, res: Response) => {
+  res.status(501).json({ success: false, error: { code: 'NOT_IMPLEMENTED', message: '음성 이벤트 변환은 팅커벨 대화로 기록해 주세요.' } });
 });

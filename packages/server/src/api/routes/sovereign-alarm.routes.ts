@@ -11,6 +11,7 @@ import { getRuleCount } from '../../services/sovereign-alarm/rules/rule-registry
 import { runThresholdLearning, runFarmThresholdLearning } from '../../intelligence-loop/threshold-learner.js';
 import { computePatternSummaries, findSimilarPatterns, runPatternMining } from '../../services/sovereign-alarm/pattern-mining.service.js';
 import { logger } from '../../lib/logger.js';
+import { requirePlatformAdmin } from '../middleware/rbac.js';
 
 export const sovereignAlarmRouter = Router();
 sovereignAlarmRouter.use(authenticate);
@@ -92,7 +93,8 @@ sovereignAlarmRouter.get('/comparison', requireScopedIds([{ source: 'query', fie
 
 // ── 임계값 학습 (Phase 2) ──
 
-sovereignAlarmRouter.post('/learning/run', async (req, res, next) => {
+// NEW-04: 알람 임계값(전역·농장)을 바꾸는 학습 실행 — 플랫폼 관리자만 (예전: 로그인한 누구나)
+sovereignAlarmRouter.post('/learning/run', requirePlatformAdmin, async (req, res, next) => {
   try {
     const days = z.coerce.number().int().min(1).max(365).default(90).parse(req.query.days ?? 90);
     const farmId = z.string().uuid().optional().parse(req.query.farmId);
@@ -150,7 +152,8 @@ sovereignAlarmRouter.get('/patterns/similar', async (req, res, next) => {
   }
 });
 
-sovereignAlarmRouter.post('/patterns/mine', async (_req, res, next) => {
+// NEW-04: 전 농장 패턴 마이닝(무거운 배치) — 플랫폼 관리자만
+sovereignAlarmRouter.post('/patterns/mine', requirePlatformAdmin, async (_req, res, next) => {
   try {
     const result = await runPatternMining();
     res.json({ success: true, data: result });

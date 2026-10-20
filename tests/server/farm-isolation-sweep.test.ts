@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import request from 'supertest';
 import { eq, inArray } from 'drizzle-orm';
@@ -46,9 +47,9 @@ function discoverGetRoutes(): RouteSpec[] {
 }
 
 let regionId = ''; let farmA = ''; let farmB = ''; let animalB = ''; let alertB = ''; let eventB = '';
-const FARMER_A = '7a000000-0000-4000-8000-0000000000a1';
-const FARMER_NONE = '7a000000-0000-4000-8000-0000000000a2';
-const ADMIN = '7a000000-0000-4000-8000-0000000000a3';
+const FARMER_A = randomUUID();
+const FARMER_NONE = randomUUID();
+const ADMIN = randomUUID();
 let tokenA = ''; let tokenNone = ''; let tokenAdmin = '';
 
 /** 경로 파라미터를 농장 B 의 실제 ID 로 채운 후보 URL 들 — 일반 :id 는 개체·알림·이벤트·농장 ID 를 모두 시도 */
