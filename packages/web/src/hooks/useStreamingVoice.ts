@@ -70,6 +70,8 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
   const objectUrlRef = useRef<string | null>(null);
   /** stop() 이후 도착하는 비동기 결과를 무시하기 위한 세대 카운터 */
   const generationRef = useRef(0);
+  // VO-12: 진행 중인 합성 요청 — 멈추면 서버 요청까지 끊는다 (예전: 멈춰도 합성은 끝까지 돌아 비용 발생)
+  const controllersRef = useRef(new Set<AbortController>());
   const spokenAnythingRef = useRef(false);
   /** 실제로 소리가 난 적이 있는지. 합성은 됐는데 재생이 막히는 경우를 구분한다. */
   const playedAnythingRef = useRef(false);
@@ -134,7 +136,9 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
       inflightRef.current++;
       const seq = seqRef.current++;
       const reqAt = performance.now();
-      const blob = synthesize({ text, voice: optsRef.current.voice, maxChars: optsRef.current.maxChars })
+      const controller = new AbortController();
+      controllersRef.current.add(controller);
+      const blob = synthesize({ text, voice: optsRef.current.voice, maxChars: optsRef.current.maxChars }, controller.signal)
         .then((r) => {
           if (seq === 0) {
             console.info(`[voice] 2) 첫 청크 합성 완료 — ${String(Math.round(performance.now() - reqAt))}ms (서버 왕복)`);
@@ -142,6 +146,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
           return r.audioBlob;
         })
         .catch((err: unknown) => {
+          if (controller.signal.aborted) return null; // 멈춘 것 — 오류가 아니다
           const status = (err as { status?: number })?.status;
           const msg = err instanceof Error ? err.message : String(err);
           console.warn('[streaming-voice] 청크 합성 실패:', msg);
@@ -153,6 +158,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
           return null;
         })
         .finally(() => {
+          controllersRef.current.delete(controller);
           // reset()이 카운터를 0으로 되돌린 뒤 늦게 도착한 응답이 음수로 만들지 않도록
           inflightRef.current = Math.max(0, inflightRef.current - 1);
           if (generationRef.current === generation) pumpSynthesis();
@@ -300,18 +306,26 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
     void drain();
   }, [drain]);
 
+  /** VO-12: 진행 중인 합성 요청을 모두 끊는다 */
+  const abortInflight = useCallback(() => {
+    for (const c of controllersRef.current) c.abort();
+    controllersRef.current.clear();
+  }, []);
+
   const stop = useCallback(() => {
     generationRef.current++;
+    abortInflight();
     queueRef.current = [];
     pendingTextRef.current = [];
     endedRef.current = true;
     drainingRef.current = false;
     releaseAudio();
     setIsSpeaking(false);
-  }, [releaseAudio]);
+  }, [releaseAudio, abortInflight]);
 
   const reset = useCallback(() => {
     generationRef.current++;
+    abortInflight();
     queueRef.current = [];
     pendingTextRef.current = [];
     endedRef.current = false;
@@ -324,7 +338,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
     inflightRef.current = 0;
     releaseAudio();
     setIsSpeaking(false);
-  }, [releaseAudio]);
+  }, [releaseAudio, abortInflight]);
 
   return { isSpeaking, enqueue, end, stop, reset };
 }
