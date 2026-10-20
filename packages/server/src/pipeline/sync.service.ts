@@ -609,7 +609,7 @@ function findFarmForAnimal(
  * 중복 방지: smaxtec_events.external_event_id 기반 존재 여부 체크.
  * 매 sync 주기마다 증분 동기화 (새 이벤트만 처리).
  */
-async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregnancies: number }> {
+export async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregnancies: number }> {
   const db = getDb();
   let inseminations = 0;
   let pregnancies = 0;
@@ -618,7 +618,7 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
     // --- 1. insemination / no_insemination → breeding_events ---
     // breeding_events.notes에 smaxtec event_id를 기록하여 중복 방지
     const insemResult = await db.execute(sql`
-      INSERT INTO breeding_events (animal_id, farm_id, event_date, type, no_insemination_reason, notes, status)
+      INSERT INTO breeding_events (animal_id, farm_id, event_date, type, no_insemination_reason, notes, status, source_event_id)
       SELECT
         se.animal_id,
         se.farm_id,
@@ -630,12 +630,17 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
           ELSE NULL
         END,
         'smaxtec:' || se.external_event_id,
-        'completed'
+        'completed',
+        se.external_event_id -- DI-14: 출처는 수정 불가 컬럼으로
       FROM smaxtec_events se
       WHERE se.event_type IN ('insemination', 'no_insemination')
         AND se.animal_id IS NOT NULL
         AND se.farm_id IS NOT NULL
         AND NOT EXISTS (
+          SELECT 1 FROM breeding_events be
+          WHERE be.source_event_id = se.external_event_id
+        )
+        AND NOT EXISTS ( -- 0043 이전에 들어온 기록 (source_event_id 비어 있음)
           SELECT 1 FROM breeding_events be
           WHERE be.notes = 'smaxtec:' || se.external_event_id
             AND be.notes LIKE 'smaxtec:%' -- OPS-06: 부분 인덱스(breeding_events_smaxtec_notes_idx) 사용 조건
@@ -650,7 +655,7 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
     // --- 2. pregnancy_check → pregnancy_checks ---
     // notes에 smaxtec event_id 기록하여 중복 방지
     const pregResult = await db.execute(sql`
-      INSERT INTO pregnancy_checks (animal_id, check_date, result, method, days_post_insemination, notes)
+      INSERT INTO pregnancy_checks (animal_id, check_date, result, method, days_post_insemination, notes, source_event_id)
       SELECT
         se.animal_id,
         se.detected_at,
@@ -664,12 +669,17 @@ async function syncBreedingFromEvents(): Promise<{ inseminations: number; pregna
             THEN EXTRACT(DAY FROM se.detected_at - (se.details->>'insemination_date')::timestamp)::int
           ELSE NULL
         END,
-        'smaxtec:' || se.external_event_id
+        'smaxtec:' || se.external_event_id,
+        se.external_event_id -- DI-14
       FROM smaxtec_events se
       WHERE se.event_type = 'pregnancy_check'
         AND se.animal_id IS NOT NULL
         AND se.details->>'pregnant' IS NOT NULL
         AND NOT EXISTS (
+          SELECT 1 FROM pregnancy_checks pc
+          WHERE pc.source_event_id = se.external_event_id
+        )
+        AND NOT EXISTS ( -- 0043 이전에 들어온 기록
           SELECT 1 FROM pregnancy_checks pc
           WHERE pc.notes = 'smaxtec:' || se.external_event_id
             AND pc.notes LIKE 'smaxtec:%' -- OPS-06: 부분 인덱스(pregnancy_checks_smaxtec_notes_idx) 사용 조건

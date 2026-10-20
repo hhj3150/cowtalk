@@ -252,6 +252,7 @@ export const breedingEvents = pgTable('breeding_events', {
   farmId: uuid('farm_id').references(() => farms.farmId),
   eventDate: timestamp('event_date', { withTimezone: true }).notNull(),
   type: varchar('type', { length: 20 }).notNull(), // insemination, heat, pregnancy_check, no_insemination, abort, dry_off
+  sourceEventId: varchar('source_event_id', { length: 200 }), // DI-14: smaXtec 원본 이벤트 id (0043)
   semenInfo: text('semen_info'),                    // 자유 텍스트 (레거시)
   semenId: uuid('semen_id').references(() => semenCatalog.semenId), // 정액 카탈로그 FK (신규)
   technicianId: uuid('technician_id'),
@@ -272,6 +273,7 @@ export const breedingEvents = pgTable('breeding_events', {
 export const pregnancyChecks = pgTable('pregnancy_checks', {
   checkId: uuid('check_id').primaryKey().defaultRandom(),
   animalId: uuid('animal_id').notNull().references(() => animals.animalId),
+  sourceEventId: varchar('source_event_id', { length: 200 }), // DI-14 (0043)
   checkDate: timestamp('check_date', { withTimezone: true }).notNull(),
   result: varchar('result', { length: 20 }).notNull(),
   method: varchar('method', { length: 30 }).notNull(),
