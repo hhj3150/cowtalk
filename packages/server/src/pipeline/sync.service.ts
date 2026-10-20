@@ -407,16 +407,21 @@ async function syncEvents(
           // DI-10: 조회 후 삽입 사이에 다른 인스턴스가 같은 이벤트를 넣었으면 건너뛴다
           // (유니크 인덱스 0042 와 함께 동작 — 건너뛴 행은 returning 에 없어 알람도 다시 방송되지 않는다)
           .onConflictDoNothing()
-          .returning({ eventId: smaxtecEvents.eventId });
+          .returning({ eventId: smaxtecEvents.eventId, externalEventId: smaxtecEvents.externalEventId });
 
         stored += rows.length;
+        // 충돌로 건너뛴 행은 returning 에 없다 → 인덱스(values[i])가 아니라 외부 이벤트 ID 로 짝지어야
+        // 다른 이벤트의 개체·유형이 알람에 붙지 않는다
+        const inserted = pairInsertedRows(rows, values);
 
         // 실시간 push — 방금 저장된 알람을 farm room + 전체 room에 즉시 전파.
         // (이 배선이 없으면 화면은 60초 폴링까지 대기 — 조기경보의 마지막 구간 지연 제거)
         try {
-          const animalIdSet = [...new Set(values.map((v) => v.animalId))];
-          const farmIdSet = [...new Set(values.map((v) => v.farmId))];
-          const [animalRows, farmRows] = await Promise.all([
+          // OPS-14: 신규 농장 온보딩·백필 때 과거 이벤트 수천 건을 '새 알람'으로 방송하지 않는다
+          const live = selectBroadcastable(inserted, Date.now());
+          const animalIdSet = [...new Set(live.map(({ v }) => v.animalId))];
+          const farmIdSet = [...new Set(live.map(({ v }) => v.farmId))];
+          const [animalRows, farmRows] = live.length === 0 ? [[], []] : await Promise.all([
             db.select({ animalId: animals.animalId, earTag: animals.earTag })
               .from(animals).where(inArray(animals.animalId, animalIdSet)),
             db.select({ farmId: farms.farmId, name: farms.name })
@@ -425,9 +430,7 @@ async function syncEvents(
           const earTagMap = new Map(animalRows.map((r) => [r.animalId, r.earTag]));
           const farmNameMap = new Map(farmRows.map((r) => [r.farmId, r.name]));
 
-          rows.forEach((row, i) => {
-            const v = values[i];
-            if (!v) return;
+          live.forEach(({ row, v }) => {
             emitNewAlarm({
               eventId: row.eventId,
               eventType: v.eventType,
@@ -447,15 +450,16 @@ async function syncEvents(
         }
 
         // 알람 패턴 스냅샷 캡처 — 이벤트 전 48h 센서 데이터 저장
-        for (const v of values) {
-          captureBeforeSnapshot(
+        // OPS-14: 실제로 새로 저장된 이벤트만, 동시 SNAPSHOT_CONCURRENCY 개씩 (예전: 배치 전체를 한꺼번에)
+        void runWithConcurrency(inserted, SNAPSHOT_CONCURRENCY, async ({ v }) => {
+          await captureBeforeSnapshot(
             v.animalId,
             v.farmId,
             v.eventType,
             v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt),
             v.externalEventId ?? undefined,
           ).catch(err => logger.debug({ err, eventType: v.eventType }, '[Snapshot] capture skipped'));
-        }
+        }).catch((err: unknown) => logger.warn({ err }, '[Snapshot] batch capture failed'));
       } catch (error) {
         logger.error({ err: error, batchSize: values.length }, '[Sync] Failed to store event batch');
       }
@@ -467,6 +471,57 @@ async function syncEvents(
     `[Sync] Events: ${String(stored)} stored (${String(events.length - newEvents.length)} duplicates skipped)`,
   );
   return stored;
+}
+
+// ===========================
+// 삽입 결과 짝짓기 · 방송 범위 (DI-10 후속, OPS-14)
+// ===========================
+
+export const BROADCAST_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const SNAPSHOT_CONCURRENCY = 4;
+
+interface InsertedValue {
+  readonly externalEventId?: string | null;
+  readonly detectedAt: Date | string;
+}
+
+/** returning 행을 외부 이벤트 ID 로 원래 값과 짝짓는다 (충돌로 빠진 행이 있어도 어긋나지 않게) */
+export function pairInsertedRows<R extends { externalEventId: string | null }, V extends InsertedValue>(
+  rows: readonly R[],
+  values: readonly V[],
+): Array<{ row: R; v: V }> {
+  const byExt = new Map<string, V>();
+  for (const v of values) if (v.externalEventId) byExt.set(v.externalEventId, v);
+  const out: Array<{ row: R; v: V }> = [];
+  for (const row of rows) {
+    const v = row.externalEventId ? byExt.get(row.externalEventId) : undefined;
+    if (v) out.push({ row, v });
+  }
+  return out;
+}
+
+/** 최근 24시간 안에 감지된 이벤트만 실시간 '새 알람'으로 방송 */
+export function selectBroadcastable<T extends { v: InsertedValue }>(items: readonly T[], now: number): T[] {
+  return items.filter(({ v }) => {
+    const t = (v.detectedAt instanceof Date ? v.detectedAt : new Date(v.detectedAt)).getTime();
+    return Number.isFinite(t) && now - t <= BROADCAST_WINDOW_MS;
+  });
+}
+
+/** 동시에 limit 개까지만 실행 */
+export async function runWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const item = items[next++] as T;
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 // ===========================
