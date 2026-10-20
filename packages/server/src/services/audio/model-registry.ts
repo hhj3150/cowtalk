@@ -155,12 +155,19 @@ async function doResolve(): Promise<ResolvedAudioModels> {
 }
 
 /** 확정된 오디오 모델. 첫 호출에서 조회하고 이후 재사용한다. */
-export async function getAudioModels(): Promise<ResolvedAudioModels> {
+// VO-10: 조회 실패 결과도 잠깐은 재사용한다 — 예전엔 OpenAI 장애 동안 음성 요청마다 목록 조회(최대 8초)를 다시 해
+// 모든 TTS/STT 가 8초씩 늦어졌다. 실패는 60초만 기억하고 그 뒤 다시 조회한다(성공 결과는 계속 유지).
+export const FAILED_PROBE_TTL_MS = 60_000;
+let failedCache: { readonly value: ResolvedAudioModels; readonly until: number } | null = null;
+
+export async function getAudioModels(now: number = Date.now()): Promise<ResolvedAudioModels> {
   if (resolvedCache) return resolvedCache;
+  if (failedCache && now < failedCache.until) return failedCache.value;
   inflight ??= doResolve()
     .then((r) => {
       // 조회에 성공했을 때만 굳힌다 — 일시적 네트워크 실패로 선호 모델이 고착되지 않도록
       if (!r.probeError) resolvedCache = r;
+      else failedCache = { value: r, until: Date.now() + FAILED_PROBE_TTL_MS };
       return r;
     })
     .finally(() => { inflight = null; });
@@ -177,5 +184,6 @@ export function warmAudioModels(): void {
 /** 테스트·운영 진단용 — 캐시를 비워 다음 호출에서 다시 조회하게 한다 */
 export function resetAudioModelCache(): void {
   resolvedCache = null;
+  failedCache = null;
   inflight = null;
 }
