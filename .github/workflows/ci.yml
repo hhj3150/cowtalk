@@ -44,6 +44,9 @@ jobs:
       - name: Lint (errors fail, warnings reported)
         run: npm run lint
 
+      - name: Confidence unit audit (AI-09 — 알람 신뢰도 0-1 단위 유지)
+        run: npm run audit:confidence-units
+
       - name: Unit tests (server + shared, DB 불필요)
         run: npx vitest run packages/server/src packages/shared/src
 
