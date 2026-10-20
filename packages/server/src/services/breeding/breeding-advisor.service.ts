@@ -7,7 +7,7 @@ import {
   animals, farms, farmSemenInventory, semenCatalog,
   breedingEvents, pregnancyChecks, smaxtecEvents,
 } from '../../db/schema.js';
-import { eq, and, desc, gte, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, isNull, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { getFarmSemenPerformance, type SemenPerformance } from './breeding-feedback.service.js';
 import { recordSemenRecommendations } from './recommendation-tracking.service.js';
@@ -534,6 +534,9 @@ export async function getBreedingAdvice(
 // 수정 기록 저장
 // ===========================
 
+/** 같은 개체·같은 정액 수정 기록이 이 시간 안에 다시 오면 중복 요청으로 본다 */
+export const INSEMINATION_DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
 export async function recordInsemination(params: {
   readonly animalId: string;
   readonly farmId: string;
@@ -546,35 +549,55 @@ export async function recordInsemination(params: {
 }): Promise<{ eventId: string }> {
   const db = getDb();
 
-  const [result] = await db.insert(breedingEvents).values({
-    animalId: params.animalId,
-    farmId: params.farmId,
-    eventDate: new Date(),
-    type: 'insemination',
-    semenId: params.semenId ?? null,
-    semenInfo: params.semenInfo ?? null,
-    technicianName: params.technicianName ?? null,
-    recommendedSemenId: params.recommendedSemenId ?? null,
-    optimalTime: params.optimalTime ? new Date(params.optimalTime) : null,
-    notes: params.notes ?? null,
-  }).returning({ eventId: breedingEvents.eventId });
+  // DI-12: 수정 기록과 정액 재고 차감을 한 트랜잭션으로 + 중복 요청(재시도·두 번 누름) 멱등 처리.
+  // 예전엔 따로 실행돼 한쪽만 반영되거나, 같은 요청이 두 번 오면 기록 2건·재고 2개 차감이 됐다.
+  const result = await db.transaction(async (tx) => {
+    const since = new Date(Date.now() - INSEMINATION_DEDUP_WINDOW_MS);
+    const [recent] = await tx
+      .select({ eventId: breedingEvents.eventId })
+      .from(breedingEvents)
+      .where(and(
+        eq(breedingEvents.animalId, params.animalId),
+        eq(breedingEvents.type, 'insemination'),
+        gte(breedingEvents.eventDate, since),
+        params.semenId ? eq(breedingEvents.semenId, params.semenId) : isNull(breedingEvents.semenId),
+      ))
+      .limit(1);
+    if (recent) return { eventId: recent.eventId, duplicate: true };
 
-  // 보유 정액 수량 차감
-  if (params.semenId) {
-    await db.execute(sql`
-      UPDATE farm_semen_inventory
-      SET quantity = GREATEST(quantity - 1, 0)
-      WHERE farm_id = ${params.farmId} AND semen_id = ${params.semenId}
-    `);
-  }
+    const [row] = await tx.insert(breedingEvents).values({
+      animalId: params.animalId,
+      farmId: params.farmId,
+      eventDate: new Date(),
+      type: 'insemination',
+      semenId: params.semenId ?? null,
+      semenInfo: params.semenInfo ?? null,
+      technicianName: params.technicianName ?? null,
+      recommendedSemenId: params.recommendedSemenId ?? null,
+      optimalTime: params.optimalTime ? new Date(params.optimalTime) : null,
+      notes: params.notes ?? null,
+    }).returning({ eventId: breedingEvents.eventId });
+    if (!row) throw new Error('수정 기록 생성 실패');
+
+    // 보유 정액 수량 차감
+    if (params.semenId) {
+      await tx.execute(sql`
+        UPDATE farm_semen_inventory
+        SET quantity = GREATEST(quantity - 1, 0)
+        WHERE farm_id = ${params.farmId} AND semen_id = ${params.semenId}
+      `);
+    }
+    return { eventId: row.eventId, duplicate: false };
+  });
 
   logger.info({
     animalId: params.animalId,
     semenId: params.semenId,
-    eventId: result?.eventId,
-  }, '[BreedingAdvisor] Insemination recorded');
+    eventId: result.eventId,
+    duplicate: result.duplicate,
+  }, result.duplicate ? '[BreedingAdvisor] 같은 수정 기록 중복 요청 — 기존 기록 반환' : '[BreedingAdvisor] Insemination recorded');
 
-  return { eventId: result?.eventId ?? '' };
+  return { eventId: result.eventId };
 }
 
 // ===========================
