@@ -32,6 +32,8 @@ const envSchema = z.object({
   DB_NAME: z.string().default('cowtalk'),
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
+  // OPS-09: 쿼리 하나가 커넥션을 무한정 붙잡지 않게 (0 = 끔). 마이그레이션 연결에는 적용 안 함
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(60_000),
 
   REDIS_ENABLED: envBool(true),
   // 데이터 전체 공개 스위치 — 소유자 단독 운영 단계용. "true"일 때만 켜진다.
