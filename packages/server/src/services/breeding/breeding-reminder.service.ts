@@ -173,14 +173,14 @@ export async function checkRepeatBreeders(): Promise<readonly RepeatBreeder[]> {
           (SELECT COUNT(*)::int FROM pregnancy_checks pc
            WHERE pc.animal_id = be.animal_id
              AND pc.result = 'pregnant'
-             AND pc.check_date >= ${cutoff}),
+             AND pc.check_date >= ${cutoff.toISOString()}::timestamptz),
           0
         ) as pregnant_count
       FROM breeding_events be
       JOIN animals a ON a.animal_id = be.animal_id
       JOIN farms f ON f.farm_id = be.farm_id
       WHERE be.type = 'insemination'
-        AND be.event_date >= ${cutoff}
+        AND be.event_date >= ${cutoff.toISOString()}::timestamptz
         AND a.status = 'active'
         AND a.deleted_at IS NULL
       GROUP BY be.animal_id, a.ear_tag, be.farm_id, f.name

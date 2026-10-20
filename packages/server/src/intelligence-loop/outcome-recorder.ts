@@ -225,8 +225,8 @@ async function findMatchingFeedback(
     .where(
       and(
         eq(feedback.animalId, pred.animalId),
-        sql`${feedback.createdAt} >= ${pred.timestamp}`,
-        sql`${feedback.createdAt} <= ${windowEnd}`,
+        sql`${feedback.createdAt} >= ${pred.timestamp.toISOString()}::timestamptz`,
+        sql`${feedback.createdAt} <= ${windowEnd.toISOString()}::timestamptz`,
       ),
     )
     .orderBy(desc(feedback.createdAt));

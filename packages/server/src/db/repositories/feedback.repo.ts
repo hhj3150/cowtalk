@@ -87,7 +87,7 @@ export async function getEnginePerformance(
     .where(
       and(
         eq(predictions.engineType, engineType),
-        sql`outcome_evaluations.evaluated_at >= ${since}`,
+        sql`outcome_evaluations.evaluated_at >= ${since.toISOString()}::timestamptz`,
       ),
     );
 

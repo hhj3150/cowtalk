@@ -460,7 +460,7 @@ adminRouter.get('/audit-log', async (req: Request, res: Response, next: NextFunc
     const [domainStats] = await db.execute(
       sql`SELECT tool_domain, COUNT(*)::int as cnt, AVG(execution_ms)::int as avg_ms
           FROM tool_audit_log
-          WHERE started_at >= ${sinceDate}
+          WHERE started_at >= ${sinceDate.toISOString()}::timestamptz
           GROUP BY tool_domain
           ORDER BY cnt DESC`,
     );
