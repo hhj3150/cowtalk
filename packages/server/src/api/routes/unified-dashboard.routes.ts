@@ -16,7 +16,7 @@ import {
   sensorDailyAgg, sensorMeasurements, eventLabels,
   pregnancyChecks, calvingEvents, regions,
 } from '../../db/schema.js';
-import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
+import { eq, count, sql, and, gte, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { resolveFarmProvince } from '../../services/epidemiology/province-mapper.js';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
@@ -133,6 +133,11 @@ function whereAll(...conditions: (SqlCondition | undefined)[]): SqlCondition | u
   if (valid.length === 0) return undefined;
   if (valid.length === 1) return valid[0];
   return and(...valid) ?? valid[0];
+}
+
+// OPS-10: 센서 장착 개체 — 활성·미삭제 개체 중 현재 센서 보유 (farm-index 와 같은 정의)
+export function sensorAttachedCondition(): SqlCondition {
+  return and(eq(animals.status, 'active'), isNull(animals.deletedAt), isNotNull(animals.currentDeviceId)) as SqlCondition;
 }
 
 // ===========================
@@ -2117,12 +2122,11 @@ unifiedDashboardRouter.get('/farm-comparison', async (req: Request, res: Respons
       const tempWarned = Number(tempAlerted?.count ?? 0);
       const tempStability = total > 0 ? Math.round(clampPct(((total - tempWarned) / total) * 100)) : 0;
 
-      // 센서 장착률
-      const [sensorAnimals] = await db.select({
-        count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
-      })
-        .from(smaxtecEvents)
-        .where(eq(smaxtecEvents.farmId, farm.farmId));
+      // 센서 장착률 — OPS-10: 이벤트 전체 기간 COUNT(DISTINCT) 스캔 대신 현재 장착 센서 기준
+      // (farm-index·방역 대시보드와 같은 정의: 활성 개체 중 current_device_id 보유)
+      const [sensorAnimals] = await db.select({ count: sql<number>`count(*)::int` })
+        .from(animals)
+        .where(and(sensorAttachedCondition(), eq(animals.farmId, farm.farmId)));
       const sensorRate = total > 0 ? Math.min(100, Math.round((Number(sensorAnimals?.count ?? 0) / total) * 100)) : 0;
 
       // 반추·사료효율은 TimescaleDB aggregation 파이프라인 미구현 — 0으로 반환
@@ -2477,13 +2481,11 @@ async function queryHerdOverview(
   // 두수 단일 소스 — D7/D9 라이브 (BUG-007).
   const herd = await getHerdTotal(currentFarmScope(farmId));
 
-  // 센서 장착: 활성 동물 중 smaXtec 이벤트가 있는 동물 수
-  const [sensorCount] = await db.select({
-    count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
-  })
-    .from(smaxtecEvents)
-    .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
-    .where(whereAll(farmCondition(smaxtecEvents.farmId, farmId), eq(animals.status, 'active')));
+  // 센서 장착: 활성 동물 중 현재 센서가 붙은 동물 수
+  // OPS-10: 예전엔 이벤트 전 기간 COUNT(DISTINCT) 스캔 (대시보드 로드마다) → 개체 테이블 기준
+  const [sensorCount] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(animals)
+    .where(whereAll(farmCondition(animals.farmId, farmId), sensorAttachedCondition()));
 
   // 미확인 알림 / 건강 이상 — alert-aggregator 단일 소스 (D3, BUG-007 Part 2).
   // window=24h, ackedFilter=false (미확인만). 878 vs 874 모순 해소.

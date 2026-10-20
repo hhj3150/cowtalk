@@ -503,7 +503,8 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
   );
 
   // 5. DIM/parity 이벤트 기반 업데이트 (calving_confirmation 기반)
-  const dimUpdated = await updateDimAndParity();
+  // OPS-10: DIM 은 하루 단위로만 바뀐다 — 5분마다 분만 이벤트 전체를 다시 읽지 않고 1시간에 한 번
+  const dimUpdated = shouldRecomputeDim(Date.now(), lastDimRecomputeAt) ? await runDimRecompute() : 0;
 
   // 6. 번식 이벤트 동기화 (smaxtec_events → breeding_events + pregnancy_checks)
   const breedingSynced = await syncBreedingFromEvents();
@@ -749,10 +750,24 @@ export function countCalvingEpisodes(dates: readonly Date[], gapDays: number = C
 // DIM/parity 이벤트 기반 업데이트
 // ===========================
 
+export const DIM_RECOMPUTE_INTERVAL_MS = 60 * 60 * 1000;
+let lastDimRecomputeAt = 0;
+
+/** OPS-10: 직전 재계산 후 1시간이 지났을 때만 (실패하면 다음 주기에 다시 시도) */
+export function shouldRecomputeDim(now: number, lastAt: number): boolean {
+  return now - lastAt >= DIM_RECOMPUTE_INTERVAL_MS;
+}
+
+async function runDimRecompute(): Promise<number> {
+  const updated = await updateDimAndParity();
+  if (updated > 0) lastDimRecomputeAt = Date.now();
+  return updated;
+}
+
 /**
  * smaXtec calving_confirmation/calving_detection 이벤트로부터
  * DIM(착유일수)과 parity(산차)를 자동 계산하여 animals 테이블 업데이트.
- * 5분 주기 sync마다 실행.
+ * sync 주기마다 호출되지만 1시간에 한 번만 실제 실행 (OPS-10).
  */
 async function updateDimAndParity(): Promise<number> {
   const db = getDb();
