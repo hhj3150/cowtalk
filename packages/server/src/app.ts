@@ -6,7 +6,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { allowedOrigins } from './lib/cors-origins.js';
 import { RedisFallbackStore } from './lib/rate-limit-store.js';
-import { getRedis } from './serving/cache.service.js';
+import { getRedis } from './lib/redis.js';
 import { createApiRouter } from './api/index.js';
 import { errorHandler, notFoundHandler } from './api/middleware/error.js';
 import { requestLogger } from './api/middleware/request-logger.js';

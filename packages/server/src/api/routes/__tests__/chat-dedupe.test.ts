@@ -10,7 +10,7 @@ const handleChatStream = vi.fn((_req: unknown, cb: { onDone: (t: string) => void
 }));
 vi.mock('../../../chat/chat-service.js', () => ({ handleChatStream, handleChatMessage: vi.fn(), buildStreamFallback: vi.fn() }));
 vi.mock('../../../ai-brain/claude-client.js', () => ({ isClaudeAvailable: () => true }));
-vi.mock('../../../serving/cache.service.js', () => ({ getRedis: () => null }));
+vi.mock('../../../lib/redis.js', () => ({ getRedis: () => null }));
 vi.mock('../../../services/auth/approval.service.js', async (orig) => ({
   ...(await orig<typeof import('../../../services/auth/approval.service.js')>()),
   isUserApproved: vi.fn(async () => true),

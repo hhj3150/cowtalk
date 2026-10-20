@@ -17,7 +17,7 @@ import { getDb } from '../../config/database.js';
 import { chatConversations } from '../../db/schema.js';
 import { and, eq, desc } from 'drizzle-orm';
 import { claimInFlight, releaseInFlight } from '../../lib/inflight-dedupe.js';
-import { getRedis } from '../../serving/cache.service.js';
+import { getRedis } from '../../lib/redis.js';
 
 export const chatRouter = Router();
 

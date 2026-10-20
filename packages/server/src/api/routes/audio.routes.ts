@@ -12,7 +12,7 @@ import { getAudioModels, TTS_PREFERENCE, STT_PREFERENCE } from '../../services/a
 import { config } from '../../config/index.js';
 import rateLimit from 'express-rate-limit';
 import { RedisFallbackStore } from '../../lib/rate-limit-store.js';
-import { getRedis } from '../../serving/cache.service.js';
+import { getRedis } from '../../lib/redis.js';
 
 export const audioRouter = Router();
 

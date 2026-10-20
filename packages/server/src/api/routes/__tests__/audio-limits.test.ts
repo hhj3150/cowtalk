@@ -7,7 +7,7 @@ import { signAccessToken } from '../../../lib/auth.js';
 const synthesize = vi.fn(async () => ({ audio: Buffer.from('ID3'), contentType: 'audio/mpeg', cached: false, truncated: false, originalLength: 1, synthesizedLength: 1 }));
 vi.mock('../../../services/audio/tts.service.js', () => ({ synthesize }));
 vi.mock('../../../services/audio/stt.service.js', () => ({ transcribe: vi.fn(async () => ({ text: 'x' })) }));
-vi.mock('../../../serving/cache.service.js', () => ({ getRedis: () => null }));
+vi.mock('../../../lib/redis.js', () => ({ getRedis: () => null }));
 vi.mock('../../../config/index.js', async (orig) => {
   const actual = await orig<typeof import('../../../config/index.js')>();
   return { ...actual, config: { ...actual.config, TTS_HOURLY_LIMIT_PER_USER: 3, OPENAI_TTS_MAX_CHARS: 800 } };

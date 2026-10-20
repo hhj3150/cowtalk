@@ -15,7 +15,7 @@ vi.mock('../../../chat/chat-service.js', () => ({
 }));
 vi.mock('../../../chat/context-builder.js', () => ({ resolveContext: vi.fn(async () => ({ context: { type: 'general' } })) }));
 vi.mock('../../../ai-brain/claude-client.js', () => ({ isClaudeAvailable: () => true }));
-vi.mock('../../../serving/cache.service.js', () => ({ getRedis: () => null }));
+vi.mock('../../../lib/redis.js', () => ({ getRedis: () => null }));
 vi.mock('../../../chat/chat-scope.js', () => ({ sanitizeChatScope: async (s: object) => ({ ...s, narrowed: false }) }));
 vi.mock('../../../services/auth/approval.service.js', async (orig) => ({
   ...(await orig<typeof import('../../../services/auth/approval.service.js')>()),

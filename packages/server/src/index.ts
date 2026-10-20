@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { logger } from './lib/logger.js';
 import { closeDb } from './config/database.js';
+import { closeRedis } from './lib/redis.js';
 import { getPipelineOrchestrator } from './pipeline/orchestrator.js';
 import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
 import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
@@ -81,6 +82,7 @@ function shutdown(signal: string): void {
       await pipeline.stop();
       await closeDb();
       logger.info('Database connection closed');
+      await closeRedis().catch((err: unknown) => logger.warn({ err }, 'Redis close failed'));
     } catch (err) {
       logger.error({ err }, 'Error during shutdown');
     }
