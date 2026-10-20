@@ -9,7 +9,7 @@ import {
 import { eq, and, desc, gte, sql, isNull } from 'drizzle-orm';
 import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
 import { logger } from '../../lib/logger.js';
-import { kstToday } from '../../lib/kst.js';
+import { kstToday, kstDateString } from '../../lib/kst.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -31,6 +31,11 @@ interface PendingCheck {
  * 수정 후 N일(목장설정 pregnancyCheckDays) 경과했지만
  * 아직 임신감정이 등록되지 않은 개체를 찾아 알림 생성
  */
+/** DI-16: 장기공태 알림 월 단위 dedup 키 — KST 달 기준 (UTC 달이면 매월 1일 0~9시에 전월 키가 된다) */
+export function longOpenDedupKey(animalId: string, now: Date): string {
+  return `long-open-${animalId}-${kstDateString(now).slice(0, 7)}`;
+}
+
 export async function checkPendingPregnancyTests(): Promise<readonly PendingCheck[]> {
   const db = getDb();
   const now = new Date();
@@ -461,7 +466,7 @@ async function checkLongOpenDays(): Promise<number> {
 
       if (recentPreg.length > 0) continue;
 
-      const dedupKey = `long-open-${animal.animalId}-${now.toISOString().split('T')[0]?.slice(0, 7)}`; // 월 단위 dedup
+      const dedupKey = longOpenDedupKey(animal.animalId, now);
 
       try {
         const [inserted] = await db.insert(alerts).values({

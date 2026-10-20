@@ -17,6 +17,7 @@ import {
   pregnancyChecks, calvingEvents, regions,
 } from '../../db/schema.js';
 import { eq, count, sql, and, gte, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { kstDateString, kstToday } from '../../lib/kst.js';
 import { resolveFarmProvince } from '../../services/epidemiology/province-mapper.js';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
@@ -95,7 +96,9 @@ function daysAgo(days: number): Date {
 }
 
 // 최근 24시간 기준 (자정 리셋 방지 — 항상 데이터가 있도록)
-function todayStart(): Date {
+// DI-16: 예전 이름은 todayStart 였지만 실제로는 '지금부터 24시간 전'이다 (오늘 0시가 아님).
+// 알림 위젯은 아침에도 밤사이 알림이 보이도록 최근 24시간 창을 쓴다 — 동작은 그대로 두고 이름을 정직하게.
+function last24hStart(): Date {
   return new Date(Date.now() - 24 * 60 * 60 * 1000);
 }
 
@@ -2411,7 +2414,7 @@ async function buildUnifiedDashboard(
 ): Promise<UnifiedDashboardData> {
   const db = getDb();
   const periodStart = daysAgo(periodDays);
-  const today = todayStart();
+  const today = last24hStart();
   const thirtyDaysAgo = daysAgo(30);
 
   // farmCondition은 _currentFarmIds 또는 farmId를 사용
@@ -2763,7 +2766,7 @@ async function queryDailyRumination(
 ): Promise<readonly RuminationDataPoint[]> {
   const baseConditions = [
     sql`${sensorDailyAgg.metricType} LIKE '%rumination%'`,
-    gte(sensorDailyAgg.date, sql`${thirtyDaysAgo.toISOString().slice(0, 10)}`),
+    gte(sensorDailyAgg.date, sql`${kstDateString(thirtyDaysAgo)}`),
   ];
 
   const rows = await db.select({
@@ -2806,7 +2809,7 @@ async function queryWeeklyRumination(
     .where(whereAll(
       farmCondition(animals.farmId, farmId),
       sql`${sensorDailyAgg.metricType} LIKE '%rumination%'`,
-      gte(sensorDailyAgg.date, sql`${thirtyDaysAgo.toISOString().slice(0, 10)}`),
+      gte(sensorDailyAgg.date, sql`${kstDateString(thirtyDaysAgo)}`),
     ))
     .groupBy(sql`DATE_TRUNC('week', ${sensorDailyAgg.date}::timestamp)`)
     .orderBy(sql`DATE_TRUNC('week', ${sensorDailyAgg.date}::timestamp)`);
@@ -3036,7 +3039,7 @@ async function queryRumenHealth(
     .where(whereAll(
       farmCondition(animals.farmId, farmId),
       sql`${sensorDailyAgg.metricType} LIKE '%ph%'`,
-      gte(sensorDailyAgg.date, sql`${thirtyDaysAgo.toISOString().slice(0, 10)}`),
+      gte(sensorDailyAgg.date, sql`${kstDateString(thirtyDaysAgo)}`),
     ))
     .groupBy(sensorDailyAgg.date)
     .orderBy(sensorDailyAgg.date);
@@ -3533,7 +3536,6 @@ import type {
 import { farmProfitEntries } from '../../db/schema.js';
 import { z } from 'zod';
 import { requireAnimalAccess, requireScopedIds, requireAnimalInBodyFarm } from '../middleware/animal-access.js';
-import { kstToday } from '../../lib/kst.js';
 
 /** Seeded pseudo-random for reproducible demo data per farmId+month */
 function seededRandom(seed: string): () => number {
