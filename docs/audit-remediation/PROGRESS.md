@@ -63,12 +63,33 @@
 | DI-13 번식 설정 덮어쓰기 | ✅ | 5c438d1 | farm-settings-sync.test.ts |
 | DI-14 출처 컬럼·유량 유니크 | ✅ | 5488d49 | 0043·0044 |
 | DI-15 estrus-action | ✅ | 6112b51 | estrus-action.test.ts |
-| AI-04 ~ AI-08 | ⬜ | | |
-| VO-04 ~ VO-09 | ⬜ | | |
-| OPS-08 ~ OPS-15 | ⬜ | | |
+| AI-04 끊긴 대화 계속 실행 | ✅ | a0d0ed0 | chat-abort.test.ts |
+| AI-05 추론 정지 스위치 | ✅ | 48bb026 | claude-client 테스트 |
+| AI-06 결측→0 저장 | ✅ | b7871a3 | prediction-bridge-features.test.ts |
+| AI-07 답변 수치 검증 | ✅ | 0a159fb | answer-verifier.test.ts |
+| AI-08 모델·프롬프트·입력 출처 | ✅ | 11b5b84 | provenance.test.ts, briefing-log.test.ts · 0045(컬럼·테이블 추가만) |
+| VO-04 끊긴 답변 표시 | ✅ | 0a159fb | stream-notes.test.ts |
+| VO-05 재생 3경로 통합·세대 | ✅ | 45a3401 | voice-playback-generation.test.tsx (구 코드에서 2건 실패 재현) |
+| VO-06 Chrome cancel 후 계속 말함 | ✅ | 45a3401 | 〃 |
+| VO-07 중복 제출·늦은 Whisper | ✅ | 45a3401 | 〃 + inflight-dedupe.test.ts, chat-dedupe.test.ts (409) |
+| VO-08 확인 요약 누락 필드·원문 전달 | ✅ | 050bc4d | write-confirmation.test.ts, stream-notes.test.ts |
+| VO-09 음성 비용 남용 | ✅ | f6a9c0c | audio-limits.test.ts, tts-cache-bytes.test.ts |
+| OPS-08 "false" 가 true | ✅ | 7a63de1 | env-bool.test.ts · ⚠️ KAKAO_ALIMTALK_TEST_MODE=false 환경은 배포 후 실발송 시작 |
+| OPS-09 쿼리 타임아웃 | ✅ | 3a54c77 | pool-options.test.ts · 로컬 DB 실측(1s 초과 취소) |
+| OPS-10 전 기간 스캔·DIM 5분 재계산 | ✅ | 3291465 | sensor-attached.test.ts, dim-throttle.test.ts |
+| OPS-11 외부 호출 타임아웃 | ✅ | abbbf2a | anthropic-client-options.test.ts |
+| OPS-12 메모리 상태(푸시·쿨다운·속도제한·Socket.IO) | ✅ | 8a226d6, 953444c, 3cedb23, 2fd4f3b | push-subscribe·cooldown-db·rate-limit-store·socket-redis-adapter 테스트 · 0046(테이블 추가만) · 실 Redis 2레플리카 전파 재현·해결 · 미배정 계정 전 농장 푸시 누수도 수정 |
+| OPS-13 마이그레이션 실패·동시 실행 | ✅ | 7959971 | migration-status.test.ts · advisory lock 동시 실행 실측 · MIGRATIONS_STRICT 기본 꺼짐 |
+| OPS-14 백필 대량 방송 | ✅ | aa5f80b | event-broadcast.test.ts · DI-10 후속(returning 행 짝짓기 오류)도 수정 |
+| OPS-15 CI 보강 | ✅ | 1c038b0 | db-tests 잡(postgres:16)·lint 추가 · 필수 체크 지정은 저장소 설정 필요 |
 
 ## 승인·정책 대기 (코드로 해결 불가)
-- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스, 0042 이벤트 유니크(중복 시 보류), 0043 source_event_id 컬럼, 0044 유량 유니크(중복 시 보류)
+- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스, 0042 이벤트 유니크(중복 시 보류), 0043 source_event_id 컬럼, 0044 유량 유니크(중복 시 보류), 0045 AI 출처 컬럼·ai_briefing_log, 0046 push_subscriptions
+  - 배포 직후 기존 브라우저 푸시 구독은 메모리에만 있었으므로 사용자가 다시 구독해야 한다 (OPS-12)
+- 새 의존성: @socket.io/redis-adapter@8.3.0 (OPS-12) — Redis 연결 시에만 사용
+- 새 환경변수(전부 기본값 있음): DB_STATEMENT_TIMEOUT_MS, ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, AUTO_MIGRATE, MIGRATIONS_STRICT, SOCKET_IO_REDIS_ADAPTER, TTS_HOURLY_LIMIT_PER_USER, STT_HOURLY_LIMIT_PER_USER
+- OPS-08: 운영에 KAKAO_ALIMTALK_TEST_MODE=false 가 설정돼 있으면 배포 후 알림톡 실발송이 시작된다 (지금까지는 무시되어 로그만 남음) — 배포 전 확인
+- OPS-15: GitHub 저장소 설정에서 build-and-test·db-tests 를 필수 체크로 지정
 - 배포 시 `schema_migrations` 테이블 생성 (SEC-03)
 - 기존 진료 기록 휴약 종료일 보정 (DI-01)
 - 이동 개체 과거 기록 귀속 정책 (DI-02)
@@ -78,13 +99,22 @@
 - AI-02: 옛 무차별 자동 레이블 데이터 정리 여부 (현재는 학습에서 제외만)
 - SEC-22: 0033(비밀번호 해시)·0034(전화번호) 공개 저장소 노출 — 비밀번호 변경·저장소 비공개 여부
 
+## 검증 기록 (P2 완료 시점, 로컬 — 2026-10-20)
+- build 3종 통과 / lint 0 오류(경고 36, 기존과 동일)
+- vitest server+shared 1108 통과·1 skip / web 266 통과
+- CI db-tests 재현: 빈 DB에 마이그레이션 47/47 적용 → 루트 vitest 전체 166 파일·1458 통과·1 skip
+- 잘못된 마이그레이션 파일을 넣으면 `npm run migrate` 종료 코드 1 확인
+
 ## 검증 기록 (P1 완료 시점, 로컬)
 - typecheck 0 오류 / lint 0 오류(경고 36, 기존) / build 3종 통과
 - vitest server+shared 1010 통과·1 skip / web 248 통과 / npm test 전체 1360 통과·1 skip (로컬 Postgres 가동)
 
 ## 테스트 기준선
-- CI 5단계(빌드 3종, server+shared vitest, web vitest) 통과 유지가 조건
-- 루트 `npm test`의 `tests/server/*` 16건 실패는 기준 커밋부터 존재 — Phase 5에서 원인 분류·해결
+- CI: build-and-test(빌드 3종·lint·server+shared·web) + db-tests(빈 DB 마이그레이션 + 루트 전체) 통과 유지가 조건
+- 기준 커밋의 루트 테스트 16건 실패는 f159178 에서 해결
+
+## 다음 작업
+- P3 13건 → Phase 5 통합 검증(권한·농장 격리·smaXtec 수집·AI 기록 저장·음성 회귀, SEC-15 CSP 브라우저 확인) → Phase 6 품질 감독 체계
 
 ## 이후 단계 (오류 수정·검증 완료 후 착수 — 2026-10-20 차세대 개발 지시서)
 - 2장 대화형 AI 중심 UI 간소화, 3장 역할별 워크스페이스(목장주·수의사 다목장·행정·방역),
