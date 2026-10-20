@@ -10,7 +10,7 @@ import { startKeepAlive, stopKeepAlive } from './lib/keep-alive.js';
 import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
 import { startReportCleanup, stopReportCleanup } from './services/report/cleanup.js';
 import { seedSemenCatalog, seedFarmSemenInventory } from './services/breeding/semen-seed.service.js';
-import { createSocketServer } from './realtime/socket-server.js';
+import { createSocketServer, attachSocketAdapter } from './realtime/socket-server.js';
 import { runAutoMigrations, migrationsFailed } from './db/auto-migrate.js';
 import { warmAudioModels } from './services/audio/model-registry.js';
 
@@ -30,6 +30,7 @@ const httpServer = createServer(app);
 
 // Socket.IO 서버 초기화
 createSocketServer(httpServer);
+await attachSocketAdapter(); // OPS-12: listen 전에 (최대 3초, 실패 시 인메모리)
 
 // Event loop lag 측정 시작 — 서버 가동 직후부터 누적 (서버 부팅 전에 시작해야 초기 히스토그램 포함)
 startEventLoopMonitor();

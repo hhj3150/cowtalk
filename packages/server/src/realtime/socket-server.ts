@@ -8,6 +8,7 @@ import { config } from '../config/index.js';
 import { logger } from '../lib/logger.js';
 import { verifyAccessToken } from '../lib/auth.js';
 import { isUserApproved } from '../services/auth/approval.service.js';
+import { attachRedisAdapter } from './socket-redis-adapter.js';
 import type { AuthTokenPayload } from '@cowtalk/shared';
 
 let io: SocketServer | null = null;
@@ -37,6 +38,18 @@ export function msUntilExpiry(token: string, now: number = Date.now()): number |
 const CORS_ORIGINS = config.NODE_ENV === 'production'
   ? [/\.netlify\.app$/, /cowtalk\.kr$/, /cowtalk\.netlify\.app$/]
   : ['http://localhost:5173', 'http://localhost:3000'];
+
+/**
+ * OPS-12: 다중 레플리카 전파용 Redis 어댑터 연결. HTTP listen 전에 await 한다 —
+ * 연결된 뒤에 어댑터를 바꾸면 이미 접속한 소켓의 방 정보가 새 어댑터에 없다.
+ */
+export async function attachSocketAdapter(): Promise<boolean> {
+  if (!io) return false;
+  return attachRedisAdapter(io).catch((err: unknown) => {
+    logger.warn({ err }, '[Socket] Redis adapter 초기화 실패 — 인메모리 유지');
+    return false;
+  });
+}
 
 export function createSocketServer(httpServer: HttpServer): SocketServer {
   io = new SocketServer(httpServer, {
