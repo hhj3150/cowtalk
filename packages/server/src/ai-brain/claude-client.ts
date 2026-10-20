@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { findUnverifiedClaims, hasUnverified, type UnverifiedClaims } from './answer-verifier.js';
 import { config } from '../config/index.js';
 import { anthropicClientOptions } from './anthropic-client-options.js';
+import { extractPendingConfirmation, type PendingConfirmation } from '../services/approval/write-confirmation.js';
 import { logger } from '../lib/logger.js';
 import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 import { TINKERBELL_TOOLS } from './tools/tool-definitions.js';
@@ -173,6 +174,8 @@ export interface ToolEvent {
   readonly toolDomain: string;
   readonly success?: boolean;
   readonly executionMs?: number;
+  /** VO-08: 저장 대기 제안 — 서버가 만든 요약 원문 (UI 가 그대로 보여준다) */
+  readonly confirmation?: PendingConfirmation;
 }
 
 export interface StreamCallbacks {
@@ -495,12 +498,14 @@ export async function callClaudeForChatWithTools(
         const gatewayResult = settled[i]!;
         const domain = TOOL_DOMAIN_MAP[toolBlock.name] ?? 'unknown';
 
+        const confirmation = extractPendingConfirmation(gatewayResult.result);
         callbacks.onToolEvent?.({
           phase: 'result',
           toolName: toolBlock.name,
           toolDomain: domain,
           success: gatewayResult.success,
           executionMs: gatewayResult.executionMs,
+          ...(confirmation ? { confirmation } : {}),
         });
 
         toolResults.push({

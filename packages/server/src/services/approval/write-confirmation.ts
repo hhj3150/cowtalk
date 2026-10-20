@@ -104,7 +104,11 @@ const TOOL_LABEL: Readonly<Record<string, string>> = {
   schedule_sync_protocol: '발정동기화 처방',
 };
 
-/** 입력 키 → 사람이 읽는 이름. 여기 없는 키는 요약에 넣지 않는다 (내부 id 노출 방지). */
+/**
+ * 입력 키 → 사람이 읽는 이름.
+ * VO-08: 예전엔 여기 없는 키를 요약에서 뺐다 → 유방 분방·CMT·BCS·탈수도·정액 ID 처럼 실제로 저장되는 값이
+ * 확인 없이 저장됐다. 이제 ID_KEYS(개체 표시로 대신하는 내부 id)만 빼고 저장되는 키는 전부 보여준다.
+ */
 const FIELD_LABEL: Readonly<Record<string, string>> = {
   diagnosis: '진단',
   severity: '중증도',
@@ -124,8 +128,35 @@ const FIELD_LABEL: Readonly<Record<string, string>> = {
   labelType: '판정 유형',
   protocol: '프로토콜',
   startDate: '시작일',
+  prescribedBy: '처방 수의사',
+  treatmentId: '대상 치료 기록 ID',
+  cmtResult: 'CMT 결과',
+  bcs: '체형점수(BCS)',
+  hydrationLevel: '탈수 정도',
+  affectedQuarter: '이환 분방',
+  semenId: '정액 카탈로그(재고 1개 차감)',
+  mappedAlarmType: '연결 알람 유형',
   notes: '비고',
 };
+
+/** 요약에서 빼는 키 — 개체·목장은 animalLabel 로 사람이 읽게 보여주고, 확인 메타는 저장 대상이 아니다 */
+const ID_KEYS: ReadonlySet<string> = new Set(['animalId', 'farmId', 'confirmationId']);
+
+const VALUE_LABEL: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  hydrationLevel: { normal: '정상', mild: '경도', moderate: '중등도', severe: '중증' },
+  affectedQuarter: { LF: '좌전', RF: '우전', LR: '좌후', RR: '우후' },
+  severity: { mild: '경증', moderate: '중등증', severe: '중증', low: '낮음', medium: '중간', high: '높음', critical: '긴급' },
+  result: { pregnant: '임신', open: '미임신', uncertain: '불확실' },
+  outcome: { recovered: '회복', improving: '호전', unchanged: '변화 없음', worsened: '악화', relapsed: '재발', died: '폐사', culled: '도태' },
+};
+
+function formatValue(key: string, v: unknown): string {
+  if (Array.isArray(v)) return v.map((x) => formatValue(key, x)).join(', ');
+  if (typeof v === 'object' && v !== null) return JSON.stringify(v);
+  const s = String(v);
+  const label = VALUE_LABEL[key]?.[s];
+  return label ? `${label} (${s})` : s;
+}
 
 export interface ProposalSubject {
   /** 예: "송영신목장 123번" — 개체를 사람이 확인할 수 있게 */
@@ -140,12 +171,40 @@ export function buildProposalSummary(
 ): string {
   const lines: string[] = [`[${TOOL_LABEL[toolName] ?? toolName}]`];
   if (subject.animalLabel) lines.push(`개체: ${subject.animalLabel}`);
+  const present = (k: string): boolean => {
+    const v = input[k];
+    return v !== undefined && v !== null && v !== '';
+  };
+  // 알려진 키는 정해진 순서·이름으로, 그 밖의 저장 키도 빠짐없이 (원래 키 이름 그대로)
   for (const [key, label] of Object.entries(FIELD_LABEL)) {
-    const v = input[key];
-    if (v === undefined || v === null || v === '') continue;
-    lines.push(`${label}: ${String(v)}`);
+    if (present(key)) lines.push(`${label}: ${formatValue(key, input[key])}`);
+  }
+  for (const key of Object.keys(input)) {
+    if (key in FIELD_LABEL || ID_KEYS.has(key) || !present(key)) continue;
+    lines.push(`${key}: ${formatValue(key, input[key])}`);
   }
   return lines.join('\n');
+}
+
+export interface PendingConfirmation {
+  readonly confirmationId: string;
+  readonly summary: string;
+}
+
+/**
+ * VO-08: 게이트웨이 결과가 '저장 대기 제안'이면 그 요약을 꺼낸다 — LLM 을 거치지 않고
+ * 클라이언트에 원문 그대로 보내기 위해 (LLM 이 요약을 줄이거나 바꿔 말하면 사용자는 다른 내용을 승인하게 된다)
+ */
+export function extractPendingConfirmation(toolResult: string): PendingConfirmation | null {
+  try {
+    const r = JSON.parse(toolResult) as { confirmationRequired?: unknown; confirmationId?: unknown; summary?: unknown };
+    if (r.confirmationRequired === true && typeof r.confirmationId === 'string' && typeof r.summary === 'string') {
+      return { confirmationId: r.confirmationId, summary: r.summary };
+    }
+  } catch {
+    // 도구 결과가 JSON 이 아니면 제안이 아니다
+  }
+  return null;
 }
 
 /** confirmationId 등 게이트웨이용 메타 키를 뺀 실제 도구 입력 */

@@ -217,6 +217,18 @@ interface StreamChunk {
   readonly executionMs?: number;
   // verification 전용 (AI-07) — 근거(도구 결과·맥락)에서 확인되지 않은 값
   readonly unverified?: { readonly earTags: readonly string[]; readonly temperatures: readonly string[] };
+  // VO-08: 저장 대기 제안 — 서버가 만든 요약 원문
+  readonly confirmation?: { readonly confirmationId: string; readonly summary: string };
+}
+
+/**
+ * VO-08: 저장 대기 요약을 서버 원문 그대로 붙인다. AI 문장은 요약을 줄이거나 바꿔 말할 수 있어
+ * 사용자가 실제 저장 내용과 다른 것을 승인할 수 있었다.
+ */
+export function buildConfirmationNote(summaries: readonly string[]): string {
+  const unique = [...new Set(summaries)];
+  if (unique.length === 0) return '';
+  return `\n\n📋 저장 대기 — 아래 내용 그대로 기록됩니다 (아직 저장 안 됨)\n${unique.join('\n\n')}\n→ 맞으면 "저장", 아니면 "취소" 또는 고칠 내용을 말씀하세요.`;
 }
 
 /** AI-07: 확인되지 않은 값 안내 문구 (없으면 빈 문자열) */
@@ -1021,6 +1033,7 @@ export function TinkerbellAssistant({
       let toolEventCount = 0;
       let doneReceived = false;
       let verificationNote = '';
+      const confirmationSummaries: string[] = [];
       let rawBytes = 0;
       let firstByteChecked = false;
 
@@ -1075,6 +1088,7 @@ export function TinkerbellAssistant({
             }
             if (parsed.type === 'tool_event' && parsed.toolName && parsed.phase) {
               toolEventCount++;
+              if (parsed.confirmation?.summary) confirmationSummaries.push(parsed.confirmation.summary);
               setToolActivities((prev) => {
                 if (parsed.phase === 'start') {
                   return [...prev, {
@@ -1112,7 +1126,7 @@ export function TinkerbellAssistant({
       // VO-04: done 없이 끊긴 스트림은 일부만 받은 것 — 완성본처럼 기록하지 않고 표시하며, 남은 문장은 읽지 않는다
       const interrupted = !doneReceived && fullText.length > 0 && !errorText;
       const answer = fullText
-        ? `${fullText}${interrupted ? INTERRUPTED_NOTE : ''}${verificationNote}`
+        ? `${fullText}${interrupted ? INTERRUPTED_NOTE : ''}${verificationNote}${buildConfirmationNote(confirmationSummaries)}`
         : (errorText ? `⚠️ ${t('common.error')}: ${errorText}` : `${t('tb.err.no_response')}\n(${emptyDiag})`);
       setStreamText('');
       setToolActivities([]);

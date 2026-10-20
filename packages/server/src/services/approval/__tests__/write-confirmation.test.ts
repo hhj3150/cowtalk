@@ -124,3 +124,36 @@ describe('stripConfirmationMeta', () => {
     expect(stripConfirmationMeta({ confirmationId: 'x', animalId: 'a', diagnosis: 'd' })).toEqual({ animalId: 'a', diagnosis: 'd' });
   });
 });
+
+describe('VO-08 확인 요약에 저장되는 값이 전부 보인다', () => {
+  it('유방 분방·CMT·BCS·탈수도·정액 카탈로그가 빠지지 않는다', () => {
+    const s = buildProposalSummary(
+      'record_treatment',
+      { animalId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', diagnosis: '유방염', affectedQuarter: 'LF', cmtResult: '++', bcs: 3.25, hydrationLevel: 'moderate' },
+      { animalLabel: '송영신목장 123번' },
+    );
+    expect(s).toContain('이환 분방: 좌전 (LF)');
+    expect(s).toContain('CMT 결과: ++');
+    expect(s).toContain('체형점수(BCS): 3.25');
+    expect(s).toContain('탈수 정도: 중등도 (moderate)');
+    expect(s).not.toContain('aaaaaaaa');
+  });
+  it('정액 카탈로그 지정은 재고 차감을 함께 알린다', () => {
+    const s = buildProposalSummary('record_insemination', { animalId: 'a', farmId: 'f', semenId: 's-1', semenInfo: 'KPN1234' }, {});
+    expect(s).toContain('정액: KPN1234');
+    expect(s).toContain('정액 카탈로그(재고 1개 차감): s-1');
+  });
+  it('모르는 키도 저장된다면 빠뜨리지 않는다', () => {
+    expect(buildProposalSummary('record_treatment', { animalId: 'a', newField: 'x' }, {})).toContain('newField: x');
+  });
+});
+
+describe('VO-08 extractPendingConfirmation', () => {
+  it('저장 대기 제안만 꺼낸다', async () => {
+    const { extractPendingConfirmation } = await import('../write-confirmation.js');
+    expect(extractPendingConfirmation(JSON.stringify({ confirmationRequired: true, confirmationId: 'c1', summary: '요약' })))
+      .toEqual({ confirmationId: 'c1', summary: '요약' });
+    expect(extractPendingConfirmation(JSON.stringify({ success: true }))).toBeNull();
+    expect(extractPendingConfirmation('not json')).toBeNull();
+  });
+});
