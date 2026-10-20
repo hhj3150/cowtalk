@@ -14,6 +14,27 @@ import type { BreedingAdvice } from '../services/breeding/breeding-advisor.servi
 
 // ── 소버린 알람 → prediction ──
 
+/** DI-17: 번식 권고의 근거 발정 이벤트 — 없거나 조회 실패면 null */
+export async function findHeatEventId(animalId: string, heatDetectedAt: string): Promise<string | null> {
+  const at = new Date(heatDetectedAt);
+  if (!Number.isFinite(at.getTime())) return null;
+  try {
+    const rows = await getDb().execute(sql`
+      SELECT event_id FROM smaxtec_events
+      WHERE animal_id = ${animalId}
+        AND event_type IN ('estrus', 'heat')
+        AND detected_at BETWEEN ${new Date(at.getTime() - 12 * 3_600_000).toISOString()}::timestamptz
+                            AND ${new Date(at.getTime() + 12 * 3_600_000).toISOString()}::timestamptz
+      ORDER BY abs(extract(epoch FROM detected_at - ${at.toISOString()}::timestamptz))
+      LIMIT 1
+    `) as unknown as Array<{ event_id: string }>;
+    return rows[0]?.event_id ?? null;
+  } catch (err) {
+    logger.debug({ err, animalId }, '[PredBridge] 발정 이벤트 조회 실패 — 출처 없이 저장');
+    return null;
+  }
+}
+
 export async function saveSovereignAlarmAsPrediction(alarm: SovereignAlarm): Promise<void> {
   try {
     const db = getDb();
@@ -39,6 +60,8 @@ export async function saveSovereignAlarmAsPrediction(alarm: SovereignAlarm): Pro
       recommendedAction: alarm.actionPlan || '모니터링 지속',
       modelVersion: 'sovereign-v1.0',
       roleSpecific: {},
+      // DI-17: 결정적 알람 서명(animalId:type:날짜) — 같은 알람의 레이블·평가와 짝지을 수 있게
+      sourceRef: `sovereign:${alarm.alarmSignature}`.slice(0, 200),
       inputHash: inputHash({ features: alarm.dataPoints ?? {} }),
     });
 
@@ -94,6 +117,8 @@ export async function saveDifferentialDiagnosisAsPrediction(
         contributingFeatures: diagnosisFeatures(candidate.evidence),
         recommendedAction: candidate.confirmatoryTests[0] ?? '수의사 진찰 권장',
         modelVersion: 'diff-diag-v1.0',
+        // DI-17: 판단에 쓴 센서 구간
+        sourceRef: result.sensorWindow ? `sensor_daily_agg:${result.sensorWindow.from}..${result.sensorWindow.to}` : null,
         roleSpecific: {},
         // AI-06: 계산한 데이터 품질을 함께 남긴다 (예전: 버려짐 → 평가 때 근거 부족 예측과 구분 불가)
         dataQuality: { level: result.dataQuality },
@@ -156,6 +181,8 @@ export async function saveBreedingAdviceAsPrediction(advice: BreedingAdvice): Pr
         : '수정 적기 도달',
       modelVersion: 'breeding-v1.0',
       roleSpecific: {},
+      // DI-17: 근거가 된 발정 이벤트 (발정 시각 ±12시간 안 가장 가까운 smaXtec 발정)
+      sourceEventId: await findHeatEventId(advice.animalId, advice.heatDetectedAt),
     });
 
     logger.debug({ animalId: advice.animalId }, '[PredBridge] Breeding advice saved');

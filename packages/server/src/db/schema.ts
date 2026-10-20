@@ -604,6 +604,9 @@ export const predictions = pgTable('predictions', {
   featureSnapshotId: uuid('feature_snapshot_id'),
   // AI-08: 판단 입력(contributingFeatures·dataQuality) 지문 (마이그레이션 0045)
   inputHash: varchar('input_hash', { length: 64 }),
+  // DI-17: 원천 smaXtec 이벤트·원천 참조(예: sovereign 알람 서명) (마이그레이션 0047)
+  sourceEventId: uuid('source_event_id'),
+  sourceRef: varchar('source_ref', { length: 200 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('predictions_engine_type_idx').on(table.engineType),

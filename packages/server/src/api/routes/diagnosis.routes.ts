@@ -72,6 +72,7 @@ interface DiagnosisResult {
   readonly urgencyLevel: string;
   readonly dataQuality: string;
   readonly farmId?: string;
+  readonly sensorWindow?: { readonly from: string; readonly to: string };
 }
 
 async function saveDiagnosisHistory(
@@ -86,7 +87,8 @@ async function saveDiagnosisHistory(
   await db.execute(sql`
     INSERT INTO diagnosis_history (
       animal_id, farm_id, requested_by, symptoms, candidates,
-      urgency_level, data_quality, top_disease, top_probability
+      urgency_level, data_quality, top_disease, top_probability,
+      sensor_window_from, sensor_window_to
     ) VALUES (
       ${animalId},
       ${result.farmId ?? null},
@@ -96,7 +98,9 @@ async function saveDiagnosisHistory(
       ${result.urgencyLevel},
       ${result.dataQuality},
       ${topCandidate?.disease ?? null},
-      ${topCandidate?.probability ?? null}
+      ${topCandidate?.probability ?? null},
+      ${result.sensorWindow?.from ?? null}::date,
+      ${result.sensorWindow?.to ?? null}::date
     )
   `);
 }
