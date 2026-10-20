@@ -19,6 +19,8 @@ import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync
 import { getDataFreshness, formatFreshnessLine } from '../services/metrics/data-freshness.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
+import { config } from '../config/index.js';
+import { sha256Hex } from '../lib/provenance.js';
 import { getLabelContextForEventType, formatLabelContext, getHierarchicalLabelContext, formatHierarchicalLabelContext } from '../ai-brain/label-context.js';
 import { parseDocument, type ParsedDocument } from '../services/document/document-parser.js';
 import { detectSkill } from '../services/skills/skills-registry.js';
@@ -200,6 +202,8 @@ export async function handleChatMessage(
         answer,
         contextType: detectedType,
         permittedFarmIds: request.permittedFarmIds ?? null,
+        model: result.model,
+        promptHash: sha256Hex(systemPrompt),
       });
     }
 
@@ -528,6 +532,8 @@ export async function handleChatStream(
           answer: fullText,
           contextType: context.type,
           permittedFarmIds: request.permittedFarmIds ?? null,
+          model: config.ANTHROPIC_MODEL,
+          promptHash: sha256Hex(systemPrompt),
         });
       }
     },

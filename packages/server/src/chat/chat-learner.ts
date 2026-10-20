@@ -186,6 +186,10 @@ export async function saveChatConversation(input: {
   readonly contextType: string;
   /** 이 계정이 접근할 수 있는 농장 (rbac 스코프). 기억을 어느 농장에 붙일지 판정한다. */
   readonly permittedFarmIds?: readonly string[] | null;
+  /** AI-08: 답변을 만든 모델 */
+  readonly model?: string | null;
+  /** AI-08: 시스템 프롬프트 지문 (sha256) — 프롬프트 변경 전후 답변 구분 */
+  readonly promptHash?: string | null;
 }): Promise<void> {
   const db = getDb();
   const signals = extractLearningSignals(input.question);
@@ -200,6 +204,8 @@ export async function saveChatConversation(input: {
       answer: input.answer,
       contextType: input.contextType,
       learningSignals: signals as unknown as Record<string, unknown>,
+      model: input.model ?? null,
+      promptHash: input.promptHash ?? null,
     }).returning({ id: chatConversations.id });
 
     // 장기기억 추출 — 임상 신호(위)가 '사건'을 담는다면 이쪽은 '지속되는 사실'을 담는다.

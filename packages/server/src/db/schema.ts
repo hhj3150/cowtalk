@@ -602,6 +602,8 @@ export const predictions = pgTable('predictions', {
   roleSpecific: jsonb('role_specific').notNull(),
   dataQuality: jsonb('data_quality'),
   featureSnapshotId: uuid('feature_snapshot_id'),
+  // AI-08: 판단 입력(contributingFeatures·dataQuality) 지문 (마이그레이션 0045)
+  inputHash: varchar('input_hash', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('predictions_engine_type_idx').on(table.engineType),
@@ -977,6 +979,9 @@ export const chatConversations = pgTable('chat_conversations', {
   answer: text('answer').notNull(),
   contextType: varchar('context_type', { length: 20 }),
   learningSignals: jsonb('learning_signals').notNull().default('[]'),
+  // AI-08: 답변을 만든 모델·시스템 프롬프트 지문 (마이그레이션 0045)
+  model: varchar('model', { length: 100 }),
+  promptHash: varchar('prompt_hash', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('chat_conversations_user_id_idx').on(table.userId),
@@ -1988,6 +1993,20 @@ export const jobLeases = pgTable('job_leases', {
   holder: varchar('holder', { length: 100 }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
+
+// AI-08: 생성 브리핑 보존 — 근거 집계(facts)와 함께 (마이그레이션 0045)
+export const aiBriefingLog = pgTable('ai_briefing_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  role: varchar('role', { length: 30 }).notNull(),
+  farmId: uuid('farm_id').references(() => farms.farmId),
+  facts: jsonb('facts').notNull(),
+  summary: text('summary').notNull(),
+  recommendations: jsonb('recommendations').notNull().default('[]'),
+  model: varchar('model', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('ai_briefing_log_created_at_idx').on(table.createdAt),
+]);
 
 export const briefingDeliveries = pgTable('briefing_deliveries', {
   farmId: uuid('farm_id').notNull().references(() => farms.farmId),

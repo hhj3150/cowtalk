@@ -78,3 +78,10 @@ describe('AI-01 대화 저장은 진료·번식 기록을 만들지 않는다', 
     expect(inserted.some((i) => i.table === 'label_follow_ups')).toBe(false);
   });
 });
+
+describe('AI-08 대화 저장에 모델·프롬프트 지문', () => {
+  it('model·promptHash 를 함께 저장', async () => {
+    await saveChatConversation({ ...base, role: 'farmer', question: '오늘 할 일', model: 'model-x', promptHash: 'a'.repeat(64) });
+    expect(inserted[0]?.values).toMatchObject({ model: 'model-x', promptHash: 'a'.repeat(64) });
+  });
+});

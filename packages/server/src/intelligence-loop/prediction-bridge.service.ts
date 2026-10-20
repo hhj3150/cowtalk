@@ -7,6 +7,7 @@ import { predictions } from '../db/schema.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import { kstToday } from '../lib/kst.js';
+import { inputHash } from '../lib/provenance.js';
 import type { SovereignAlarm } from '../services/sovereign-alarm.service.js';
 import type { DifferentialDiagnosisResult } from '../services/vet/differential-diagnosis.service.js';
 import type { BreedingAdvice } from '../services/breeding/breeding-advisor.service.js';
@@ -38,6 +39,7 @@ export async function saveSovereignAlarmAsPrediction(alarm: SovereignAlarm): Pro
       recommendedAction: alarm.actionPlan || '모니터링 지속',
       modelVersion: 'sovereign-v1.0',
       roleSpecific: {},
+      inputHash: inputHash({ features: alarm.dataPoints ?? {} }),
     });
 
     logger.debug({ animalId: alarm.animalId, type: alarm.type }, '[PredBridge] Sovereign alarm saved');
@@ -95,6 +97,8 @@ export async function saveDifferentialDiagnosisAsPrediction(
         roleSpecific: {},
         // AI-06: 계산한 데이터 품질을 함께 남긴다 (예전: 버려짐 → 평가 때 근거 부족 예측과 구분 불가)
         dataQuality: { level: result.dataQuality },
+        // AI-08: 같은 입력으로 다른 판단이 나왔는지 대조할 수 있게 입력 지문을 남긴다
+        inputHash: inputHash({ features: diagnosisFeatures(candidate.evidence), dataQuality: result.dataQuality }),
       });
     }
 
@@ -146,6 +150,7 @@ export async function saveBreedingAdviceAsPrediction(advice: BreedingAdvice): Pr
       predictionLabel: 'insemination_recommended',
       explanationText: advice.optimalTimeLabel,
       contributingFeatures: { windowStart: advice.windowStartHours, windowEnd: advice.windowEndHours },
+      inputHash: inputHash({ features: { windowStart: advice.windowStartHours, windowEnd: advice.windowEndHours } }),
       recommendedAction: advice.recommendations[0]
         ? `추천 정액: ${advice.recommendations[0].bullName} (점수 ${advice.recommendations[0].score})`
         : '수정 적기 도달',

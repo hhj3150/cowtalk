@@ -14,6 +14,9 @@ vi.mock('../ai-brain/claude-client.js', () => ({
   isClaudeAvailable: () => claudeAvailable(),
 }));
 
+// AI-08: 생성 브리핑 보존(ai_briefing_log)은 실제 DB로 가지 않게
+vi.mock('../config/database.js', () => ({ getDb: () => ({ insert: () => ({ values: async () => undefined }) }) }));
+
 const { getCachedBriefingNarrative, clearBriefingCache } = await import('./briefing-ai.service.js');
 
 const FACTS = {
