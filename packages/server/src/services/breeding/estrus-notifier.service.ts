@@ -7,6 +7,7 @@ import { getIO } from '../../realtime/socket-server.js';
 import { getDb } from '../../config/database.js';
 import { alerts } from '../../db/schema.js';
 import type { BreedingAdvice } from './breeding-advisor.service.js';
+import { kstToday } from '../../lib/kst.js';
 
 /**
  * 발정 감지 시 수정사에게 알림 발송
@@ -77,7 +78,7 @@ async function insertEstrusAlert(
   if (topSemen) actionParts.push(`추천정액: ${topSemen.bullName}`);
   if (advice.warnings.length > 0) actionParts.push(`주의: ${advice.warnings.join(', ')}`);
 
-  const dedupKey = `estrus-${advice.animalId}-${new Date().toISOString().split('T')[0]}`;
+  const dedupKey = `estrus-${advice.animalId}-${kstToday()}`;
 
   try {
     const db = getDb();

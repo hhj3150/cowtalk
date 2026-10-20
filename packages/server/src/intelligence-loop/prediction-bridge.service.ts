@@ -6,6 +6,7 @@ import { getDb } from '../config/database.js';
 import { predictions } from '../db/schema.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
+import { kstToday } from '../lib/kst.js';
 import type { SovereignAlarm } from '../services/sovereign-alarm.service.js';
 import type { DifferentialDiagnosisResult } from '../services/vet/differential-diagnosis.service.js';
 import type { BreedingAdvice } from '../services/breeding/breeding-advisor.service.js';
@@ -110,7 +111,7 @@ export async function saveDifferentialDiagnosisAsPrediction(
 export async function saveBreedingAdviceAsPrediction(advice: BreedingAdvice): Promise<void> {
   try {
     const db = getDb();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = kstToday();
 
     // 같은 날 같은 개체는 1회만
     const existing = await db.execute(sql`

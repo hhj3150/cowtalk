@@ -3324,7 +3324,7 @@ unifiedDashboardRouter.get('/vet-route', async (req: Request, res: Response, nex
   try {
     const db = getDb();
     const user = req.user;
-    const dateParam = (req.query.date as string | undefined) ?? new Date().toISOString().slice(0, 10);
+    const dateParam = (req.query.date as string | undefined) ?? kstToday();
     const farmIdParam = (req.query.farmId as string | undefined) ?? null;
 
     // 48시간 전부터의 미확인 건강 이벤트 조회
@@ -3531,6 +3531,7 @@ import type {
 import { farmProfitEntries } from '../../db/schema.js';
 import { z } from 'zod';
 import { requireAnimalAccess, requireScopedIds, requireAnimalInBodyFarm } from '../middleware/animal-access.js';
+import { kstToday } from '../../lib/kst.js';
 
 /** Seeded pseudo-random for reproducible demo data per farmId+month */
 function seededRandom(seed: string): () => number {
@@ -4751,7 +4752,7 @@ unifiedDashboardRouter.get('/insemination-route', async (req: Request, res: Resp
   try {
     const db = getDb();
     const user = req.user;
-    const dateParam = (req.query.date as string | undefined) ?? new Date().toISOString().slice(0, 10);
+    const dateParam = (req.query.date as string | undefined) ?? kstToday();
     const farmIdParam = (req.query.farmId as string | undefined) ?? null;
     const now = new Date();
 

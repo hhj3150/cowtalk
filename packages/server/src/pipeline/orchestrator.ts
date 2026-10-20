@@ -594,7 +594,7 @@ export class PipelineOrchestrator {
       INSERT INTO sensor_daily_agg (animal_id, date, metric_type, avg, min, max, stddev, count)
       SELECT
         animal_id,
-        date_trunc('day', timestamp)::date AS date,
+        (timestamp AT TIME ZONE 'Asia/Seoul')::date AS date, -- DI-11: 한국 날짜 기준 일별 집계
         metric_type,
         avg(value),
         min(value),
@@ -603,7 +603,7 @@ export class PipelineOrchestrator {
         count(*)::int
       FROM sensor_measurements
       WHERE timestamp >= ${sinceDate}::timestamptz
-      GROUP BY animal_id, date_trunc('day', timestamp)::date, metric_type
+      GROUP BY animal_id, (timestamp AT TIME ZONE 'Asia/Seoul')::date, metric_type
       ON CONFLICT (animal_id, date, metric_type)
       DO UPDATE SET
         avg = EXCLUDED.avg,

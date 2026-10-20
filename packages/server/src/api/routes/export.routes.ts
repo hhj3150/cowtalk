@@ -14,6 +14,7 @@ import {
   toXlsxBuffer,
 } from '../../services/export/export.service.js';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 365;
@@ -42,7 +43,7 @@ exportRouter.get('/:target', async (req: Request, res: Response, next: NextFunct
       days,
     });
 
-    const filename = `cowtalk_${target}_${new Date().toISOString().slice(0, 10)}.${format}`;
+    const filename = `cowtalk_${target}_${kstToday()}.${format}`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     if (sheet.truncated) {
       res.setHeader('X-Export-Truncated', 'true');

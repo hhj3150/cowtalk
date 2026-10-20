@@ -10,6 +10,7 @@ import { getDb } from '../../config/database.js';
 import { milkRecords, animals } from '../../db/schema.js';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 export interface RecordMilkYieldInput {
   readonly animalId?: string;
@@ -54,7 +55,7 @@ export async function recordMilkYield(input: RecordMilkYieldInput): Promise<Reco
   if (typeof input.yieldL !== 'number' || !Number.isFinite(input.yieldL) || input.yieldL < 0 || input.yieldL > 100) {
     return { success: false, error: 'yieldL은 0~100 사이 리터 값이어야 합니다.' };
   }
-  const date = input.date ?? new Date().toISOString().slice(0, 10);
+  const date = input.date ?? kstToday();
   if (!isValidDateStr(date)) {
     return { success: false, error: 'date는 YYYY-MM-DD 형식이어야 합니다.' };
   }

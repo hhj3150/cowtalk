@@ -10,6 +10,7 @@ import { and, eq, gte, inArray, isNotNull, isNull, sql, count, desc } from 'driz
 import { getBreedingPipeline } from '../breeding/breeding-pipeline.service.js';
 import { logger } from '../../lib/logger.js';
 import type { FarmIntelligenceIndex, FarmIndexAxis, FarmIndexGrade, FarmIndexTrendPoint } from '@cowtalk/shared';
+import { kstToday } from '../../lib/kst.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -218,7 +219,7 @@ export async function getFarmIntelligenceIndex(farmId: string): Promise<FarmInte
 /** 전 활성 농장의 오늘자 지수를 스냅샷 (같은 날짜는 갱신 — 하루 1행) */
 export async function snapshotFarmIndexes(): Promise<{ snapped: number; failed: number }> {
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kstToday();
   const activeFarms = await db
     .select({ farmId: farms.farmId })
     .from(farms)

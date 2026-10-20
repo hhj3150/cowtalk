@@ -21,6 +21,7 @@ import { generatePdf } from '../../services/report/generators/pdfGenerator.js';
 import { REPORT_CONFIG } from '../../services/report/config.js';
 import type { OutputFormat } from '../../services/report/config.js';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 export const reportGenerateRouter = Router();
 reportGenerateRouter.use(authenticate);
@@ -103,7 +104,7 @@ reportGenerateRouter.post('/generate', async (req: Request, res: Response, next:
 
     // 3단계: 파일 생성
     const fileId = uuidv4();
-    const dateStr = new Date().toISOString().split('T')[0]!.replace(/-/g, '');
+    const dateStr = kstToday().replace(/-/g, '');
     const safeType = reportType.replace(/[^a-zA-Z0-9_]/g, '');
     const fileName = `cowtalk_${safeType}_${dateStr}.${outputFormat}`;
     const outputPath = path.join(REPORT_CONFIG.OUTPUT_DIR, `${fileId}_${fileName}`);

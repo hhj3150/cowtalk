@@ -34,6 +34,7 @@ import {
   computeAdjustedThresholds,
   type DailyAggRow,
 } from './sensor-analysis.js';
+import { kstToday } from '../../lib/kst.js';
 
 const MAX_RESULT_LENGTH = 6000;
 
@@ -604,7 +605,7 @@ async function querySensorData(input: Record<string, unknown>): Promise<unknown>
     .limit(168); // 7일 × 24시간
 
     if (hourlyRows.length > 0) {
-      const todayDate = new Date().toISOString().split('T')[0]!;
+      const todayDate = kstToday();
       timeOfDayAnalysis = computeTimeOfDayAnalysis(
         hourlyRows.map((r) => ({
           hour: typeof r.hour === 'string' ? r.hour : new Date(r.hour).toISOString(),

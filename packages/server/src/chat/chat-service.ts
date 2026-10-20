@@ -337,7 +337,7 @@ export async function handleChatStream(
       }
 
       const fileId = uuidv4();
-      const dateStr = new Date().toISOString().split('T')[0]!.replace(/-/g, '');
+      const dateStr = kstToday().replace(/-/g, '');
       const safeType = (reportIntent.reportType ?? 'custom').replace(/[^a-zA-Z0-9_]/g, '');
       const fmt = reportIntent.format ?? 'docx';
       const fileName = `cowtalk_${safeType}_${dateStr}.${fmt}`;
@@ -615,6 +615,7 @@ function buildFallbackResponse(
 // ===========================
 
 import type { ChatContext } from '../ai-brain/prompts/conversation-prompt.js';
+import { kstToday } from '../lib/kst.js';
 
 export function buildStreamFallback(
   _question: string,

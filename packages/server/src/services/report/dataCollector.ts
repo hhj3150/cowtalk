@@ -16,6 +16,7 @@ import {
 import { eq, and, gte, lt, lte, count, sql, desc, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import type { ReportType } from './config.js';
+import { kstToday } from '../../lib/kst.js';
 
 export interface ReportParams {
   readonly farmId?: string;
@@ -60,7 +61,7 @@ export async function collectReportData(reportType: string, params: ReportParams
 // ── 농장 일일 현황 ──
 async function collectFarmDaily({ farmId, date }: ReportParams): Promise<ReportData> {
   const db = getDb();
-  const targetDate = date ?? new Date().toISOString().split('T')[0]!;
+  const targetDate = date ?? kstToday();
   const dayStart = new Date(`${targetDate}T00:00:00Z`);
   const dayEnd = new Date(`${targetDate}T23:59:59Z`);
 

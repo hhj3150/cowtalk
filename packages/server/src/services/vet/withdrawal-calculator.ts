@@ -15,10 +15,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const KST_OFFSET_MS = 9 * HOUR_MS;
 
-/** 순간(instant)의 KST 달력 날짜 YYYY-MM-DD */
-export function kstDateString(instant: Date): string {
-  return new Date(instant.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
-}
+import { kstDateString } from '../../lib/kst.js';
+
+export { kstDateString };
 
 /** 순간의 KST HH:MM */
 export function kstTimeString(instant: Date): string {

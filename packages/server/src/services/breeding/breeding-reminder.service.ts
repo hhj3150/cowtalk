@@ -9,6 +9,7 @@ import {
 import { eq, and, desc, gte, sql, isNull } from 'drizzle-orm';
 import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
 import { logger } from '../../lib/logger.js';
+import { kstToday } from '../../lib/kst.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -202,7 +203,7 @@ export async function checkRepeatBreeders(): Promise<readonly RepeatBreeder[]> {
         pregnantCount: row.pregnant_count,
       });
 
-      const dedupKey = `repeat-breeder-${row.animal_id}-${new Date().toISOString().split('T')[0]}`;
+      const dedupKey = `repeat-breeder-${row.animal_id}-${kstToday()}`;
 
       try {
         await db.insert(alerts).values({
@@ -564,7 +565,7 @@ async function checkPostCalvingChecklist(): Promise<number> {
         title: `분만 후 ${dim}일 체크리스트 — #${cow.ear_tag}`,
         explanation: message,
         recommendedAction: message,
-        dedupKey: `post_calving:${cow.animal_id}:${dim}:${new Date().toISOString().slice(0, 10)}`,
+        dedupKey: `post_calving:${cow.animal_id}:${dim}:${kstToday()}`,
         status: 'new',
       });
       created++;
@@ -585,7 +586,7 @@ async function checkSyncProtocolTasks(): Promise<number> {
   let created = 0;
 
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = kstToday();
 
     const scheduled = await db.execute(sql`
       SELECT be.event_id, be.animal_id, be.farm_id, be.semen_info, be.notes,
@@ -621,7 +622,7 @@ async function checkSyncProtocolTasks(): Promise<number> {
         title: `발정동기화 — #${task.ear_tag} ${task.semen_info ?? '처치'}`,
         explanation: `${task.farm_name} #${task.ear_tag}: ${cleanNote}`,
         recommendedAction: task.semen_info ?? '처치 실시',
-        dedupKey: `sync:${task.event_id}:${new Date().toISOString().slice(0, 10)}`,
+        dedupKey: `sync:${task.event_id}:${kstToday()}`,
         status: 'new',
       });
       created++;

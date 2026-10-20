@@ -15,6 +15,7 @@ import { getSovereignAlarmAccuracy } from './label.service.js';
 import { getAllRules } from './rules/rule-registry.js';
 import { clampConfidence01 } from './confidence.js';
 import type { SovereignAlarm, AnimalProfile } from './types.js';
+import { kstToday } from '../../lib/kst.js';
 
 export async function generateSovereignAlarms(farmId: string, limit = 30): Promise<SovereignAlarm[]> {
   const db = getDb();
@@ -45,7 +46,7 @@ export async function generateSovereignAlarms(farmId: string, limit = 30): Promi
       const summary = summaryMap.get(animal.animalId) ?? [];
       if (summary.length < 3) continue;
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = kstToday();
       for (const def of registry) {
         const alarm = def.rule(summary, animal);
         if (alarm) {
