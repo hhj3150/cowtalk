@@ -21,6 +21,11 @@ import {
 
 let client: Anthropic | null = null;
 
+/** 깊은 분석 thinking — 정지 스위치(budget 0)면 끔, 아니면 모델별 형태 (claude-model-params) */
+export function deepThinkingFor(model: string, budget: number): ReturnType<typeof thinkingParam> {
+  return budget > 0 ? thinkingParam(model, budget) : {};
+}
+
 function getClient(): Anthropic | null {
   if (!config.ANTHROPIC_API_KEY) {
     return null;
@@ -93,9 +98,11 @@ export async function callClaudeForAnalysis(
   // deep(Opus) 경로만 adaptive thinking + effort 로 임상추론 품질↑.
   // fast 추출 경로(useDeep=false, Sonnet)는 지연·비용 위해 현행 유지(thinking 미적용).
   // ⚠️ adaptive thinking 토큰이 max_tokens 를 잠식하므로 ANTHROPIC_MAX_TOKENS_ANALYSIS 상향 전제.
+  // AI-05: ANTHROPIC_THINKING_BUDGET=0 은 운영 정지 스위치 — 채팅 경로와 같은 가드를 깊은 분석에도 적용한다
+  // (예전: adaptive 모델은 budget 을 무시하므로 0 으로 꺼도 깊은 분석은 계속 추론했다. CLAUDE.md 문서와 불일치)
   const reasoningParams = useDeep
     ? {
-        ...thinkingParam(model, config.ANTHROPIC_THINKING_BUDGET),
+        ...deepThinkingFor(model, config.ANTHROPIC_THINKING_BUDGET),
         ...effortParam(model, config.ANTHROPIC_ANALYSIS_EFFORT),
       }
     : {};
