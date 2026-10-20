@@ -83,11 +83,57 @@
 | OPS-14 백필 대량 방송 | ✅ | aa5f80b | event-broadcast.test.ts · DI-10 후속(returning 행 짝짓기 오류)도 수정 |
 | OPS-15 CI 보강 | ✅ | 1c038b0 | db-tests 잡(postgres:16)·lint 추가 · 필수 체크 지정은 저장소 설정 필요 |
 
+## P3 (13/13)
+| ID | 상태 | 커밋 | 비고 |
+|---|---|---|---|
+| SEC-18 JWT 기본 시크릿·알고리즘 | ✅ | 13830ed | ⚠️ 운영 JWT 시크릿이 기본값/예시값이면 서버가 기동하지 않음 — 배포 전 확인 |
+| SEC-19 CORS 정규식 | ✅ | ed30e7b | ⚠️ 운영 프런트 도메인이 목록 밖이면 CORS_EXTRA_ORIGINS 에 추가 |
+| SEC-20 보고서 다운로드 생성자 묶기 | ✅ | bf747fb | report-owner.test.ts |
+| SEC-21 OPEN_DATA_SCOPE | ✅ | 40b30f3 | 데이터 공개 스위치가 관리자 권한(isMaster)까지 주던 것 분리 · 운영 설정값 확인 필요 |
+| DI-16 KST 리마인더 키 | ✅ | c690e29 | reminder-kst.test.ts |
+| DI-17 예측·진단 출처 | ✅ | 4938fdd | 0047(컬럼 추가만) |
+| AI-09 경험치 confidence 표기 | ✅ | a1fb470 | 단위 감사 CI 편입 |
+| AI-10 실행 중 Claude 오류 fallback | ✅ | dc61c81 | chat-fallback.test.ts |
+| VO-10 모델 조회 실패 캐시 | ✅ | 88f2f20 | 60초 |
+| VO-11 'AI' 발음 | ✅ | 92ded60 | 번식 맥락에서만 인공 수정 |
+| VO-12 멈춘 TTS 요청 취소 | ✅ | 0e458dc | streaming-voice-abort.test.tsx |
+| OPS-16 소켓 재검증·캐시 상한 | ✅ | d04b932 | 발정 알림 전체 방 누락도 수정 |
+| OPS-17 죽은 캐시 코드 | ✅ | 7c11588 | Redis 클라이언트 lib/redis.ts |
+
+## 감사 목록 밖에서 새로 찾아 고친 결함 (검증 중 발견)
+| ID | 심각도(제안) | 커밋 | 내용 · 발견 경로 |
+|---|---|---|---|
+| NEW-01 | P1 | 63a6da0 | 원시 SQL 에 Date 객체 → 수태율 통계·정액 성과·반복번식우 체크가 조용히 빈 결과, 엔진 성능 조회 예외 (DI-17 실DB 검증 중) |
+| NEW-02 | **P0** | 66f7466 | 타 농장 데이터 노출 6곳: /alerts, /actions, /vital-monitor, /xai/animal·farm, 조기감지 사례 (GET 전수 격리 점검) |
+| NEW-03 | P2 | f57b056 | 센서 이력 기본 범위(24h) 500, 핸들러 검증 오류 500 (격리 점검 5xx 기록) |
+| NEW-04 | P1 | 39594d5 | 누구나 전역 R0·알람 임계값 재보정 실행 가능, 가짜 음성 변환 결과 (쓰기 경로 점검) |
+| NEW-05 | P1 | 7ef3e63 | 같은 턴 자기 확인이 요청 문장을 '거부'로 읽어 제안 취소 → 사용자가 저장 못 함 (AI 기록 종단 시험) |
+| (OPS-12 중) | P1 | 8a226d6 | 농장 미배정 계정이 모든 농장 푸시 수신 |
+| (OPS-14 중) | P2 | aa5f80b | DI-10 이후 삽입 결과-알람 정보 어긋남 가능 |
+| (SEC-15 확인) | P3 | 2e0e087 | Pretendard 글꼴 CSP 차단(기준 커밋부터) |
+
+## Phase 5 통합 검증 (로컬 실DB)
+| 항목 | 결과 | 근거 |
+|---|---|---|
+| 권한·농장 격리 (GET 전수) | ✅ 누수 0 (농장주·미배정 각 269회 호출) | farm-isolation-sweep.test.ts · 대조군(행정관) 표지 확인 |
+| 쓰기 경로 격리 | ✅ 타 농장 변경 0 | farm-isolation-write-probe.test.ts |
+| smaXtec 수집 | ✅ (가짜 응답 · 실계정 미사용) | smaxtec-sync-e2e.test.ts |
+| AI 기록 저장 | ✅ | ai-record-confirmation-e2e.test.ts |
+| 음성 회귀 | ✅ 단위·훅 테스트만 | 브라우저 실제 음성 재생·마이크는 미실행 (헤드리스 한계) |
+| SEC-15 CSP 브라우저 | ✅ 위반 0 | Chromium · 운영 _headers · Google Maps 'unsafe-eval' 은 외부망 없어 미실행 |
+| 5xx 전수 | ✅ GET 0건 | 격리 점검 기록 |
+
+## Phase 6 품질 감독 체계
+- `npm run verify` — CI 와 같은 7단계 로컬 게이트 (미실행은 종료 코드 2) · 7단계 전부 통과 확인
+- CI: lint · 단위 감사 · db-tests(빈 DB 마이그레이션 + 루트 전체) 추가 · 위 회귀 장치가 매번 실행
+- `docs/quality-gates.md`, `.github/pull_request_template.md`
+- 남은 일: 저장소 설정에서 필수 체크 지정 (하원장님 권한)
+
 ## 승인·정책 대기 (코드로 해결 불가)
-- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스, 0042 이벤트 유니크(중복 시 보류), 0043 source_event_id 컬럼, 0044 유량 유니크(중복 시 보류), 0045 AI 출처 컬럼·ai_briefing_log, 0046 push_subscriptions
+- 배포 시 실행될 마이그레이션: schema_migrations(자동), 0039 animals 유니크(중복 시 보류), 0040 job_leases·briefing_deliveries, 0041 인덱스, 0042 이벤트 유니크(중복 시 보류), 0043 source_event_id 컬럼, 0044 유량 유니크(중복 시 보류), 0045 AI 출처 컬럼·ai_briefing_log, 0046 push_subscriptions, 0047 예측·진단 출처 컬럼
   - 배포 직후 기존 브라우저 푸시 구독은 메모리에만 있었으므로 사용자가 다시 구독해야 한다 (OPS-12)
 - 새 의존성: @socket.io/redis-adapter@8.3.0 (OPS-12) — Redis 연결 시에만 사용
-- 새 환경변수(전부 기본값 있음): DB_STATEMENT_TIMEOUT_MS, ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, AUTO_MIGRATE, MIGRATIONS_STRICT, SOCKET_IO_REDIS_ADAPTER, TTS_HOURLY_LIMIT_PER_USER, STT_HOURLY_LIMIT_PER_USER
+- 새 환경변수(전부 기본값 있음): CORS_EXTRA_ORIGINS, DB_STATEMENT_TIMEOUT_MS, ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, AUTO_MIGRATE, MIGRATIONS_STRICT, SOCKET_IO_REDIS_ADAPTER, TTS_HOURLY_LIMIT_PER_USER, STT_HOURLY_LIMIT_PER_USER
 - OPS-08: 운영에 KAKAO_ALIMTALK_TEST_MODE=false 가 설정돼 있으면 배포 후 알림톡 실발송이 시작된다 (지금까지는 무시되어 로그만 남음) — 배포 전 확인
 - OPS-15: GitHub 저장소 설정에서 build-and-test·db-tests 를 필수 체크로 지정
 - 배포 시 `schema_migrations` 테이블 생성 (SEC-03)
@@ -114,7 +160,8 @@
 - 기준 커밋의 루트 테스트 16건 실패는 f159178 에서 해결
 
 ## 다음 작업
-- P3 13건 → Phase 5 통합 검증(권한·농장 격리·smaXtec 수집·AI 기록 저장·음성 회귀, SEC-15 CSP 브라우저 확인) → Phase 6 품질 감독 체계
+- 오류 수정·검증·품질 체계 완료. 남은 것은 승인 대기 항목과 운영 반영(별도 승인).
+- 이후: 차세대 개발 지시서(아래) 착수 — 하원장님 지시 후
 
 ## 이후 단계 (오류 수정·검증 완료 후 착수 — 2026-10-20 차세대 개발 지시서)
 - 2장 대화형 AI 중심 UI 간소화, 3장 역할별 워크스페이스(목장주·수의사 다목장·행정·방역),
