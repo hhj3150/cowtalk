@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { scopedFarmIds } from '../middleware/rbac.js';
+import { scopedFarmIds, hasAllFarmScope } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { chatMessageSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
@@ -91,7 +91,7 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
       animalId: scoped.animalId,
       userId: req.user?.userId,
       assignedFarmIds: req.user?.farmIds,
-      isMaster: req.user?.isMaster,
+      isMaster: hasAllFarmScope(req.user), // 도구 데이터 범위 판정용 (SEC-21: 열람 토큰 포함)
       // 계정의 실제 권한 범위 — 장기기억 회상이 클라이언트가 보낸 farmId를 그대로 믿지 않게 한다
       permittedFarmIds: scopedFarmIds(req),
       conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
@@ -186,7 +186,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     // 권한은 JWT에서만 온다. body.farmId는 "요청"일 뿐 권한이 아니다 —
     // 예전에는 이 구분이 없어 남의 farmId를 넣으면 그 농장 데이터가 나왔다.
     assignedFarmIds: req.user?.farmIds,
-    isMaster: req.user?.isMaster,
+    isMaster: hasAllFarmScope(req.user), // 도구 데이터 범위 판정용 (SEC-21: 열람 토큰 포함)
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,

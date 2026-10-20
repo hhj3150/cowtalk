@@ -23,10 +23,10 @@ export function getIO(): SocketServer | null {
  *   - 마스터 토큰, 또는 배정 없는 행정·방역관 → 전체 알람 방
  *   - 그 외 → 토큰의 배정 목장 방만 (예전: 배정이 걸린 행정관도 alarms:all 에 들어갔다)
  */
-export function socketRoomsFor(payload: Pick<AuthTokenPayload, 'role' | 'farmIds' | 'isMaster'>): string[] {
+export function socketRoomsFor(payload: Pick<AuthTokenPayload, 'role' | 'farmIds' | 'isMaster' | 'openScope'>): string[] {
   const farmIds = payload.farmIds ?? [];
   const adminRole = payload.role === 'government_admin' || payload.role === 'quarantine_officer';
-  if (payload.isMaster || (adminRole && farmIds.length === 0)) return ['alarms:all'];
+  if (payload.isMaster || payload.openScope || (adminRole && farmIds.length === 0)) return ['alarms:all'];
   return farmIds.map((id) => `farm:${id}`);
 }
 

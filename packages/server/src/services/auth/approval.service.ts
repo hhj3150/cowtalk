@@ -34,11 +34,12 @@ export function isOwnerAccount(user: { readonly email: string | null | undefined
 export function tokenScopeFor(
   email: string | null | undefined,
   assignedFarmIds: readonly string[],
-): { readonly farmIds: string[]; readonly isMaster?: true } {
+): { readonly farmIds: string[]; readonly isMaster?: true; readonly openScope?: true } {
   const normalized = (email ?? '').trim().toLowerCase();
   if (OWNER_EMAILS.includes(normalized)) return { farmIds: [], isMaster: true };
-  // 소유자 단독 운영 단계 — 승인된 모든 계정에 전체 공개 (Railway OPEN_DATA_SCOPE=true)
-  if (config.OPEN_DATA_SCOPE) return { farmIds: [], isMaster: true };
+  // 소유자 단독 운영 단계 — 승인된 모든 계정에 전체 '데이터' 공개 (Railway OPEN_DATA_SCOPE=true)
+  // SEC-21: 데이터 범위만 연다. 관리 권한(isMaster)은 주지 않는다
+  if (config.OPEN_DATA_SCOPE) return { farmIds: [], openScope: true };
   return { farmIds: [...assignedFarmIds] };
 }
 

@@ -5,6 +5,14 @@ import { ForbiddenError, UnauthorizedError } from '../../lib/errors.js';
 import { hasPermission } from '@cowtalk/shared';
 import type { Role, ResourceType, ActionType } from '@cowtalk/shared';
 
+/**
+ * SEC-21: 목장 범위 제한이 없는 토큰인가 — 마스터(소유자) 또는 OPEN_DATA_SCOPE 열람 토큰.
+ * 데이터 범위 판정에만 쓴다. 관리 권한 판정(requirePlatformAdmin·requireRoleOrMaster)에는 isMaster 만.
+ */
+export function hasAllFarmScope(user: { readonly isMaster?: boolean; readonly openScope?: boolean } | undefined): boolean {
+  return Boolean(user?.isMaster || user?.openScope);
+}
+
 /** 특정 역할 또는 마스터(소유자) 토큰 허용 — 방역·행정 업무 화면용 (SEC-12) */
 export function requireRoleOrMaster(...roles: readonly Role[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
@@ -126,7 +134,7 @@ export function requireFarmAccess(
   // 관리 역할(행정·방역관)은 **배정이 없을 때만** 전체 — 배정된 관리 계정은
   // 배정 목장으로 제한된다 (배정 우선 규칙, 목록뿐 아니라 직접 조회도 동일).
   const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (req.user.isMaster || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
+  if (hasAllFarmScope(req.user) || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
     next();
     return;
   }
@@ -196,7 +204,7 @@ export function scopedFarmIds(req: Request): readonly string[] | null {
     return farmIds;
   }
   // 마스터 토큰(역할 전환 시뮬레이션 포함)은 전체 유지
-  if (FARM_SCOPED_ROLES.includes(req.user.role) && !req.user.isMaster) {
+  if (FARM_SCOPED_ROLES.includes(req.user.role) && !hasAllFarmScope(req.user)) {
     return [NO_FARM_SENTINEL];
   }
   return null;
@@ -244,7 +252,7 @@ export function enforceFarmScope(
   }
 
   const adminRoles: readonly string[] = ['government_admin', 'quarantine_officer'];
-  if (req.user.isMaster || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
+  if (hasAllFarmScope(req.user) || (adminRoles.includes(req.user.role) && (req.user.farmIds ?? []).length === 0)) {
     next();
     return;
   }
