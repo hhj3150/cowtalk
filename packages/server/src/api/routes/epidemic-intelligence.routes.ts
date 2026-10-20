@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
+import { scopedFarmIds, resolveScopedFarmIds, farmParamGuard } from '../middleware/rbac.js';
 import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { farms, smaxtecEvents } from '../../db/schema.js';
@@ -30,6 +30,8 @@ import type {
 export const epidemicIntelligenceRouter = Router();
 
 epidemicIntelligenceRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+epidemicIntelligenceRouter.param('farmId', farmParamGuard(false));
 
 // 농장 그룹 farmIds 파싱 미들웨어
 import { AsyncLocalStorage } from 'node:async_hooks';

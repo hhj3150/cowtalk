@@ -17,6 +17,30 @@ export function requireRoleOrMaster(...roles: readonly Role[]) {
   };
 }
 
+const FARM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * SEC-13: 경로 파라미터 :farmId 범위 검사 — `router.param('farmId', farmParamGuard())` 로 라우터 전체에 건다.
+ * 예전엔 쿼리의 farmId 만 검사하고 경로 파라미터는 보지 않아 남의 목장 프로필·센서·기상·드릴다운이 열렸다.
+ * @param hideExistence true 면 범위 밖도 404 (존재 자체를 숨김), false 면 403
+ */
+export function farmParamGuard(hideExistence = false) {
+  return (req: Request, res: Response, next: NextFunction, value: unknown): void => {
+    const farmId = typeof value === 'string' ? value : '';
+    if (!FARM_UUID_RE.test(farmId)) {
+      res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      return;
+    }
+    const scope = scopedFarmIds(req);
+    if (scope !== null && !scope.includes(farmId)) {
+      if (hideExistence) res.status(404).json({ success: false, error: '농장을 찾을 수 없습니다' });
+      else res.status(403).json({ success: false, error: '접근 권한이 없는 농장입니다' });
+      return;
+    }
+    next();
+  };
+}
+
 /** 특정 역할만 허용 */
 export function requireRole(...roles: readonly Role[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {

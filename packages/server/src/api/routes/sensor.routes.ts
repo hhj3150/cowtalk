@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, farmParamGuard } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { sensorQuerySchema } from '@cowtalk/shared';
 import { getDb } from '../../config/database.js';
@@ -14,6 +14,8 @@ import { requireAnimalAccess } from '../middleware/animal-access.js';
 export const sensorRouter = Router();
 
 sensorRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+sensorRouter.param('farmId', farmParamGuard(false));
 
 // GET /sensors — 센서 측정값 목록
 sensorRouter.get('/', requirePermission('sensor', 'read'), validate({ query: sensorQuerySchema }), async (req: Request, res: Response, next: NextFunction) => {

@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, farmParamGuard } from '../middleware/rbac.js';
 import { getDb } from '../../config/database.js';
 import { dryOffRecords, animals, animalGroupMembers, animalGroups } from '../../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
@@ -13,6 +13,8 @@ import { requireAnimalAccess } from '../middleware/animal-access.js';
 export const dryOffRouter = Router();
 
 dryOffRouter.use(authenticate);
+// SEC-13: 경로 :farmId 범위 검사 (이 라우터의 모든 /:farmId 경로)
+dryOffRouter.param('farmId', farmParamGuard(false));
 
 // POST /dry-off/:animalId — 건유 전환 실행
 dryOffRouter.post('/:animalId', requireAnimalAccess(), requirePermission('animal', 'update'), async (req: Request, res: Response, next: NextFunction) => {
