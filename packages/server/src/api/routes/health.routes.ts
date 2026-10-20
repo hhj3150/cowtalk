@@ -7,6 +7,7 @@ import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { getMigrationStatus, type MigrationRunStatus } from '../../db/auto-migrate.js';
 
 export const healthRouter = Router();
 
@@ -52,6 +53,20 @@ export async function pingRedisOnce(
     if (timer) clearTimeout(timer);
     client.disconnect();
   }
+}
+
+export function describeMigrationHealth(
+  status: MigrationRunStatus | null,
+  autoMigrate: boolean,
+): { status: 'healthy' | 'degraded'; detail: string } {
+  if (!status) {
+    return autoMigrate
+      ? { status: 'degraded', detail: 'Not run yet' }
+      : { status: 'healthy', detail: 'Boot migration disabled (run separately)' };
+  }
+  if (status.error) return { status: 'degraded', detail: 'Migration run failed' };
+  if (status.failed.length > 0) return { status: 'degraded', detail: `${String(status.failed.length)} migration(s) failed` };
+  return { status: 'healthy', detail: `${String(status.total)} files, ${String(status.applied)} applied` };
 }
 
 export function resetDeepHealthCacheForTest(): void {
@@ -157,6 +172,10 @@ async function computeDeepHealth(): Promise<DeepHealthResult> {
     latencyMs: Date.now() - smaxtecStart,
     detail: smaxtecDetail,
   });
+
+  // 5. OPS-13: 마이그레이션 — 실패가 로그에만 남아 스키마 불일치를 모르던 문제
+  //    공개 엔드포인트라 파일 이름은 노출하지 않고 개수만. 서비스는 동작하므로 down 이 아닌 degraded
+  checks.push({ name: 'Migrations', latencyMs: 0, ...describeMigrationHealth(getMigrationStatus(), config.AUTO_MIGRATE) });
 
   const overallStatus = checks.every((c) => c.status === 'healthy')
     ? 'healthy'

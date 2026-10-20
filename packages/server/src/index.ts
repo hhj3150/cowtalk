@@ -11,11 +11,19 @@ import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
 import { startReportCleanup, stopReportCleanup } from './services/report/cleanup.js';
 import { seedSemenCatalog, seedFarmSemenInventory } from './services/breeding/semen-seed.service.js';
 import { createSocketServer } from './realtime/socket-server.js';
-import { runAutoMigrations } from './db/auto-migrate.js';
+import { runAutoMigrations, migrationsFailed } from './db/auto-migrate.js';
 import { warmAudioModels } from './services/audio/model-registry.js';
 
 // 서버 시작 전 마이그레이션 자동 실행 — 파일별 격리(한 파일 실패가 이후를 막지 않음).
-await runAutoMigrations();
+// OPS-13: AUTO_MIGRATE=false 면 건너뛴다 (배포 전 별도 단계 `npm run migrate` 로 실행할 때).
+//         MIGRATIONS_STRICT=true 면 실패 시 기동하지 않는다 (스키마 불일치 상태로 서비스하지 않음).
+if (config.AUTO_MIGRATE) {
+  const migrationStatus = await runAutoMigrations();
+  if (config.MIGRATIONS_STRICT && migrationsFailed(migrationStatus)) {
+    logger.fatal({ failed: migrationStatus.failed, error: migrationStatus.error }, '[Migrations] 실패 — MIGRATIONS_STRICT 로 기동 중단');
+    process.exit(1);
+  }
+}
 
 const app = createApp();
 const httpServer = createServer(app);

@@ -33,6 +33,11 @@ const envSchema = z.object({
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
   // OPS-09: 쿼리 하나가 커넥션을 무한정 붙잡지 않게 (0 = 끔). 마이그레이션 연결에는 적용 안 함
+  // OPS-13: 부팅 시 마이그레이션 (기본 켜짐 — 기존 동작). 배포 파이프라인에 별도 단계가 생기면 false
+  AUTO_MIGRATE: envBool(true),
+  // OPS-13: 마이그레이션 실패 시 기동 중단. 기본 꺼짐 — 운영 DB 중복 데이터로 가드형 마이그레이션(0039·0042·0044)이
+  //         실패하면 서비스 전체가 멈추므로, 중복 정리 후 켠다
+  MIGRATIONS_STRICT: envBool(false),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(60_000),
 
   REDIS_ENABLED: envBool(true),

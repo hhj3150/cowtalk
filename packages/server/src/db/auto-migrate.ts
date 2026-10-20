@@ -107,43 +107,97 @@ function readMigrationFiles(dir: string): MigrationFile[] {
     .map((name) => ({ name, sql: readFileSync(resolve(dir, name), 'utf-8') }));
 }
 
-// 서버 부팅 시 호출 — DB 연결을 열어 dist/db/migrations 전체를 파일별로 적용.
-// 비치명: 실패해도 throw 하지 않는다(개별 파일 실패는 warn 로그). 서버는 계속 기동.
-export async function runAutoMigrations(): Promise<void> {
+// OPS-13: 레플리카 여러 개가 동시에 부팅해도 마이그레이션은 한 번에 하나만 (pg advisory lock)
+export const MIGRATION_LOCK_KEY = 727_274_013;
+
+export interface MigrationRunStatus {
+  readonly ranAt: string;
+  readonly total: number;
+  readonly applied: number;
+  readonly skipped: number;
+  readonly failed: readonly string[];
+  /** 연결·디렉터리 읽기 같은 전체 단위 오류 */
+  readonly error: string | null;
+}
+
+let lastStatus: MigrationRunStatus | null = null;
+
+/** OPS-13: 마지막 실행 결과 — 실패가 로그에만 남아 스키마 불일치를 모르던 문제 → 헬스체크에 노출 */
+export function getMigrationStatus(): MigrationRunStatus | null {
+  return lastStatus;
+}
+
+/** 실패가 하나라도 있으면 true — 엄격 모드(MIGRATIONS_STRICT)에서 기동 중단 판단에 쓴다 */
+export function migrationsFailed(status: MigrationRunStatus | null): boolean {
+  return status !== null && (status.error !== null || status.failed.length > 0);
+}
+
+// dist/db/migrations(또는 src) 전체를 파일별로 적용 — 부팅(index.ts)과 CLI(migrate.ts)가 같은 경로를 쓴다.
+// 예외를 던지지 않고 결과를 돌려준다. 기동을 멈출지는 호출부가 결정한다.
+export async function runMigrations(): Promise<MigrationRunStatus> {
   const dir = resolve(__dirname, 'migrations');
-  const pgSql = postgres(getDatabaseUrl());
+  // 연결 하나로 고정 — advisory lock 은 세션 단위라 같은 연결에서 잠그고 풀어야 한다
+  const pgSql = postgres(getDatabaseUrl(), { max: 1, onnotice: () => undefined });
+  let status: MigrationRunStatus;
   try {
-    const files = readMigrationFiles(dir);
-    await pgSql.unsafe(
-      `CREATE TABLE IF NOT EXISTS schema_migrations (
-         name TEXT PRIMARY KEY,
-         checksum TEXT NOT NULL,
-         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-       )`,
-    );
-    const tracker: MigrationTracker = {
-      loadApplied: async () => {
-        const rows = await pgSql<{ name: string; checksum: string }[]>`SELECT name, checksum FROM schema_migrations`;
-        return new Map(rows.map((r) => [r.name, r.checksum]));
-      },
-      record: async (name, checksum) => {
-        await pgSql`INSERT INTO schema_migrations (name, checksum) VALUES (${name}, ${checksum})
-                    ON CONFLICT (name) DO NOTHING`;
-      },
-    };
-    const { applied, failed, skipped } = await applyMigrations(
-      files,
-      (sql) => pgSql.unsafe(sql).then(() => undefined),
-      tracker,
-    );
-    logger.info(
-      { total: files.length, applied, skipped, failedCount: failed.length, failed },
-      '[Migrations] 자동 마이그레이션 완료',
-    );
+    await pgSql`SELECT pg_advisory_lock(${MIGRATION_LOCK_KEY})`;
+    try {
+      const files = readMigrationFiles(dir);
+      await pgSql.unsafe(
+        `CREATE TABLE IF NOT EXISTS schema_migrations (
+           name TEXT PRIMARY KEY,
+           checksum TEXT NOT NULL,
+           applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+         )`,
+      );
+      const tracker: MigrationTracker = {
+        loadApplied: async () => {
+          const rows = await pgSql<{ name: string; checksum: string }[]>`SELECT name, checksum FROM schema_migrations`;
+          return new Map(rows.map((r) => [r.name, r.checksum]));
+        },
+        record: async (name, checksum) => {
+          await pgSql`INSERT INTO schema_migrations (name, checksum) VALUES (${name}, ${checksum})
+                      ON CONFLICT (name) DO NOTHING`;
+        },
+      };
+      const { applied, failed, skipped } = await applyMigrations(
+        files,
+        (sql) => pgSql.unsafe(sql).then(() => undefined),
+        tracker,
+      );
+      status = { ranAt: new Date().toISOString(), total: files.length, applied, skipped, failed, error: null };
+    } finally {
+      await pgSql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch((err: unknown) => {
+        logger.warn({ err }, '[Migrations] advisory unlock 실패 — 연결 종료로 해제됨');
+      });
+    }
   } catch (err) {
-    // 디렉터리 읽기/연결 실패 등 전체 단위 오류만 여기로 — 비치명 처리.
-    logger.error({ err }, '[Migrations] 자동 마이그레이션 전체 실패 — 서버는 계속 기동');
+    status = {
+      ranAt: new Date().toISOString(), total: 0, applied: 0, skipped: 0, failed: [],
+      error: err instanceof Error ? err.message : String(err),
+    };
   } finally {
     await pgSql.end();
   }
+  lastStatus = status;
+  return status;
+}
+
+// 서버 부팅 시 호출. 실패해도 throw 하지 않는다 — 기동 중단 여부는 index.ts 가 MIGRATIONS_STRICT 로 결정.
+export async function runAutoMigrations(): Promise<MigrationRunStatus> {
+  const status = await runMigrations();
+  if (status.error) {
+    logger.error({ error: status.error }, '[Migrations] 자동 마이그레이션 전체 실패');
+  } else if (status.failed.length > 0) {
+    logger.error(
+      { total: status.total, applied: status.applied, skipped: status.skipped, failed: status.failed },
+      '[Migrations] 일부 마이그레이션 실패 — 스키마가 코드와 다를 수 있음 (/api/health/deep 에 표시)',
+    );
+  } else {
+    logger.info(
+      { total: status.total, applied: status.applied, skipped: status.skipped },
+      '[Migrations] 자동 마이그레이션 완료',
+    );
+  }
+  return status;
 }
