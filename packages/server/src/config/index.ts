@@ -12,6 +12,17 @@ const rootEnvPath = path.resolve(__dirname, '../../../../.env');
 // override: true → 환경에 빈 문자열로 존재해도 .env 값 우선
 dotenv.config({ path: rootEnvPath, override: true });
 
+// OPS-08: z.coerce.boolean 은 문자열 "false" 도 true 로 바꾼다 → 환경변수로 끌 수 없었다.
+// 'true'/'1'/'yes'/'on' → true, 'false'/'0'/'no'/'off' → false, 미설정·그 외 → 기본값
+export function envBool(defaultValue: boolean) {
+  return z.string().optional().transform((v) => {
+    const t = v?.trim().toLowerCase();
+    if (t === 'true' || t === '1' || t === 'yes' || t === 'on') return true;
+    if (t === 'false' || t === '0' || t === 'no' || t === 'off') return false;
+    return defaultValue;
+  });
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -22,7 +33,7 @@ const envSchema = z.object({
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
 
-  REDIS_ENABLED: z.coerce.boolean().default(true),
+  REDIS_ENABLED: envBool(true),
   // 데이터 전체 공개 스위치 — 소유자 단독 운영 단계용. "true"일 때만 켜진다.
   // 켜면 로그인한(=소유자가 승인한) 모든 계정이 목장 배정과 무관하게 전체 목장을 본다.
   // ⚠️ 다른 사용자(목장주·수의사)를 받기 전에 반드시 끈다 — 끄면 목장별 권한으로 즉시 복귀(재로그인·토큰 갱신 시)
@@ -53,8 +64,8 @@ const envSchema = z.object({
 
   // 젖소 정액추천 외부 데이터 연동 플래그 (데이터 거버넌스 확정 시 true로 전환 — 코드 변경 불필요)
   // 켜지면 dairy-sire-provider의 해당 공급원이 live가 되어 추천 신뢰도가 자동 상승한다.
-  DAIRY_DHI_ENABLED: z.coerce.boolean().default(false),        // 젖소 검정데이터(DHI) 연동
-  DAIRY_PEDIGREE_ENABLED: z.coerce.boolean().default(false),    // 한국종축개량협회 혈통 연동
+  DAIRY_DHI_ENABLED: envBool(false),        // 젖소 검정데이터(DHI) 연동
+  DAIRY_PEDIGREE_ENABLED: envBool(false),    // 한국종축개량협회 혈통 연동
 
   // Anthropic Claude API — 이중 모델 구성
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -132,7 +143,7 @@ const envSchema = z.object({
   KAKAO_ALIMTALK_API_SECRET: z.string().optional(),
   KAKAO_ALIMTALK_PFID: z.string().optional(),       // 카카오 플러스친구 채널 ID
   KAKAO_ALIMTALK_FROM: z.string().optional(),        // 발신번호 (Solapi 등록 번호)
-  KAKAO_ALIMTALK_TEST_MODE: z.coerce.boolean().default(true), // true=로그만, false=실발송
+  KAKAO_ALIMTALK_TEST_MODE: envBool(true), // true=로그만, false=실발송
 
   // 토스페이먼츠 구독 결제
   // https://console.tosspayments.com 에서 발급
