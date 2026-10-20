@@ -21,6 +21,7 @@ import { correctSttTranscript } from '@web/lib/voice/stt-correction';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
+import { sanitizeSvg } from '@web/lib/svg-sanitize';
 
 // iOS Safari 감지 — Web Speech API가 불안정하므로 MediaRecorder + Whisper STT로 우회
 function isIOSDevice(): boolean {
@@ -55,31 +56,7 @@ interface TinkerbellMessage {
   readonly timestamp: Date;
 }
 
-// Artifacts: SVG 코드블록을 안전하게 렌더링 (XSS 방지)
-// 허용: 표준 SVG 태그·속성, viewBox, fill, stroke 등
-// 차단: <script>, on* 이벤트 핸들러, javascript: URL, <foreignObject> 안의 HTML 스크립트
-function sanitizeSvg(rawSvg: string): string {
-  let svg = rawSvg.trim();
-  // <script> 태그 제거 (중첩 케이스 포함)
-  svg = svg.replace(/<script[\s\S]*?<\/script>/gi, '');
-  svg = svg.replace(/<script[^>]*\/?>/gi, '');
-  // 이벤트 핸들러 속성 제거 (onclick, onmouseover, onload, on... 일체)
-  svg = svg.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');
-  svg = svg.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '');
-  svg = svg.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
-  // javascript: URL 제거
-  svg = svg.replace(/javascript\s*:/gi, '');
-  // foreignObject (HTML 스크립트 임베드 통로) 제거
-  svg = svg.replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '');
-  // 반응형: 최상위 <svg> 의 width/height 속성 제거 → 컨테이너 폭에 맞게 스케일
-  svg = svg.replace(/(<svg\b[^>]*?)\swidth\s*=\s*"[^"]*"/i, '$1');
-  svg = svg.replace(/(<svg\b[^>]*?)\sheight\s*=\s*"[^"]*"/i, '$1');
-  // <svg> 에 style 강제 추가 (이미 style 속성 있으면 그대로 두고, 없으면 추가)
-  if (!/<svg\b[^>]*\sstyle\s*=/.test(svg)) {
-    svg = svg.replace(/<svg\b/i, '<svg style="width:100%;height:auto;display:block"');
-  }
-  return svg;
-}
+// Artifacts: SVG 코드블록 — 허용 목록 정화는 lib/svg-sanitize (SEC-15)
 
 interface CodeBlockEntry {
   readonly content: string;
@@ -146,7 +123,7 @@ function MarkdownText({ text }: { text: string }): React.JSX.Element {
             }}>
               <div
                 style={{ width: '100%', overflow: 'hidden' }}
-                // SVG는 sanitize 후 dangerouslySetInnerHTML 로 인라인 — script/on*/javascript: 제거됨
+                // SVG는 허용 목록 정화(sanitizeSvg) 후 인라인 — 허용 태그·속성 외 전부 제거, href 는 #내부참조만
                 dangerouslySetInnerHTML={{ __html: clean }}
               />
             </div>
