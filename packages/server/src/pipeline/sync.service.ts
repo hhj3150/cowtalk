@@ -404,6 +404,9 @@ async function syncEvents(
         const rows = await db
           .insert(smaxtecEvents)
           .values(values)
+          // DI-10: 조회 후 삽입 사이에 다른 인스턴스가 같은 이벤트를 넣었으면 건너뛴다
+          // (유니크 인덱스 0042 와 함께 동작 — 건너뛴 행은 returning 에 없어 알람도 다시 방송되지 않는다)
+          .onConflictDoNothing()
           .returning({ eventId: smaxtecEvents.eventId });
 
         stored += rows.length;

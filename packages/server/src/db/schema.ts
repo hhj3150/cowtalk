@@ -238,6 +238,8 @@ export const smaxtecEvents = pgTable('smaxtec_events', {
   index('smaxtec_events_event_type_detected_at_idx').on(table.eventType, table.detectedAt),
   index('smaxtec_events_farm_event_detected_idx').on(table.farmId, table.eventType, table.detectedAt),
   index('smaxtec_events_external_event_id_idx').on(table.externalEventId), // OPS-06 (0041)
+  uniqueIndex('smaxtec_events_external_event_id_uidx').on(table.externalEventId)
+    .where(sql`${table.externalEventId} IS NOT NULL`), // DI-10 (0042, 중복 시 보류)
 ]);
 
 // ======================================================================
