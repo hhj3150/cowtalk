@@ -16,6 +16,8 @@ import { logger } from '../../lib/logger.js';
 import { getDb } from '../../config/database.js';
 import { chatConversations } from '../../db/schema.js';
 import { and, eq, desc } from 'drizzle-orm';
+import { claimInFlight, releaseInFlight } from '../../lib/inflight-dedupe.js';
+import { getRedis } from '../../serving/cache.service.js';
 
 export const chatRouter = Router();
 
@@ -103,6 +105,9 @@ chatRouter.post('/message', validate({ body: chatMessageSchema }), async (req: R
   }
 });
 
+// VO-07: 처리 중 표시 최대 유지 시간 — 정상 종료 시 즉시 해제, 비정상 종료 대비 상한
+const INFLIGHT_TTL_MS = 3 * 60 * 1000;
+
 // SSE 스트리밍
 chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Request, res: Response) => {
   const body = req.body as {
@@ -115,7 +120,15 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
     images?: Array<{ data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }>;
     documents?: Array<{ data: string; mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.ms-excel' | 'text/csv'; filename?: string }>;
+    clientRequestId?: string;
   };
+
+  // VO-07: 같은 발화(clientRequestId)가 처리 중이면 두 번째는 실행하지 않는다
+  const inflightKey = body.clientRequestId && req.user ? `${req.user.userId}:${body.clientRequestId}` : null;
+  if (inflightKey && !(await claimInFlight(inflightKey, INFLIGHT_TTL_MS, getRedis()))) {
+    res.status(409).json({ success: false, error: { code: 'DUPLICATE_REQUEST', message: '같은 질문을 이미 처리하고 있습니다.' } });
+    return;
+  }
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform, must-revalidate');
@@ -131,6 +144,8 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   // SSE keep-alive (프록시 타임아웃 방지 — 5초 간격, 기존 10초는 일부 CDN에서 부족)
   const keepAlive = setInterval(() => { res.write(':\n\n'); }, 5000);
   req.on('close', () => { clearInterval(keepAlive); });
+  // VO-07: 응답 연결이 끝나면 처리 중 표시를 해제한다 (req 'close'는 본문 수신 직후 올 수 있어 res 기준)
+  res.on('close', () => { if (inflightKey) void releaseInFlight(inflightKey, getRedis()); });
 
   // 클라이언트의 farmId/farmIds/animalId는 "요청"일 뿐 권한이 아니다.
   // 맥락(개체·농장 프로필, 농장 펄스, 보고서 데이터)을 만들기 전에 권한과 대조한다.
