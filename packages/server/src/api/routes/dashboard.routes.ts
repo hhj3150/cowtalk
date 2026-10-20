@@ -134,27 +134,40 @@ dashboardRouter.post('/estrus-action', requireScopedIds([
       skipReason?: string;
     };
 
-    const technicianId = req.user?.userId ?? null;
+    // DI-15: 예전엔 type 'ai'(다른 쿼리는 'insemination' 을 센다)·'skipped' 로, farmId 없이, 중복 방지 없이 넣었다.
+    // 번식 파이프라인·수태율 집계가 이 기록을 보지 못했다. 이제 표준 경로(recordInsemination)와 같은 규칙으로 기록한다.
+    if (action !== 'inseminated' && action !== 'skipped') {
+      res.status(400).json({ success: false, error: "action 은 'inseminated' 또는 'skipped' 여야 합니다" });
+      return;
+    }
+    const farmId = req.animalFarmId;
+    if (!farmId) {
+      res.status(404).json({ success: false, error: '개체를 찾을 수 없습니다' });
+      return;
+    }
 
     if (action === 'inseminated') {
-      await db.insert(breedingEvents).values({
+      const { recordInsemination } = await import('../../services/breeding/breeding-advisor.service.js');
+      const result = await recordInsemination({
         animalId,
-        eventDate: new Date(),
-        type: 'ai',
-        semenInfo: semenName ?? null,
-        technicianId,
-        notes: `발정 이벤트 ${eventId} 기반 수정`,
+        farmId,
+        semenInfo: semenName,
+        technicianName: undefined,
+        notes: eventId ? `발정 이벤트 ${eventId} 기반 수정` : undefined,
       });
-    } else {
-      await db.insert(breedingEvents).values({
-        animalId,
-        eventDate: new Date(),
-        type: 'skipped',
-        semenInfo: null,
-        technicianId,
-        notes: skipReason ?? '사유 미입력',
-      });
+      res.json({ success: true, data: { eventId, action, breedingEventId: result.eventId } });
+      return;
     }
+
+    await db.insert(breedingEvents).values({
+      animalId,
+      farmId,
+      eventDate: new Date(),
+      type: 'no_insemination',
+      noInseminationReason: skipReason ?? '사유 미입력',
+      technicianId: req.user?.userId ?? null,
+      notes: eventId ? `발정 이벤트 ${eventId} — 수정 안 함` : null,
+    });
 
     res.json({ success: true, data: { eventId, action } });
   } catch (error) {
