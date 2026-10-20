@@ -259,6 +259,11 @@ export interface ChatToolOptions {
   readonly images?: readonly { data: string; mimeType: ImageMediaType }[];
   /** Files: 첨부 PDF — Claude 네이티브 document block (base64) */
   readonly pdfs?: readonly { data: string; filename?: string }[];
+  /**
+   * AI-04: 클라이언트가 연결을 끊으면 abort — 진행 중인 Claude 스트림을 끊고, 다음 도구 라운드로 가지 않으며,
+   * onDone(대화 저장·학습·기억 추출)을 부르지 않는다.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export async function callClaudeForChatWithTools(
@@ -344,7 +349,15 @@ export async function callClaudeForChatWithTools(
     const requestStart = Date.now();
     let firstTokenLogged = false;
 
+    const signal = options?.signal;
+    const aborted = (): boolean => {
+      if (!signal?.aborted) return false;
+      logger.info({ fullTextLen: fullText.length }, '[ToolUse] 클라이언트 연결 종료 — 생성 중단 (저장·학습 생략)');
+      return true;
+    };
+
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      if (aborted()) return;
       // 실시간 스트리밍 — messages.stream으로 텍스트를 토큰 단위로 즉시 방출.
       // (기존 messages.create는 라운드 전체 생성이 끝나야 텍스트가 나와 체감 지연이 컸음)
       let roundTextLen = 0;
@@ -359,7 +372,7 @@ export async function callClaudeForChatWithTools(
         system: buildCachedSystem(systemPrompt),
         messages,
         tools: toolsWithWebSearch,
-      });
+      }, signal ? { signal } : undefined);
 
       // text 델타를 즉시 사용자에게 전달 (진짜 스트리밍)
       stream.on('text', (text) => {
@@ -379,7 +392,14 @@ export async function callClaudeForChatWithTools(
         logger.warn({ error: err, round: round + 1 }, '[ToolUse] 스트림 error 이벤트 (finalMessage에서 전파됨)');
       });
 
-      const response = await stream.finalMessage();
+      let response: Anthropic.Messages.Message;
+      try {
+        response = await stream.finalMessage();
+      } catch (err) {
+        if (aborted()) return; // 클라이언트가 끊어서 스트림이 중단된 경우 — 오류가 아니다
+        throw err;
+      }
+      if (aborted()) return;
 
       // tool_use 블록만 수집 — 텍스트는 위 on('text')에서 이미 방출됨(재방출 금지)
       const toolUseBlocks: Anthropic.Messages.ToolUseBlock[] = [];
@@ -415,11 +435,13 @@ export async function callClaudeForChatWithTools(
           callbacks.onError(new Error(reason));
           return;
         }
+        if (aborted()) return;
         callbacks.onDone(fullText);
         return;
       }
 
-      // tool_use 실행
+      // tool_use 실행 — 끊긴 요청의 도구(조회·기록 제안)는 실행하지 않는다
+      if (aborted()) return;
       // assistant 메시지 추가 (tool_use blocks 포함)
       messages.push({ role: 'assistant', content: response.content });
 
@@ -470,6 +492,7 @@ export async function callClaudeForChatWithTools(
       messages.push({ role: 'user', content: toolResults });
     }
 
+    if (aborted()) return;
     // 최대 라운드 초과 — 도구 없이 한 번 더 호출해 강제로 텍스트 답변 생성
     // (특히 영어/우즈벡어/몽골어 응답에서 Claude가 도구 호출에 갇혀 빈 응답을 내는 케이스 방지)
     logger.warn({ rounds: MAX_TOOL_ROUNDS, fullTextLen: fullText.length }, '[ToolUse] 최대 도구 호출 초과 — 도구 없이 final round 시도');
@@ -490,7 +513,7 @@ export async function callClaudeForChatWithTools(
         system: buildCachedSystem(systemPrompt),
         messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
-      });
+      }, signal ? { signal } : undefined);
       // 'error' 리스너 필수 (위 라운드 루프와 동일 이유) — 전파는 finalMessage()가 담당
       finalStream.on('error', (err: Error) => {
         logger.warn({ error: err }, '[ToolUse] final round 스트림 error 이벤트');
@@ -511,6 +534,7 @@ export async function callClaudeForChatWithTools(
       logger.error({ err: finalErr }, '[ToolUse] final round 실패');
     }
 
+    if (aborted()) return;
     if (fullText.length === 0) {
       callbacks.onError(new Error(`도구 호출 ${MAX_TOOL_ROUNDS}회 + final round 후에도 답변이 생성되지 않았습니다. 질문을 단순화해 주세요.`));
       return;

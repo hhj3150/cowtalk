@@ -133,7 +133,13 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
 
   // SSE keep-alive (프록시 타임아웃 방지 — 5초 간격, 기존 10초는 일부 CDN에서 부족)
   const keepAlive = setInterval(() => { res.write(':\n\n'); }, 5000);
-  req.on('close', () => { clearInterval(keepAlive); });
+  // AI-04: 응답을 끝내기 전에 클라이언트가 끊으면 서버의 Claude·도구 루프도 멈춘다
+  // (예전: 계속 돌며 비용을 쓰고, 사용자가 취소한 답변을 대화로 저장·학습·기억 추출까지 했다)
+  const abort = new AbortController();
+  res.on('close', () => {
+    clearInterval(keepAlive);
+    if (!res.writableEnded) abort.abort();
+  });
 
   // 클라이언트의 farmId/farmIds/animalId는 "요청"일 뿐 권한이 아니다.
   // 맥락(개체·농장 프로필, 농장 펄스, 보고서 데이터)을 만들기 전에 권한과 대조한다.
@@ -172,6 +178,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     uiLang: body.uiLang,
     images: body.images,
     documents: body.documents,
+    signal: abort.signal,
   };
 
   try {

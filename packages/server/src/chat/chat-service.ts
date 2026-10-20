@@ -61,6 +61,8 @@ export interface ChatMessageRequest {
   readonly question: string;
   /** VO-01: 사용자가 실제로 한 말 (맥락이 덧붙지 않은 원문). 없으면 question 에서 추출한다. */
   readonly userText?: string;
+  /** AI-04: 클라이언트 연결 종료 시 abort — 생성 중단, 대화 저장·학습 생략 */
+  readonly signal?: AbortSignal;
   readonly role: Role;
   readonly farmId: string | null;
   readonly farmIds?: readonly string[]; // 지역(그룹) 스코프 — 집계 도구 데이터 레벨 한정
@@ -515,8 +517,8 @@ export async function handleChatStream(
     },
     onDone: (fullText: string) => {
       callbacks.onDone(fullText);
-      // 대화 저장 + 학습 (비동기, fire-and-forget)
-      if (request.userId) {
+      // 대화 저장 + 학습 (비동기, fire-and-forget) — 사용자가 받지 못한(끊긴) 답변은 저장·학습하지 않는다 (AI-04)
+      if (request.userId && !request.signal?.aborted) {
         void saveChatConversation({
           userId: request.userId,
           role,
@@ -563,7 +565,7 @@ export async function handleChatStream(
       // 사용자 발화 하나 = 턴 하나. 기록 도구는 제안 턴과 다른 턴의 명시적 승인으로만 실행된다
       confirmationTurn: { turnId: uuidv4(), userUtterance: extractUserUtterance(question, request.userText) },
     },
-    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
+    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined, signal: request.signal },
   );
 }
 
