@@ -13,6 +13,7 @@ import { getDb } from '../../config/database.js';
 import { users } from '../../db/schema.js';
 import { revokeAllUserRefreshTokens } from '../../db/repositories/user.repo.js';
 import { logger } from '../../lib/logger.js';
+import { setBounded } from '../../lib/bounded-map.js';
 import { config } from '../../config/index.js';
 import type { ApprovalStatus } from '@cowtalk/shared';
 
@@ -68,7 +69,7 @@ export async function isUserApproved(userId: string): Promise<boolean> {
       .where(eq(users.userId, userId))
       .limit(1);
     const approved = row?.approvalStatus === 'approved';
-    approvalCache.set(userId, { at: Date.now(), approved });
+    setBounded(approvalCache, userId, { at: Date.now(), approved }, 10_000); // OPS-16
     return approved;
   } catch (err) {
     logger.error({ err, userId }, '[Approval] 승인 조회 실패 — 차단(fail-closed)');

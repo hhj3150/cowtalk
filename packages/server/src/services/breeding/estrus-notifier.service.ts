@@ -97,7 +97,8 @@ async function insertEstrusAlert(
     if (inserted) {
       const io = getIO();
       if (io) {
-        io.to(`farm:${advice.farmId}`).emit('alert:new', {
+        // OPS-16: 다른 알림처럼 전체 열람(alarms:all) 방에도 — 소유자·전국 관리자가 발정 알림을 못 받았다
+        io.to([`farm:${advice.farmId}`, 'alarms:all']).emit('alert:new', {
           alertId: inserted.alertId,
           alertType: 'breeding_estrus',
           title,

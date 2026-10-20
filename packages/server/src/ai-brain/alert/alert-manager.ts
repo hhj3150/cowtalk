@@ -7,6 +7,7 @@ import type {
 } from '@cowtalk/shared';
 import { ALERT_COOLDOWN_HOURS, URGENCY_HOURS } from '@cowtalk/shared';
 import { logger } from '../../lib/logger.js';
+import { setBounded } from '../../lib/bounded-map.js';
 import { getDb } from '../../config/database.js';
 import { alerts as alertsTable } from '../../db/schema.js';
 import { and, gte, inArray, sql } from 'drizzle-orm';
@@ -14,6 +15,8 @@ import { and, gte, inArray, sql } from 'drizzle-orm';
 // 쿨다운 캐시 — 이 프로세스가 보낸 알림. OPS-12: 재시작·다른 레플리카가 보낸 알림은
 // primeCooldownFromDb 가 alerts 테이블(dedup_key, created_at)에서 채운다
 const cooldownCache = new Map<string, number>();
+// OPS-16: 상한 — 넘치면 오래된 키부터 버린다 (버려진 키는 primeCooldownFromDb 가 DB 에서 다시 채운다)
+const COOLDOWN_CACHE_MAX = 20_000;
 const MAX_COOLDOWN_MS = Math.max(...Object.values(ALERT_COOLDOWN_HOURS), 12) * 60 * 60 * 1000;
 
 /**
@@ -40,7 +43,7 @@ export function mergeCooldown(rows: ReadonlyArray<{ dedupKey: string; lastAt: nu
   for (const r of rows) {
     if (!Number.isFinite(r.lastAt)) continue;
     const cur = cooldownCache.get(r.dedupKey) ?? 0;
-    if (r.lastAt > cur) cooldownCache.set(r.dedupKey, r.lastAt);
+    if (r.lastAt > cur) setBounded(cooldownCache, r.dedupKey, r.lastAt, COOLDOWN_CACHE_MAX);
   }
 }
 
@@ -135,7 +138,7 @@ export function filterByCooldown(
 }
 
 export function markAlertSent(alert: AlertCandidate): void {
-  cooldownCache.set(alert.dedupKey.slice(0, 200), Date.now());
+  setBounded(cooldownCache, alert.dedupKey.slice(0, 200), Date.now(), COOLDOWN_CACHE_MAX);
 }
 
 // ===========================

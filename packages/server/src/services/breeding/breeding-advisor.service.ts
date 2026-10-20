@@ -9,6 +9,7 @@ import {
 } from '../../db/schema.js';
 import { eq, and, desc, gte, isNull, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { setBounded } from '../../lib/bounded-map.js';
 import { getFarmSemenPerformance, type SemenPerformance } from './breeding-feedback.service.js';
 import { recordSemenRecommendations } from './recommendation-tracking.service.js';
 import { computeCR } from '../metrics/fertility-service.js';
@@ -143,6 +144,7 @@ export interface InbreedingAssessment {
 // 혈통 캐시 (in-memory, 1h TTL) — 시연 중 cold fetch 1회 후 warm hit
 const pedigreeCache = new Map<string, { record: PedigreeRecord | null; cachedAt: number }>();
 const PEDIGREE_TTL_MS = 60 * 60 * 1000;
+const PEDIGREE_CACHE_MAX = 5_000; // OPS-16: 개체 수만큼 늘던 캐시에 상한
 let pedigreeConnector: PedigreeConnector | null = null;
 
 async function fetchPedigreeCached(traceId: string): Promise<PedigreeRecord | null> {
@@ -156,11 +158,11 @@ async function fetchPedigreeCached(traceId: string): Promise<PedigreeRecord | nu
       await pedigreeConnector.connect();
     }
     const record = await pedigreeConnector.fetchPedigree(traceId);
-    pedigreeCache.set(traceId, { record, cachedAt: Date.now() });
+    setBounded(pedigreeCache, traceId, { record, cachedAt: Date.now() }, PEDIGREE_CACHE_MAX);
     return record;
   } catch (err) {
     logger.debug({ err, traceId }, '[BreedingAdvisor] pedigree fetch failed');
-    pedigreeCache.set(traceId, { record: null, cachedAt: Date.now() });
+    setBounded(pedigreeCache, traceId, { record: null, cachedAt: Date.now() }, PEDIGREE_CACHE_MAX);
     return null;
   }
 }

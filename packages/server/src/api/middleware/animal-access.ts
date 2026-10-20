@@ -16,6 +16,7 @@
 //      개체 id는 UUID라 열거가 사실상 불가능하므로, 현장 디버깅 편의를 우선한다.
 
 import type { Request, Response, NextFunction } from 'express';
+import { setBounded } from '../../lib/bounded-map.js';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { animals, smaxtecEvents, eventLabels } from '../../db/schema.js';
@@ -42,7 +43,7 @@ function cacheSet(animalId: string, farmId: string): void {
     const oldest = farmIdCache.keys().next().value;
     if (oldest) farmIdCache.delete(oldest);
   }
-  farmIdCache.set(animalId, { farmId, expiresAt: Date.now() + CACHE_TTL_MS });
+  setBounded(farmIdCache, animalId, { farmId, expiresAt: Date.now() + CACHE_TTL_MS }, 50_000); // OPS-16
 }
 
 /** 개체 이동·삭제 등으로 소속이 바뀌었을 때 호출 (쓰기 경로에서 사용) */

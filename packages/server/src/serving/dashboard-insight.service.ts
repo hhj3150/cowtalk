@@ -3,6 +3,7 @@
 
 import { callClaudeForAnalysis, isClaudeAvailable } from '../ai-brain/claude-client.js';
 import { logger } from '../lib/logger.js';
+import { setBounded } from '../lib/bounded-map.js';
 import type { Role } from '@cowtalk/shared';
 
 // ===========================
@@ -81,7 +82,7 @@ export async function generateDashboardInsight(
     }
 
     const parsed = toAiInsight(result.parsed, context.role);
-    insightCache.set(cacheKey, { insight: parsed, expiresAt: Date.now() + CACHE_TTL_MS });
+    setBounded(insightCache, cacheKey, { insight: parsed, expiresAt: Date.now() + CACHE_TTL_MS }, 500); // OPS-16: 역할×농장조합 키에 상한
 
     logger.info({
       role: context.role,

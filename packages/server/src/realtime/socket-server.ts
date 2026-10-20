@@ -132,7 +132,36 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     });
   });
 
+  // OPS-16: 연결 중 승인 해제된 계정은 토큰 만료(최대 2h)까지 알람을 계속 받았다 → 5분마다 재검증
+  const revalidateTimer = setInterval(() => {
+    // 이 프로세스에 붙은 소켓만 (레플리카마다 자기 소켓을 본다)
+    if (io) void revalidateSockets(io.local).catch((err: unknown) => logger.warn({ err }, '[Socket] 재검증 실패'));
+  }, SOCKET_REVALIDATE_MS);
+  revalidateTimer.unref();
+
   logger.info('[Socket.IO] Server initialized');
 
   return io;
+}
+
+export const SOCKET_REVALIDATE_MS = 5 * 60 * 1000;
+
+/** OPS-16: 승인이 해제된 사용자의 연결을 끊는다. 끊은 수를 돌려준다 */
+export async function revalidateSockets(
+  server: { fetchSockets: () => Promise<Array<{ data: unknown; disconnect: (close?: boolean) => unknown }>> },
+  approved: (userId: string) => Promise<boolean> = isUserApproved,
+): Promise<number> {
+  const sockets = await server.fetchSockets();
+  let dropped = 0;
+  for (const s of sockets) {
+    const userId = (s.data as { userId?: string }).userId;
+    if (!userId) continue;
+    const ok = await approved(userId).catch(() => true); // 조회 실패로 정상 사용자를 끊지 않는다
+    if (!ok) {
+      s.disconnect(true);
+      dropped++;
+    }
+  }
+  if (dropped > 0) logger.info({ dropped }, '[Socket] 승인 해제 계정 연결 종료');
+  return dropped;
 }
