@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>CowTalk v5.0 — 필요성·활용성·미래성 기준 자료</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans CJK KR", "Noto Sans KR", sans-serif;
+    font-size: 10.2pt; line-height: 1.62; color: #1b1f24; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1, h2, h3 { line-height: 1.32; margin: 0; }
+  .cover {
+    height: 250mm; display: flex; flex-direction: column; justify-content: center;
+    page-break-after: always; border-left: 6px solid #1f5f4b; padding-left: 14mm;
+  }
+  .cover .kicker { font-size: 11pt; letter-spacing: .18em; color: #1f5f4b; font-weight: 700; }
+  .cover h1 { font-size: 30pt; margin: 8mm 0 4mm; letter-spacing: -.02em; }
+  .cover .sub { font-size: 14pt; color: #3d4752; font-weight: 500; line-height: 1.5; }
+  .cover .formula {
+    margin-top: 12mm; padding: 6mm 7mm; background: #f2f7f5; border-radius: 3mm;
+    font-size: 11.5pt; font-weight: 600; color: #17493a; line-height: 1.7;
+  }
+  .cover .meta { margin-top: 14mm; font-size: 9.5pt; color: #6a747e; line-height: 1.8; }
+
+  h2 {
+    font-size: 15pt; margin: 9mm 0 3.5mm; padding-bottom: 2mm;
+    border-bottom: 2px solid #1f5f4b; color: #14352a;
+    page-break-after: avoid;
+  }
+  h2 .num { color: #1f5f4b; font-weight: 800; margin-right: 3mm; }
+  h3 { font-size: 11.5pt; margin: 5.5mm 0 2mm; color: #1f5f4b; page-break-after: avoid; }
+  p { margin: 0 0 3mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5.5mm; }
+  li { margin-bottom: 1.4mm; }
+  strong { color: #14352a; }
+
+  table { width: 100%; border-collapse: collapse; margin: 3mm 0 4mm; font-size: 9.3pt; page-break-inside: avoid; }
+  th { background: #1f5f4b; color: #fff; text-align: left; padding: 2.2mm 2.6mm; font-weight: 600; }
+  td { border-bottom: 1px solid #dde3e0; padding: 2.2mm 2.6mm; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7faf9; }
+
+  .stats { display: flex; gap: 3mm; margin: 4mm 0 5mm; }
+  .stat { flex: 1; background: #f2f7f5; border-radius: 2.5mm; padding: 4mm 3mm; text-align: center; }
+  .stat .v { font-size: 16pt; font-weight: 800; color: #1f5f4b; display: block; letter-spacing: -.02em; }
+  .stat .l { font-size: 8.4pt; color: #55606b; margin-top: 1mm; display: block; }
+
+  .callout {
+    background: #fdf6e9; border-left: 4px solid #c98a1b; padding: 4mm 5mm;
+    margin: 4mm 0; border-radius: 0 2mm 2mm 0; page-break-inside: avoid;
+  }
+  .callout .t { font-weight: 700; color: #8a5c07; display: block; margin-bottom: 1.5mm; }
+  .quote {
+    border-left: 4px solid #1f5f4b; padding: 3mm 5mm; margin: 4mm 0;
+    background: #f7faf9; font-size: 10.5pt; font-weight: 600; color: #14352a;
+  }
+  .role-card { border: 1px solid #dde3e0; border-radius: 2.5mm; padding: 4mm 5mm; margin-bottom: 3.5mm; page-break-inside: avoid; }
+  .role-card h3 { margin-top: 0; }
+  .role-card .tag { font-size: 8pt; background: #1f5f4b; color: #fff; padding: .8mm 2.2mm; border-radius: 6mm; margin-left: 2mm; vertical-align: 2px; letter-spacing: .04em; }
+  .pipe { font-size: 9.6pt; color: #35414c; background: #f4f6f7; padding: 2.5mm 3mm; border-radius: 2mm; margin-top: 2mm; }
+  .pagebreak { page-break-before: always; }
+  .footnote { font-size: 8.6pt; color: #6a747e; margin-top: 2mm; }
+  .ok { color: #1f5f4b; font-weight: 700; }
+  .part { page-break-before: always; }
+  .part-label {
+    font-size: 9.5pt; letter-spacing: .2em; color: #1f5f4b; font-weight: 700; margin-bottom: 2mm;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="kicker">LIVESTOCK DIGITAL OPERATING SYSTEM</div>
+  <h1>CowTalk v5.0</h1>
+  <div class="sub">축산 디지털 운영체제 —<br>필요성 · 활용성 · 미래성 기준 자료</div>
+  <div class="formula">
+    smaXtec 위내센서 &nbsp;+&nbsp; 국가 공공데이터 &nbsp;+&nbsp; AI 해석 &nbsp;+&nbsp; 역할별 액션플랜<br>
+    = &nbsp;통합 플랫폼
+  </div>
+  <div class="meta">
+    본 문서는 CowTalk 프로젝트 문서와 코드 감사 결과를 근거로 작성된 기준 자료입니다.<br>
+    수록된 수치와 기능은 실제 데이터베이스 집계 및 코드 검증에 기반합니다.<br>
+    작성 기준일: 2026년 8월 · 규모 스냅샷: 2026년 7월 19일
+  </div>
+</div>
+
+<div class="part-label">PART 1 — 왜 필요한가</div>
+<h2><span class="num">1</span>한 줄 정의</h2>
+<p>CowTalk은 <strong>축산 디지털 운영체제</strong>다. 목장의 센서 데이터, 국가가 보유한 공공데이터, AI의 해석, 그리고 역할별 행동 지침을 하나의 플랫폼으로 묶는다.</p>
+<div class="quote">CowTalk은 smaXtec을 복제하지 않는다. 세계 최고 수준의 위내센서 위에 세 개의 레이어를 얹어 확장한다.</div>
+<p>smaXtec은 소의 위(반추위) 안에 삽입하는 볼루스 센서로 체온과 활동량을 측정해 발정·질병·분만을 감지한다. 이벤트 정확도는 95% 이상으로, 센서와 알고리즘 영역에서는 세계 최고 수준이다. CowTalk은 그 정확도를 재판단하지 않고 신뢰한다. 대신 그 다음을 맡는다.</p>
+
+<h2><span class="num">2</span>해결하려는 문제 세 가지</h2>
+
+<h3>문제 ① — 알람과 행동 사이에 다리가 없다</h3>
+<p>센서가 "3번 소가 발정입니다"라고 알려준다. 그런데 목장주는 그 다음을 혼자 판단해야 한다. 언제 수정해야 최적인가. 어떤 정액을 써야 하는가. 이 소는 지난달 유방염을 앓았는데 지금 수정해도 되는가. 이전에 두 번 실패했는데 이번엔 무엇이 달라야 하는가. 알람은 정확하지만, 알람이 곧 답은 아니다.</p>
+
+<h3>문제 ② — 판단의 근거가 흩어져 있다</h3>
+<p>그 판단에 필요한 데이터는 각기 다른 시스템에 흩어져 있다. 개체 이력은 축산물이력추적시스템에, 혈통은 종축개량협회에, 도체 등급과 경락가격은 축산물품질평가원에, 검정 성적은 DHI에, 방역 정보는 KAHIS에, 기상은 기상청에 있다. 목장주가 이 여섯 개의 창을 동시에 띄워놓고 한 마리의 소를 판단할 수는 없다.</p>
+
+<h3>문제 ③ — 축산 행정이 아날로그에 머물러 있다</h3>
+<p>역학조사는 여전히 종이와 전화로 이뤄지는 부분이 크다. 전염병이 발생했을 때 어느 농장이 어느 농장과 접촉했는지, 얼마나 빠르게 번질 것인지를 판단할 근거가 현장에 즉시 주어지지 않는다. 방역관과 행정관은 목장주와 완전히 다른 관점으로 같은 데이터를 봐야 하는데, 그 관점별 화면이 존재하지 않았다.</p>
+
+<div class="callout">
+  <span class="t">CowTalk의 목표</span>
+  알람 → 판단 → 추천 → 행동 → 기록이 <strong>한 화면에서 끝나야 한다.</strong>
+  그리고 그 기록이 다시 AI를 정확하게 만들어야 한다.
+</div>
+
+<div class="part">
+<div class="part-label">PART 2 — 어떻게 푸는가</div>
+<h2><span class="num">3</span>세 개의 레이어</h2>
+
+<table>
+  <tr><th style="width:26%">레이어</th><th>내용</th></tr>
+  <tr>
+    <td><strong>레이어 1</strong><br>공공데이터 융합</td>
+    <td>이력제(축산물이력추적), 혈통, 축산물 등급판정, 경락가격, DHI 검정성적, KAHIS 방역정보, 기상 데이터를 <strong>개체 단위로 매핑</strong>한다. 흩어진 국가 데이터가 한 마리 소의 프로필로 모인다.</td>
+  </tr>
+  <tr>
+    <td><strong>레이어 2</strong><br>CowTalk AI</td>
+    <td>데이터 → AI 분석 → 결과 축적 → AI 재강화의 <strong>순환 루프</strong>. 한 번 쓰고 버리는 분석이 아니라, 쓸수록 정확해지는 구조.</td>
+  </tr>
+  <tr>
+    <td><strong>레이어 3</strong><br>다중 역할·행정 전환</td>
+    <td>같은 데이터를 목장주·수의사·방역관·행정관이 <strong>각자의 관점</strong>으로 본다. 축산 행정의 아날로그를 디지털로 옮긴다.</td>
+  </tr>
+</table>
+
+<h2><span class="num">4</span>AI 4층 구조</h2>
+
+<h3>1층 — 데이터 통합 (Data Integration)</h3>
+<p>smaXtec 이벤트(신뢰 대상), 센서 원데이터(보조), 공공데이터, 농장 기록을 합쳐 <strong>통합 개체 프로필</strong>을 만든다. 한 마리 소에는 최대 네 개의 번호가 존재한다 — 이력제 번호(12자리, 국가 등록), 목장 관리번호, 혈통등록번호, 센서 시리얼. CowTalk은 이 번호들을 연결해 흩어진 데이터를 한 개체로 봉합한다.</p>
+
+<h3>2층 — Claude AI 해석 (Interpretation)</h3>
+<p>통합 프로필을 Claude API가 해석하고 <strong>역할별 액션</strong>을 생성한다. 모든 해석에는 설명(explanation), 판단 근거(contributingFactors), 역할별 지침(roleSpecific)이 반드시 포함된다. 규칙 기반 엔진은 보조 분석과 대체 경로를 담당한다 — AI 호출이 실패해도 서비스는 멈추지 않는다.</p>
+
+<h3>3층 — 역할별 서빙 (Role-Based Serving)</h3>
+<p>네 개 역할에 각각 맞춤 대시보드와 액션플랜을 제공한다. 같은 사건이 목장주에게는 "오늘 아침에 할 일"로, 방역관에게는 "확산 위험도"로 번역된다.</p>
+
+<h3>4층 — 지능 루프 (Intelligence Loop)</h3>
+<p>피드백 → 정확도 추적 → 프롬프트 개선. 중요한 것은 이것이 <strong>모델 재학습이 아니라는 점</strong>이다. 90일간 축적된 전문가 레이블을 규칙 기반으로 집계해, 감사 가능한 문장 형태의 자기보정 가이던스를 생성한다. AI가 스스로 자기 프롬프트를 마음대로 다시 쓰는 구조가 아니다. 표본이 10건 미만이면 가이던스를 만들지 않으며, 생성된 문장에는 항상 모수와 수치를 명시한다.</p>
+
+<div class="callout">
+  <span class="t">설계 원칙 — 정직성이 기능이다</span>
+  통계적 근거가 부족하면 조언하지 않는다. 조언할 때는 그 근거가 몇 건에서 나왔는지 함께 말한다.
+  AI가 자신 있게 틀리는 것보다, 모른다고 말하는 편이 현장에서 더 유용하다.
+</div>
+</div>
+
+<div class="part">
+<div class="part-label">PART 3 — 누가 어떻게 쓰는가</div>
+<h2><span class="num">5</span>네 개의 역할, 하나의 데이터</h2>
+
+<div class="role-card">
+  <h3>목장주 <span class="tag">FARMER</span></h3>
+  <p>smaXtec의 기본 기능(개체 모니터링, 할 일, 건강 알림)에 AI 해석과 번식 관리가 더해진다. 핵심은 <strong>번식 AI 루프</strong>다.</p>
+  <div class="pipe">발정 알람 수신 → 수정 적기 자동 계산 → 보유 정액 중 최적 추천(근교계수·혈통·생산성적) → 수정 전 안전 점검(최근 질병 이력·휴약 기간·이전 실패 횟수) → 수정사에게 알림 → 수정 기록 → 임신감정 결과 피드백 → AI 학습</div>
+  <p style="margin-top:2.5mm">여기에 6단계 번식 칸반(미수정→발정→수정→임신→후기→분만), 발정동기화 프로토콜 4종의 일정 자동 생성, 수태율·평균 공태일·분만간격·첫수정일수 같은 핵심 지표가 실데이터로 따라붙는다. 목장마다 다른 번식 파라미터(발정재귀일, 수정 적기, 임신감정 시기, 건유 시점)는 목장별 설정으로 관리되어 AI가 반드시 그 목장의 기준을 참조한다.</p>
+</div>
+
+<div class="role-card">
+  <h3>수의사 <span class="tag">VETERINARIAN</span></h3>
+  <p>담당 목장 그룹을 한 화면에서 관리한다. 감별진단 도구는 여섯 개 질병에 대한 확률 순위를 센서 근거와 함께 제시하고, 확인검사 경로를 제안한다. 치료를 기록하면 이후 센서 데이터를 자동 비교해 회복·악화·관찰 필요를 판정한다.</p>
+  <p><strong>전문가 학습 루프</strong>가 핵심이다. 수의사가 대화 중에 "이건 케토시스네"라고 판단하면, AI가 한 줄로 확인을 구하고 동의 시 그 판단을 정답 레이블로 저장한다. <strong>전문가의 일상적인 판단이 곧 고신뢰 학습 데이터가 된다.</strong> 반대로 목장주나 행정관의 추측은 레이블에서 제외한다 — 학습 데이터 오염을 막기 위한 의도적 설계다.</p>
+</div>
+
+<div class="role-card">
+  <h3>방역관 <span class="tag">QUARANTINE OFFICER</span></h3>
+  <p>전국 → 시도 → 농장 → 개체로 이어지는 <strong>3단계 드릴다운</strong>이 한 화면에서 끝난다. 전체 농장이 실제 좌표로 지도에 표시되고, 두수에 비례한 크기와 위험등급에 따른 색으로 그려진다.</p>
+  <p>확산 시뮬레이션은 시각 효과가 아니라 <strong>실제 SEIR 미분방정식</strong>이다. 기초감염재생산수, 잠복기, 감염기간을 입력하고 이동제한 시나리오별 결과를 비교한다. 접촉망 추적은 실제 개체 이동 이력을 우선 사용하고, 없을 때만 지역 기반으로 대체한다. 역학조사와 KAHIS 보고는 데이터베이스에 영속화되어 초안부터 제출까지 상태가 관리된다.</p>
+</div>
+
+<div class="role-card">
+  <h3>행정관 <span class="tag">GOVERNMENT ADMIN</span></h3>
+  <p>수급 조절과 축산 행정의 디지털 전환을 담당한다. 시도별 현황, 24시간 추이, 위험 농장 순위가 실시간 집계로 제공된다. 종이와 전화로 오가던 행정 절차가 화면 위의 상태값으로 바뀐다.</p>
+</div>
+
+<h2><span class="num">6</span>대화형 AI — 팅커벨</h2>
+<p>네 역할 모두 자연어 대화로 시스템을 다룬다. AI는 25개의 전용 도구를 갖고 있으며, 조회에 그치지 않고 <strong>기록과 추천까지 수행</strong>한다.</p>
+<table>
+  <tr><th style="width:18%">영역</th><th>도구 예시</th></tr>
+  <tr><td>센서·개체</td><td>개체 프로필 조회, 이벤트 이력, 개체 온톨로지 그래프(관계 전체 맥락), 체온·활동량 집계, 기상·열스트레스 지수</td></tr>
+  <tr><td>농장</td><td>농장 요약, 핵심 지표, 치료 기록, 개체별 일 유량 기록</td></tr>
+  <tr><td>번식</td><td>번식 통계, 수태율 통계, 수정 기록, 임신감정 기록, 수정 적기·정액 추천, 발정동기화 처방, 오늘의 처치 일정</td></tr>
+  <tr><td>공공데이터</td><td>이력제 실시간 조회, 등급판정 결과, 경락가격 시세, 방역 대시보드, 전국 현황</td></tr>
+  <tr><td>수의·유전</td><td>감별진단, 치료 결과 추적, 전문가 레이블 기록, 씨수소 유전정보</td></tr>
+</table>
+<p>도구 사용에는 <strong>역할별 접근 제어</strong>가 걸려 있고, 모든 호출이 감사 로그에 자동 기록된다. 답변에는 데이터 출처 기록이 강제되어, 근거 없는 서술이 나가지 못한다. 음성 입력과 음성 답변을 지원해 장갑을 낀 채 축사에서도 쓸 수 있다.</p>
+
+<h2><span class="num">7</span>자동화 — 승인을 우회하지 않는 자동화</h2>
+<p>10분 주기로 최근 알림과 이벤트를 활성 규칙과 대조해, 조건이 맞으면 정해진 도구를 자동 실행한다. 같은 규칙이 같은 개체에 대해 반복 실행되지 않도록 냉각 시간이 걸려 있다.</p>
+<p>중요한 설계 결정이 하나 있다. <strong>자동화가 승인 체계를 우회하는 경로는 존재하지 않는다.</strong> 예를 들어 목장주 규칙이 호르몬 투여 프로토콜을 자동으로 걸면, 그것은 즉시 실행되지 않고 승인 대기 상태로 들어가 수의사나 행정관의 승인을 기다린다. 자동화는 속도를 위한 것이지, 책임을 건너뛰기 위한 것이 아니다.</p>
+</div>
+
+<div class="part">
+<div class="part-label">PART 4 — 지금 어디까지 왔는가</div>
+<h2><span class="num">8</span>현재 규모</h2>
+<div class="stats">
+  <div class="stat"><span class="v">201</span><span class="l">연결 농장</span></div>
+  <div class="stat"><span class="v">11,170</span><span class="l">등록 개체(두)</span></div>
+  <div class="stat"><span class="v">11,127</span><span class="l">센서 장착(두)</span></div>
+  <div class="stat"><span class="v">757,062</span><span class="l">누적 이벤트(건)</span></div>
+  <div class="stat"><span class="v">6</span><span class="l">AI 엔진</span></div>
+</div>
+<p class="footnote">2026년 7월 19일 실측 스냅샷. 규모 수치의 유일한 진실은 데이터베이스이며, 실시간 집계 API가 값을 공급한다. 과거 문서에 등장하는 "146개 농장 / 7,000두"는 옛 스냅샷이므로 현재 수치로 읽어서는 안 된다.</p>
+
+<h2><span class="num">9</span>코드 감사로 검증된 기능</h2>
+<p>아래 항목은 마케팅 주장이 아니라, 코드베이스를 파일 단위로 감사해 실제 구현과 실데이터베이스 연동을 확인한 결과다.</p>
+<table>
+  <tr><th style="width:24%">영역</th><th>검증된 내용</th></tr>
+  <tr><td>대화형 AI</td><td>도구 25개 전부 실행 구현(미구현 껍데기 0개), 역할별 접근제어, 감사 로그 자동 기록, 실시간 스트리밍, 프롬프트 캐싱, 도구 병렬 실행, 출처 기록 강제, 방역 모드 자동 활성화, 음성 입출력</td></tr>
+  <tr><td>방역·역학</td><td>3단계 드릴다운 대시보드, 전 농장 실좌표 지도, SEIR 미분방정식 확산 시뮬레이션, 실 이동이력 기반 접촉망 추적, 역학조사 영속화 및 6항목 자동수집, KAHIS 보고 상태관리, 좌표 기반 시도 자동 매핑</td></tr>
+  <tr><td>번식</td><td>6단계 칸반(실데이터), 수정 적기 추천, 발정동기화 4종 일정 자동생성, 번식 핵심지표 산출, 번식 리마인더 5종 일일 배치</td></tr>
+  <tr><td>센서·조기감지</td><td>5분 주기 수집 파이프라인, 조기 질병감지 지수(0~100, 70 이상 경보), 중복 삽입 방지 인덱스</td></tr>
+  <tr><td>공공데이터</td><td>축산물통합이력정보 실연동, 등급판정·경락가격 연동, 씨수소 유전정보 연동</td></tr>
+  <tr><td>학습 루프</td><td>전문가 레이블 수집, 치료 결과 자동 추적 배치, 임계값 자기보정, 프롬프트 가이던스 생성</td></tr>
+</table>
+
+<h2><span class="num">10</span>아직 안 되는 것 — 정직한 경계</h2>
+<div class="callout">
+  <span class="t">이 항목을 생략하지 말 것</span>
+  이 자료의 신뢰도는 되는 것을 자랑하는 데서 오지 않고, 안 되는 것을 먼저 말하는 데서 온다.
+</div>
+<table>
+  <tr><th style="width:30%">항목</th><th>현재 상태</th></tr>
+  <tr><td>젖소 정액(씨수소) 추천</td><td>추천 엔진 자체는 품종과 무관하게 동작한다. 다만 한우는 공공데이터(씨수소 정보 API)가 연결된 반면, 젖소는 혈통(종축개량협회)·DHI 연동 전까지 내부 데이터 기반이며 <strong>화면에 신뢰도를 표시</strong>한다. 데이터 공급원은 어댑터 계층으로 분리되어 있어, 연동이 완료되면 엔진 변경 없이 정밀도가 올라간다.</td></tr>
+  <tr><td>역학조사 기상 데이터</td><td>일부 항목이 임시값 — 실 기상 API 연동 필요</td></tr>
+  <tr><td>과거 발열 추이</td><td>당주 데이터는 실측, 과거분은 추정 — 히스토리 적재 필요</td></tr>
+  <tr><td>접촉망 추적</td><td>실 이동이력이 없는 구간은 지역 기반으로 대체. 이동 데이터가 쌓이면 자동 전환</td></tr>
+  <tr><td>착유 로봇 연동</td><td>파일럿 목장의 착유 설비는 공개 API가 없는 온프레미스 시스템이다. 현재는 보고서 CSV 업로드 방식(열 자동 인식·수동 매핑 지원)이며, 목장 PC 동기화 에이전트가 다음 단계로 예정되어 있다.</td></tr>
+</table>
+
+<h2><span class="num">11</span>파일럿 — 실사업 구조 위에서의 검증</h2>
+<p>파일럿 목장은 <strong>송영신목장</strong>으로, 플랫폼 소유자가 직접 운영한다. 소유자는 스마트팜과 축산환경 분야 전문가이며 우유공장(자체 가공·판매)을 함께 운영한다. 시연용 가상 목장이 아니라 실제 손익이 걸린 사업 구조 위에서 검증이 이뤄진다는 뜻이다.</p>
+<div class="pipe">운영 루프 — 아침 브리핑(알림톡) → 결정 카드 조치 → 유량·유성분·사료 기록 → 조치 기록률 집계 → 월간 성과 리포트(두당 일 마진)</div>
+<p style="margin-top:3mm">목표 지자체는 <strong>경기도</strong>이며, 파일럿의 실측 성과가 정책 제안의 근거가 된다. 성과는 아직 확정된 결과가 아니라 <strong>측정이 진행 중인 지표</strong>다.</p>
+<h3>환경 축 — 경축순환</h3>
+<p>소유자의 축산환경(분뇨·탄소·악취) 전문성을 바탕으로, <strong>휴머스(HUMUS)를 활용한 HBP 시스템(Humus Bedded Pack barn)</strong>을 환경 축으로 삼는다. 축사 깔짚을 휴머스 기반으로 운용해 분뇨를 축사 내에서 발효시키고, 악취와 환경부하를 줄이며, 퇴비와 토양 순환으로 경축순환을 완성하는 모델이다. 적용 축종은 낙농·비육우·육계·양돈이다.</p>
+</div>
+
+<div class="part">
+<div class="part-label">PART 5 — 앞으로</div>
+<h2><span class="num">12</span>미래성 — 네 개의 확장 축</h2>
+
+<h3>축 ① — 쓸수록 정확해지는 구조</h3>
+<p>센서와 공공데이터가 AI 분석으로 들어가고, 전문가의 판단이 정답 레이블로 축적되며, 그 축적이 프롬프트 자기보정으로 되먹임되어 다음 판단을 개선한다. 시간은 이 시스템의 편이다. 데이터가 쌓일수록 경쟁 우위가 커지는 구조이며, 이는 뒤늦게 진입하는 쪽이 따라잡기 어려운 종류의 격차다.</p>
+
+<h3>축 ② — 1개 농장에서 국가로</h3>
+<p>한 목장의 개체 관리에서 출발해, 전국 농장의 방역 네트워크로, 나아가 국가 단위 축산 행정 플랫폼으로 확장되는 구조다. 아키텍처가 처음부터 이 방향으로 설계되어 있다 — 개체·농장·시도·전국의 드릴다운이 데이터 모델에 내재되어 있다.</p>
+
+<h3>축 ③ — 수출 가능한 설계</h3>
+<p>한국 특화 기능(공공데이터 커넥터)은 어댑터 패턴으로 분리되어 있고, 다국어 구조가 준비되어 있다. 다른 나라로 옮길 때 바꿔야 하는 것은 데이터 공급원 어댑터이지, 핵심 엔진이 아니다. 센서 계층은 이미 글로벌 표준(smaXtec)을 쓰고 있어 국가 간 이식성이 확보되어 있다.</p>
+
+<h3>축 ④ — 축산 디지털 주권</h3>
+<p>전염병은 국경과 지자체 경계를 존중하지 않는다. 개체 단위 데이터가 실시간으로 국가 방역 체계에 연결될 때 비로소 확산 차단이 가능해진다. 이것은 개별 농가의 편익을 넘어선 공공재의 영역이며, 민간 혼자서도 정부 혼자서도 만들 수 없는 종류의 인프라다.</p>
+
+<h2><span class="num">13</span>세 가지 가치</h2>
+<table>
+  <tr><th style="width:22%">가치</th><th>내용</th></tr>
+  <tr><td><strong>목장 경제성</strong></td><td>번식 성적 향상과 질병 조기 대응을 통한 수익 증가. 공태일 하루가 곧 비용이고, 질병 하루 늦은 발견이 곧 손실이다.</td></tr>
+  <tr><td><strong>질병 관리</strong></td><td>위내센서와 AI 조기감지로 피해 최소화. 증상이 눈에 보이기 전에 체온과 활동량이 먼저 말한다.</td></tr>
+  <tr><td><strong>공공성</strong></td><td>국가 방역 고도화, 전염병 확산 차단, 축산 행정의 디지털 전환, 축산 디지털 주권.</td></tr>
+</table>
+
+<div class="quote">CowTalk의 목적은 시연이 아니라, 실제 목장에 도움이 되고 사회와 세계에 기여하는 프로그램을 만드는 것이다.</div>
+</div>
+
+<div class="part">
+<div class="part-label">부록 A — 오디오 슬라이드 제작 지침</div>
+<h2><span class="num">A</span>권장 슬라이드 구성 (10~12장, 6~8분)</h2>
+<table>
+  <tr><th style="width:8%">장</th><th style="width:30%">제목</th><th>담을 내용</th></tr>
+  <tr><td>1</td><td>표지</td><td>CowTalk — 축산 디지털 운영체제. 한 줄 정의와 공식</td></tr>
+  <tr><td>2</td><td>문제</td><td>센서는 세계 최고인데 알람과 행동 사이에 다리가 없다. 데이터는 흩어져 있고 행정은 아날로그다</td></tr>
+  <tr><td>3</td><td>세 개의 레이어</td><td>공공데이터 융합 / CowTalk AI / 다중 역할·행정 전환</td></tr>
+  <tr><td>4</td><td>AI 4층 구조</td><td>데이터 통합 → Claude 해석 → 역할별 서빙 → 지능 루프</td></tr>
+  <tr><td>5</td><td>활용 ① 목장주</td><td>발정 알람에서 수정 적기·정액 추천·기록까지 한 화면에서 끝나는 번식 루프</td></tr>
+  <tr><td>6</td><td>활용 ② 수의사</td><td>감별진단, 치료 결과 추적, 전문가 판단이 곧 학습 레이블이 되는 구조</td></tr>
+  <tr><td>7</td><td>활용 ③ 방역관</td><td>전국→시도→농장→개체 드릴다운, SEIR 확산 시뮬레이션, 역학조사·보고</td></tr>
+  <tr><td>8</td><td>활용 ④ 행정관</td><td>수급 조절과 축산 행정의 아날로그→디지털 전환</td></tr>
+  <tr><td>9</td><td>현재 규모</td><td>농장 201개, 11,170두, 센서 11,127두, 누적 이벤트 757,062건</td></tr>
+  <tr><td>10</td><td>정직한 경계</td><td>보강 중인 것 — 젖소 혈통·DHI 연동, 기상 데이터 일부, 착유로봇 자동 연동</td></tr>
+  <tr><td>11</td><td>미래성</td><td>쓸수록 정확해지는 순환, 1농장→전국→국가, 수출 가능한 어댑터 구조</td></tr>
+  <tr><td>12</td><td>마무리</td><td>세 가지 가치와 파일럿(송영신목장 → 경기도)</td></tr>
+</table>
+
+<h2><span class="num">B</span>내레이션 규칙</h2>
+<ul>
+  <li>존댓말, 담백하고 단정한 브리핑 톤. 감탄사와 광고성 형용사를 쓰지 않는다.</li>
+  <li>전문용어는 처음 나올 때 한 문장으로 푼다. 예: "DSI, 즉 조기 질병감지 지수".</li>
+  <li>영어 약어는 한국어 독음으로 읽는다. SEIR → "에스이아이알 모형", KPI → "핵심 성과 지표".</li>
+  <li>smaXtec은 "스맥스텍"으로 읽는다.</li>
+  <li>화면 문구는 8단어 이내의 한국어 키워드 위주로. 문장을 통째로 넣지 않는다.</li>
+  <li>숫자는 크게, 단위를 붙여서 표기한다. 예: 농장 201개 / 11,170두 / 757,062건.</li>
+</ul>
+
+<h2><span class="num">C</span>금지 사항</h2>
+<div class="callout">
+  <span class="t">반드시 지킬 것</span>
+  <ul style="margin-bottom:0">
+    <li>이 자료에 없는 수치를 만들어내지 않는다. 특히 <strong>도입 농가 수, 매출, 비용 절감률, 수태율 향상 퍼센트, 폐사율 감소 수치</strong>는 이 문서에 존재하지 않으므로 언급해서는 안 된다.</li>
+    <li>성과를 단정하지 않는다. 구조와 근거를 설명하고, 파일럿은 진행 중인 검증으로 표현한다.</li>
+    <li>10장(정직한 경계)을 생략하지 않는다.</li>
+    <li>환경 축의 공식 명칭은 "휴머스를 활용한 HBP 시스템"이다. 다른 깔짚 자재명으로 바꿔 부르지 않는다.</li>
+    <li>CowTalk을 smaXtec의 대체재로 설명하지 않는다. 그 위에 얹는 확장 레이어다.</li>
+  </ul>
+</div>
+
+<h2><span class="num">D</span>용어 읽기</h2>
+<table>
+  <tr><th style="width:26%">용어</th><th style="width:22%">읽기</th><th>뜻</th></tr>
+  <tr><td>smaXtec</td><td>스맥스텍</td><td>오스트리아의 위내(반추위) 볼루스 센서 제조사. 체온·활동량 측정</td></tr>
+  <tr><td>볼루스</td><td>볼루스</td><td>소의 위 안에 삽입해 평생 유지되는 캡슐형 센서</td></tr>
+  <tr><td>DSI</td><td>디에스아이</td><td>조기 질병감지 지수. 0~100, 70 이상이면 경보</td></tr>
+  <tr><td>SEIR</td><td>에스이아이알</td><td>감수성-잠복-감염-회복 구획으로 전염병 확산을 푸는 미분방정식 모형</td></tr>
+  <tr><td>DHI</td><td>디에이치아이</td><td>젖소 검정사업. 유량·유지방·유단백·체세포수 성적</td></tr>
+  <tr><td>KAHIS</td><td>카히스</td><td>국가동물방역통합시스템</td></tr>
+  <tr><td>공태일</td><td>공태일</td><td>분만 후 다시 임신하기까지의 기간. 길수록 손실</td></tr>
+  <tr><td>HBP</td><td>에이치비피</td><td>Humus Bedded Pack barn. 휴머스 깔짚 기반 축사 환경관리 방식</td></tr>
+</table>
+<p class="footnote" style="margin-top:6mm">— 문서 끝 —</p>
+</div>
+
+</body>
+</html>
