@@ -7,6 +7,8 @@ import { getDb } from '../../config/database.js';
 import { config } from '../../config/index.js';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { getRedisSettings } from '../../lib/redis-settings.js';
+import type { RedisSettings, RedisConnectionOptions } from '../../lib/redis-settings.js';
 
 export const healthRouter = Router();
 
@@ -26,12 +28,7 @@ healthRouter.get('/', (_req, res) => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFunction) => {
   const startTime = Date.now();
-  const checks: Array<{
-    name: string;
-    status: 'healthy' | 'degraded' | 'down';
-    latencyMs: number;
-    detail?: string;
-  }> = [];
+  const checks: HealthCheck[] = [];
 
   // 1. DB 연결 확인
   const dbStart = Date.now();
@@ -44,27 +41,8 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     checks.push({ name: 'PostgreSQL', status: 'down', latencyMs: Date.now() - dbStart, detail: 'Connection refused' });
   }
 
-  // 2. Redis 연결 확인 (ioredis ping)
-  const redisStart = Date.now();
-  try {
-    const IORedis = await import('ioredis');
-    const Redis = IORedis.default;
-    const redis = new Redis({
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      password: config.REDIS_PASSWORD || undefined,
-      connectTimeout: 3000,
-    });
-    const pong = await redis.ping();
-    await redis.quit();
-    checks.push({
-      name: 'Redis',
-      status: pong === 'PONG' ? 'healthy' : 'degraded',
-      latencyMs: Date.now() - redisStart,
-    });
-  } catch {
-    checks.push({ name: 'Redis', status: 'down', latencyMs: Date.now() - redisStart, detail: 'Connection failed' });
-  }
+  // 2. Redis — 꺼져 있거나 접속 정보가 없으면 'skipped', 연결 실패는 'degraded' (캐시 없이 동작 가능 — DB 장애와 같은 등급이 아니다)
+  checks.push(await checkRedis(getRedisSettings(), pingRedis));
 
   // 3. Claude API 키 존재 확인 (실제 호출 없이)
   const claudeStart = Date.now();
@@ -110,11 +88,7 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     detail: smaxtecDetail,
   });
 
-  const overallStatus = checks.every((c) => c.status === 'healthy')
-    ? 'healthy'
-    : checks.some((c) => c.status === 'down')
-      ? 'down'
-      : 'degraded';
+  const overallStatus = summarizeHealth(checks);
 
   const httpStatus = overallStatus === 'down' ? 503 : 200;
 
@@ -129,6 +103,66 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
     },
   });
 });
+
+export interface HealthCheck {
+  name: string;
+  status: 'healthy' | 'degraded' | 'down' | 'skipped';
+  latencyMs: number;
+  detail?: string;
+}
+
+/** 전체 판정 — 'skipped'(의도적으로 쓰지 않는 구성요소)는 판정에서 뺀다 */
+export function summarizeHealth(checks: readonly HealthCheck[]): 'healthy' | 'degraded' | 'down' {
+  const counted = checks.filter((c) => c.status !== 'skipped');
+  if (counted.some((c) => c.status === 'down')) return 'down';
+  if (counted.every((c) => c.status === 'healthy')) return 'healthy';
+  return 'degraded';
+}
+
+/** Redis 점검 — 설정 판정 + ping 함수를 받아 결과만 만든다 (테스트 가능) */
+export async function checkRedis(
+  settings: RedisSettings,
+  ping: (conn: RedisConnectionOptions) => Promise<string>,
+): Promise<HealthCheck> {
+  if (settings.state === 'disabled' || settings.state === 'not_configured') {
+    return { name: 'Redis', status: 'skipped', latencyMs: 0, detail: `${settings.detail} — running without cache` };
+  }
+  if (settings.state === 'invalid') {
+    return { name: 'Redis', status: 'degraded', latencyMs: 0, detail: `${settings.detail} — running without cache` };
+  }
+  const start = Date.now();
+  try {
+    const pong = await ping(settings.connection);
+    return {
+      name: 'Redis',
+      status: pong === 'PONG' ? 'healthy' : 'degraded',
+      latencyMs: Date.now() - start,
+      detail: settings.detail,
+    };
+  } catch {
+    return { name: 'Redis', status: 'degraded', latencyMs: Date.now() - start, detail: 'Connection failed — running without cache' };
+  }
+}
+
+/** 1회용 ping — 재연결하지 않고, 성공·실패 모두 연결을 닫는다 (예전: 실패 시 연결이 남아 재시도 로그가 쌓였다) */
+async function pingRedis(conn: RedisConnectionOptions): Promise<string> {
+  const IORedis = await import('ioredis');
+  const Redis = IORedis.default;
+  const redis = new Redis({
+    ...conn,
+    lazyConnect: true,
+    connectTimeout: 2000,
+    maxRetriesPerRequest: 0,
+    retryStrategy: () => null,
+  });
+  redis.on('error', () => { /* 결과는 호출부가 degraded 로 기록 */ });
+  try {
+    await redis.connect();
+    return await redis.ping();
+  } finally {
+    redis.disconnect();
+  }
+}
 
 /** 공개 헬스 응답용 smaXtec 상태 문구 — 원문 오류 대신 원인 분류 */
 export function describeSmaxtecHealth(h: {
