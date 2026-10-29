@@ -40,7 +40,10 @@ type ViewMode = 'month' | 'week';
 // ===========================
 
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // 로컬(KST) 날짜 — toISOString()은 UTC라 KST 자정 날짜가 하루 앞당겨진다
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${String(d.getFullYear())}-${mm}-${dd}`;
 }
 
 function addDays(d: Date, n: number): Date {

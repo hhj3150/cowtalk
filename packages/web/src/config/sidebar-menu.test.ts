@@ -38,7 +38,7 @@ const CONTRACTS: readonly RoleContract[] = [
   },
   {
     role: 'veterinarian',
-    mustHave: ['dashboard', 'vet-cases', 'vet-schedule', 'breeding', 'sensor-cmp'],
+    mustHave: ['dashboard', 'breeding', 'sensor-cmp'],
     mustNotHave: [...ADMIN_ONLY, ...SURVEILLANCE, ...FARM_OPERATIONS, 'admin-ai'],
   },
   {

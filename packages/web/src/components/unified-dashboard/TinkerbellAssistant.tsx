@@ -768,7 +768,12 @@ export function TinkerbellAssistant({
   // 소리만 끊으면 서버 스트림은 계속 흘러 들어와 ① 취소된 답변이 대화 기록에 확정되고
   // (다음 질문의 맥락으로 재전송됨) ② 뒤늦게 도착한 문장이 다시 읽힌다.
   // 끼어들기·새 질문 시 스트림 자체를 끊고, 그 답변은 기록에 남기지 않는다.
-  const activeAnswerRef = useRef<{ readonly controller: AbortController; cancelled: boolean } | null>(null);
+  const activeAnswerRef = useRef<{ readonly controller: AbortController; cancelled: boolean; muted: boolean } | null>(null);
+  // '말하기 중지' — 글 답변은 계속 받되, 이 답변의 남은 문장은 더 읽지 않는다
+  // (중지 후 뒤늦게 도착한 문장이 다시 큐에 들어가 재생이 되살아나던 문제)
+  const muteActiveAnswer = useCallback((): void => {
+    if (activeAnswerRef.current) activeAnswerRef.current.muted = true;
+  }, []);
   const cancelActiveAnswer = useCallback((): void => {
     const active = activeAnswerRef.current;
     if (!active) return;
@@ -933,7 +938,7 @@ export function TinkerbellAssistant({
     // 다층 타임아웃 변수 — try/catch 양쪽에서 정리 필요
     let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
-    let answerHandle: { readonly controller: AbortController; cancelled: boolean } | null = null;
+    let answerHandle: { readonly controller: AbortController; cancelled: boolean; muted: boolean } | null = null;
 
     try {
       const token = useAuthStore.getState().accessToken;
@@ -973,7 +978,7 @@ export function TinkerbellAssistant({
       // 다층 타임아웃: 전체 90초 + 첫 바이트 30초 + 무응답 45초 (시연 중 빠른 실패 처리)
       cancelActiveAnswer(); // 이전 답변이 아직 흐르고 있으면 끊는다 (새 질문 우선)
       const controller = new AbortController();
-      const handle = { controller, cancelled: false };
+      const handle = { controller, cancelled: false, muted: false };
       answerHandle = handle;
       activeAnswerRef.current = handle;
       const TOTAL_TIMEOUT_MS = 90_000;
@@ -1068,7 +1073,7 @@ export function TinkerbellAssistant({
               setStreamText(fullText);
               if (firstChunk) { setState('speaking'); firstChunk = false; }
               // 문장이 완성되는 즉시 합성·재생을 시작한다 (답변 종료를 기다리지 않음)
-              if (shouldSpeak) {
+              if (shouldSpeak && !handle.muted) {
                 for (const chunk of chunkerRef.current.push(parsed.content)) {
                   streamedChunkCount++;
                   enqueueSpeech(chunk);
@@ -1121,7 +1126,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
       setState('speaking');
 
-      if (!shouldSpeak) {
+      if (!shouldSpeak || answerHandle?.muted) {
         setState('idle');
       } else if (streamedChunkCount > 0) {
         // 스트리밍으로 이미 말하는 중 — 남은 꼬리만 큐에 넣고 종료를 알린다.
@@ -2283,7 +2288,7 @@ export function TinkerbellAssistant({
             {/* 마이크 버튼 */}
             <button type="button"
               onClick={() => {
-                if (!hasSpeechRecognition) { setVoiceError(t('voice.err.not_supported')); return; }
+                if (!hasSpeechRecognition && !isIOSDevice()) { setVoiceError(t('voice.err.not_supported')); return; }
                 if (state === 'listening') { stopListening(); } else { unlockTts(); void startListening(); }
               }}
               disabled={state === 'thinking'}
@@ -2442,7 +2447,7 @@ export function TinkerbellAssistant({
             {/* 말하는 중 중지 — OpenAI 또는 브라우저 TTS 모두 정지 */}
             {(state === 'speaking' || voiceOutput.isPlaying) && (
               <button type="button"
-                onClick={() => { voiceOutput.stopSpeaking(); stopSpeaking(); stopStreamingSpeech(); handsFreeRef.current = false; setState('idle'); }}
+                onClick={() => { muteActiveAnswer(); voiceOutput.stopSpeaking(); stopSpeaking(); stopStreamingSpeech(); handsFreeRef.current = false; setState('idle'); }}
                 style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: '#ef444420', border: '1px solid #ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 title="말하기 중지"
               >
@@ -2840,7 +2845,7 @@ export function TinkerbellAssistant({
         {/* 마이크 버튼 */}
           <button
             onClick={() => {
-              if (!hasSpeechRecognition) {
+              if (!hasSpeechRecognition && !isIOSDevice()) {
                 setVoiceError('이 브라우저는 음성 인식을 지원하지 않습니다.');
                 return;
               }
@@ -2920,7 +2925,7 @@ export function TinkerbellAssistant({
         {/* 말하는 중 → 중지 버튼 (OpenAI 또는 브라우저 TTS 모두 정지) */}
         {(state === 'speaking' || voiceOutput.isPlaying) && (
           <button
-            onClick={() => { voiceOutput.stopSpeaking(); stopSpeaking(); stopStreamingSpeech(); handsFreeRef.current = false; setState('idle'); }}
+            onClick={() => { muteActiveAnswer(); voiceOutput.stopSpeaking(); stopSpeaking(); stopStreamingSpeech(); handsFreeRef.current = false; setState('idle'); }}
             style={{
               width: 40,
               height: 40,

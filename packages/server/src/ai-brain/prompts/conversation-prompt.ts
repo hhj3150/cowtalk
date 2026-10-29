@@ -841,6 +841,9 @@ function buildBreedingPipelinePrompt(data: BreedingPipelineData): string {
   return lines.join('\n');
 }
 
+/** profile-builder ALARM_LIST_LIMIT와 같은 값 — 목록이 상한에 닿으면 실제 두수는 그 이상 */
+const ALARM_LIST_LIMIT = 50;
+
 function buildGlobalContextPrompt(ctx: GlobalContext): string {
   const lines: string[] = [
     `## 맥락: 전체 농장 실시간 현황 (smaXtec 위내센서 데이터)`,
@@ -850,14 +853,14 @@ function buildGlobalContextPrompt(ctx: GlobalContext): string {
   ];
 
   // === smaXtec 알람별 동물 목록 (핵심 데이터) ===
-  lines.push('## smaXtec 알람 현황');
+  lines.push('## smaXtec 알람 현황 (최근 24시간 미확인)');
 
   // 알람 요약 (한눈에)
   const summaryParts: string[] = [];
   for (const type of ALARM_DISPLAY_ORDER) {
     const animals = ctx.alarmsByType[type];
     if (animals && animals.length > 0) {
-      summaryParts.push(`${ALARM_LABELS[type] ?? type}: **${String(animals.length)}두**`);
+      summaryParts.push(`${ALARM_LABELS[type] ?? type}: **${String(animals.length)}두${animals.length >= ALARM_LIST_LIMIT ? ' 이상' : ''}**`);
     }
   }
   if (summaryParts.length > 0) {

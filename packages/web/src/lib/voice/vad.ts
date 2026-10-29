@@ -74,6 +74,9 @@ export function createVad(stream: MediaStream, options: VadOptions = {}): VadHan
 
   let stopped = false;
   let speechDetected = false;
+  // 마이크 신호가 한 번이라도 들어왔는가 — iOS에서 AudioContext가 suspended로 시작하면
+  // 분석기가 계속 0만 읽는다. 그 상태를 '말 없음'으로 오판해 녹음을 끊지 않기 위함.
+  let signalSeen = false;
   let intervalId: number | null = null;
   let ctx: AudioContext | null = null;
   let source: MediaStreamAudioSourceNode | null = null;
@@ -117,6 +120,8 @@ export function createVad(stream: MediaStream, options: VadOptions = {}): VadHan
 
   try {
     ctx = new AC();
+    // getUserMedia await 뒤(사용자 탭 밖)에 만들어지므로 iOS Safari는 suspended로 시작할 수 있다
+    if (ctx.state === 'suspended') void ctx.resume().catch(() => { /* 신호 없음 → 최대 시간 안전망 */ });
     source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
@@ -139,6 +144,7 @@ export function createVad(stream: MediaStream, options: VadOptions = {}): VadHan
         sumSquares += v * v;
       }
       const rms = Math.sqrt(sumSquares / data.length);
+      if (rms > 0) signalSeen = true;
 
       const elapsed = Date.now() - startedAt;
 
@@ -169,7 +175,8 @@ export function createVad(stream: MediaStream, options: VadOptions = {}): VadHan
       }
 
       // (3) 아예 말이 없음 → 종료
-      if (!speechDetected && elapsed > noSpeechMs) {
+      //     신호 자체가 0이면(분석기가 죽은 상태) 판단 불가 — 최대 시간까지 녹음해 전사에 맡긴다
+      if (!speechDetected && signalSeen && elapsed > noSpeechMs) {
         finish('no-speech');
         return;
       }

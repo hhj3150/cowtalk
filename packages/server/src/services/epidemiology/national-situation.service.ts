@@ -148,13 +148,16 @@ export async function getNationalSituation(
     // 2.5. 라이브 두수 (D7, BUG-007) — farmId별 활성 동물 카운트.
     // currentHeadCount(D8 격하)는 시도 합계에 사용 안 함.
     const animalRows = await db
-      .select({ farmId: animals.farmId })
+      .select({ farmId: animals.farmId, deviceId: animals.currentDeviceId })
       .from(animals)
       .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
     const liveCountByFarm = new Map<string, number>();
+    // 센서 장착 두수 — 공개 통계(/public/stats)와 같은 정의: currentDeviceId IS NOT NULL
+    const sensorCountByFarm = new Map<string, number>();
     for (const a of animalRows) {
       liveCountByFarm.set(a.farmId, (liveCountByFarm.get(a.farmId) ?? 0) + 1);
+      if (a.deviceId) sensorCountByFarm.set(a.farmId, (sensorCountByFarm.get(a.farmId) ?? 0) + 1);
     }
 
     // 3. 시도별 농장 집계 — totalAnimals는 라이브 카운트 합 (D7).
@@ -220,7 +223,7 @@ export async function getNationalSituation(
         centerLng: center.lng,
         farmCount: agg.farmCount,
         totalAnimals: agg.totalAnimals,
-        monitoredAnimals: Math.round(agg.totalAnimals * 0.994), // 센서율 99.4% (실제 smaXtec)
+        monitoredAnimals: agg.farmIds.reduce((sum, fId) => sum + (sensorCountByFarm.get(fId) ?? 0), 0),
         feverAnimals,
         feverRate,
         clusterFarms,
