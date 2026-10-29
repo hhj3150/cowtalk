@@ -8,6 +8,8 @@ import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 import { AbstractConnector, withRetry } from './base.connector.js';
 import type { ConnectorConfig, FetchResult } from './base.connector.js';
+import { parseSmaxtecTimestamp } from '../smaxtec-time.js';
+
 // ===========================
 // smaXtec API 응답 타입
 // ===========================
@@ -414,7 +416,10 @@ export class SmaxtecConnector extends AbstractConnector<SmaxtecFetchData> {
             organisation_id: orgId,
           }));
           const filtered = since
-            ? eventsWithOrg.filter((e) => new Date(e.event_ts ?? e.timestamp ?? '') > since)
+            ? eventsWithOrg.filter((e) => {
+                const ts = parseSmaxtecTimestamp(e.event_ts ?? e.timestamp);
+                return ts !== null && ts > since;
+              })
             : eventsWithOrg;
           allEvents.push(...filtered);
 

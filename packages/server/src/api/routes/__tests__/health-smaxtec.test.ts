@@ -20,6 +20,10 @@ describe('describeSmaxtecHealth — 공개 헬스 응답의 smaXtec 상태 문�
     expect(d).toContain('last sync: 2026-10-18T09:00:00.000Z');
     expect(d).toContain('last event: 2026-10-18T08:55:00.000Z');
   });
+  it('미래 시각 이벤트(타임존 오파싱 등)는 건수로 드러낸다', () => {
+    expect(describeSmaxtecHealth({ ...base, futureEvents: 42 })).toContain('future-dated events: 42');
+    expect(describeSmaxtecHealth({ ...base, futureEvents: 0 })).not.toContain('future-dated');
+  });
   it('파이프라인이 꺼져 있으면 드러낸다', () => {
     expect(describeSmaxtecHealth({ ...base, running: false })).toContain('pipeline not running');
   });

@@ -64,8 +64,15 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
       const { getPipelineOrchestrator } = await import('../../pipeline/orchestrator.js');
       const pipeline = await getPipelineOrchestrator().getHealth();
       const conn = pipeline.connectors.find((c) => c.connectorId === 'smaxtec');
-      const [latest] = await getDb().execute(sql`SELECT max(detected_at) AS last_event FROM smaxtec_events`) as unknown as Array<{ last_event: string | null }>;
+      // 미래 시각 행(타임존 오파싱 등)은 '마지막 이벤트'에서 제외 — 섞이면 수집이 멈춰도 최대 9시간 healthy 로 보인다.
+      // (10분은 시계 오차 허용) 대신 그 건수를 따로 노출해 데이터 무결성 문제를 숨기지 않는다. (detected_at 인덱스 범위 스캔)
+      const [latest] = await getDb().execute(sql`
+        SELECT
+          (SELECT max(detected_at) FROM smaxtec_events WHERE detected_at <= now() + interval '10 minutes') AS last_event,
+          (SELECT count(*) FROM smaxtec_events WHERE detected_at > now() + interval '10 minutes') AS future_events
+      `) as unknown as Array<{ last_event: string | null; future_events: string | number | null }>;
       const lastEventAt = latest?.last_event ? new Date(latest.last_event) : null;
+      const futureEvents = Number(latest?.future_events ?? 0);
       const hoursSince = lastEventAt ? (Date.now() - lastEventAt.getTime()) / 3_600_000 : null;
       smaxtecDetail = describeSmaxtecHealth({
         running: pipeline.isRunning,
@@ -73,6 +80,7 @@ healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFuncti
         lastError: conn?.lastError ?? null,
         lastSyncAt: conn?.lastSyncAt ?? null,
         lastEventAt,
+        futureEvents,
       });
       const connected = conn?.status === 'connected' || conn?.status === 'syncing';
       smaxtecStatus = pipeline.isRunning && connected && hoursSince !== null && hoursSince < 6 ? 'healthy' : 'degraded';
@@ -171,6 +179,7 @@ export function describeSmaxtecHealth(h: {
   readonly lastError: string | null;
   readonly lastSyncAt: Date | null;
   readonly lastEventAt: Date | null;
+  readonly futureEvents?: number;
 }): string {
   const parts: string[] = [];
   if (!h.running) parts.push('pipeline not running');
@@ -185,5 +194,6 @@ export function describeSmaxtecHealth(h: {
   }
   parts.push(`last sync: ${h.lastSyncAt ? h.lastSyncAt.toISOString() : 'never'}`);
   parts.push(`last event: ${h.lastEventAt ? h.lastEventAt.toISOString() : 'none'}`);
+  if (h.futureEvents && h.futureEvents > 0) parts.push(`future-dated events: ${String(h.futureEvents)}`);
   return parts.join(' · ');
 }

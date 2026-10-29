@@ -7,6 +7,7 @@
 import type { SmaxtecRawEvent, SmaxtecAnimal } from './connectors/smaxtec.connector.js';
 import type { Severity, SmaxtecEventType } from '@cowtalk/shared';
 import { logger } from '../lib/logger.js';
+import { parseSmaxtecTimestamp } from './smaxtec-time.js';
 
 // ===========================
 // smaXtec 이벤트 → CowTalk 표준
@@ -279,8 +280,9 @@ export function buildIdMappingIndex(
 // ===========================
 
 function toKST(isoString: string): Date {
-  const date = new Date(isoString);
-  if (isNaN(date.getTime())) {
+  // 타임존 없는 smaXtec 시각은 KST 벽시계 — new Date() 로 바로 읽으면 서버(UTC) 기준 +9h 미래가 된다
+  const date = parseSmaxtecTimestamp(isoString);
+  if (!date) {
     logger.warn({ raw: isoString }, '[Normalization] Invalid date string');
     return new Date();
   }
