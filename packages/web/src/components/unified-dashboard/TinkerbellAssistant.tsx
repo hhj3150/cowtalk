@@ -240,6 +240,11 @@ interface StreamChunk {
   readonly executionMs?: number;
 }
 
+/** 중지 이후 도착한 답변 문장을 읽을지 — 이 답변을 시작한 세대가 아직 현재일 때만 읽는다 */
+export function canVoiceAnswer(shouldSpeak: boolean, currentGen: number, answerGen: number): boolean {
+  return shouldSpeak && currentGen === answerGen;
+}
+
 /** VO-07: 음성 발화 제출 여부 — 현재 듣기 세션이고, 그 세션에서 아직 제출하지 않았을 때만 */
 export function shouldSubmitVoice(session: number, currentSession: number, lastSubmittedSession: number): boolean {
   return session === currentSession && session !== lastSubmittedSession;
@@ -1020,6 +1025,10 @@ export function TinkerbellAssistant({
       // VO-05: 이전 답변 스트림뿐 아니라 아직 나오고 있는 소리(세 갈래 전부)도 끊는다 — 새 질문 우선
       stopAllSpeech();
       cancelActiveAnswer();
+      // 이 답변을 소리 내 읽어도 되는 세대. 중지 버튼·"그만"이 세대를 올리면, 그 뒤 도착하는
+      // 문장은 화면에만 쓰고 읽지 않는다 (예전: 중지해도 다음 문장이 도착하면 다시 말하기 시작했다)
+      const answerSpeechGen = speechGenRef.current;
+      const voiceStillOn = (): boolean => canVoiceAnswer(shouldSpeak, speechGenRef.current, answerSpeechGen);
       const controller = new AbortController();
       const handle = { controller, cancelled: false };
       answerHandle = handle;
@@ -1114,9 +1123,9 @@ export function TinkerbellAssistant({
               textEventCount++;
               fullText += parsed.content;
               setStreamText(fullText);
-              if (firstChunk) { setState('speaking'); firstChunk = false; }
+              if (firstChunk) { if (speechGenRef.current === answerSpeechGen) setState('speaking'); firstChunk = false; }
               // 문장이 완성되는 즉시 합성·재생을 시작한다 (답변 종료를 기다리지 않음)
-              if (shouldSpeak) {
+              if (voiceStillOn()) {
                 for (const chunk of chunkerRef.current.push(parsed.content)) {
                   streamedChunkCount++;
                   enqueueSpeech(chunk);
@@ -1167,9 +1176,11 @@ export function TinkerbellAssistant({
       setStreamText('');
       setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
-      setState('speaking');
+      // 읽는 도중 중지했으면 남은 꼬리도 읽지 않고 대기 상태로 끝낸다
+      const speakNow = voiceStillOn();
+      setState(speakNow ? 'speaking' : 'idle');
 
-      if (!shouldSpeak) {
+      if (!speakNow) {
         setState('idle');
       } else if (streamedChunkCount > 0) {
         // 스트리밍으로 이미 말하는 중 — 남은 꼬리만 큐에 넣고 종료를 알린다.
@@ -2516,7 +2527,7 @@ export function TinkerbellAssistant({
             </button>
 
             {/* 말하는 중 중지 — OpenAI 또는 브라우저 TTS 모두 정지 */}
-            {(state === 'speaking' || voiceOutput.isPlaying) && (
+            {(state === 'speaking' || state === 'thinking' || voiceOutput.isPlaying) && (
               <button type="button"
                 onClick={() => { stopAllSpeech(); handsFreeRef.current = false; setState('idle'); }}
                 style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: '#ef444420', border: '1px solid #ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -2994,7 +3005,7 @@ export function TinkerbellAssistant({
         </button>
 
         {/* 말하는 중 → 중지 버튼 (OpenAI 또는 브라우저 TTS 모두 정지) */}
-        {(state === 'speaking' || voiceOutput.isPlaying) && (
+        {(state === 'speaking' || state === 'thinking' || voiceOutput.isPlaying) && (
           <button
             onClick={() => { stopAllSpeech(); handsFreeRef.current = false; setState('idle'); }}
             style={{
