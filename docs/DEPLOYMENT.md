@@ -69,7 +69,9 @@ cp .env.example .env
 | `DB_NAME` | 데이터베이스 이름 | `cowtalk` |
 | `DB_USER` | DB 사용자 | `cowtalk` |
 | `DB_PASSWORD` | DB 비밀번호 | (프로덕션에서 강한 비밀번호 사용) |
-| `REDIS_HOST` | Redis 호스트 | `localhost` |
+| `REDIS_ENABLED` | `false`/`0`/`no`/`off` 이면 Redis 를 쓰지 않음 | (미설정 = 사용) |
+| `REDIS_URL` | Redis 접속 URL (`redis://` 또는 `rediss://`). 있으면 아래 HOST/PORT/PASSWORD 보다 우선 | (Railway: `${{Redis.REDIS_URL}}`) |
+| `REDIS_HOST` | Redis 호스트. `REDIS_URL`·`REDIS_HOST` 둘 다 없으면 연결을 시도하지 않고 캐시 없이 동작 | (없음) |
 | `REDIS_PORT` | Redis 포트 | `6379` |
 | `REDIS_PASSWORD` | Redis 비밀번호 | (프로덕션에서 설정) |
 | `JWT_ACCESS_SECRET` | JWT Access 시크릿 (32자 이상) | (랜덤 생성) |
@@ -235,6 +237,11 @@ docker compose exec postgres psql -U cowtalk -d cowtalk
 ```bash
 docker compose exec redis redis-cli ping
 ```
+
+Redis 는 캐시·잡 큐용이며 없어도 서버는 동작한다 (캐시 없이, 잡은 in-process 타이머).
+`/api/health/deep` 의 Redis 항목:
+- `skipped` — `REDIS_ENABLED=false` 이거나 접속 정보(`REDIS_URL`/`REDIS_HOST`)가 없음. 전체 판정에서 제외
+- `degraded` — 설정은 있는데 연결 실패. 전체 판정은 최대 `degraded`(200), Postgres 장애(`down`, 503)와 구분
 
 ### 포트 충돌
 
