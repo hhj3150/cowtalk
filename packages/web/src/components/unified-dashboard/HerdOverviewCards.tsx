@@ -37,14 +37,14 @@ const ROLE_CARDS: Readonly<Record<string, readonly CardConfig[]>> = {
   veterinarian: [
     { key: 'totalAnimals', label: '관리 두수', icon: 'stethoscope', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246' },
     { key: 'healthIssues', label: '진료 대상', icon: 'heart', category: 'health', accent: '#ef4444', accentRgb: '239,68,68' },
-    { key: 'activeAlerts', label: '발열·질병', icon: 'thermometer', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11' },
+    { key: 'activeAlerts', label: '24h 알림', icon: 'thermometer', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11' },
     { key: 'sensorAttached', label: '센서 장착', icon: 'sensor', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212' },
   ],
   quarantine_officer: [
     { key: 'totalAnimals', label: '감시 두수', icon: 'shield', category: 'total', accent: '#3b82f6', accentRgb: '59,130,246' },
-    { key: 'healthIssues', label: '발열 두수', icon: 'thermometer', category: 'health', accent: '#ef4444', accentRgb: '239,68,68' },
+    { key: 'healthIssues', label: '건강 이상', icon: 'thermometer', category: 'health', accent: '#ef4444', accentRgb: '239,68,68' },
     { key: 'activeAlerts', label: '역학 경보', icon: 'siren', category: 'alerts', accent: '#f59e0b', accentRgb: '245,158,11' },
-    { key: 'sensorAttached', label: '감시 농장', icon: 'clipboard', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212' },
+    { key: 'sensorAttached', label: '센서 감시 두수', icon: 'clipboard', category: 'sensor', accent: '#06b6d4', accentRgb: '6,182,212' },
   ],
 };
 

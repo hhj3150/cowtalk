@@ -15,7 +15,7 @@ import {
   sensorDailyAgg, sensorMeasurements, eventLabels,
   pregnancyChecks, calvingEvents, regions,
 } from '../../db/schema.js';
-import { eq, count, sql, and, gte, desc, inArray } from 'drizzle-orm';
+import { eq, count, sql, and, gte, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { resolveFarmProvince } from '../../services/epidemiology/province-mapper.js';
 import { haversineKm } from '../../lib/haversine.js';
 import { batchRouteDistances } from '../../lib/kakao-mobility.js';
@@ -2431,13 +2431,18 @@ async function queryHerdOverview(
   // 두수 단일 소스 — D7/D9 라이브 (BUG-007).
   const herd = await getHerdTotal(currentFarmScope(farmId));
 
-  // 센서 장착: 활성 동물 중 smaXtec 이벤트가 있는 동물 수
+  // 센서 장착: 활성 동물 중 현재 센서가 붙어 있는 두수.
+  // 공개 통계(/public/stats)·로그인 화면과 같은 정의(currentDeviceId IS NOT NULL) — 화면 간 숫자 일치.
   const [sensorCount] = await db.select({
-    count: sql<number>`COUNT(DISTINCT ${smaxtecEvents.animalId})`,
+    count: sql<number>`COUNT(*)`,
   })
-    .from(smaxtecEvents)
-    .innerJoin(animals, eq(smaxtecEvents.animalId, animals.animalId))
-    .where(whereAll(farmCondition(smaxtecEvents.farmId, farmId), eq(animals.status, 'active')));
+    .from(animals)
+    .where(whereAll(
+      farmCondition(animals.farmId, farmId),
+      eq(animals.status, 'active'),
+      isNull(animals.deletedAt),
+      isNotNull(animals.currentDeviceId),
+    ));
 
   // 미확인 알림 / 건강 이상 — alert-aggregator 단일 소스 (D3, BUG-007 Part 2).
   // window=24h, ackedFilter=false (미확인만). 878 vs 874 모순 해소.

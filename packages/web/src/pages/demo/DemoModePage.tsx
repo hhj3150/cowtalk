@@ -37,7 +37,7 @@ function buildSlides(scale: LiveScale | null): readonly SlideConfig[] {
       // D4/D5 (BUG-008): hardcoded "95%+" mock 제거. ground truth 부족 시 "—".
       { label: 'AI 감지 정확도', value: null, suffix: '학습 중' },
     ],
-    features: ['위내센서 실시간 체온·반추·활동 모니터링', '6개 역할별 맞춤 대시보드', '알람 → 판단 → 행동이 한 화면에서 완결'],
+    features: ['위내센서 실시간 체온·반추·활동 모니터링', '4개 역할별 맞춤 대시보드 (목장주·수의사·방역관·행정관)', '알람 → 판단 → 행동이 한 화면에서 완결'],
   },
   {
     key: 'farmer',
@@ -101,11 +101,11 @@ function buildSlides(scale: LiveScale | null): readonly SlideConfig[] {
     icon: '🌏',
     kpis: [
       { label: '한국 목장', value: farms, suffix: farms != null ? '개' : '실시간' },
-      { label: '공공데이터 API', value: 8, suffix: '종' },
-      { label: '지원 역할', value: 6, suffix: '개' },
-      { label: '다국어 지원', value: 3, suffix: '종', color: 'text-blue-400' },
+      { label: '공공데이터 실연동', value: 4, suffix: '종' },
+      { label: '지원 역할', value: 4, suffix: '개' },
+      { label: '다국어 지원', value: 5, suffix: '종', color: 'text-blue-400' },
     ],
-    features: ['국가별 어댑터 패턴 — 한국 특화이되 글로벌 확장', 'i18n 지원 (한/영/러)', '축산 디지털 주권 — 아날로그→디지털 전환'],
+    features: ['국가별 어댑터 패턴 — 한국 특화이되 글로벌 확장', 'i18n 지원 (한/영/러/우즈베크/몽골)', '축산 디지털 주권 — 아날로그→디지털 전환'],
   },
   ];
 }

@@ -264,17 +264,22 @@ export default function CowProfilePage(): React.JSX.Element {
     });
 
     // 센서 데이터 — 별도 비동기 로드 (프로필 로딩 차단 안 함, 15초 여유)
-    withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]> }>(
+    withTimeout(apiGet<{ metrics: Record<string, readonly { ts: number; value: number }[]>; simulatedMetrics?: readonly string[] }>(
       `/unified-dashboard/animal/${id}/sensor-chart?days=7`
     ), 15000)
       .then((sensorData) => {
         if (cancelled || !sensorData?.metrics) return;
+        // 서버가 실측이 없어 추정 곡선으로 채운 메트릭은 '현재 값'으로 쓰지 않는다 (— 표시).
+        // 추정치를 실측 KPI처럼 보여주면 개체 상태를 잘못 전달한다.
+        const simulated = new Set(sensorData.simulatedMetrics ?? []);
+        const realPts = (key: string): readonly { ts: number; value: number }[] =>
+          simulated.has(key) ? [] : (sensorData.metrics[key] ?? []);
         const getLatest = (key: string): number | null => {
-          const pts = sensorData.metrics[key];
-          return pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
+          const pts = realPts(key);
+          return pts.length > 0 ? pts[pts.length - 1]!.value : null;
         };
-        const tempPts = sensorData.metrics['temp'] ?? [];
-        const rumPts = sensorData.metrics['rum'] ?? [];
+        const tempPts = realPts('temp');
+        const rumPts = realPts('rum');
         setSensor({
           temperature: getLatest('temp'),
           baselineTemp: computeBaselineTemp(tempPts),
@@ -283,7 +288,7 @@ export default function CowProfilePage(): React.JSX.Element {
           activity: getLatest('act'),
           // 음수량은 smaXtec이 하루 뒤에 집계하므로 전날(어제) 데이터 사용
           drinking: (() => {
-            const drPts = sensorData.metrics['dr'] ?? [];
+            const drPts = realPts('dr');
             if (drPts.length === 0) return null;
             // 어제 자정 기준 (로컬 타임존)
             const todayMidnight = new Date();

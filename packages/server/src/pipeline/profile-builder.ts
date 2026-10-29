@@ -282,21 +282,27 @@ export interface GlobalContext {
   };
 }
 
+/** 알람 유형별 목록 상한 — 프롬프트에서 '상한 도달 = N두 이상'으로 표기한다 */
+export const ALARM_LIST_LIMIT = 50;
+
 export async function buildGlobalContext(): Promise<GlobalContext> {
   const db = getDb();
 
-  // 1. 전체 농장/동물 수
+  // 1. 전체 농장/동물 수 — 대시보드 KPI·공개 통계와 같은 정의(활성만).
+  //    정의가 다르면 팅커벨이 화면과 다른 두수를 말한다 (도태·판매우 포함 금지).
   const [farmCount] = await db
     .select({ count: count() })
     .from(farms)
-    .where(isNull(farms.deletedAt));
+    .where(and(eq(farms.status, 'active'), isNull(farms.deletedAt)));
 
   const [animalCount] = await db
     .select({ count: count() })
     .from(animals)
-    .where(isNull(animals.deletedAt));
+    .where(and(eq(animals.status, 'active'), isNull(animals.deletedAt)));
 
-  // 2. smaXtec 알람 유형별 동물 목록 (미확인, 최신순 각 50건)
+  // 2. smaXtec 알람 유형별 동물 목록 (최근 24시간 미확인, 최신순 각 50건)
+  //    대시보드 '24h 알림'과 같은 창 — 전체 기간 미확인을 세면 화면과 다른 숫자를 말한다.
+  const alarmSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const alarmSelect = {
     earTag: animals.earTag,
     farmName: farms.name,
@@ -314,9 +320,10 @@ export async function buildGlobalContext(): Promise<GlobalContext> {
       .where(and(
         eq(smaxtecEvents.eventType, type),
         eq(smaxtecEvents.acknowledged, false),
+        gte(smaxtecEvents.detectedAt, alarmSince),
       ))
       .orderBy(desc(smaxtecEvents.detectedAt))
-      .limit(50),
+      .limit(ALARM_LIST_LIMIT),
   );
 
   // 3. 농장별 알림 순위
