@@ -14,7 +14,7 @@
 
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { config } from '../config/index.js';
+import { getRedisSettings } from '../lib/redis-settings.js';
 import { logger } from '../lib/logger.js';
 
 export interface RepeatableJob {
@@ -102,7 +102,10 @@ export class InProcessScheduler implements JobScheduler {
 export interface RedisConnectionOpts {
   readonly host: string;
   readonly port: number;
+  readonly username?: string;
   readonly password?: string;
+  readonly db?: number;
+  readonly tls?: Record<string, never>;
   readonly maxRetriesPerRequest: null;
 }
 
@@ -161,27 +164,30 @@ export class BullMqScheduler implements JobScheduler {
 // ===========================
 
 export async function createJobScheduler(): Promise<JobScheduler> {
-  if (!config.REDIS_ENABLED) {
+  // 접속 정보가 없거나 꺼져 있으면 프로브조차 하지 않는다 (경고는 redis-settings 가 1회 남김)
+  const settings = getRedisSettings();
+  if (settings.state !== 'configured') {
     return new InProcessScheduler();
   }
   try {
     // 도달성 검사 (프로브는 즉시 해제)
     const probe = new IORedis({
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      password: config.REDIS_PASSWORD || undefined,
+      ...settings.connection,
       lazyConnect: true,
       connectTimeout: 3000,
       maxRetriesPerRequest: 1,
+      retryStrategy: () => null, // 프로브는 재연결하지 않는다
     });
-    await probe.connect();
-    await probe.ping();
-    probe.disconnect();
+    probe.on('error', () => { /* 아래 catch 에서 1회만 기록 */ });
+    try {
+      await probe.connect();
+      await probe.ping();
+    } finally {
+      probe.disconnect();
+    }
 
     return new BullMqScheduler({
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      password: config.REDIS_PASSWORD || undefined,
+      ...settings.connection,
       maxRetriesPerRequest: null, // BullMQ Worker 요구사항
     });
   } catch (err) {

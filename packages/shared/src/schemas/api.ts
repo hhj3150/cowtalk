@@ -194,6 +194,8 @@ const chatDocumentSchema = z.object({
 
 export const chatMessageSchema = z.object({
   question: z.string().min(1).max(2000),
+  // VO-07: 한 번의 음성 발화(인식 세션)에 붙는 ID — 같은 발화가 두 번 제출되면 서버가 두 번째를 거절한다
+  clientRequestId: z.string().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(),
   farmId: z.string().uuid().optional(),
   // 지역(그룹) 스코프 — 활성 지역 필터의 농장 id 목록. 집계 도구를 이 농장들로 데이터 레벨 한정.
   farmIds: z.array(z.string().uuid()).max(5000).optional(),

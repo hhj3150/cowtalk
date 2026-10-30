@@ -2,7 +2,7 @@
 // TTL 5분, 파이프라인 완료 시 업데이트
 
 import Redis from 'ioredis';
-import { config } from '../config/index.js';
+import { getRedisSettings } from '../lib/redis-settings.js';
 import { logger } from '../lib/logger.js';
 import type { AnimalProfile, FarmProfile, RegionalProfile } from '@cowtalk/shared';
 
@@ -12,31 +12,43 @@ import type { AnimalProfile, FarmProfile, RegionalProfile } from '@cowtalk/share
 
 let redis: Redis | null = null;
 let redisDisabled = false;
+let errorLogged = false;
+
+// 연결 실패 시 재시도 상한 — 넘으면 이 프로세스에서는 캐시를 끈다 (로그 도배·무한 재연결 방지)
+const MAX_RECONNECT_ATTEMPTS = 3;
 
 export function getRedis(): Redis | null {
-  if (redisDisabled || !config.REDIS_ENABLED) {
+  if (redisDisabled) return null;
+  // 접속 정보가 없거나 꺼져 있으면 연결을 시도하지 않는다 (예전: 기본값 localhost:6379 로 계속 시도)
+  const settings = getRedisSettings();
+  if (settings.state !== 'configured') {
+    redisDisabled = true;
     return null;
   }
   if (!redis) {
     redis = new Redis({
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      password: config.REDIS_PASSWORD || undefined,
+      ...settings.connection,
+      connectTimeout: 3000,
+      maxRetriesPerRequest: 1,
       retryStrategy: (times) => {
-        if (times > 3) {
-          logger.warn('[Cache] Redis unavailable, disabling cache');
+        if (times > MAX_RECONNECT_ATTEMPTS) {
+          logger.warn(`[Cache] Redis 재연결 ${MAX_RECONNECT_ATTEMPTS}회 실패 — 캐시를 끄고 계속 동작합니다`);
           redisDisabled = true;
           return null;
         }
-        return Math.min(times * 200, 5000);
+        return Math.min(times * 500, 5000);
       },
       lazyConnect: true,
     });
 
     redis.on('error', (err) => {
+      // 같은 원인의 오류가 재시도마다 반복되므로 첫 1회만 error 로 남긴다
+      if (errorLogged) return;
+      errorLogged = true;
       logger.error({ err }, '[Cache] Redis error');
     });
     redis.on('connect', () => {
+      errorLogged = false;
       logger.info('[Cache] Redis connected');
     });
   }
