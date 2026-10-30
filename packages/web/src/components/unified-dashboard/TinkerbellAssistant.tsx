@@ -240,6 +240,16 @@ interface StreamChunk {
   readonly executionMs?: number;
 }
 
+/** 중지 이후 도착한 답변 문장을 읽을지 — 이 답변을 시작한 세대가 아직 현재일 때만 읽는다 */
+export function canVoiceAnswer(shouldSpeak: boolean, currentGen: number, answerGen: number): boolean {
+  return shouldSpeak && currentGen === answerGen;
+}
+
+/** VO-07: 음성 발화 제출 여부 — 현재 듣기 세션이고, 그 세션에서 아직 제출하지 않았을 때만 */
+export function shouldSubmitVoice(session: number, currentSession: number, lastSubmittedSession: number): boolean {
+  return session === currentSession && session !== lastSubmittedSession;
+}
+
 interface ToolActivity {
   readonly toolName: string;
   readonly toolDomain: string;
@@ -402,6 +412,9 @@ function splitIntoChunks(text: string, maxLen = 150): readonly string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
+/** VO-06: 브라우저 음성 세대 — stopSpeaking 이 올리면 진행 중이던 문장 체인이 멈춘다 */
+let browserSpeechGeneration = 0;
+
 function speak(text: string, onEnd?: () => void): void {
   if (!('speechSynthesis' in window)) {
     onEnd?.();
@@ -472,8 +485,11 @@ function speak(text: string, onEnd?: () => void): void {
 
   // 문장 분할 재생 (Chrome TTS 15초 끊김 방지)
   const chunks = splitIntoChunks(cleanText);
+  const generation = browserSpeechGeneration;
 
   function speakChunk(index: number): void {
+    // VO-06: 중단 뒤에는 다음 문장으로 넘어가지 않는다
+    if (generation !== browserSpeechGeneration) return;
     if (index >= chunks.length) {
       onEnd?.();
       return;
@@ -485,14 +501,24 @@ function speak(text: string, onEnd?: () => void): void {
     utt.pitch = utterance.pitch;
     if (selectedVoice) utt.voice = selectedVoice;
     utt.onend = () => speakChunk(index + 1);
-    utt.onerror = () => speakChunk(index + 1);
+    // VO-06: Chrome 은 cancel() 때 onerror('canceled'/'interrupted')를 낸다 — 예전엔 이걸 '다음 문장'으로
+    // 처리해 끼어들어도 계속 말했다. 중단 오류면 멈추고, 그 밖의 오류만 다음 문장으로 넘어간다.
+    utt.onerror = (e: SpeechSynthesisErrorEvent) => {
+      if (isCancelSpeechError(e.error)) return;
+      speakChunk(index + 1);
+    };
     window.speechSynthesis.speak(utt);
   }
 
   speakChunk(0);
 }
 
+export function isCancelSpeechError(error: string | undefined): boolean {
+  return error === 'canceled' || error === 'interrupted';
+}
+
 function stopSpeaking(): void {
+  browserSpeechGeneration++;
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
@@ -714,8 +740,22 @@ export function TinkerbellAssistant({
   const chunkerRef = useRef<ChunkAccumulator>(new ChunkAccumulator());
   // 발화 종료 후 후속 동작(핸즈프리 재청취) — 선언 순서 문제를 피하려 ref로 우회
   const afterSpeechRef = useRef<() => void>(() => { /* 초기엔 할 일 없음 */ });
+  // VO-05: 재생 세대 — 세 갈래 음성(스트리밍 문장 큐·통짜 합성·브라우저 음성)을 한 번에 멈출 때 올린다.
+  // 늦게 끝난 이전 소리의 종료 콜백이 핸즈프리 재청취를 걸어 '새 답변'을 취소하지 못하게,
+  // 종료 콜백은 자기가 시작된 세대일 때만 실행한다.
+  const speechGenRef = useRef(0);
+  const afterSpeechIfCurrent = useCallback((generation: number) => (): void => {
+    if (speechGenRef.current !== generation) return;
+    setState('idle');
+    afterSpeechRef.current();
+  }, []);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // VO-07: 듣기 세션 번호 — 새로 듣기 시작하면 올린다. 이전 인식기·녹음의 늦은 결과는 버린다
+  const listenSessionRef = useRef(0);
+  // 세션당 제출은 한 번 (인식기가 onend 를 두 번 내거나 Whisper 결과가 겹쳐도 같은 질문을 두 번 보내지 않게)
+  const submittedSessionRef = useRef(-1);
+  const tabIdRef = useRef(Math.random().toString(36).slice(2, 10));
   const transcriptRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastTriggerRef = useRef<string | undefined>(undefined);
@@ -760,9 +800,17 @@ export function TinkerbellAssistant({
     // 실패를 화면에 드러낸다 — 무음의 원인을 사용자가 알 수 있어야 한다
     onError: (message) => { setVoiceError(message); },
     // 청크 합성이 전부 실패하면 브라우저 TTS로 폴백 — 무음보다 낫다
-    onAllFailed: (fullText) => { speak(fullText, () => { setState('idle'); afterSpeechRef.current(); }); },
+    onAllFailed: (fullText) => { speak(fullText, afterSpeechIfCurrent(speechGenRef.current)); },
   });
   const { enqueue: enqueueSpeech, end: endSpeech, reset: resetSpeech, stop: stopStreamingSpeech } = streamingVoice;
+
+  /** VO-05: 세 갈래 재생을 모두 멈추고 세대를 올린다 (이전 소리의 종료 콜백 무효화) */
+  const stopAllSpeech = useCallback((): void => {
+    speechGenRef.current++;
+    try { stopSpeaking(); } catch { /* ignore */ }
+    try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
+    stopStreamingSpeech();
+  }, [voiceOutput, stopStreamingSpeech]);
 
   // ── 진행 중인 답변 스트림 (barge-in 취소용) ──
   // 소리만 끊으면 서버 스트림은 계속 흘러 들어와 ① 취소된 답변이 대화 기록에 확정되고
@@ -776,10 +824,11 @@ export function TinkerbellAssistant({
     activeAnswerRef.current = null;
     active.controller.abort();
     chunkerRef.current.reset();
-    stopStreamingSpeech();
+    // VO-05: 예전엔 문장 큐만 멈췄다 → 브라우저 음성·통짜 합성이 새 답변과 겹쳐 들렸다
+    stopAllSpeech();
     setStreamText('');
     setToolActivities([]);
-  }, [stopStreamingSpeech]);
+  }, [stopAllSpeech]);
 
   const t = useT();
   const { lang: uiLang } = useLang();
@@ -838,7 +887,7 @@ export function TinkerbellAssistant({
   // AI에 질문 전송 (fetch ReadableStream 실시간 스트리밍)
   // inputMode: 사용자가 어떻게 물었는지 — 음성으로 물으면 음성으로 답함 (현장 핵심 UX).
   // 'voice' = 마이크/wake word, 'text' = 입력창/suggestion 클릭
-  const askTinkerbell = useCallback(async (question: string, inputMode: 'voice' | 'text' = 'text') => {
+  const askTinkerbell = useCallback(async (question: string, inputMode: 'voice' | 'text' = 'text', clientRequestId?: string) => {
     // ── 로컬 명령 가로채기(음성·텍스트·제안 공통): 지역/농장 보기 → AI 왕복 없이 즉시 스코핑 ──
     if (pendingImages.length === 0 && pendingDocuments.length === 0) {
       const farmsList = farmsForRegion?.farms ?? [];
@@ -941,6 +990,8 @@ export function TinkerbellAssistant({
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
           : `[대화 모드] 당신은 목장 전담 AI 요정 "팅커벨"입니다.\n핵심만 명확하게 답하되, **bold**, - 목록 등 마크다운으로 가독성을 높이세요.\nASCII 차트·표 금지.${sovereignContext}${scopeDirective}\n\n질문: ${question}`,
+        // VO-07: 음성 발화 ID — 서버가 같은 발화의 중복 실행을 거절한다
+        ...(clientRequestId ? { clientRequestId } : {}),
         role: effectiveRole ?? 'farm_owner',
         farmId: farmIdForChat ?? selectedFarmId ?? undefined,
         // 지역(그룹) 스코프 — 서버 집계 도구를 이 농장들로 데이터 레벨 한정 (방역 대시보드 등)
@@ -971,7 +1022,13 @@ export function TinkerbellAssistant({
       };
 
       // 다층 타임아웃: 전체 90초 + 첫 바이트 30초 + 무응답 45초 (시연 중 빠른 실패 처리)
-      cancelActiveAnswer(); // 이전 답변이 아직 흐르고 있으면 끊는다 (새 질문 우선)
+      // VO-05: 이전 답변 스트림뿐 아니라 아직 나오고 있는 소리(세 갈래 전부)도 끊는다 — 새 질문 우선
+      stopAllSpeech();
+      cancelActiveAnswer();
+      // 이 답변을 소리 내 읽어도 되는 세대. 중지 버튼·"그만"이 세대를 올리면, 그 뒤 도착하는
+      // 문장은 화면에만 쓰고 읽지 않는다 (예전: 중지해도 다음 문장이 도착하면 다시 말하기 시작했다)
+      const answerSpeechGen = speechGenRef.current;
+      const voiceStillOn = (): boolean => canVoiceAnswer(shouldSpeak, speechGenRef.current, answerSpeechGen);
       const controller = new AbortController();
       const handle = { controller, cancelled: false };
       answerHandle = handle;
@@ -1066,9 +1123,9 @@ export function TinkerbellAssistant({
               textEventCount++;
               fullText += parsed.content;
               setStreamText(fullText);
-              if (firstChunk) { setState('speaking'); firstChunk = false; }
+              if (firstChunk) { if (speechGenRef.current === answerSpeechGen) setState('speaking'); firstChunk = false; }
               // 문장이 완성되는 즉시 합성·재생을 시작한다 (답변 종료를 기다리지 않음)
-              if (shouldSpeak) {
+              if (voiceStillOn()) {
                 for (const chunk of chunkerRef.current.push(parsed.content)) {
                   streamedChunkCount++;
                   enqueueSpeech(chunk);
@@ -1119,9 +1176,11 @@ export function TinkerbellAssistant({
       setStreamText('');
       setToolActivities([]);
       setMessages((prev) => [...prev, { role: 'assistant', content: answer, timestamp: startedAt }]);
-      setState('speaking');
+      // 읽는 도중 중지했으면 남은 꼬리도 읽지 않고 대기 상태로 끝낸다
+      const speakNow = voiceStillOn();
+      setState(speakNow ? 'speaking' : 'idle');
 
-      if (!shouldSpeak) {
+      if (!speakNow) {
         setState('idle');
       } else if (streamedChunkCount > 0) {
         // 스트리밍으로 이미 말하는 중 — 남은 꼬리만 큐에 넣고 종료를 알린다.
@@ -1143,14 +1202,16 @@ export function TinkerbellAssistant({
       } else {
         // 여기까지 오면 발화할 내용이 없다 — 통짜 경로로 마지막 시도
         echoGuardRef.current.noteSpoken(answer);
+        const generation = speechGenRef.current;
         ttsSpeakText(answer)
-          .then(() => { setState('idle'); afterSpeechRef.current(); })
+          .then(afterSpeechIfCurrent(generation))
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             console.warn('[Tinkerbell TTS] OpenAI 실패, 브라우저 TTS로 대체:', msg);
             // 브라우저 TTS로 대체하되 원인은 남긴다 — 무음의 이유를 사용자가 알 수 있어야 한다
             setVoiceError(`음성 합성 실패(브라우저 음성으로 대체): ${msg}`);
-            speak(answer, () => { setState('idle'); afterSpeechRef.current(); });
+            if (speechGenRef.current !== generation) return; // 그사이 중단·새 질문 — 대체 음성도 내지 않는다
+            speak(answer, afterSpeechIfCurrent(generation));
           });
       }
     } catch (err) {
@@ -1181,7 +1242,7 @@ export function TinkerbellAssistant({
       setMessages((prev) => [...prev, errorMsg]);
       setState('idle');
     }
-  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate, ttsVoiceMode, ttsSpeakText, enqueueSpeech, endSpeech, resetSpeech, stopStreamingSpeech, cancelActiveAnswer]);
+  }, [messages, effectiveRole, selectedFarmId, selectedFarmIds, farmIdForChat, dashboardContext, animalContext, animalIdForChat, sovereignStats, t, uiLang, pendingImages, pendingDocuments, farmsForRegion, selectFarmGroup, clearFarmSelection, selectFarm, navigate, ttsVoiceMode, ttsSpeakText, enqueueSpeech, endSpeech, resetSpeech, stopStreamingSpeech, cancelActiveAnswer, stopAllSpeech, afterSpeechIfCurrent]);
 
   // openTrigger가 바뀌면 패널 열고 이전 대화 초기화 후 자동 질문 예약
   useEffect(() => {
@@ -1227,18 +1288,35 @@ export function TinkerbellAssistant({
   // iOS Safari: MediaRecorder + Whisper STT 경로
   // Web Speech API가 iOS에서 불안정한 문제를 우회. 녹음 → 서버 업로드 → 텍스트 반환.
   // 단계별 콘솔 로그 + 시각 진단 메시지를 강화 (개발자도구 없이도 사용자가 원인 파악 가능).
+  /** VO-07: 음성 발화 제출 — 현재 세션이고 아직 제출하지 않았을 때만, 세션 ID 를 요청 ID 로 */
+  const submitVoiceUtterance = useCallback((text: string, session: number): void => {
+    if (!shouldSubmitVoice(session, listenSessionRef.current, submittedSessionRef.current)) return;
+    submittedSessionRef.current = session;
+    void askTinkerbell(text, 'voice', `v-${tabIdRef.current}-${String(session)}`);
+  }, [askTinkerbell]);
+
+  /** VO-07: 새 듣기 세션 — 이전 인식기·녹음을 멈추고 그 결과는 버리게 한다 */
+  const beginListenSession = useCallback((): number => {
+    const session = ++listenSessionRef.current;
+    try { recognitionRef.current?.abort(); } catch { /* ignore */ }
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === 'recording') {
+      try { rec.stop(); } catch { /* ignore */ }
+    }
+    return session;
+  }, []);
+
   const startListeningWhisper = useCallback(async () => {
     setVoiceError(null);
     // 피드백 루프 방지 — 진행 중인 모든 음성 출력 강제 중단
     // (브라우저 SpeechSynthesis + 통짜 Nova MP3 + 스트리밍 문장 큐 세 갈래 모두)
-    stopSpeaking();
-    try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
-    stopStreamingSpeech();
+    stopAllSpeech();
     cancelActiveAnswer(); // 답변 생성 중 마이크를 열면 그 답변은 버린다 (barge-in)
     // 자기 음성을 이미 껐으므로 이전 발화는 더 이상 에코 판정 근거가 아니다.
     // 비우지 않으면 답변에 나온 단어를 되쓰는 후속 질문이 에코로 오판돼 통째로 버려진다.
     echoGuardRef.current.clear();
     unlockTts();
+    const session = beginListenSession();
     if (import.meta.env.DEV) console.log('[Whisper] 1) 시작 — getUserMedia 요청');
 
     try {
@@ -1271,6 +1349,11 @@ export function TinkerbellAssistant({
 
       recorder.onstop = async () => {
         if (import.meta.env.DEV) console.log('[Whisper] 5) recorder.onstop fired');
+        // VO-07: 새 세션이 시작돼 멈춘 이전 녹음 — 자기 마이크만 닫고, 공유 상태·전사는 건드리지 않는다
+        if (session !== listenSessionRef.current) {
+          for (const track of stream.getTracks()) track.stop();
+          return;
+        }
         vadRef.current?.stop();
         vadRef.current = null;
         setMicLevel(0);
@@ -1297,16 +1380,19 @@ export function TinkerbellAssistant({
         try {
           const result = await transcribeAudio(blob, uiLang);
           if (import.meta.env.DEV) console.log('[Whisper] 8) 전사 완료 — text:', result.text);
+          // VO-07: 전사 중에 새로 듣기 시작했으면 이 결과는 버린다 (늦게 도착한 이전 발화가 새 질문을 덮지 않게)
+          if (session !== listenSessionRef.current) return;
           const text = (result.text ?? '').trim();
           // 정규화 → 축산 도메인 보정 ("사백이십삼번" → "423번", "발전 왔어" → "발정 왔어")
           const cleaned = text ? correctSttTranscript(cleanSttTranscript(text), uiLang).text : '';
           if (cleaned.length >= 2) {
-            askTinkerbell(cleaned, 'voice'); // iOS Whisper 경로 — 음성 입력
+            submitVoiceUtterance(cleaned, session); // iOS Whisper 경로 — 음성 입력 (세션당 1회)
           } else {
             setState('idle');
             setVoiceError('음성을 인식하지 못했습니다 (빈 텍스트). 다시 시도해 주세요.');
           }
         } catch (err) {
+          if (session !== listenSessionRef.current) return;
           const e = err as { response?: { status?: number; data?: { error?: { code?: string; message?: string } } }; message?: string };
           const status = e?.response?.status;
           const apiErr = e?.response?.data?.error;
@@ -1372,7 +1458,7 @@ export function TinkerbellAssistant({
       }
       setState('idle');
     }
-  }, [uiLang, askTinkerbell, voiceOutput, stopStreamingSpeech, cancelActiveAnswer]);
+  }, [uiLang, cancelActiveAnswer, stopAllSpeech, beginListenSession, submitVoiceUtterance]);
 
   // 음성 인식 시작 (권한 체크 + 에러 메시지 포함)
   // iOS Safari 중요: await 체인이 사용자 제스처 컨텍스트를 끊으므로
@@ -1401,14 +1487,14 @@ export function TinkerbellAssistant({
     }
 
     // 피드백 루프 방지 — 진행 중인 모든 음성 출력 강제 중단 (통짜 + 스트리밍 큐 모두)
-    stopSpeaking();
-    try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
-    stopStreamingSpeech();
+    stopAllSpeech();
     cancelActiveAnswer(); // 답변 생성 중 마이크를 열면 그 답변은 버린다 (barge-in)
     // 마이크를 사용자에게 여는 순간 에코 기억을 비운다 (오판으로 질문이 삼켜지는 것 방지)
     echoGuardRef.current.clear();
     unlockTts();
 
+    // VO-07: 이전 인식기를 멈추고 새 세션 — 이전 인식기의 onend 가 같은 말을 또 제출하던 문제
+    const session = beginListenSession();
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognitionClass();
     // 다국어 음성 인식: 사용자 UI 언어(uiLang) 우선 → 브라우저 언어 → 한국어
@@ -1425,12 +1511,14 @@ export function TinkerbellAssistant({
     recognition.interimResults = true;
 
     recognition.onstart = () => {
+      if (session !== listenSessionRef.current) return;
       setState('listening');
       setTranscript('');
       transcriptRef.current = '';
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      if (session !== listenSessionRef.current) return;
       let interim = '';
       let finalText = '';
       for (let i = 0; i < event.results.length; i++) {
@@ -1449,6 +1537,7 @@ export function TinkerbellAssistant({
     };
 
     recognition.onend = () => {
+      if (session !== listenSessionRef.current) return; // 새 세션이 시작돼 멈춘 이전 인식기
       const rawText = transcriptRef.current.trim();
       // 정규화 → 축산 도메인 보정 ("사백이십삼번" → "423번", "발전 왔어" → "발정 왔어")
       const cleaned = rawText ? correctSttTranscript(cleanSttTranscript(rawText), uiLang).text : '';
@@ -1466,11 +1555,13 @@ export function TinkerbellAssistant({
         transcriptRef.current = '';
         return;
       }
-      askTinkerbell(cleaned, 'voice'); // Web Speech API 경로 — 음성 입력
+      // 확정 결과가 없으면 마지막 중간 결과를 쓴다(사용자가 멈춤을 눌러 끝난 경우) — 세션당 한 번만 제출
+      submitVoiceUtterance(cleaned, session); // Web Speech API 경로 — 음성 입력
       transcriptRef.current = '';
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (session !== listenSessionRef.current) return;
       setState('idle');
       setTranscript('');
       transcriptRef.current = '';
@@ -1505,7 +1596,7 @@ export function TinkerbellAssistant({
         setVoiceError('음성 인식을 시작할 수 없습니다.');
       }
     }
-  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput, stopStreamingSpeech, cancelActiveAnswer]);
+  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput, stopStreamingSpeech, cancelActiveAnswer, stopAllSpeech, beginListenSession, submitVoiceUtterance]);
 
   // 음성 인식 중지 — Web Speech API + MediaRecorder 양쪽 대응
   const stopListening = useCallback(() => {
@@ -1715,9 +1806,7 @@ export function TinkerbellAssistant({
     if (state === 'listening') return;
     // 답변 중·생각 중이면 먼저 끊기 (Siri 식 barge-in)
     if (state === 'speaking' || state === 'thinking') {
-      try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
-      try { stopSpeaking(); } catch { /* ignore */ }
-      stopStreamingSpeech();
+      stopAllSpeech();
       cancelActiveAnswer();
       echoGuardRef.current.clear();
     }
@@ -1734,21 +1823,19 @@ export function TinkerbellAssistant({
 
     // 듣기는 항상 즉시 시작 — 인사 끝날 때까지 기다리지 않음
     void startListening();
-  }, [state, startListening, playWakeChime, voiceOutput, uiLang, isMobile, stopStreamingSpeech, cancelActiveAnswer]);
+  }, [state, startListening, playWakeChime, uiLang, isMobile, cancelActiveAnswer, stopAllSpeech]);
 
   // "조용히 해" / "그만" / "stop" 등 — 답변만 끊고 새 질문 모드로 가지 않음
   const handleInterruptDetected = useCallback(() => {
     if (state === 'speaking' || state === 'thinking') {
-      try { voiceOutput.stopSpeaking(); } catch { /* ignore */ }
-      try { stopSpeaking(); } catch { /* ignore */ }
-      stopStreamingSpeech();
+      stopAllSpeech();
       cancelActiveAnswer();
       // 중단시켰으면 남은 에코 기억도 지운다 — 사용자의 다음 말을 에코로 오인하지 않도록
       echoGuardRef.current.clear();
       handsFreeRef.current = false; // 중단 의사를 밝혔는데 다시 듣기 시작하면 안 된다
       setState('idle');
     }
-  }, [state, voiceOutput, stopStreamingSpeech, cancelActiveAnswer]);
+  }, [state, cancelActiveAnswer, stopAllSpeech]);
 
   // ── 핸즈프리 연속 대화 ──
   // 답변이 끝나면 자동으로 다시 듣는다. 착유·급이 중에는 매번 마이크를 누를 손이 없다.
@@ -2440,9 +2527,9 @@ export function TinkerbellAssistant({
             </button>
 
             {/* 말하는 중 중지 — OpenAI 또는 브라우저 TTS 모두 정지 */}
-            {(state === 'speaking' || voiceOutput.isPlaying) && (
+            {(state === 'speaking' || state === 'thinking' || voiceOutput.isPlaying) && (
               <button type="button"
-                onClick={() => { voiceOutput.stopSpeaking(); stopSpeaking(); stopStreamingSpeech(); handsFreeRef.current = false; setState('idle'); }}
+                onClick={() => { stopAllSpeech(); handsFreeRef.current = false; setState('idle'); }}
                 style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: '#ef444420', border: '1px solid #ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 title="말하기 중지"
               >
@@ -2918,9 +3005,9 @@ export function TinkerbellAssistant({
         </button>
 
         {/* 말하는 중 → 중지 버튼 (OpenAI 또는 브라우저 TTS 모두 정지) */}
-        {(state === 'speaking' || voiceOutput.isPlaying) && (
+        {(state === 'speaking' || state === 'thinking' || voiceOutput.isPlaying) && (
           <button
-            onClick={() => { voiceOutput.stopSpeaking(); stopSpeaking(); stopStreamingSpeech(); handsFreeRef.current = false; setState('idle'); }}
+            onClick={() => { stopAllSpeech(); handsFreeRef.current = false; setState('idle'); }}
             style={{
               width: 40,
               height: 40,

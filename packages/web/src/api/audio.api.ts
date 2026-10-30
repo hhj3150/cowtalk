@@ -51,13 +51,19 @@ export function looksLikeMp3(buf: ArrayBuffer): boolean {
  *     Content-Encoding: identity 는 HTTP/2에서 디코드 실패를 유발해 제거했다)
  *    (MP3가 한 바이트라도 변형되면 브라우저는 NotSupportedError만 던지고 조용히 죽는다)
  */
-export async function speak(request: SpeakRequest): Promise<SpeakResult> {
+export async function speak(request: SpeakRequest, signal?: AbortSignal): Promise<SpeakResult> {
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
   const url = `${apiBase}/api/audio/speak`;
   const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30_000);
+  // VO-12: 호출자가 멈추면(끼어들기·새 질문) 요청 자체를 끊는다 — 이미 보낸 합성 요청도 비용이 든다
+  const onCallerAbort = (): void => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onCallerAbort, { once: true });
+  }
 
   let res: Response;
   try {
@@ -73,6 +79,7 @@ export async function speak(request: SpeakRequest): Promise<SpeakResult> {
     });
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', onCallerAbort);
   }
 
   if (!res.ok) {

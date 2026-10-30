@@ -70,6 +70,11 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  // VO-05: 세대 번호 — stopSpeaking 이후 늦게 도착한 합성 결과는 재생하지 않는다
+  //   (예전: 합성 중에 끼어들어도 합성이 끝나면 그대로 재생 → 새 답변과 소리가 겹침)
+  const generationRef = useRef(0);
+  // 재생이 끝나거나 중단될 때 speakText 의 Promise 를 끝낸다
+  const endResolverRef = useRef<(() => void) | null>(null);
 
   // 언마운트 시 audio 정리
   useEffect(() => {
@@ -86,6 +91,9 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
   }, []);
 
   const cleanup = useCallback(() => {
+    const resolveEnd = endResolverRef.current;
+    endResolverRef.current = null;
+    resolveEnd?.();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
@@ -108,6 +116,7 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
   }, [storageKey, cleanup]);
 
   const stopSpeaking = useCallback(() => {
+    generationRef.current++;
     cleanup();
     setIsPlaying(false);
   }, [cleanup]);
@@ -121,6 +130,7 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
 
       // 진행 중인 재생 정리
       cleanup();
+      const generation = ++generationRef.current;
       setError(null);
       setIsSynthesizing(true);
 
@@ -158,6 +168,9 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
           throw err; // unreachable — raiseAndThrow는 throw함
         }
 
+        // 합성 중에 중단·새 재생이 있었다 — 이 결과는 버린다
+        if (generationRef.current !== generation) return;
+
         const url = URL.createObjectURL(result.audioBlob);
         objectUrlRef.current = url;
 
@@ -165,6 +178,9 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
         audioRef.current = audio;
 
         audio.onplay = () => setIsPlaying(true);
+        // VO-05: Promise 는 재생이 '끝날 때'(또는 중단될 때) 끝난다 — 예전엔 재생 시작 시점에 끝나
+        // 호출부의 핸즈프리 재청취가 말하는 도중에 열렸다
+        const ended = new Promise<void>((resolve) => { endResolverRef.current = resolve; });
         audio.onended = () => {
           setIsPlaying(false);
           cleanup();
@@ -183,6 +199,8 @@ export function useVoiceOutput(options: UseVoiceOutputOptions = {}): UseVoiceOut
             raiseAndThrow({ code: 'unknown', message: `오디오 재생 실패: ${name || 'unknown'}` });
           }
         }
+        setIsSynthesizing(false);
+        await ended;
       } finally {
         setIsSynthesizing(false);
       }

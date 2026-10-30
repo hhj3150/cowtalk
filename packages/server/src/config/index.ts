@@ -1,6 +1,7 @@
 // 중앙 설정 — 환경변수 → 타입 객체
 
 import { z } from 'zod';
+import { parseRedisEnabled } from '../lib/env-flags.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -22,13 +23,16 @@ const envSchema = z.object({
   DB_USER: z.string().default('cowtalk'),
   DB_PASSWORD: z.string().default('cowtalk_dev_2025'),
 
-  REDIS_ENABLED: z.coerce.boolean().default(true),
+  // Redis — 명시적으로 false/0/no/off 일 때만 끈다 (z.coerce.boolean 은 "false"도 true 로 바꿨다).
+  // 실제 연결 여부는 lib/redis-settings.ts 가 접속 정보(REDIS_URL 또는 REDIS_HOST) 유무까지 보고 정한다.
+  REDIS_ENABLED: z.string().optional().transform((v) => parseRedisEnabled(v)),
+  REDIS_URL: z.string().optional(),
   // 데이터 전체 공개 스위치 — 소유자 단독 운영 단계용. "true"일 때만 켜진다.
   // 켜면 로그인한(=소유자가 승인한) 모든 계정이 목장 배정과 무관하게 전체 목장을 본다.
   // ⚠️ 다른 사용자(목장주·수의사)를 받기 전에 반드시 끈다 — 끄면 목장별 권한으로 즉시 복귀(재로그인·토큰 갱신 시)
   // (z.coerce.boolean은 "false"도 true로 바꾸므로 쓰지 않는다)
   OPEN_DATA_SCOPE: z.string().optional().transform((v) => v === 'true'),
-  REDIS_HOST: z.string().default('localhost'),
+  REDIS_HOST: z.string().optional(),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(''),
 
