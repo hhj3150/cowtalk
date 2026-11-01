@@ -57,3 +57,15 @@ export {
   EPIDEMIC_RELEVANT_EVENT_TYPES,
   DISEASE_PATTERN_MAP,
 } from './epidemic-thresholds.js';
+export {
+  BREEDING_SETTING_DEFS,
+  BREEDING_SETTING_MAP,
+  BREEDING_SETTING_KEYS,
+  isBreedingSettingKey,
+  resolveBreedingSettings,
+  buildBreedingSettingViews,
+  validateBreedingSettingsPatch,
+  applyManualPatch,
+  mergeSmaxtecSettings,
+} from './breeding-settings.js';
+export type { BreedingSettingsValidation } from './breeding-settings.js';

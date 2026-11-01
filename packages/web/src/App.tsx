@@ -49,6 +49,7 @@ const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
 const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
 const EconomicParametersPage = lazy(() => import('@web/pages/settings/EconomicParametersPage'));
+const BreedingSettingsPage = lazy(() => import('@web/pages/settings/BreedingSettingsPage'));
 const MemoryPage = lazy(() => import('@web/pages/settings/MemoryPage'));
 const MilkEntryPage = lazy(() => import('@web/pages/milk/MilkEntryPage'));
 const FeedRationPage = lazy(() => import('@web/pages/feed/FeedRationPage'));
@@ -122,6 +123,7 @@ export function App(): React.JSX.Element {
               <Route path="/subscription" element={<SubscriptionPage />} />
               <Route path="/automation" element={<AutomationRulesPage />} />
               <Route path="/settings/economics" element={<EconomicParametersPage />} />
+              <Route path="/settings/breeding" element={<BreedingSettingsPage />} />
               <Route path="/settings/memory" element={<MemoryPage />} />
               <Route path="/milk-entry" element={<MilkEntryPage />} />
               <Route path="/feed-ration" element={<FeedRationPage />} />

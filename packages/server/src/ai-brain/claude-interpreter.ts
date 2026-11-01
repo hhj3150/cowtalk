@@ -15,7 +15,7 @@ import type {
 } from '@cowtalk/shared';
 import { callClaudeForAnalysis } from './claude-client.js';
 import { buildAnimalPrompt } from './prompts/animal-prompt.js';
-import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
+import { getStoredBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
 import { buildFarmPrompt } from './prompts/farm-prompt.js';
 import { buildRegionalPrompt } from './prompts/regional-prompt.js';
@@ -46,7 +46,7 @@ export async function interpretAnimal(
   // 실패해도 해석은 계속 — 렌더러가 null이면 기본값 블록을 생성.
   let farmSettings: FarmBreedingSettings | null = null;
   try {
-    farmSettings = await getFarmBreedingSettings(profile.farmId);
+    farmSettings = await getStoredBreedingSettings(profile.farmId);
   } catch (err) {
     logger.warn({ err, farmId: profile.farmId }, '목장 번식 설정 로드 실패 — 기본값으로 진행');
   }
