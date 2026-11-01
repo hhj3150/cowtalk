@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getFarmProfile, type FarmProfile } from '../../api/farm.api';
 import { listAnimals, type AnimalSummary } from '../../api/animal.api';
+import { describeColdPathError } from '../../api/client';
 
 // ===========================
 // 타입
@@ -110,6 +111,8 @@ export default function FarmDetailPage() {
   });
 
   const [searchQuery, setSearchQuery] = useState('');
+  // 다시 시도 — 값이 바뀌면 프로필·개체 목록을 다시 불러온다
+  const [reloadKey, setReloadKey] = useState(0);
 
   // 농장 프로필 로드
   useEffect(() => {
@@ -138,10 +141,10 @@ export default function FarmDetailPage() {
         setFarmLoading(false);
       })
       .catch((err) => {
-        setFarmError(err instanceof Error ? err.message : '농장 정보를 불러올 수 없습니다.');
+        setFarmError(describeColdPathError(err));
         setFarmLoading(false);
       });
-  }, [farmId]);
+  }, [farmId, reloadKey]);
 
   // 개체 목록 로드
   const loadAnimals = useCallback(() => {
@@ -162,14 +165,14 @@ export default function FarmDetailPage() {
         setAnimalState((prev) => ({
           ...prev,
           loading: false,
-          error: err instanceof Error ? err.message : '개체 목록을 불러올 수 없습니다.',
+          error: describeColdPathError(err),
         }));
       });
   }, [farmId]);
 
   useEffect(() => {
     loadAnimals();
-  }, [loadAnimals]);
+  }, [loadAnimals, reloadKey]);
 
   // 검색 필터
   const filteredAnimals = searchQuery
@@ -201,12 +204,22 @@ export default function FarmDetailPage() {
     return (
       <div className="max-w-2xl mx-auto mt-12 p-6 bg-red-50 dark:bg-red-900/20 rounded-lg text-center">
         <p className="text-red-600 dark:text-red-400 font-medium">{farmError}</p>
-        <button
-          onClick={() => navigate(-1)}
-          className="mt-4 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded text-sm"
-        >
-          뒤로 가기
-        </button>
+        <div className="mt-4 flex justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="px-4 py-2 bg-blue-600 text-white rounded text-sm"
+          >
+            다시 시도
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded text-sm"
+          >
+            뒤로 가기
+          </button>
+        </div>
       </div>
     );
   }
