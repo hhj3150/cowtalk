@@ -104,6 +104,14 @@ export const animals = pgTable('animals', {
   lactationStatus: varchar('lactation_status', { length: 20 }).notNull().default('unknown'),
   currentDeviceId: varchar('current_device_id', { length: 100 }),
   status: varchar('status', { length: 20 }).notNull().default('active'),
+  /** smaXtec 동기화 응답에 마지막으로 포함된 시각 (동기화만 갱신 — updated_at 은 DIM 갱신이 바꿔 신선도로 못 씀) */
+  lastSeenInSyncAt: timestamp('last_seen_in_sync_at', { withTimezone: true }),
+  /** 연속 미응답 횟수 (목장 조회가 성공한 사이클만 센다) */
+  syncMissingCount: integer('sync_missing_count').notNull().default(0),
+  /** 이번 연속 미응답이 시작된 시각 */
+  syncMissingSince: timestamp('sync_missing_since', { withTimezone: true }),
+  /** 비활성 사유: smaxtec_removed | manual | ... */
+  inactiveReason: varchar('inactive_reason', { length: 40 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

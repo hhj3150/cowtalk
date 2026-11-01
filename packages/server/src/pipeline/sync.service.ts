@@ -11,6 +11,7 @@ import type { SmaxtecOrganisation, SmaxtecAnimal, SmaxtecRawEvent } from './conn
 import type { SmaxtecFetchData } from './connectors/smaxtec.connector.js';
 import { normalizeSmaxtecEvent } from './normalization.js';
 import { emitNewAlarm } from '../realtime/alarm-emitter.js';
+import { applySyncPresence } from './sync-presence.js';
 
 // ===========================
 // 동기화 결과
@@ -417,6 +418,17 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
   // 2. 동물 동기화
   const animalResult = await syncAnimals(fetchData.animals, farmResult.farmMap);
 
+  // 2-1. smaXtec 목록에서 빠진 개체(도태·판매) 유예 처리 — 개체 목록 조회가 성공한 목장만
+  //      (fetchData.organisations 는 조회 성공 org 만 담는다). 실패해도 동기화는 계속.
+  try {
+    const presence = await applySyncPresence(buildFarmPresence(fetchData.animals, farmResult.farmMap));
+    if (presence.deactivated > 0 || presence.reappeared > 0 || presence.heldFarms > 0) {
+      logger.info(presence, '[Sync] 개체 존재 판정');
+    }
+  } catch (err) {
+    logger.error({ err }, '[Sync] 개체 존재 판정 실패 — 이번 사이클 건너뜀');
+  }
+
   // 3. Farm headcount 업데이트
   await updateFarmHeadCounts(farmResult.farmMap);
 
@@ -463,6 +475,25 @@ export async function syncSmaxtecData(fetchData: SmaxtecFetchData): Promise<Sync
 // ===========================
 // 헬퍼 함수
 // ===========================
+
+/** 농장 ID → 이번 응답의 개체 external_id 집합. 응답에 개체가 0인 목장도 빈 집합으로 포함한다 */
+export function buildFarmPresence(
+  smaxtecAnimals: readonly SmaxtecAnimal[],
+  farmMap: ReadonlyMap<string, string>,
+): Map<string, Set<string>> {
+  const presence = new Map<string, Set<string>>();
+  for (const farmId of farmMap.values()) presence.set(farmId, new Set());
+  for (const sa of smaxtecAnimals) {
+    const farmId = farmMap.get(sa.organisation_id);
+    if (!farmId) continue;
+    const set = presence.get(farmId)!;
+    // syncAnimals 와 같은 키 규칙 (external_id = _id ?? animal_id)
+    const extId = sa._id ?? sa.animal_id;
+    if (extId) set.add(extId);
+    if (sa.animal_id) set.add(sa.animal_id);
+  }
+  return presence;
+}
 
 async function updateFarmHeadCounts(
   farmMap: ReadonlyMap<string, string>,
