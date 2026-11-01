@@ -32,6 +32,59 @@ function onRefreshed(token: string): void {
   pendingRequests = [];
 }
 
+// ── 일시 장애 자동 재시도 (조회 GET 전용) ──
+//
+// 목장에 처음 들어갈 때 오류가 뜨고 다시 누르면 되던 증상: 첫 요청이 콜드 경로
+// (DB 연결 수립·캐시 미스)에서 타임아웃/5xx 로 끝나고, 그 사이 서버가 데워져 두 번째는 성공.
+// 사용자가 다시 누르는 대신 클라이언트가 조용히 다시 묻는다. 조회는 멱등이라 안전하다.
+// - 타임아웃·네트워크·502/503/504: 최대 2회 (타임아웃을 30s → 45s 로 늘려 느린 첫 계산을 기다린다)
+// - 500: 1회 (DB 연결 수립 실패 등 일시 오류가 500 으로 올라온다)
+// - 4xx 는 재시도하지 않는다. apiGetWithRetry 는 자체 일정이 있어 제외(noAutoRetry).
+const AUTO_RETRY_SCHEDULE = [
+  { timeout: 30_000, delayBefore: 600 },
+  { timeout: 45_000, delayBefore: 1_500 },
+] as const;
+
+interface AutoRetryConfig extends InternalAxiosRequestConfig {
+  _autoRetryCount?: number;
+  _noAutoRetry?: boolean;
+}
+
+/** 이 오류에 남은 자동 재시도 횟수 (0 = 재시도 안 함) */
+export function autoRetryBudget(err: AxiosError): number {
+  const cfg = err.config as AutoRetryConfig | undefined;
+  if (!cfg || cfg._noAutoRetry) return 0;
+  if ((cfg.method ?? 'get').toLowerCase() !== 'get') return 0;
+  const status = err.response?.status;
+  if (status === 500) return 1;
+  if (status === 502 || status === 503 || status === 504) return AUTO_RETRY_SCHEDULE.length;
+  if (!err.response && err.code !== 'ERR_CANCELED') return AUTO_RETRY_SCHEDULE.length; // 타임아웃·네트워크
+  return 0;
+}
+
+/** 자동 재시도를 이미 다 쓴 오류 — React Query 가 또 재시도하면 최악 대기만 늘어난다 */
+export function isAutoRetryExhausted(err: unknown): boolean {
+  const cfg = (err as AxiosError | null)?.config as AutoRetryConfig | undefined;
+  return (cfg?._autoRetryCount ?? 0) > 0;
+}
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const cfg = error.config as AutoRetryConfig | undefined;
+    if (!cfg) return Promise.reject(error);
+    const done = cfg._autoRetryCount ?? 0;
+    if (done < autoRetryBudget(error)) {
+      const step = AUTO_RETRY_SCHEDULE[done]!;
+      cfg._autoRetryCount = done + 1;
+      cfg.timeout = Math.max(cfg.timeout ?? 0, step.timeout);
+      await new Promise<void>((resolve) => { setTimeout(resolve, step.delayBefore); });
+      return apiClient(cfg);
+    }
+    return Promise.reject(error);
+  },
+);
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -93,6 +146,8 @@ export interface ApiResponse<T> {
 
 export interface ApiCallOptions {
   readonly timeout?: number;
+  /** 인터셉터 자동 재시도 끄기 — 자체 재시도 일정이 있는 호출용 */
+  readonly noAutoRetry?: boolean;
 }
 
 export async function apiGet<T>(
@@ -103,6 +158,7 @@ export async function apiGet<T>(
   const res = await apiClient.get<ApiResponse<T>>(url, {
     params,
     ...(options?.timeout !== undefined ? { timeout: options.timeout } : {}),
+    ...(options?.noAutoRetry ? { _noAutoRetry: true } : {}),
   });
   return res.data.data;
 }
@@ -154,7 +210,7 @@ export async function apiGetWithRetry<T>(
     }
     options?.onAttempt?.({ attempt: i, totalAttempts: COLD_PATH_RETRY_SCHEDULE.length });
     try {
-      return await apiGet<T>(url, params, { timeout: step.timeout });
+      return await apiGet<T>(url, params, { timeout: step.timeout, noAutoRetry: true });
     } catch (err) {
       lastError = err;
       if (!isRetriableError(err)) throw err;
