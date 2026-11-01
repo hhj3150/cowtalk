@@ -17,7 +17,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import type { AutomationTrigger, AutomationAction } from '@cowtalk/shared';
+import type { AutomationTrigger, AutomationAction, StoredBreedingSettings } from '@cowtalk/shared';
 
 // ======================================================================
 // A-0. 멀티테넌트
@@ -71,33 +71,11 @@ export const farms = pgTable('farms', {
   index('farms_status_idx').on(table.status),
 ]);
 
-/** smaXtec Organisation Settings에서 동기화되는 목장별 번식 파라미터 */
-export interface FarmBreedingSettings {
-  /** 발정재귀일수 (기본: 21일, smaXtec 기본: 20) */
-  readonly estrusRecurrenceDays?: number;
-  /** 일반 정액 수정 적기 시작 시간 (기본: 10h) */
-  readonly inseminationWindowStartHours?: number;
-  /** 일반 정액 수정 적기 종료 시간 (기본: 18h) */
-  readonly inseminationWindowEndHours?: number;
-  /** 성감별 정액 수정 적기 시작 (null = 미사용) */
-  readonly sexedSemenWindowStartHours?: number | null;
-  /** 성감별 정액 수정 적기 종료 */
-  readonly sexedSemenWindowEndHours?: number | null;
-  /** 수정 후 임신감정 시기 (기본: 28일, smaXtec 기본: 40) */
-  readonly pregnancyCheckDays?: number;
-  /** 평균 임신 기간 (기본: 280일) */
-  readonly gestationDays?: number;
-  /** 건유 목록 표시 (분만 N일 전, 기본: 90, smaXtec 기본: 80) */
-  readonly dryOffBeforeCalvingDays?: number;
-  /** 육성우 최소 번식 연령 (월, 기본: 12) */
-  readonly minBreedingAgeMonths?: number;
-  /** DIM 경과 후 발정 탐지 활성화 (기본: 20일) */
-  readonly estrusDetectionAfterDim?: number;
-  /** 장기공태우 기준 DIM (기본: 200일) */
-  readonly longOpenDaysDim?: number;
-  /** smaXtec에서 마지막 동기화 시각 */
-  readonly syncedAt?: string;
-}
+/**
+ * 목장별 번식·대시보드 설정 (smaXtec Dashboard settings 대응) — 값 + 출처 메타.
+ * 정의·기본값·병합 규칙은 @cowtalk/shared 의 BREEDING_SETTING_DEFS 가 단일 원천이다.
+ */
+export type FarmBreedingSettings = StoredBreedingSettings;
 
 export const farmGroups = pgTable('farm_groups', {
   groupId: uuid('group_id').primaryKey().defaultRandom(),

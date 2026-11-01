@@ -4,12 +4,18 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requireFarmAccess, scopedFarmIds, resolveScopedFarmIds } from '../middleware/rbac.js';
-import { ForbiddenError } from '../../lib/errors.js';
+import { ForbiddenError, BadRequestError, NotFoundError } from '../../lib/errors.js';
 import { getDb } from '../../config/database.js';
 import { breedingEvents, smaxtecEvents, animals, semenCatalog, pregnancyChecks, farmSemenInventory } from '../../db/schema.js';
 import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { getBreedingAdvice, recordInsemination, recordPregnancyCheck, getBreedingFeedback } from '../../services/breeding/breeding-advisor.service.js';
-import { getFarmBreedingSettings } from '../../services/breeding/farm-settings-sync.service.js';
+import {
+  getFarmBreedingSettings,
+  getStoredBreedingSettings,
+  saveManualBreedingSettings,
+} from '../../services/breeding/farm-settings-sync.service.js';
+import { buildBreedingSettingViews, validateBreedingSettingsPatch } from '@cowtalk/shared';
+import type { FarmBreedingSettingsResponse } from '@cowtalk/shared';
 import { getBreedingPipeline, getBreedingCalendarEvents } from '../../services/breeding/breeding-pipeline.service.js';
 import { seedSemenCatalog, syncHanwooSemenFromPublicApi } from '../../services/breeding/semen-seed.service.js';
 import { PedigreeConnector } from '../../pipeline/connectors/public-data/pedigree.connector.js';
@@ -378,12 +384,82 @@ breedingRouter.get('/feedback/:animalId', requireAnimalAccess(), async (req: Req
   }
 });
 
-// GET /breeding/farm/:farmId/settings — 목장별 번식 설정 조회
-breedingRouter.get('/farm/:farmId/settings', async (req: Request, res: Response, next: NextFunction) => {
+// ===========================
+// 목장별 번식·대시보드 설정 (smaXtec Dashboard settings 대응)
+// ===========================
+
+/** 설정 쓰기 권한: 마스터·행정관리자, 또는 그 목장에 배정된 농장주/수의사 */
+function assertBreedingSettingsWriteAccess(req: Request, farmId: string): void {
+  const user = req.user!;
+  if (user.isMaster || user.role === 'government_admin') return;
+  if (user.role !== 'farmer' && user.role !== 'veterinarian') {
+    throw new ForbiddenError('목장 번식 설정 수정 권한이 없습니다');
+  }
+  if (!(user.farmIds ?? []).includes(farmId)) {
+    throw new ForbiddenError('접근 권한이 없는 농장입니다');
+  }
+}
+
+async function buildSettingsResponse(farmId: string): Promise<FarmBreedingSettingsResponse | null> {
+  const stored = await getStoredBreedingSettings(farmId);
+  if (stored === null) return null;
+  return {
+    farmId,
+    settings: buildBreedingSettingViews(stored),
+    syncedAt: stored.syncedAt ?? null,
+    manualUpdatedAt: stored.manualUpdatedAt ?? null,
+  };
+}
+
+// GET /breeding/farm/:farmId/settings — 유효값 (기본값 병합)
+breedingRouter.get('/farm/:farmId/settings', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const farmId = req.params.farmId as string;
     const settings = await getFarmBreedingSettings(farmId);
     res.json({ success: true, data: settings });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/farm/:farmId/settings/detail — 화면용 (값·출처·기본값·smaXtec 문구)
+breedingRouter.get('/farm/:farmId/settings/detail', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await buildSettingsResponse(req.params.farmId as string);
+    if (!data) throw new NotFoundError('농장을 찾을 수 없습니다');
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /breeding/farm/:farmId/settings — 직접 입력 { key: number | null } (null = 직접 입력 해제)
+breedingRouter.put('/farm/:farmId/settings', requireFarmAccess, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const farmId = req.params.farmId as string;
+    assertBreedingSettingsWriteAccess(req, farmId);
+    const current = await getStoredBreedingSettings(farmId);
+    if (current === null) throw new NotFoundError('농장을 찾을 수 없습니다');
+    const verdict = validateBreedingSettingsPatch(req.body, current);
+    if (!verdict.ok) throw new BadRequestError(verdict.reason);
+    await saveManualBreedingSettings(farmId, verdict.patch, req.user!.userId);
+    const data = await buildSettingsResponse(farmId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /breeding/farm/:farmId/settings/smaxtec-raw — smaXtec 원본 응답 (키 매핑 검증용, 관리자)
+breedingRouter.get('/farm/:farmId/settings/smaxtec-raw', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user!;
+    if (!user.isMaster && user.role !== 'government_admin') {
+      throw new ForbiddenError('관리자 전용입니다');
+    }
+    const stored = await getStoredBreedingSettings(req.params.farmId as string);
+    if (stored === null) throw new NotFoundError('농장을 찾을 수 없습니다');
+    res.json({ success: true, data: { syncedAt: stored.syncedAt ?? null, raw: stored.smaxtecRaw ?? null } });
   } catch (error) {
     next(error);
   }
