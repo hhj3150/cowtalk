@@ -51,8 +51,8 @@ farmRouter.get('/', requirePermission('farm', 'read'), validate({ query: farmQue
         regionDistrict: regions.district,
         createdAt: farms.createdAt,
         updatedAt: farms.updatedAt,
-        // 센서 장착 두수 (currentDeviceId가 있는 개체 수)
-        sensorCount: sql<number>`(SELECT COUNT(*) FROM ${animals} WHERE ${animals.farmId} = ${farms.farmId} AND ${animals.currentDeviceId} IS NOT NULL AND ${animals.currentDeviceId} != '')`.as('sensor_count'),
+        // 센서 장착 두수 (active 개체 중 currentDeviceId가 있는 수 — 도태·판매 개체 제외)
+        sensorCount: sql<number>`(SELECT COUNT(*) FROM ${animals} WHERE ${animals.farmId} = ${farms.farmId} AND ${animals.status} = 'active' AND ${animals.deletedAt} IS NULL AND ${animals.currentDeviceId} IS NOT NULL AND ${animals.currentDeviceId} != '')`.as('sensor_count'),
         // 주요 품종 (가장 많은 품종)
         primaryBreed: sql<string>`COALESCE((SELECT ${animals.breed} FROM ${animals} WHERE ${animals.farmId} = ${farms.farmId} AND ${animals.breed} IS NOT NULL GROUP BY ${animals.breed} ORDER BY COUNT(*) DESC LIMIT 1), '-')`.as('primary_breed'),
       })
