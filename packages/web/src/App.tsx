@@ -8,6 +8,7 @@ import { useAuthStore } from '@web/stores/auth.store';
 import { AppShell } from '@web/components/layout/AppShell';
 import { LoadingSkeleton } from '@web/components/common/LoadingSkeleton';
 import { ErrorBoundary } from '@web/components/common/ErrorBoundary';
+import { isAutoRetryExhausted } from '@web/api/client';
 import { ServerWarmupGate } from '@web/components/common/ServerWarmupGate';
 import type { Role } from '@cowtalk/shared';
 
@@ -49,6 +50,7 @@ const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
 const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
 const EconomicParametersPage = lazy(() => import('@web/pages/settings/EconomicParametersPage'));
+const BreedingSettingsPage = lazy(() => import('@web/pages/settings/BreedingSettingsPage'));
 const MemoryPage = lazy(() => import('@web/pages/settings/MemoryPage'));
 const ReportSchedulePage = lazy(() => import('@web/pages/settings/ReportSchedulePage'));
 const MilkEntryPage = lazy(() => import('@web/pages/milk/MilkEntryPage'));
@@ -65,6 +67,8 @@ const queryClient = new QueryClient({
       retry: (failureCount, error) => {
         // 네트워크 에러(ECONNREFUSED 등)는 재시도하지 않음
         if (error instanceof Error && (error.message.includes('fetch') || error.message.includes('network'))) return false;
+        // 클라이언트 인터셉터가 이미 일시 장애 재시도를 다 쓴 요청 — 겹치면 최악 대기만 늘어난다
+        if (isAutoRetryExhausted(error)) return false;
         return failureCount < 2;
       },
       refetchOnWindowFocus: false,
@@ -123,6 +127,7 @@ export function App(): React.JSX.Element {
               <Route path="/subscription" element={<SubscriptionPage />} />
               <Route path="/automation" element={<AutomationRulesPage />} />
               <Route path="/settings/economics" element={<EconomicParametersPage />} />
+              <Route path="/settings/breeding" element={<BreedingSettingsPage />} />
               <Route path="/settings/memory" element={<MemoryPage />} />
               <Route path="/settings/reports" element={<ReportSchedulePage />} />
               <Route path="/milk-entry" element={<MilkEntryPage />} />

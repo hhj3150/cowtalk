@@ -15,7 +15,7 @@ import { smaxtecEvents, animals } from '../db/schema.js';
 import { and, inArray, gte, sql, eq, isNull } from 'drizzle-orm';
 import { countHerdGroups } from '../services/metrics/herd-group.js';
 import { getRoleTone } from './role-tone.js';
-import { getFarmBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
+import { getStoredBreedingSettings } from '../services/breeding/farm-settings-sync.service.js';
 import { getDataFreshness, formatFreshnessLine } from '../services/metrics/data-freshness.service.js';
 import type { FarmBreedingSettings } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
@@ -108,7 +108,8 @@ async function loadFarmBreedingSettings(
   const farmId = context.profile.farmId;
   if (!farmId) return undefined;
   try {
-    return await getFarmBreedingSettings(farmId);
+    // 저장 원본을 넘겨야 프롬프트의 "(기본값)" 표기가 정확하다
+    return (await getStoredBreedingSettings(farmId)) ?? undefined;
   } catch (err) {
     logger.warn({ err, farmId }, '[Chat] 목장 번식 설정 로드 실패 — 주입 생략');
     return undefined;

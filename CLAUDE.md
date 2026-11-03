@@ -201,21 +201,47 @@ NoteSchema 핵심 필드: reference_type, reference_id (=animal_id), category, n
 목장마다 번식 파라미터가 다르므로 AI가 반드시 목장 설정을 참조해야 한다.
 GET /api/v2/organisations/{org_id}/settings로 조회.
 
-| 설정 | 해돋이목장 실값 | smaXtec 기본값 | 용도 |
-|------|---------------|---------------|------|
-| 발정재귀일 | 21일 | 20일 | 발정 예측, 미수정 알림 |
-| 수정 적기 (일반 정액) | 10~18h | 10~18h | 수정 적기 계산 |
-| 수정 적기 (성감별 정액) | 미사용 | 미사용 | 정액 종류별 분기 |
-| 수정 후 임신감정 시기 | 28일 | 40일 | 임신감정 알림 |
-| 평균 임신 기간 | 280일 | 280일 | 분만 예정일 계산 |
-| 건유 목록 표시 | 분만 90일 전 | 80일 | 건유 알림 |
-| 육성우 최소 번식 연령 | 12개월 | 12개월 | 수정 가능 판단 |
-| DIM 후 발정 탐지 활성화 | 20일 | 20일 | 발정 필터 |
-| 장기공태우 기준 DIM | 200일 | 200일 | 장기공태우 알림 |
+smaXtec 웹앱 "Dashboard settings" 화면과 항목이 1:1 대응한다 (2026-11-01 송영신목장 화면 기준).
+**굵게** = smaXtec 기본값과 다르게 운영 중인 값.
 
-구현: farms.breeding_settings JSONB 컬럼에 저장, FarmBreedingSettings 타입.
-breeding-advisor.service.ts가 getFarmBreedingSettings()로 목장별 값 로드.
-동기화: farm-settings-sync.service.ts (smaXtec API → DB).
+| 구획 | 설정 | 송영신목장 실값 | 해돋이목장 실값 | smaXtec 기본 | CowTalk 기본 | CowTalk 사용처 |
+|---|---|---|---|---|---|---|
+| To-do | 미확인 건강 알림 기준 | 48h | — | 48h | 48h | 저장만 (연동 예정) |
+| To-do | 발정 탐지 목록 기간 | 36h | — | 36h | 36h | 저장만 (연동 예정) |
+| To-do | 발정재귀일 | 20일 | 21일 | 20일 | 21일 | 번식 캘린더, 재발정 확인 |
+| To-do | 육성우 최소 교배 월령 | 12개월 | 12개월 | 12 | 12 | 수정 전 체크 |
+| To-do | 분만 후 발정 탐지 시작 | 20착유일 | 20일 | 20 | 20 | 저장만 (연동 예정) |
+| To-do | 수정 적기 (일반 정액) | 10~18h | 10~18h | 10~18h | 10~18h | 수정 적기 계산 |
+| To-do | 수정 적기 (성감별 정액) | 미사용 | 미사용 | 미사용 | 미사용 | 저장만 (정액 분기 예정) |
+| To-do | 임신감정 시기 (수정 후) | 40일 | 28일 | 40일 | 28일 | 임신감정 리마인더, 파이프라인 |
+| To-do | 임신 기간 | 280일 | 280일 | 280 | 280 | 분만 예정일 |
+| To-do | 임신우 발정 탐지 계속 | 비활성 | — | 비활성 | 비활성 | 유산 의심 판정 참고 |
+| To-do | 유산 의심: 임신우 활동량 증가 간격 | 18~26일 | — | 18~26 | 18~26 | 유산 의심 인사이트 (주기성 신호) |
+| To-do | 유산 의심 제외 (분만 예정 N일 전부터) | 60일 | — | 60 | 60 | 유산 의심 인사이트 |
+| To-do | 건유 알림 (분만 N일 전) | **60일** | 90일 | 80 | 90 | 건유 리마인더, 캘린더 |
+| To-do | 분만 임박 알림 | 14일 | — | 14 | 7 | 분만 임박 리마인더 |
+| Health | 건강 알림 목록 기간 | **36h** | — | 24h | 24h | 저장만 (연동 예정) |
+| Health | 건강 그래프 범위 | 7일 | — | 7 | 7 | 저장만 (연동 예정) |
+| Fertility | 분만우 기준 (비유일수 <) | 30일 | — | 30 | 30 | 저장만 (연동 예정) |
+| Fertility | 무발정우 기준 (착유일 >) | 50일 | — | 50 | 50 | 무발정우 인사이트 |
+| Fertility | 장기공태우 기준 (DIM >) | **175일** | 200일 | 200 | 200 | 장기공태 리마인더, 수정 전 체크 |
+| Export | CSV 구분자 / 커스텀 내보내기 | `;` / 비활성 | — | `;` / 비활성 | — | CowTalk 미사용 |
+
+구현 (2026-11-01):
+- 정의·기본값·병합·검증 단일 원천: `packages/shared/src/constants/breeding-settings.ts` (`BREEDING_SETTING_DEFS`)
+- 저장: `farms.breeding_settings` JSONB (`StoredBreedingSettings` = 값 + `manualKeys`/`syncedAt`/`smaxtecRaw` 메타)
+- 우선순위: **직접 입력 > smaXtec 동기화 > CowTalk 기본값**. 직접 입력한 키는 동기화가 덮어쓰지 않는다
+- ⚠️ 빈 객체 `{}`는 truthy — `farm?.breedingSettings ?? 기본값` 식으로 쓰면 기본값이 붙지 않는다.
+  반드시 `resolveBreedingSettings()`로 키 단위 병합한다 (`getFarmBreedingSettings()`가 이미 그렇게 반환).
+  호출부에 기본값 숫자(`?? 90` 등)를 새로 적지 말 것 — 기본값은 카탈로그 한 곳에만
+- 화면: `/settings/breeding` (목장 번식 설정) — 출처 배지·smaXtec 화면 문구·사용처 표시
+- API: `GET /breeding/farm/:farmId/settings`(유효값) · `GET .../settings/detail`(화면용) ·
+  `PUT .../settings`(직접 입력, null=해제) · `GET .../settings/smaxtec-raw`(관리자, 키 검증용)
+- 동기화: `farm-settings-sync.service.ts` `syncAllFarmSettings()` — 배치 사이클에서 번식 리마인더 직전 실행.
+  ⚠️ smaXtec settings 응답 **키 이름은 추정**이다. 실응답이 `smaxtecRaw`에 쌓이면
+  `smaxtec-raw` API로 확인해 `SMAXTEC_KEY_MAP`을 보정할 것. 초기 5곳 연속 실패 시 배치 중단(헛호출 방지)
+- 송영신목장 실값: 마이그레이션 `0039_songyeongsin_breeding_settings.sql` (직접 입력으로 저장, 1회만 적용)
+- AI 주입: `farm-settings-context.ts`가 저장 원본을 받아 미설정 항목에 "(기본값)" 표기
 
 ## smaXtec Integrations
 

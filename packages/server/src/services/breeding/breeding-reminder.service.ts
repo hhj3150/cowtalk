@@ -329,7 +329,7 @@ async function checkDryOffReminders(): Promise<number> {
 // ===========================
 
 /**
- * 분만 예정일이 7일 이내인 개체를 찾아 알림
+ * 분만 예정일이 목장 설정(calvingSoonDays, 기본 7일) 이내인 개체를 찾아 알림
  */
 async function checkCalvingImminent(): Promise<number> {
   const db = getDb();
@@ -369,13 +369,14 @@ async function checkCalvingImminent(): Promise<number> {
 
       const settings = await getFarmBreedingSettings(row.farm_id);
       const gestationDays = settings.gestationDays ?? 280;
+      const calvingSoonDays = settings.calvingSoonDays ?? 7;
       const expectedCalving = new Date(row.insem_date.getTime() + gestationDays * MS_PER_DAY);
       const daysUntilCalving = Math.floor((expectedCalving.getTime() - now.getTime()) / MS_PER_DAY);
 
-      if (daysUntilCalving > 7 || daysUntilCalving < -3) continue;
+      if (daysUntilCalving > calvingSoonDays || daysUntilCalving < -3) continue;
 
       const dedupKey = `calving-imminent-${row.animal_id}-${expectedCalving.toISOString().split('T')[0]}`;
-      const priority = daysUntilCalving <= 1 ? 'critical' : 'high';
+      const priority = daysUntilCalving <= 1 ? 'critical' : daysUntilCalving <= 7 ? 'high' : 'medium';
 
       try {
         const [inserted] = await db.insert(alerts).values({

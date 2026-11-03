@@ -25,6 +25,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'epi-dash',     label: '방역 대시보드', href: '/epidemiology/dashboard', icon: 'ShieldAlert',     roles: ['master','government_admin','quarantine_officer'],                          order: 60,  group: 'analytics' },
   { id: 'automation',   label: '자동화 룰',     href: '/automation',             icon: 'Zap',             roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 78,  group: 'core' },
   { id: 'alerts',       label: '알림 설정',     href: '/notifications',          icon: 'Bell',            roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 80,  group: 'core' },
+  { id: 'breeding-settings', label: '목장 번식 설정', href: '/settings/breeding', icon: 'Calendar',        roles: ['master','farmer','veterinarian','government_admin'],                       order: 81,  group: 'core' },
   { id: 'econ-params',  label: '경제 파라미터', href: '/settings/economics',     icon: 'Calculator',      roles: ['master','farmer','veterinarian','government_admin'],                       order: 82,  group: 'core' },
   { id: 'ai-memory',    label: '팅커벨 기억',   href: '/settings/memory',        icon: 'Brain',           roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 83,  group: 'core' },
   { id: 'milk-entry',   label: '유량 입력',     href: '/milk-entry',             icon: 'Milk',            roles: ['master','farmer'],                                                          order: 32,  group: 'core' },

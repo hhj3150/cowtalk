@@ -12,8 +12,12 @@ export function getDb() {
   if (!db) {
     sql = postgres(getDatabaseUrl(), {
       max: 20,
-      idle_timeout: 20,
-      connect_timeout: 10,
+      // 20초였을 때: 잠깐만 한가해도 연결이 전부 닫혀, 목장 진입처럼 요청 십수 개가 몰리는
+      // 순간 새 연결을 한꺼번에 열어야 했다. 연결 수립이 connect_timeout 을 넘기면 500 →
+      // "처음엔 오류, 다시 누르면 됨"(두 번째엔 연결이 살아 있음). 연결을 5분간 유지한다.
+      idle_timeout: 300,
+      // 동시 연결 수립이 몰려도 첫 요청이 오류로 끝나지 않게 여유를 둔다
+      connect_timeout: 30,
     });
     db = drizzle(sql, { schema });
   }
