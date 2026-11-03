@@ -243,6 +243,11 @@ export class SmaxtecApiClient {
 
   // ── Notes / Todos / Events (Public API v2) ──
 
+  /** GET /api/v2/organisations/{org_id}/settings — 목장별 대시보드·번식 설정 */
+  async getOrganisationSettings(orgId: string): Promise<unknown> {
+    return this.request<unknown>(this.apiBase, `/organisations/${orgId}/settings`);
+  }
+
   /** GET /api/v2/organisations/{org_id}/todos */
   async getTodos(orgId: string, done?: boolean): Promise<unknown> {
     const qs = done !== undefined ? `?done=${String(done)}` : '';

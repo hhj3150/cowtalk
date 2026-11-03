@@ -1,13 +1,17 @@
 // 번식 인사이트 서비스 — 4종 분류 리스트
-// ① 무발정우 (non-cycling): DIM > 50일, 최근 45일 발정 없음
+// ① 무발정우 (non-cycling): DIM > 목장 설정 noHeatDim(기본 50일), 최근 45일 발정 없음
 // ② 불규칙 발정우 (irregular): 발정 주기가 17일 미만 또는 25일 초과
 // ③ 유산 의심우 (abortion risk): 임신 확인 후 발정 재감지
+//    — 분만 예정 abortSuspectExcludeDaysBeforeCalving일 이내는 제외 (smaXtec 'Abort suspected' 규칙)
+//    — 직전 수정/발정과의 간격이 pregnantHeatInterval(18~26일) 안이면 주기성 신호로 명시
 // ④ 수정 실패 (repeat breeder): 수정 후 25일 이내 재발정 감지
 
 import { getDb } from '../../config/database.js';
 import { animals, farms, smaxtecEvents, breedingEvents, pregnancyChecks } from '../../db/schema.js';
 import { eq, and, desc, gte, inArray, isNull } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
+import { getFarmBreedingSettings } from './farm-settings-sync.service.js';
+import type { ResolvedBreedingSettings } from '@cowtalk/shared';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -122,11 +126,19 @@ export async function getBreedingInsights(farmId?: string): Promise<BreedingInsi
     }
   }
 
+  // 목장별 설정 (농장 수만큼만 조회)
+  const settingsByFarm = new Map<string, ResolvedBreedingSettings>();
+  for (const fid of new Set(femaleAnimals.map((a) => a.farmId))) {
+    settingsByFarm.set(fid, await getFarmBreedingSettings(fid));
+  }
+  const settingsOf = (fid: string): ResolvedBreedingSettings | undefined => settingsByFarm.get(fid);
+
   // ─── ① 무발정우 (non-cycling) ───
   const nonCycling: BreedingInsightAnimal[] = [];
   for (const a of femaleAnimals) {
     const dim = a.daysInMilk ?? 0;
-    if (dim < 50) continue; // DIM 50일 미만은 제외
+    const noHeatDim = settingsOf(a.farmId)?.noHeatDim ?? 50;
+    if (dim <= noHeatDim) continue; // 목장 설정 착유일 이하는 제외
     if (a.lactationStatus === 'dry') continue; // 건유우 제외
     if (pregnantMap.has(a.animalId)) continue; // 임신 확인우 제외
 
@@ -185,9 +197,19 @@ export async function getBreedingInsights(farmId?: string): Promise<BreedingInsi
 
     if (postPregnancyEstrus.length > 0) {
       const latestEstrus = postPregnancyEstrus[0]!;
-      const daysSinceConfirm = Math.round(
-        (latestEstrus.getTime() - confirmedDate.getTime()) / MS_PER_DAY,
-      );
+      const settings = settingsOf(a.farmId);
+      const verdict = assessAbortionSignal({
+        latestEstrus,
+        confirmedDate,
+        inseminations: insemMap.get(a.animalId) ?? [],
+        estrusDates: estrusMap.get(a.animalId) ?? [],
+        now,
+        gestationDays: settings?.gestationDays ?? 280,
+        excludeDaysBeforeCalving: settings?.abortSuspectExcludeDaysBeforeCalving ?? 60,
+        intervalMinDays: settings?.pregnantHeatIntervalMinDays ?? 18,
+        intervalMaxDays: settings?.pregnantHeatIntervalMaxDays ?? 26,
+      });
+      if (!verdict.include) continue;
       abortionRisk.push({
         animalId: a.animalId,
         earTag: a.earTag,
@@ -195,7 +217,7 @@ export async function getBreedingInsights(farmId?: string): Promise<BreedingInsi
         farmName: a.farmName ?? '',
         parity: a.parity ?? 0,
         daysInMilk: a.daysInMilk,
-        detail: `임신확인 ${daysSinceConfirm}일 후 발정 재감지 — 유산 의심`,
+        detail: verdict.detail,
       });
     }
   }
@@ -237,4 +259,51 @@ export async function getBreedingInsights(farmId?: string): Promise<BreedingInsi
   }, '[BreedingInsights] 조회 완료');
 
   return { nonCycling, irregularCycle, abortionRisk, repeatBreeder };
+}
+
+export interface AbortionSignalInput {
+  readonly latestEstrus: Date;
+  readonly confirmedDate: Date;
+  /** 최근 수정일 (내림차순) */
+  readonly inseminations: readonly Date[];
+  /** 최근 발정일 (내림차순) */
+  readonly estrusDates: readonly Date[];
+  readonly now: Date;
+  readonly gestationDays: number;
+  readonly excludeDaysBeforeCalving: number;
+  readonly intervalMinDays: number;
+  readonly intervalMaxDays: number;
+}
+
+/**
+ * 임신우 발정 재감지의 유산 의심 판정 (순수 함수).
+ * - 분만 예정일까지 excludeDaysBeforeCalving일 이내면 제외 (분만 전 활동 증가는 정상)
+ * - 직전 수정/발정과의 간격이 [min, max]일이면 "주기성 발정 신호"로 명시 (더 강한 근거)
+ */
+export function assessAbortionSignal(input: AbortionSignalInput): { readonly include: boolean; readonly detail: string } {
+  const daysSinceConfirm = Math.round(
+    (input.latestEstrus.getTime() - input.confirmedDate.getTime()) / MS_PER_DAY,
+  );
+
+  // 이번 임신의 수정일 = 임신확인일 이전의 가장 최근 수정
+  const conceptionInsem = input.inseminations.find((d) => d <= input.confirmedDate);
+  if (conceptionInsem) {
+    const expectedCalving = conceptionInsem.getTime() + input.gestationDays * MS_PER_DAY;
+    const daysUntilCalving = Math.floor((expectedCalving - input.now.getTime()) / MS_PER_DAY);
+    if (daysUntilCalving <= input.excludeDaysBeforeCalving) {
+      return { include: false, detail: `분만 예정 ${daysUntilCalving}일 전 — 유산 의심 판정 제외 구간` };
+    }
+  }
+
+  // 직전 기준점: 이번 발정보다 앞선 가장 최근 발정 또는 수정
+  const prior = [...input.estrusDates, ...input.inseminations]
+    .filter((d) => d < input.latestEstrus)
+    .sort((x, y) => y.getTime() - x.getTime())[0];
+  const gap = prior ? Math.round((input.latestEstrus.getTime() - prior.getTime()) / MS_PER_DAY) : null;
+  const cyclic = gap !== null && gap >= input.intervalMinDays && gap <= input.intervalMaxDays;
+
+  const detail = cyclic
+    ? `임신확인 ${daysSinceConfirm}일 후 발정 재감지 — 직전 기록과 ${gap}일 간격(주기성 ${input.intervalMinDays}~${input.intervalMaxDays}일) · 유산 의심`
+    : `임신확인 ${daysSinceConfirm}일 후 발정 재감지 — 유산 의심`;
+  return { include: true, detail };
 }

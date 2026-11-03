@@ -1,6 +1,7 @@
 // 육종/번식 API
 
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, apiPut } from './client';
+import type { FarmBreedingSettingsResponse, BreedingSettingsPatch } from '@cowtalk/shared';
 
 export interface SemenRecord {
   readonly semenId: string;
@@ -223,4 +224,19 @@ export function getBreedingCalendar(
     '/breeding/calendar',
     { startDate, endDate, farmId },
   );
+}
+
+// ── 목장별 번식·대시보드 설정 (smaXtec Dashboard settings 대응) ──
+
+/** 화면용 설정 목록 (값·출처·기본값) */
+export function getFarmBreedingSettingsDetail(farmId: string): Promise<FarmBreedingSettingsResponse> {
+  return apiGet<FarmBreedingSettingsResponse>(`/breeding/farm/${farmId}/settings/detail`);
+}
+
+/** 직접 입력 저장 — 값 null 은 직접 입력 해제 (smaXtec 값/기본값으로 복귀) */
+export function saveFarmBreedingSettings(
+  farmId: string,
+  patch: BreedingSettingsPatch,
+): Promise<FarmBreedingSettingsResponse> {
+  return apiPut<FarmBreedingSettingsResponse>(`/breeding/farm/${farmId}/settings`, patch);
 }
