@@ -32,3 +32,4 @@ export * from './economics.js';
 export * from './diagnosis.js';
 export * from './memory.js';
 export * from './breeding-settings.js';
+export * from './behavior.js';
