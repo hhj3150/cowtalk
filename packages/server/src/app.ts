@@ -4,6 +4,7 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { rateLimitIdentity, ANON_LIMIT_PER_30MIN, USER_LIMIT_PER_30MIN } from './lib/rate-limit-key.js';
 import { createApiRouter } from './api/index.js';
 import { errorHandler, notFoundHandler } from './api/middleware/error.js';
 import { requestLogger } from './api/middleware/request-logger.js';
@@ -31,9 +32,11 @@ export function createApp(): express.Express {
   }));
 
   // --- Rate Limiting (전역) ---
+  // 로그인 사용자는 계정별(3000/30분), 비로그인은 IP별(1000/30분) — 행사장 공용 IP에서 발표자 보호
   app.use(rateLimit({
     windowMs: 30 * 60 * 1000, // 30분
-    max: 1000,
+    max: (req) => (rateLimitIdentity(req).authenticated ? USER_LIMIT_PER_30MIN : ANON_LIMIT_PER_30MIN),
+    keyGenerator: (req) => rateLimitIdentity(req).key,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },

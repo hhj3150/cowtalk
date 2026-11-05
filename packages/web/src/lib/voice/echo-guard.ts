@@ -27,7 +27,9 @@
 const DEFAULT_MEMORY_MS = 4000;
 /** 들린 말의 이 비율 이상이 발화와 "연속으로" 일치하면 에코 */
 const DEFAULT_THRESHOLD = 0.7;
-/** 이보다 짧은 인식 결과는 비교가 무의미 — "그만" 같은 짧은 명령을 살려야 한다 */
+/** 읽는 속도 추정 (한국어 TTS 기준, 보수적으로 느리게 잡아 기억을 길게) */
+const SPOKEN_CHARS_PER_SEC = 5;
+/** 이보다 짧은 인식 결과는 비율 비교가 무의미 — "그만" 같은 짧은 명령을 살려야 한다 */
 const MIN_COMPARABLE_CHARS = 6;
 /** 연속 일치가 이 길이 미만이면 우연의 일치로 본다 */
 const MIN_RUN_CHARS = 6;
@@ -97,12 +99,17 @@ export class EchoGuard {
     this.now = options.now ?? (() => Date.now());
   }
 
-  /** 팅커벨이 말하기 시작한 텍스트를 기억한다. TTS 청크마다 호출. */
+  /**
+   * 팅커벨이 말하기 시작한 텍스트를 기억한다. TTS 청크마다 호출.
+   * 기억 시간 = 그 문장을 다 읽는 예상 시간 + 잔향 여유. 예전에는 '말하기 시작한 순간 + 4초'라
+   * 긴 문장(최대 30초 분량)의 뒷부분이 에코 판정 없이 마이크로 되들어왔다 (강연장 스피커에서 치명적).
+   */
   noteSpoken(text: string): void {
     const normalized = normalize(text);
     if (!normalized) return;
     this.prune();
-    this.entries.push({ text: normalized, expiresAt: this.now() + this.memoryMs });
+    const speakingMs = Math.ceil(normalized.length / SPOKEN_CHARS_PER_SEC) * 1000;
+    this.entries.push({ text: normalized, expiresAt: this.now() + speakingMs + this.memoryMs });
   }
 
   /**
@@ -114,11 +121,16 @@ export class EchoGuard {
    */
   isEcho(heard: string): boolean {
     const normalized = normalize(heard);
-    // 짧은 발화는 판정하지 않는다 — "그만" 같은 중단 명령을 반드시 살려야 한다
-    if (normalized.length < MIN_COMPARABLE_CHARS) return false;
-
+    if (!normalized) return false;
     this.prune();
     if (this.entries.length === 0) return false;
+
+    // 짧은 발화는 비율로 판정하지 않는다 — "그만" 같은 중단 명령을 살려야 한다.
+    // 다만 방금 자기가 말한 문장 안에 그대로 들어 있는 짧은 조각("팅커벨", "그만")은
+    // 스피커에서 되돌아온 것으로 본다 (자기 이름을 듣고 스스로 호출되는 문제).
+    if (normalized.length < MIN_COMPARABLE_CHARS) {
+      return normalized.length >= 2 && this.entries.some((e) => e.text.includes(normalized));
+    }
 
     for (const entry of this.entries) {
       if (echoRatio(normalized, entry.text) >= this.threshold) return true;

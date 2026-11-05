@@ -154,13 +154,20 @@ async function doResolve(): Promise<ResolvedAudioModels> {
   return result;
 }
 
+/** 조회 실패 시 선호 모델 결과를 이 시간 동안 재사용 (그 뒤 다시 조회) */
+const FAILED_PROBE_REUSE_MS = 5 * 60 * 1000;
+let failedCache: { readonly result: ResolvedAudioModels; readonly until: number } | null = null;
+
 /** 확정된 오디오 모델. 첫 호출에서 조회하고 이후 재사용한다. */
 export async function getAudioModels(): Promise<ResolvedAudioModels> {
   if (resolvedCache) return resolvedCache;
+  // 조회 실패 결과는 잠깐만 재사용 — 없으면 실패한 동안 모든 음성 호출 앞에 조회(최대 수 초)가 붙는다
+  if (failedCache && Date.now() < failedCache.until) return failedCache.result;
   inflight ??= doResolve()
     .then((r) => {
       // 조회에 성공했을 때만 굳힌다 — 일시적 네트워크 실패로 선호 모델이 고착되지 않도록
       if (!r.probeError) resolvedCache = r;
+      else failedCache = { result: r, until: Date.now() + FAILED_PROBE_REUSE_MS };
       return r;
     })
     .finally(() => { inflight = null; });
@@ -177,5 +184,6 @@ export function warmAudioModels(): void {
 /** 테스트·운영 진단용 — 캐시를 비워 다음 호출에서 다시 조회하게 한다 */
 export function resetAudioModelCache(): void {
   resolvedCache = null;
+  failedCache = null;
   inflight = null;
 }
