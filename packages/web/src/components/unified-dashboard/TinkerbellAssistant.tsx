@@ -983,6 +983,8 @@ export function TinkerbellAssistant({
     let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let answerHandle: { readonly controller: AbortController; cancelled: boolean } | null = null;
+    // 끊겨도 살릴 수 있도록 받은 답을 바깥에 둔다
+    let partialText = '';
 
     try {
       const token = useAuthStore.getState().accessToken;
@@ -1033,15 +1035,18 @@ export function TinkerbellAssistant({
       const handle = { controller, cancelled: false };
       answerHandle = handle;
       activeAnswerRef.current = handle;
-      const TOTAL_TIMEOUT_MS = 90_000;
-      const FIRST_BYTE_TIMEOUT_MS = 30_000;
+      // 전체 상한은 답이 끝날 때까지 유지한다 (서버 상한 90초 + 대체 응답 여유).
+      // 예전에는 응답 헤더가 오면 전체 타이머를 껐고, 서버의 5초 keep-alive 가 무응답 감지까지
+      // 매번 초기화해 — 서버가 멈추면 '생각 중'이 영원히 떠 있었다. 이제 실제 데이터 줄만 센다.
+      const TOTAL_TIMEOUT_MS = 105_000;
+      const FIRST_DATA_TIMEOUT_MS = 60_000;
       const STALL_TIMEOUT_MS = 45_000;
       fetchTimeout = setTimeout(() => controller.abort(), TOTAL_TIMEOUT_MS);
       let lastDataAt = Date.now();
-      let firstByteReceived = false;
+      let firstDataReceived = false;
       heartbeat = setInterval(() => {
         const idleMs = Date.now() - lastDataAt;
-        const limit = firstByteReceived ? STALL_TIMEOUT_MS : FIRST_BYTE_TIMEOUT_MS;
+        const limit = firstDataReceived ? STALL_TIMEOUT_MS : FIRST_DATA_TIMEOUT_MS;
         if (idleMs > limit) controller.abort();
       }, 5_000);
 
@@ -1060,10 +1065,10 @@ export function TinkerbellAssistant({
         signal: controller.signal,
       });
 
-      clearTimeout(fetchTimeout);
-
       if (!res.ok || !res.body) {
-        throw new Error(`HTTP ${res.status}`);
+        // 서버가 이유를 JSON 으로 주면 그 문장을 쓴다 (409 같은 질문 처리 중, 429 요청 한도 등)
+        const body = await res.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
+        throw Object.assign(new Error(`HTTP ${res.status}`), { userMessage: body?.error?.message, status: res.status });
       }
 
       // Netlify Edge가 timeout 시 'Inactivity Timeout' HTML을 캐시해서 SSE 응답으로 반환하는
@@ -1091,11 +1096,9 @@ export function TinkerbellAssistant({
 
       while (true) {
         const { value, done } = await reader.read();
-        if (handle.cancelled) return; // barge-in — 이 답변은 확정하지 않는다
+        if (handle.cancelled) { clearInterval(heartbeat); clearTimeout(fetchTimeout); return; } // barge-in — 이 답변은 확정하지 않는다
         if (done) break;
         rawBytes += value.byteLength;
-        lastDataAt = Date.now();
-        firstByteReceived = true;
 
         // 첫 byte가 '<'면 HTML 응답 (Netlify Edge timeout HTML) — 즉시 throw
         if (!firstByteChecked && value.byteLength > 0) {
@@ -1112,6 +1115,8 @@ export function TinkerbellAssistant({
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           dataLineCount++;
+          lastDataAt = Date.now();
+          firstDataReceived = true;
           try {
             const parsed = JSON.parse(line.slice(6)) as StreamChunk;
             if (parsed.type === 'done') {
@@ -1122,6 +1127,7 @@ export function TinkerbellAssistant({
             if (parsed.type === 'text') {
               textEventCount++;
               fullText += parsed.content;
+              partialText = fullText;
               setStreamText(fullText);
               if (firstChunk) { if (speechGenRef.current === answerSpeechGen) setState('speaking'); firstChunk = false; }
               // 문장이 완성되는 즉시 합성·재생을 시작한다 (답변 종료를 기다리지 않음)
@@ -1163,6 +1169,10 @@ export function TinkerbellAssistant({
       clearTimeout(fetchTimeout);
       if (handle.cancelled) return;
       if (activeAnswerRef.current === handle) activeAnswerRef.current = null;
+      if (!doneReceived && fullText) {
+        // done 없이 끊겼다 — 받은 데까지는 보여주되 끊겼다는 사실을 숨기지 않는다
+        fullText += `\n\n${t('tb.err.partial')}`;
+      }
       const elapsedMs = Date.now() - startedAt.getTime();
 
       // 빈 응답 진단 — 어디서 끊겼는지 정확히 표시
@@ -1222,11 +1232,17 @@ export function TinkerbellAssistant({
       if (answerHandle && activeAnswerRef.current === answerHandle) activeAnswerRef.current = null;
       setStreamText('');
       stopStreamingSpeech(); // 중간까지 큐에 쌓인 문장을 끊는다 — 실패한 답변을 계속 읽으면 안 된다
-      const fetchErr = err as { message?: string; name?: string };
+      const fetchErr = err as { message?: string; name?: string; userMessage?: string; status?: number };
       const isAbort = fetchErr.name === 'AbortError';
       const isCacheConflict = fetchErr.message?.includes('캐시 충돌') || fetchErr.message?.includes('HTML');
       const isNetworkError = fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError');
-      const errorContent = isAbort
+      // 받은 답이 있으면 지우지 않는다 — 와이파이가 잠깐 끊겨도 화면에 남은 답은 살린다
+      const kept = partialText.trim() ? `${partialText}\n\n${t('tb.err.partial')}` : '';
+      const errorContent = kept
+        ? kept
+        : fetchErr.userMessage
+        ? `⚠️ ${fetchErr.userMessage}`
+        : isAbort
         ? t('tb.err.no_response')
         : isCacheConflict
         ? t('tb.err.cache_conflict')
