@@ -582,6 +582,41 @@ export async function callClaudeForChatJson(
 }
 
 // ===========================
+// 실호출 점검 (시연 전 점검용) — 키 존재가 아니라 "지금 답이 오는가"
+// ===========================
+
+export interface ClaudePingResult {
+  readonly ok: boolean;
+  readonly model: string;
+  readonly latencyMs: number;
+  readonly error?: string;
+}
+
+/** 대화 모델에 아주 짧은 실호출 (출력 토큰 수 개) — 시연 전 점검 전용 */
+export async function pingClaude(timeoutMs = 15_000): Promise<ClaudePingResult> {
+  const model = config.ANTHROPIC_MODEL;
+  const anthropic = getClient();
+  if (!anthropic) return { ok: false, model, latencyMs: 0, error: 'ANTHROPIC_API_KEY 미설정' };
+  const startTime = Date.now();
+  try {
+    const response = await anthropic.messages.create(
+      {
+        model,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: '점검입니다. "정상"이라고만 답하세요.' }],
+      },
+      { timeout: timeoutMs, maxRetries: 0 },
+    );
+    const text = extractTextContent(response).trim();
+    return { ok: text.length > 0, model: response.model, latencyMs: Date.now() - startTime, ...(text ? {} : { error: '빈 응답' }) };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.warn({ error, model }, '[ClaudePing] 실호출 점검 실패');
+    return { ok: false, model, latencyMs: Date.now() - startTime, error: msg.slice(0, 200) };
+  }
+}
+
+// ===========================
 // Vision 호출 (이표 번호 인식)
 // ===========================
 

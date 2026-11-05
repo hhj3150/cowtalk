@@ -9,6 +9,8 @@ import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger.js';
 import { getRedisSettings } from '../../lib/redis-settings.js';
 import type { RedisSettings, RedisConnectionOptions } from '../../lib/redis-settings.js';
+import { authenticate } from '../middleware/auth.js';
+import { getVoiceReadiness } from '../../services/audio/voice-readiness.service.js';
 
 export const healthRouter = Router();
 
@@ -22,6 +24,18 @@ healthRouter.get('/', (_req, res) => {
       timestamp: new Date().toISOString(),
     },
   });
+});
+
+// GET /health/voice — 음성 응답 시연 전 점검 (대화 모델 · TTS · STT 실호출, 로그인 필요)
+// 외부 유료 API 를 부르므로 공개하지 않고, 1분 재사용·15초 재점검 간격으로 묶는다.
+healthRouter.get('/voice', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await getVoiceReadiness(req.query.force === '1');
+    logger.info({ ready: data.ready, totalMs: data.totalMs, checks: data.checks.map((c) => `${c.name}:${c.status}:${String(c.latencyMs)}ms`) }, '[HealthCheck] 음성 시연 점검');
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // GET /health/deep — 전체 의존성 검증 (배포 후 확인용)
