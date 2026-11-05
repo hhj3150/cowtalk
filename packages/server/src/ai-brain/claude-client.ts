@@ -14,6 +14,7 @@ import {
   effortParam,
   thinkingSafeTemperature,
 } from './claude-model-params.js';
+import { ChatDeadlineError } from '../chat/chat-error.js';
 
 // ===========================
 // 클라이언트 싱글톤
@@ -26,7 +27,9 @@ function getClient(): Anthropic | null {
     return null;
   }
   if (!client) {
-    client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
+    // SDK 기본값(요청당 10분 대기)이면 멈춘 답변이 화면에 몇 분씩 떠 있다.
+    // 한 번의 API 요청 상한 60초, 일시 오류(429·5xx·529)는 SDK가 2회까지 재시도한다.
+    client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 2 });
   }
   return client;
 }
@@ -259,6 +262,24 @@ export interface ChatToolOptions {
   readonly images?: readonly { data: string; mimeType: ImageMediaType }[];
   /** Files: 첨부 PDF — Claude 네이티브 document block (base64) */
   readonly pdfs?: readonly { data: string; filename?: string }[];
+  /** 사용자가 연결을 끊으면 진행 중인 생성도 멈춘다 (비용·동시 처리 낭비 방지) */
+  readonly signal?: AbortSignal;
+}
+
+/** 한 질문의 전체 답변 시간 상한 (도구 라운드 포함). CHAT_DEADLINE_MS 로 조정 */
+export const CHAT_DEADLINE_MS = Number(process.env.CHAT_DEADLINE_MS) > 0 ? Number(process.env.CHAT_DEADLINE_MS) : 90_000;
+
+/** 신호가 끊기면 기다리던 작업을 버리고 그 원인으로 거부한다 (작업 자체는 각자의 상한으로 끝난다) */
+function raceAbort<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      (e: unknown) => { signal.removeEventListener('abort', onAbort); reject(e); },
+    );
+  });
 }
 
 export async function callClaudeForChatWithTools(
@@ -275,6 +296,17 @@ export async function callClaudeForChatWithTools(
   }
 
   let fullText = '';
+
+  // 전체 시간 상한 + 사용자 연결 끊김 → 진행 중인 스트림을 실제로 멈춘다
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(new ChatDeadlineError(CHAT_DEADLINE_MS)), CHAT_DEADLINE_MS);
+  const onClientAbort = (): void => controller.abort(new Error('client disconnected'));
+  options?.signal?.addEventListener('abort', onClientAbort, { once: true });
+  const throwIfAborted = (): void => {
+    if (controller.signal.aborted) {
+      throw controller.signal.reason instanceof Error ? controller.signal.reason : new ChatDeadlineError(CHAT_DEADLINE_MS);
+    }
+  };
 
   // Vision + Files: 이미지·PDF가 있으면 content blocks 형태로 첫 user message 구성.
   // 순서: [document(pdf), document(pdf), ..., image, image, ..., text] — Anthropic 권장
@@ -345,6 +377,7 @@ export async function callClaudeForChatWithTools(
     let firstTokenLogged = false;
 
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      throwIfAborted();
       // 실시간 스트리밍 — messages.stream으로 텍스트를 토큰 단위로 즉시 방출.
       // (기존 messages.create는 라운드 전체 생성이 끝나야 텍스트가 나와 체감 지연이 컸음)
       let roundTextLen = 0;
@@ -359,7 +392,7 @@ export async function callClaudeForChatWithTools(
         system: buildCachedSystem(systemPrompt),
         messages,
         tools: toolsWithWebSearch,
-      });
+      }, { signal: controller.signal });
 
       // text 델타를 즉시 사용자에게 전달 (진짜 스트리밍)
       stream.on('text', (text) => {
@@ -434,8 +467,8 @@ export async function callClaudeForChatWithTools(
         logger.info({ tool: toolBlock.name, input: toolBlock.input }, '[ToolUse] 도구 실행 (병렬)');
       }
 
-      // Promise.all로 병렬 실행
-      const settled = await Promise.all(
+      // Promise.all로 병렬 실행 — 상한 초과·연결 끊김이면 도구 완료를 기다리지 않는다
+      const settled = await raceAbort(controller.signal, Promise.all(
         toolUseBlocks.map((toolBlock) =>
           executeToolWithGateway(
             toolBlock.name,
@@ -443,7 +476,7 @@ export async function callClaudeForChatWithTools(
             gatewayContext,
           ),
         ),
-      );
+      ));
 
       // 결과 이벤트 발사 + tool_result 블록 생성
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -490,7 +523,7 @@ export async function callClaudeForChatWithTools(
         system: buildCachedSystem(systemPrompt),
         messages: wrapUpMessages,
         // tools 미전달 → 강제 텍스트 응답
-      });
+      }, { signal: controller.signal });
       // 'error' 리스너 필수 (위 라운드 루프와 동일 이유) — 전파는 finalMessage()가 담당
       finalStream.on('error', (err: Error) => {
         logger.warn({ error: err }, '[ToolUse] final round 스트림 error 이벤트');
@@ -509,6 +542,7 @@ export async function callClaudeForChatWithTools(
       }, '[ToolUse] final round 완료');
     } catch (finalErr) {
       logger.error({ err: finalErr }, '[ToolUse] final round 실패');
+      throwIfAborted();
     }
 
     if (fullText.length === 0) {
@@ -529,7 +563,13 @@ export async function callClaudeForChatWithTools(
     const detail = errObj.status
       ? `[Claude ${errObj.status}] ${errObj.message ?? 'unknown'} (model=${config.ANTHROPIC_MODEL})`
       : errObj.message ?? String(error);
-    callbacks.onError(error instanceof Error ? error : new Error(detail));
+    // 상한 초과로 끊었으면 SDK 의 APIUserAbortError 대신 원인(상한 초과)을 넘긴다
+    const reason: unknown = controller.signal.aborted ? controller.signal.reason : null;
+    const toReport = reason instanceof Error ? reason : error instanceof Error ? error : new Error(detail);
+    callbacks.onError(toReport);
+  } finally {
+    clearTimeout(deadline);
+    options?.signal?.removeEventListener('abort', onClientAbort);
   }
 }
 
@@ -578,6 +618,41 @@ export async function callClaudeForChatJson(
   } catch (error) {
     logger.error({ error, durationMs: Date.now() - startTime }, 'Claude chat API failed');
     return null;
+  }
+}
+
+// ===========================
+// 실호출 점검 (시연 전 점검용) — 키 존재가 아니라 "지금 답이 오는가"
+// ===========================
+
+export interface ClaudePingResult {
+  readonly ok: boolean;
+  readonly model: string;
+  readonly latencyMs: number;
+  readonly error?: string;
+}
+
+/** 대화 모델에 아주 짧은 실호출 (출력 토큰 수 개) — 시연 전 점검 전용 */
+export async function pingClaude(timeoutMs = 15_000): Promise<ClaudePingResult> {
+  const model = config.ANTHROPIC_MODEL;
+  const anthropic = getClient();
+  if (!anthropic) return { ok: false, model, latencyMs: 0, error: 'ANTHROPIC_API_KEY 미설정' };
+  const startTime = Date.now();
+  try {
+    const response = await anthropic.messages.create(
+      {
+        model,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: '점검입니다. "정상"이라고만 답하세요.' }],
+      },
+      { timeout: timeoutMs, maxRetries: 0 },
+    );
+    const text = extractTextContent(response).trim();
+    return { ok: text.length > 0, model: response.model, latencyMs: Date.now() - startTime, ...(text ? {} : { error: '빈 응답' }) };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.warn({ error, model }, '[ClaudePing] 실호출 점검 실패');
+    return { ok: false, model, latencyMs: Date.now() - startTime, error: msg.slice(0, 200) };
   }
 }
 

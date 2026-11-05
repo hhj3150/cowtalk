@@ -28,6 +28,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'breeding-settings', label: '목장 번식 설정', href: '/settings/breeding', icon: 'Calendar',        roles: ['master','farmer','veterinarian','government_admin'],                       order: 81,  group: 'core' },
   { id: 'econ-params',  label: '경제 파라미터', href: '/settings/economics',     icon: 'Calculator',      roles: ['master','farmer','veterinarian','government_admin'],                       order: 82,  group: 'core' },
   { id: 'cases',        label: '관리 케이스',   href: '/cases',                  icon: 'ClipboardCheck',  roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 12,  group: 'core' },
+  { id: 'voice-check',  label: '음성 시연 점검', href: '/settings/voice-check',   icon: 'Bell',            roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 84,  group: 'core' },
   { id: 'ai-memory',    label: '팅커벨 기억',   href: '/settings/memory',        icon: 'Brain',           roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 83,  group: 'core' },
   { id: 'behavior',     label: '휴식·행동',     href: '/behavior',               icon: 'Activity',        roles: ['master','farmer','veterinarian'],                                          order: 34,  group: 'core' },
   { id: 'milk-entry',   label: '유량 입력',     href: '/milk-entry',             icon: 'Milk',            roles: ['master','farmer'],                                                          order: 32,  group: 'core' },

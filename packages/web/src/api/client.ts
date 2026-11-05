@@ -137,6 +137,46 @@ apiClient.interceptors.response.use(
   },
 );
 
+// ── 직접 호출(fetch)용 토큰 신선도 보장 ──
+//
+// 대화 스트림·음성 합성·음성 인식은 axios 를 거치지 않고 Railway 를 직접 부른다.
+// 그래서 axios 의 '401 → 토큰 갱신' 경로를 타지 못한다. 액세스 토큰은 2시간짜리라
+// 화면을 2시간 넘게 띄워 두면(강연·시연) 음성·대화만 조용히 401 로 실패했다.
+// 만료 5분 전이면 미리 갱신한다. 동시 호출은 한 번의 갱신에 합류한다.
+
+const REFRESH_AHEAD_MS = 5 * 60 * 1000;
+let directRefresh: Promise<string | null> | null = null;
+
+/** JWT exp(초) — 형식이 아니면 null */
+export function jwtExpiresAtMs(token: string): number | null {
+  const part = token.split('.')[1];
+  if (!part) return null;
+  try {
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = (JSON.parse(json) as { exp?: number }).exp;
+    return typeof exp === 'number' ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function ensureFreshAccessToken(now: number = Date.now()): Promise<string | null> {
+  const { accessToken, refreshToken, updateTokens } = useAuthStore.getState();
+  if (!accessToken) return null;
+  const exp = jwtExpiresAtMs(accessToken);
+  if (exp === null || exp - now > REFRESH_AHEAD_MS || !refreshToken) return accessToken;
+  directRefresh ??= axios
+    .post<{ accessToken: string; refreshToken: string }>(`${BASE_URL}/auth/refresh`, { refreshToken })
+    .then((res) => {
+      updateTokens(res.data.accessToken, res.data.refreshToken);
+      return res.data.accessToken;
+    })
+    // 갱신 실패 — 기존 토큰으로 시도하게 둔다 (만료면 서버가 401 을 주고 화면이 로그인으로 안내)
+    .catch(() => accessToken)
+    .finally(() => { directRefresh = null; });
+  return directRefresh;
+}
+
 // API 응답 래퍼
 export interface ApiResponse<T> {
   readonly success: boolean;

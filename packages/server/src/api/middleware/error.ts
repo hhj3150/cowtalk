@@ -50,6 +50,20 @@ export function errorHandler(
     return;
   }
 
+  // 본문 파서 오류(크기 초과 413, 깨진 JSON 400) — 500 으로 바꾸면 클라이언트가 원인을 모른다
+  const parserStatus = (err as { status?: number; type?: string }).status;
+  if (typeof parserStatus === 'number' && parserStatus >= 400 && parserStatus < 500 && (err as { type?: string }).type) {
+    logger.warn({ path: req.path, status: parserStatus, type: (err as { type?: string }).type }, 'Request body rejected');
+    res.status(parserStatus).json({
+      success: false,
+      error: {
+        code: parserStatus === 413 ? 'PAYLOAD_TOO_LARGE' : 'BAD_REQUEST_BODY',
+        message: parserStatus === 413 ? '보낸 데이터가 너무 큽니다' : '요청 본문 형식이 올바르지 않습니다',
+      },
+    });
+    return;
+  }
+
   // 예상치 못한 에러 → 500 + 상세 숨김
   logger.error({ err, path: req.path }, 'Unhandled error');
   res.status(500).json({

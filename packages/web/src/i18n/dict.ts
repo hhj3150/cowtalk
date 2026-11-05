@@ -39,6 +39,7 @@ const ko: Dict = {
 
   // 팅커벨 에러/상태
   'tb.err.no_response': '서버로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  'tb.err.partial': '(연결이 끊겨 답변이 여기서 멈췄습니다 — 같은 질문을 다시 하면 이어서 답합니다)',
   'tb.err.network': '인터넷 연결을 확인해 주세요. 네트워크 오류가 발생했습니다.',
   'tb.err.server': '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   'tb.err.cache_conflict': '연결 충돌이 감지되었습니다. 다시 시도해 주세요.',
@@ -124,6 +125,7 @@ const en: Dict = {
   'tb.sugg.animal.breeding_history': "Analyze this cow's breeding history",
 
   'tb.err.no_response': 'No response from server. Please try again shortly.',
+  'tb.err.partial': '(Connection dropped — the answer stopped here. Ask again to continue.)',
   'tb.err.network': 'Please check your internet connection. A network error occurred.',
   'tb.err.server': 'A server error occurred. Please try again shortly.',
   'tb.err.cache_conflict': 'Connection conflict detected. Please try again.',
@@ -204,6 +206,7 @@ const uz: Dict = {
   'tb.sugg.animal.breeding_history': "Bu sigirning urugʻlantirish tarixini tahlil qil",
 
   'tb.err.no_response': "Serverdan javob kelmadi. Iltimos, biroz kutib qaytadan urinib koʻring.",
+  'tb.err.partial': "(Aloqa uzildi — javob shu yerda toʻxtadi. Qaytadan soʻrang.)",
   'tb.err.network': "Internet aloqasini tekshiring. Tarmoq xatosi yuz berdi.",
   'tb.err.server': 'Server xatosi. Iltimos, biroz kutib qaytadan urinib koʻring.',
   'tb.err.cache_conflict': 'Aloqa toʻqnashuvi aniqlandi. Qaytadan urinib koʻring.',
@@ -284,6 +287,7 @@ const ru: Dict = {
   'tb.sugg.animal.breeding_history': 'Проанализируй историю осеменения этой коровы',
 
   'tb.err.no_response': 'Нет ответа от сервера. Пожалуйста, попробуйте позже.',
+  'tb.err.partial': '(Соединение прервалось — ответ остановился здесь. Спросите ещё раз.)',
   'tb.err.network': 'Проверьте подключение к интернету. Произошла сетевая ошибка.',
   'tb.err.server': 'Произошла ошибка сервера. Пожалуйста, попробуйте позже.',
   'tb.err.cache_conflict': 'Обнаружен конфликт соединения. Попробуйте снова.',
@@ -364,6 +368,7 @@ const mn: Dict = {
   'tb.sugg.animal.breeding_history': 'Энэ үнээний хээлтүүлгийн түүхийг шинжил',
 
   'tb.err.no_response': 'Серверээс хариу ирсэнгүй. Дараа дахин оролдоно уу.',
+  'tb.err.partial': '(Холболт тасарлаа — хариулт энд зогслоо. Дахин асууна уу.)',
   'tb.err.network': 'Интернэт холболтоо шалгана уу. Сүлжээний алдаа гарлаа.',
   'tb.err.server': 'Серверийн алдаа гарлаа. Дараа дахин оролдоно уу.',
   'tb.err.cache_conflict': 'Холболтын зөрчил илэрлээ. Дахин оролдоно уу.',

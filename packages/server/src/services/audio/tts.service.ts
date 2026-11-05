@@ -11,6 +11,7 @@
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
 import { createHash } from 'node:crypto';
+import { fetchOpenAi, isRetriableStatus, isTransientFailure } from './openai-fetch.js';
 import { getAudioModels } from './model-registry.js';
 
 // === 타입 ===
@@ -239,7 +240,7 @@ async function callSpeechApi(
   format: TtsFormat,
   instructions: string,
 ): Promise<Response> {
-  return fetch('https://api.openai.com/v1/audio/speech', {
+  return fetchOpenAi('https://api.openai.com/v1/audio/speech', () => ({
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -254,8 +255,13 @@ async function callSpeechApi(
         ? (instructions ? { instructions } : {})
         : { speed: config.OPENAI_TTS_SPEED }),
     }),
-  });
+  }), { timeoutMs: TTS_TIMEOUT_MS, retries: 1 });
 }
+
+/** 문장 하나 합성 상한 (재시도 포함 ~15초) — 클라이언트 상한(15초) 안에 끝나게 */
+const TTS_TIMEOUT_MS = 7_000;
+/** 최신 모델이 일시 장애일 때 대신 쓰는 안정 모델 (말투 지시는 못 받지만 소리는 난다) */
+const TTS_FALLBACK_MODEL: TtsModel = 'tts-1';
 
 // === 메인: synthesize ===
 
@@ -302,8 +308,23 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
 
   // 4) OpenAI API 호출 — 모델은 레지스트리가 이미 "사용 가능함을 확인한" 것만 넘어온다
   const startedAt = Date.now();
-  const usedModel = model;
-  const response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, instructions);
+  let usedModel = model;
+  let response: Response;
+  try {
+    response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, instructions);
+  } catch (err) {
+    // 시간 초과·네트워크 — 호출자가 모델을 지정하지 않았으면 안정 모델로 한 번 더
+    if (options.model || model === TTS_FALLBACK_MODEL || !isTransientFailure(err)) throw err;
+    logger.warn({ err, model }, '[tts] 일시 장애 — 안정 모델로 대체');
+    usedModel = TTS_FALLBACK_MODEL;
+    response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, '');
+  }
+  if (!response.ok && isRetriableStatus(response.status) && !options.model && model !== TTS_FALLBACK_MODEL) {
+    logger.warn({ status: response.status, model }, '[tts] 일시 장애 응답 — 안정 모델로 대체');
+    await response.body?.cancel().catch(() => undefined);
+    usedModel = TTS_FALLBACK_MODEL;
+    response = await callSpeechApi(apiKey, usedModel, finalText, voice, format, '');
+  }
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
@@ -333,8 +354,8 @@ export async function synthesize(options: SynthesizeOptions): Promise<Synthesize
     '[tts] synthesized',
   );
 
-  // 5) 캐시 저장
-  setCache(cacheKey, audio, contentType);
+  // 5) 캐시 저장 — 대체 모델로 만든 소리는 원래 모델 키로 굳히지 않는다
+  if (usedModel === model) setCache(cacheKey, audio, contentType);
 
   return {
     audio,
