@@ -69,3 +69,18 @@ export {
   mergeSmaxtecSettings,
 } from './breeding-settings.js';
 export type { BreedingSettingsValidation } from './breeding-settings.js';
+export {
+  BEHAVIOR_METRIC_DEFS,
+  BEHAVIOR_METRIC_MAP,
+  BEHAVIOR_GROUP_LABELS,
+  LYING_TIME_REFERENCE,
+  BEHAVIOR_SMALL_GROUP_THRESHOLD,
+  BEHAVIOR_MAX_ROWS,
+  completeBehaviorMetrics,
+  validateBehaviorRows,
+  normalizeBehaviorGroup,
+  normalizeBehaviorDate,
+  mapBehaviorCsv,
+  computeBehaviorTrend,
+} from './behavior.js';
+export type { BehaviorValidation, BehaviorCsvResult } from './behavior.js';

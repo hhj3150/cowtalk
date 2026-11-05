@@ -28,6 +28,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'breeding-settings', label: '목장 번식 설정', href: '/settings/breeding', icon: 'Calendar',        roles: ['master','farmer','veterinarian','government_admin'],                       order: 81,  group: 'core' },
   { id: 'econ-params',  label: '경제 파라미터', href: '/settings/economics',     icon: 'Calculator',      roles: ['master','farmer','veterinarian','government_admin'],                       order: 82,  group: 'core' },
   { id: 'ai-memory',    label: '팅커벨 기억',   href: '/settings/memory',        icon: 'Brain',           roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 83,  group: 'core' },
+  { id: 'behavior',     label: '휴식·행동',     href: '/behavior',               icon: 'Activity',        roles: ['master','farmer','veterinarian'],                                          order: 34,  group: 'core' },
   { id: 'milk-entry',   label: '유량 입력',     href: '/milk-entry',             icon: 'Milk',            roles: ['master','farmer'],                                                          order: 32,  group: 'core' },
   { id: 'feed-ration',  label: 'TMR 배합비',    href: '/feed-ration',            icon: 'Wheat',           roles: ['master','farmer'],                                                          order: 33,  group: 'core' },
   { id: 'report-sched', label: '보고서 발송',   href: '/settings/reports',       icon: 'Mail',            roles: ['master','farmer','veterinarian','government_admin'],                       order: 84,  group: 'core' },

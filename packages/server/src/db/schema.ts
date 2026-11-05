@@ -481,6 +481,34 @@ export const milkRecords = pgTable('milk_records', {
   index('milk_records_animal_id_idx').on(table.animalId),
 ]);
 
+// 행동 일별 지표 — 우군·그룹 단위 휴식(횡와)·기립·이동·반추 자세 (마이그레이션 0041)
+// 출처와 무관한 일반 저장소: 같은 (farm, group, date, source) 는 한 행 (재업로드 시 갱신)
+export const behaviorDaily = pgTable('behavior_daily', {
+  behaviorId: uuid('behavior_id').primaryKey().defaultRandom(),
+  farmId: uuid('farm_id').notNull().references(() => farms.farmId),
+  groupKey: varchar('group_key', { length: 20 }).notNull().default('all'),
+  date: date('date').notNull(),
+  source: varchar('source', { length: 30 }).notNull(),
+  lyingHours: real('lying_hours'),
+  standingHours: real('standing_hours'),
+  standingActiveHours: real('standing_active_hours'),
+  standingInactiveHours: real('standing_inactive_hours'),
+  movingHours: real('moving_hours'),
+  ruminationLyingMin: real('rumination_lying_min'),
+  ruminationStandingMin: real('rumination_standing_min'),
+  ruminationLyingPct: real('rumination_lying_pct'),
+  ruminationStandingPct: real('rumination_standing_pct'),
+  peakLyingSyncPct: real('peak_lying_sync_pct'),
+  animalCount: integer('animal_count'),
+  raw: jsonb('raw'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('behavior_daily_unique_idx').on(table.farmId, table.groupKey, table.date, table.source),
+  index('behavior_daily_farm_date_idx').on(table.farmId, table.date),
+]);
+
 // 우군(농장) 단위 유량·유성분 일별 기록 — 벌크탱크 기준.
 // price_krw_per_l 기록 시 월간 리포트 유대 추정보다 실기록 단가가 우선한다
 // (목장마다 단가가 다름: 조합/유업체 납유, 유기농 납유, 직접 가공·판매).
