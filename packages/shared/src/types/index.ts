@@ -33,3 +33,4 @@ export * from './diagnosis.js';
 export * from './memory.js';
 export * from './case.js';
 export * from './breeding-settings.js';
+export * from './behavior.js';
