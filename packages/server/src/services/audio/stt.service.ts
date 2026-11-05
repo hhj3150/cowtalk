@@ -6,6 +6,7 @@
 
 import { config } from '../../config/index.js';
 import { logger } from '../../lib/logger.js';
+import { fetchOpenAi, isRetriableStatus, isTransientFailure } from './openai-fetch.js';
 import { getAudioModels } from './model-registry.js';
 
 export interface TranscribeOptions {
@@ -49,12 +50,15 @@ function buildForm(opts: TranscribeOptions, model: SttModel, ext: string): FormD
   return form;
 }
 
-async function callTranscribeApi(apiKey: string, form: FormData): Promise<Response> {
-  return fetch('https://api.openai.com/v1/audio/transcriptions', {
+/** 짧은 발화 인식 상한 — 질문 한 마디가 이보다 오래 걸리면 다시 묻는 편이 낫다 */
+const STT_TIMEOUT_MS = 20_000;
+
+async function callTranscribeApi(apiKey: string, makeForm: () => FormData): Promise<Response> {
+  return fetchOpenAi('https://api.openai.com/v1/audio/transcriptions', () => ({
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}` },
-    body: form,
-  });
+    body: makeForm(),
+  }), { timeoutMs: STT_TIMEOUT_MS, retries: 1 });
 }
 
 export async function transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
@@ -76,7 +80,23 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
   const model: SttModel = opts.model ?? (await getAudioModels()).stt;
 
   const startedAt = Date.now();
-  const response = await callTranscribeApi(apiKey, buildForm(opts, model, ext));
+  let usedModel = model;
+  let response: Response;
+  try {
+    response = await callTranscribeApi(apiKey, () => buildForm(opts, usedModel, ext));
+  } catch (err) {
+    // 시간 초과·네트워크 — 호출자가 모델을 지정하지 않았으면 안정 모델(whisper-1)로 한 번 더
+    if (opts.model || model === 'whisper-1' || !isTransientFailure(err)) throw err;
+    logger.warn({ err, model }, '[stt.service] 일시 장애 — whisper-1 로 대체');
+    usedModel = 'whisper-1';
+    response = await callTranscribeApi(apiKey, () => buildForm(opts, usedModel, ext));
+  }
+  if (!response.ok && isRetriableStatus(response.status) && !opts.model && model !== 'whisper-1') {
+    logger.warn({ status: response.status, model }, '[stt.service] 일시 장애 응답 — whisper-1 로 대체');
+    await response.body?.cancel().catch(() => undefined);
+    usedModel = 'whisper-1';
+    response = await callTranscribeApi(apiKey, () => buildForm(opts, usedModel, ext));
+  }
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
@@ -108,7 +128,7 @@ export async function transcribe(opts: TranscribeOptions): Promise<TranscribeRes
 
   const data = await response.json() as { text?: string; language?: string; duration?: number };
   const elapsed = Date.now() - startedAt;
-  logger.info({ elapsed, model, lang: data.language, textLen: (data.text ?? '').length, audioBytes: opts.audio.length }, '[stt.service] 전사 완료');
+  logger.info({ elapsed, model: usedModel, lang: data.language, textLen: (data.text ?? '').length, audioBytes: opts.audio.length }, '[stt.service] 전사 완료');
 
   return {
     text: (data.text ?? '').trim(),

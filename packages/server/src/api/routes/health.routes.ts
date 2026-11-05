@@ -39,7 +39,6 @@ healthRouter.get('/voice', authenticate, async (req: Request, res: Response, nex
 });
 
 // GET /health/deep — 전체 의존성 검증 (배포 후 확인용)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 healthRouter.get('/deep', async (_req: Request, res: Response, _next: NextFunction) => {
   const startTime = Date.now();
   const checks: HealthCheck[] = [];

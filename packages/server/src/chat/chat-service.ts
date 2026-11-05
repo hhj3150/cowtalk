@@ -75,6 +75,8 @@ export interface ChatMessageRequest {
    */
   readonly assignedFarmIds?: readonly string[];
   readonly isMaster?: boolean;
+  /** 사용자가 연결을 끊으면 생성을 멈춘다 (SSE 경로) */
+  readonly signal?: AbortSignal;
   readonly conversationHistory: readonly ConversationTurn[];
   readonly dashboardContext?: string;
   readonly uiLang?: 'ko' | 'en' | 'uz' | 'ru' | 'mn';
@@ -561,7 +563,7 @@ export async function handleChatStream(
       // 사용자 발화 하나 = 턴 하나. 기록 도구는 제안 턴과 다른 턴의 명시적 승인으로만 실행된다
       confirmationTurn: { turnId: uuidv4(), userUtterance: question },
     },
-    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined },
+    { useDeepThinking, images: request.images, pdfs: pdfs.length > 0 ? pdfs : undefined, signal: request.signal },
   );
 }
 
