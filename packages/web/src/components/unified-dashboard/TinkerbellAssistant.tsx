@@ -3,7 +3,6 @@
 // 음성 입력 → Claude AI 해석 → 음성 응답 + 소버린 학습 현황 통합
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { useAuthStore } from '@web/stores/auth.store';
 import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +20,7 @@ import { correctSttTranscript } from '@web/lib/voice/stt-correction';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
+import { ensureFreshAccessToken } from '@web/api/client';
 
 // iOS Safari 감지 — Web Speech API가 불안정하므로 MediaRecorder + Whisper STT로 우회
 function isIOSDevice(): boolean {
@@ -987,7 +987,8 @@ export function TinkerbellAssistant({
     let partialText = '';
 
     try {
-      const token = useAuthStore.getState().accessToken;
+      // 직접 호출이라 axios 토큰 갱신을 못 탄다 — 만료 직전이면 미리 갱신 (2시간 넘게 띄운 화면 대비)
+      const token = await ensureFreshAccessToken();
       const payload = {
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`

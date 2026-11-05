@@ -258,8 +258,8 @@ async function callSpeechApi(
   }), { timeoutMs: TTS_TIMEOUT_MS, retries: 1 });
 }
 
-/** 문장 하나 합성 상한 — 클라이언트가 기다리는 시간보다 짧게 */
-const TTS_TIMEOUT_MS = 15_000;
+/** 문장 하나 합성 상한 (재시도 포함 ~15초) — 클라이언트 상한(15초) 안에 끝나게 */
+const TTS_TIMEOUT_MS = 7_000;
 /** 최신 모델이 일시 장애일 때 대신 쓰는 안정 모델 (말투 지시는 못 받지만 소리는 난다) */
 const TTS_FALLBACK_MODEL: TtsModel = 'tts-1';
 

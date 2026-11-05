@@ -1,6 +1,6 @@
 // 오디오 API 클라이언트 — TTS 호출 (mp3 Blob 수신)
 
-import { apiClient } from './client';
+import { apiClient, ensureFreshAccessToken } from './client';
 
 export type TtsVoice =
   | 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
@@ -51,13 +51,17 @@ export function looksLikeMp3(buf: ArrayBuffer): boolean {
  *     Content-Encoding: identity 는 HTTP/2에서 디코드 실패를 유발해 제거했다)
  *    (MP3가 한 바이트라도 변형되면 브라우저는 NotSupportedError만 던지고 조용히 죽는다)
  */
+const SPEAK_TIMEOUT_MS = 15_000;
+const TRANSCRIBE_TIMEOUT_MS = 25_000;
+
 export async function speak(request: SpeakRequest, signal?: AbortSignal): Promise<SpeakResult> {
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
   const url = `${apiBase}/api/audio/speak`;
-  const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
+  const token = await ensureFreshAccessToken();
 
+  // 문장 하나 합성 상한 — 길게 기다리면 답변 중간에 침묵이 길어진다 (서버는 자체 재시도·대체 모델)
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
+  const timer = setTimeout(() => controller.abort(), SPEAK_TIMEOUT_MS);
   // VO-12: 호출자가 멈추면(끼어들기·새 질문) 요청 자체를 끊는다 — 이미 보낸 합성 요청도 비용이 든다
   const onCallerAbort = (): void => controller.abort();
   if (signal) {
@@ -142,23 +146,38 @@ export interface TranscribeResult {
  * Netlify 프록시가 audio/* 바이너리를 변조할 위험이 있어 Railway 백엔드를 직접 호출한다
  * (팅커벨 SSE도 동일 패턴 — netlify.toml 주석 참조).
  */
-export async function transcribeAudio(audioBlob: Blob, language?: string): Promise<TranscribeResult> {
+export async function transcribeAudio(audioBlob: Blob, language?: string, signal?: AbortSignal): Promise<TranscribeResult> {
   const contentType = audioBlob.type || 'audio/webm';
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
   const root = apiBase ? `${apiBase}/api` : '/api';
   const url = language ? `${root}/audio/transcribe?lang=${encodeURIComponent(language)}` : `${root}/audio/transcribe`;
 
   // axios 대신 fetch 직접 — axios의 자동 헤더/변환을 우회하여 바이너리 그대로 전송
-  const token = (await import('@web/stores/auth.store')).useAuthStore.getState().accessToken;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': contentType,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: audioBlob,
-    credentials: 'omit',
-  });
+  const token = await ensureFreshAccessToken();
+  // 인식 상한 — 행사장 와이파이에서 무한 대기('생각 중' 고착) 방지. 호출자 중지도 반영
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TRANSCRIBE_TIMEOUT_MS);
+  const onCallerAbort = (): void => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: audioBlob,
+      credentials: 'omit',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onCallerAbort);
+  }
 
   if (!res.ok) {
     let detail = '';
