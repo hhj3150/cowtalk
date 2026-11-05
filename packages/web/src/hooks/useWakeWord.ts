@@ -30,6 +30,13 @@ const INTERRUPT_COMMANDS: readonly string[] = [
 /** 명령 앞뒤로 붙어도 되는 말 ("팅커벨 그만", "그만 그만") */
 const INTERRUPT_FILLERS = /^(팅커벨|팅커|자|야|어|잠깐|이제)+|(이제|요|좀)+$/g;
 
+// 본격 마이크가 열리는 동안 호명 청취기의 재시작을 미룬다.
+// 브라우저 음성 인식은 한 번에 하나 — 둘이 겹치면 한쪽이 끊겨 '마이크를 눌렀는데 아무 반응 없음'이 된다.
+let holdUntil = 0;
+export function holdWakeWord(ms = 4000): void {
+  holdUntil = Math.max(holdUntil, Date.now() + ms);
+}
+
 function normalizeCommand(text: string): string {
   return text.toLowerCase().replace(/[\s.,!?~…·'"]/g, '');
 }
@@ -217,7 +224,7 @@ export function useWakeWord({
         // 충돌하고 브라우저만 바빠진다 → 연속 실패할수록 늦게(최대 15초) 다시 시도
         networkFailsRef.current = lastError === 'network' ? networkFailsRef.current + 1 : 0;
         const backoff = networkFailsRef.current > 0 ? Math.min(15_000, 1000 * 2 ** (networkFailsRef.current - 1)) : 0;
-        const delay = backoff || (isIOS ? 60 : 500);
+        const delay = Math.max(backoff || (isIOS ? 60 : 500), holdUntil - Date.now());
         restartTimeoutRef.current = window.setTimeout(() => {
           restartTimeoutRef.current = null;
           startRecognition();
