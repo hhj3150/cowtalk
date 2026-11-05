@@ -54,6 +54,7 @@ const BreedingSettingsPage = lazy(() => import('@web/pages/settings/BreedingSett
 const BehaviorPage = lazy(() => import('@web/pages/behavior/BehaviorPage'));
 const VoiceCheckPage = lazy(() => import('@web/pages/settings/VoiceCheckPage'));
 const MemoryPage = lazy(() => import('@web/pages/settings/MemoryPage'));
+const ReportSchedulePage = lazy(() => import('@web/pages/settings/ReportSchedulePage'));
 const MilkEntryPage = lazy(() => import('@web/pages/milk/MilkEntryPage'));
 const FeedRationPage = lazy(() => import('@web/pages/feed/FeedRationPage'));
 const ApprovalHistoryPage = lazy(() => import('@web/pages/vet/ApprovalHistoryPage'));
@@ -130,6 +131,7 @@ export function App(): React.JSX.Element {
               <Route path="/settings/economics" element={<EconomicParametersPage />} />
               <Route path="/settings/breeding" element={<BreedingSettingsPage />} />
               <Route path="/settings/memory" element={<MemoryPage />} />
+              <Route path="/settings/reports" element={<ReportSchedulePage />} />
               <Route path="/settings/voice-check" element={<VoiceCheckPage />} />
               <Route path="/milk-entry" element={<MilkEntryPage />} />
               <Route path="/behavior" element={<BehaviorPage />} />
