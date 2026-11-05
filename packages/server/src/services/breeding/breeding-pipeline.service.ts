@@ -428,8 +428,9 @@ function deriveUrgentAction(
 ): BreedingUrgentAction | null {
   if (stage === 'estrus_detected') {
     const estrusEvent = events.find((e) => e.eventType === 'estrus' || e.eventType === 'heat');
+    // 미래 시각(타임존 오파싱 데이터)이면 음수가 되어 "-8시간 전 · 26시간 남음" 같은 잘못된 적기가 나온다 → 0으로 하한
     const hoursSince = estrusEvent
-      ? (now.getTime() - new Date(estrusEvent.detectedAt).getTime()) / 3_600_000
+      ? Math.max(0, (now.getTime() - new Date(estrusEvent.detectedAt).getTime()) / 3_600_000)
       : 0;
     const hoursRemaining = Math.max(0, 18 - hoursSince); // 18시간 윈도우
 
