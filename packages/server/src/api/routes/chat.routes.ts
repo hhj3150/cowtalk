@@ -9,6 +9,7 @@ import { chatMessageSchema } from '@cowtalk/shared';
 import type { Role } from '@cowtalk/shared';
 import { handleChatMessage, handleChatStream, buildStreamFallback } from '../../chat/chat-service.js';
 import { isClaudeAvailable } from '../../ai-brain/claude-client.js';
+import { classifyChatError } from '../../chat/chat-error.js';
 import { resolveContext } from '../../chat/context-builder.js';
 import { sanitizeChatScope } from '../../chat/chat-scope.js';
 import { getAnimalFarmId } from '../middleware/animal-access.js';
@@ -142,10 +143,25 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
   res.write(': stream-open\n\n');
 
   // SSE keep-alive (프록시 타임아웃 방지 — 5초 간격, 기존 10초는 일부 CDN에서 부족)
-  const keepAlive = setInterval(() => { res.write(':\n\n'); }, 5000);
+  const keepAlive = setInterval(() => { if (!res.writableEnded) res.write(':\n\n'); }, 5000);
   req.on('close', () => { clearInterval(keepAlive); });
+  // 사용자가 끊으면(중지·새 질문·창 닫기) 진행 중인 생성도 멈춘다
+  const clientAbort = new AbortController();
   // VO-07: 응답 연결이 끝나면 처리 중 표시를 해제한다 (req 'close'는 본문 수신 직후 올 수 있어 res 기준)
-  res.on('close', () => { if (inflightKey) void releaseInFlight(inflightKey, getRedis()); });
+  res.on('close', () => {
+    clearInterval(keepAlive);
+    if (!res.writableEnded) clientAbort.abort();
+    if (inflightKey) void releaseInFlight(inflightKey, getRedis());
+  });
+  // 끝난 응답에 쓰지 않는다 (onDone 뒤 늦은 onError 등)
+  const send = (payload: Record<string, unknown>): void => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+  const finish = (): void => {
+    clearInterval(keepAlive);
+    if (!res.writableEnded) res.end();
+  };
+  let sentText = false;
 
   // 클라이언트의 farmId/farmIds/animalId는 "요청"일 뿐 권한이 아니다.
   // 맥락(개체·농장 프로필, 농장 펄스, 보고서 데이터)을 만들기 전에 권한과 대조한다.
@@ -178,6 +194,7 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
     // 예전에는 이 구분이 없어 남의 farmId를 넣으면 그 농장 데이터가 나왔다.
     assignedFarmIds: req.user?.farmIds,
     isMaster: req.user?.isMaster,
+    signal: clientAbort.signal,
     conversationHistory: (body.conversationHistory ?? []).slice(-MAX_HISTORY_TURNS),
     dashboardContext: body.dashboardContext,
     uiLang: body.uiLang,
@@ -198,10 +215,9 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
       } catch {
         fallbackText = 'AI 엔진이 현재 오프라인입니다. 대시보드에서 실시간 데이터를 확인해주세요.\n\n💡 잠시 후 다시 시도해 주세요.';
       }
-      res.write(`data: ${JSON.stringify({ type: 'text', content: fallbackText })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'done', content: fallbackText })}\n\n`);
-      clearInterval(keepAlive);
-      res.end();
+      send({ type: 'text', content: fallbackText });
+      send({ type: 'done', content: fallbackText });
+      finish();
       return;
     }
 
@@ -209,32 +225,63 @@ chatRouter.post('/stream', validate({ body: chatMessageSchema }), async (req: Re
       chatRequest,
       {
         onText: (text) => {
-          res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`);
+          sentText = true;
+          send({ type: 'text', content: text });
         },
         onDone: (fullText) => {
-          clearInterval(keepAlive);
-          res.write(`data: ${JSON.stringify({ type: 'done', content: fullText })}\n\n`);
-          res.end();
+          send({ type: 'done', content: fullText });
+          finish();
         },
         onError: (error) => {
-          clearInterval(keepAlive);
-          // error.message가 이미 상세 정보(status, model 등)를 포함 — 그대로 노출
-          const errorMsg = error.message || 'AI 서비스 오류';
-          res.write(`data: ${JSON.stringify({ type: 'error', content: errorMsg })}\n\n`);
-          res.end();
+          void respondToChatFailure(error);
         },
         onToolEvent: (event) => {
-          res.write(`data: ${JSON.stringify({ type: 'tool_event', ...event })}\n\n`);
+          send({ type: 'tool_event', ...event });
         },
       },
     );
   } catch (error) {
-    clearInterval(keepAlive);
-    const msg = error instanceof Error ? error.message : 'AI 서비스 오류가 발생했습니다';
-    res.write(`data: ${JSON.stringify({ type: 'error', content: msg })}\n\n`);
-    res.end();
+    await respondToChatFailure(error);
+  }
+
+  /**
+   * 실패 응답 — 원문 오류는 로그에만. 사용자에게는 사람이 읽을(음성이면 들을) 문장만 보낸다.
+   * 아직 아무 답도 안 나갔으면 DB 데이터 요약으로 대신 답한다 (빈손으로 끝내지 않는다).
+   */
+  async function respondToChatFailure(error: unknown): Promise<void> {
+    if (res.writableEnded) return;
+    if (clientAbort.signal.aborted) { finish(); return; }
+    const classified = classifyChatError(error);
+    logger.error({ err: error, kind: classified.kind, sentText, userId: req.user?.userId }, '[chat] 스트림 답변 실패');
+    if (!sentText) {
+      try {
+        const { context } = await withTimeout(
+          resolveContext(
+            chatRequest.question, chatRequest.farmId, chatRequest.animalId, chatRequest.role, chatRequest.dashboardContext,
+            chatRequest.permittedFarmIds,
+          ),
+          5_000,
+        );
+        const fallback = `${classified.userMessage}\n\n아래는 지금 데이터로 정리한 요약입니다.\n\n${buildStreamFallback(chatRequest.question, chatRequest.role, context)}`;
+        send({ type: 'text', content: fallback });
+        send({ type: 'done', content: fallback, degraded: true });
+        finish();
+        return;
+      } catch (fallbackErr) {
+        logger.warn({ err: fallbackErr }, '[chat] 데이터 요약 대체 응답도 실패');
+      }
+    }
+    send({ type: 'error', content: classified.userMessage, kind: classified.kind });
+    finish();
   }
 });
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`timeout ${String(ms)}ms`)), ms);
+    work.then((v) => { clearTimeout(t); resolve(v); }, (e: unknown) => { clearTimeout(t); reject(e); });
+  });
+}
 
 // 대화 이력 — chat_conversations 기반 (기기·세션을 넘는 장기 기억)
 // ?limit=50&farmId=...&animalId=... 필터 지원. 본인 대화만 조회 가능.

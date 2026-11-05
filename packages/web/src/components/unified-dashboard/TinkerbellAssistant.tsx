@@ -3,7 +3,6 @@
 // 음성 입력 → Claude AI 해석 → 음성 응답 + 소버린 학습 현황 통합
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { useAuthStore } from '@web/stores/auth.store';
 import { useEffectiveRole } from '@web/hooks/useEffectiveRole';
 import { useFarmStore } from '@web/stores/farm.store';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +11,8 @@ import { useIsMobile } from '@web/hooks/useIsMobile';
 import { getSovereignStats } from '@web/api/label-chat.api';
 import type { SovereignAiStats } from '@cowtalk/shared';
 import { useVoiceOutput } from '@web/hooks/useVoiceOutput';
-import { useWakeWord } from '@web/hooks/useWakeWord';
+import { useWakeWord, holdWakeWord } from '@web/hooks/useWakeWord';
+import { readStageMode, subscribeStageMode, shouldWakeListen } from '@web/lib/voice/stage-mode';
 import { useStreamingVoice } from '@web/hooks/useStreamingVoice';
 import { ChunkAccumulator } from '@web/lib/voice/sentence-chunker';
 import { EchoGuard } from '@web/lib/voice/echo-guard';
@@ -21,8 +21,12 @@ import { correctSttTranscript } from '@web/lib/voice/stt-correction';
 import { useT, useLang, type TFunction } from '@web/i18n/useT';
 import { LangSwitcher } from '@web/i18n/LangSwitcher';
 import { transcribeAudio } from '@web/api/audio.api';
+import { ensureFreshAccessToken } from '@web/api/client';
 
 // iOS Safari 감지 — Web Speech API가 불안정하므로 MediaRecorder + Whisper STT로 우회
+/** 브라우저 음성 인식 한 번의 듣기 상한 (말 끝을 못 알아채는 시끄러운 곳 대비) */
+const MAX_LISTEN_MS = 20_000;
+
 function isIOSDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -800,7 +804,11 @@ export function TinkerbellAssistant({
     // 실패를 화면에 드러낸다 — 무음의 원인을 사용자가 알 수 있어야 한다
     onError: (message) => { setVoiceError(message); },
     // 청크 합성이 전부 실패하면 브라우저 TTS로 폴백 — 무음보다 낫다
-    onAllFailed: (fullText) => { speak(fullText, afterSpeechIfCurrent(speechGenRef.current)); },
+    // 대체 음성도 스피커로 나가므로 에코 기억에 넣는다 (예전: 대체 음성만 에코 방어가 없었다)
+    onAllFailed: (fullText) => {
+      echoGuardRef.current.noteSpoken(fullText);
+      speak(fullText, afterSpeechIfCurrent(speechGenRef.current));
+    },
   });
   const { enqueue: enqueueSpeech, end: endSpeech, reset: resetSpeech, stop: stopStreamingSpeech } = streamingVoice;
 
@@ -983,9 +991,12 @@ export function TinkerbellAssistant({
     let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let answerHandle: { readonly controller: AbortController; cancelled: boolean } | null = null;
+    // 끊겨도 살릴 수 있도록 받은 답을 바깥에 둔다
+    let partialText = '';
 
     try {
-      const token = useAuthStore.getState().accessToken;
+      // 직접 호출이라 axios 토큰 갱신을 못 탄다 — 만료 직전이면 미리 갱신 (2시간 넘게 띄운 화면 대비)
+      const token = await ensureFreshAccessToken();
       const payload = {
         question: animalContext
           ? `[팅커벨 AI — 개체 전담 모드]\n이 개체의 센서·알람·번식·건강 데이터를 기반으로 답하세요.\n\n응답 규칙:\n- 자연스러운 대화체로 답하세요. ASCII 차트·표 금지.\n- 수치는 문장으로 설명하세요 ("체온 38.7°C로 정상" 처럼).\n- 일반 축산 질문은 전문 지식으로 자유롭게 답하세요.\n- **bold**, - 목록 등 마크다운 활용 가능.\n\n${animalContext}\n\n사용자 질문: ${question}`
@@ -1033,15 +1044,18 @@ export function TinkerbellAssistant({
       const handle = { controller, cancelled: false };
       answerHandle = handle;
       activeAnswerRef.current = handle;
-      const TOTAL_TIMEOUT_MS = 90_000;
-      const FIRST_BYTE_TIMEOUT_MS = 30_000;
+      // 전체 상한은 답이 끝날 때까지 유지한다 (서버 상한 90초 + 대체 응답 여유).
+      // 예전에는 응답 헤더가 오면 전체 타이머를 껐고, 서버의 5초 keep-alive 가 무응답 감지까지
+      // 매번 초기화해 — 서버가 멈추면 '생각 중'이 영원히 떠 있었다. 이제 실제 데이터 줄만 센다.
+      const TOTAL_TIMEOUT_MS = 105_000;
+      const FIRST_DATA_TIMEOUT_MS = 60_000;
       const STALL_TIMEOUT_MS = 45_000;
       fetchTimeout = setTimeout(() => controller.abort(), TOTAL_TIMEOUT_MS);
       let lastDataAt = Date.now();
-      let firstByteReceived = false;
+      let firstDataReceived = false;
       heartbeat = setInterval(() => {
         const idleMs = Date.now() - lastDataAt;
-        const limit = firstByteReceived ? STALL_TIMEOUT_MS : FIRST_BYTE_TIMEOUT_MS;
+        const limit = firstDataReceived ? STALL_TIMEOUT_MS : FIRST_DATA_TIMEOUT_MS;
         if (idleMs > limit) controller.abort();
       }, 5_000);
 
@@ -1060,10 +1074,10 @@ export function TinkerbellAssistant({
         signal: controller.signal,
       });
 
-      clearTimeout(fetchTimeout);
-
       if (!res.ok || !res.body) {
-        throw new Error(`HTTP ${res.status}`);
+        // 서버가 이유를 JSON 으로 주면 그 문장을 쓴다 (409 같은 질문 처리 중, 429 요청 한도 등)
+        const body = await res.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
+        throw Object.assign(new Error(`HTTP ${res.status}`), { userMessage: body?.error?.message, status: res.status });
       }
 
       // Netlify Edge가 timeout 시 'Inactivity Timeout' HTML을 캐시해서 SSE 응답으로 반환하는
@@ -1091,11 +1105,9 @@ export function TinkerbellAssistant({
 
       while (true) {
         const { value, done } = await reader.read();
-        if (handle.cancelled) return; // barge-in — 이 답변은 확정하지 않는다
+        if (handle.cancelled) { clearInterval(heartbeat); clearTimeout(fetchTimeout); return; } // barge-in — 이 답변은 확정하지 않는다
         if (done) break;
         rawBytes += value.byteLength;
-        lastDataAt = Date.now();
-        firstByteReceived = true;
 
         // 첫 byte가 '<'면 HTML 응답 (Netlify Edge timeout HTML) — 즉시 throw
         if (!firstByteChecked && value.byteLength > 0) {
@@ -1112,6 +1124,8 @@ export function TinkerbellAssistant({
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           dataLineCount++;
+          lastDataAt = Date.now();
+          firstDataReceived = true;
           try {
             const parsed = JSON.parse(line.slice(6)) as StreamChunk;
             if (parsed.type === 'done') {
@@ -1122,6 +1136,7 @@ export function TinkerbellAssistant({
             if (parsed.type === 'text') {
               textEventCount++;
               fullText += parsed.content;
+              partialText = fullText;
               setStreamText(fullText);
               if (firstChunk) { if (speechGenRef.current === answerSpeechGen) setState('speaking'); firstChunk = false; }
               // 문장이 완성되는 즉시 합성·재생을 시작한다 (답변 종료를 기다리지 않음)
@@ -1163,6 +1178,10 @@ export function TinkerbellAssistant({
       clearTimeout(fetchTimeout);
       if (handle.cancelled) return;
       if (activeAnswerRef.current === handle) activeAnswerRef.current = null;
+      if (!doneReceived && fullText) {
+        // done 없이 끊겼다 — 받은 데까지는 보여주되 끊겼다는 사실을 숨기지 않는다
+        fullText += `\n\n${t('tb.err.partial')}`;
+      }
       const elapsedMs = Date.now() - startedAt.getTime();
 
       // 빈 응답 진단 — 어디서 끊겼는지 정확히 표시
@@ -1222,11 +1241,17 @@ export function TinkerbellAssistant({
       if (answerHandle && activeAnswerRef.current === answerHandle) activeAnswerRef.current = null;
       setStreamText('');
       stopStreamingSpeech(); // 중간까지 큐에 쌓인 문장을 끊는다 — 실패한 답변을 계속 읽으면 안 된다
-      const fetchErr = err as { message?: string; name?: string };
+      const fetchErr = err as { message?: string; name?: string; userMessage?: string; status?: number };
       const isAbort = fetchErr.name === 'AbortError';
       const isCacheConflict = fetchErr.message?.includes('캐시 충돌') || fetchErr.message?.includes('HTML');
       const isNetworkError = fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError');
-      const errorContent = isAbort
+      // 받은 답이 있으면 지우지 않는다 — 와이파이가 잠깐 끊겨도 화면에 남은 답은 살린다
+      const kept = partialText.trim() ? `${partialText}\n\n${t('tb.err.partial')}` : '';
+      const errorContent = kept
+        ? kept
+        : fetchErr.userMessage
+        ? `⚠️ ${fetchErr.userMessage}`
+        : isAbort
         ? t('tb.err.no_response')
         : isCacheConflict
         ? t('tb.err.cache_conflict')
@@ -1306,6 +1331,8 @@ export function TinkerbellAssistant({
     return session;
   }, []);
 
+  // 브라우저 음성 인식 서버에 닿지 못한 적이 있으면 이 화면에서는 서버(Whisper) 인식을 쓴다
+  const preferServerSttRef = useRef(false);
   const startListeningWhisper = useCallback(async () => {
     setVoiceError(null);
     // 피드백 루프 방지 — 진행 중인 모든 음성 출력 강제 중단
@@ -1464,11 +1491,13 @@ export function TinkerbellAssistant({
   // iOS Safari 중요: await 체인이 사용자 제스처 컨텍스트를 끊으므로
   // recognition.start()를 동기적으로 먼저 호출해야 한다. 권한 거부는 onerror로 잡힌다.
   const startListening = useCallback(() => {
-    // iOS는 Web Speech API 불안정 → MediaRecorder + Whisper로 우회
-    if (isIOSDevice()) {
+    // iOS는 Web Speech API 불안정 → MediaRecorder + Whisper로 우회.
+    // 데스크톱도 브라우저 음성 서버에 닿지 못한 적이 있으면(행사장 와이파이) 서버 인식으로 간다
+    if (isIOSDevice() || preferServerSttRef.current) {
       void startListeningWhisper();
       return;
     }
+    holdWakeWord();
 
     setVoiceError(null);
 
@@ -1510,6 +1539,10 @@ export function TinkerbellAssistant({
     recognition.continuous = false;
     recognition.interimResults = true;
 
+    // 시끄러운 강연장에서는 말이 끝난 걸 못 알아채 듣기가 끝나지 않을 수 있다 — 상한을 둔다
+    const maxListenTimer = window.setTimeout(() => {
+      if (session === listenSessionRef.current) { try { recognition.stop(); } catch { /* ignore */ } }
+    }, MAX_LISTEN_MS);
     recognition.onstart = () => {
       if (session !== listenSessionRef.current) return;
       setState('listening');
@@ -1537,6 +1570,7 @@ export function TinkerbellAssistant({
     };
 
     recognition.onend = () => {
+      window.clearTimeout(maxListenTimer);
       if (session !== listenSessionRef.current) return; // 새 세션이 시작돼 멈춘 이전 인식기
       const rawText = transcriptRef.current.trim();
       // 정규화 → 축산 도메인 보정 ("사백이십삼번" → "423번", "발전 왔어" → "발정 왔어")
@@ -1577,7 +1611,11 @@ export function TinkerbellAssistant({
           setVoiceError('마이크를 찾을 수 없습니다.');
           break;
         case 'network':
-          setVoiceError('음성 인식 서버에 연결할 수 없습니다. 인터넷을 확인해 주세요.');
+          // 브라우저 음성 서버(구글)에 닿지 못함 — 행사장 와이파이에서 흔하다.
+          // 이 화면에서는 CowTalk 서버 인식으로 바꾸고 바로 다시 듣는다.
+          preferServerSttRef.current = true;
+          setVoiceError('브라우저 음성 인식에 연결할 수 없어 CowTalk 서버 인식으로 전환했습니다. 이어서 말씀해 주세요.');
+          void startListeningWhisper();
           break;
         case 'aborted':
           // 사용자 취소 — 메시지 없음
@@ -1596,7 +1634,21 @@ export function TinkerbellAssistant({
         setVoiceError('음성 인식을 시작할 수 없습니다.');
       }
     }
-  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput, stopStreamingSpeech, cancelActiveAnswer, stopAllSpeech, beginListenSession, submitVoiceUtterance]);
+  }, [hasSpeechRecognition, askTinkerbell, uiLang, voiceOutput, stopStreamingSpeech, cancelActiveAnswer, stopAllSpeech, beginListenSession, submitVoiceUtterance, startListeningWhisper]);
+
+  // 빨간 중지 버튼 — 말하는 중이면 소리만 끄고(글은 남김), 생각 중이면 그 답변 자체를 취소한다.
+  // 예전에는 생각 중에 눌러도 서버 답변이 계속 흘러와 나중에 화면에 튀어나왔다.
+  // 음성 인식 결과를 기다리는 중이었다면 그 결과도 버린다 (늦게 와서 질문으로 제출되지 않게).
+  const handleStopButton = useCallback((): void => {
+    const wasThinking = state === 'thinking';
+    stopAllSpeech();
+    if (wasThinking) {
+      cancelActiveAnswer();
+      listenSessionRef.current++;
+    }
+    handsFreeRef.current = false;
+    setState('idle');
+  }, [state, stopAllSpeech, cancelActiveAnswer]);
 
   // 음성 인식 중지 — Web Speech API + MediaRecorder 양쪽 대응
   const stopListening = useCallback(() => {
@@ -1860,7 +1912,10 @@ export function TinkerbellAssistant({
   // "팅커벨"을 무한 재호출했기 때문인데, 그 대가로 답변 도중에는 끼어들 수가 없었다.
   // 이제 EchoGuard가 자기 발화를 걸러내므로 'speaking'/'thinking' 중에도 켜둔다 → 진짜 barge-in.
   // 'listening' 중에만 끈다 (본격 마이크와 동시에 점유하면 인식이 서로 깨진다).
-  const wakeShouldListen = alwaysOpen && wakeEnabled && state !== 'listening';
+  // 강연 모드(스피커가 큰 곳)에서는 말하는 중·생각 중에는 듣지 않는다 — 자기 소리에 반응하지 않게
+  const [stageMode, setStageMode] = useState<boolean>(() => readStageMode());
+  useEffect(() => subscribeStageMode(setStageMode), []);
+  const wakeShouldListen = shouldWakeListen({ alwaysOpen, wakeEnabled, stageMode, state });
   const wakeShouldIgnore = useCallback(
     (heard: string) => echoGuardRef.current.isEcho(heard),
     [],
@@ -2529,7 +2584,7 @@ export function TinkerbellAssistant({
             {/* 말하는 중 중지 — OpenAI 또는 브라우저 TTS 모두 정지 */}
             {(state === 'speaking' || state === 'thinking' || voiceOutput.isPlaying) && (
               <button type="button"
-                onClick={() => { stopAllSpeech(); handsFreeRef.current = false; setState('idle'); }}
+                onClick={handleStopButton}
                 style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: '#ef444420', border: '1px solid #ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 title="말하기 중지"
               >
@@ -3007,7 +3062,7 @@ export function TinkerbellAssistant({
         {/* 말하는 중 → 중지 버튼 (OpenAI 또는 브라우저 TTS 모두 정지) */}
         {(state === 'speaking' || state === 'thinking' || voiceOutput.isPlaying) && (
           <button
-            onClick={() => { stopAllSpeech(); handsFreeRef.current = false; setState('idle'); }}
+            onClick={handleStopButton}
             style={{
               width: 40,
               height: 40,

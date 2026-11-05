@@ -178,15 +178,28 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
         objectUrlRef.current = url;
 
         let settled = false;
+        let watchdog: number | undefined;
         const done = (): void => {
           if (settled) return;
           settled = true;
+          if (watchdog !== undefined) window.clearTimeout(watchdog);
           resolve();
+        };
+        // 감시견 — ended/error 가 끝내 오지 않으면(재생 중 출력 장치 변경: HDMI·강연장 스피커 연결 등)
+        // 큐가 영원히 멈추고 '말하는 중'에 갇힌다. 소리 길이 + 여유가 지나면 다음 문장으로 넘어간다.
+        const armWatchdog = (audio: HTMLAudioElement): void => {
+          if (watchdog !== undefined) window.clearTimeout(watchdog);
+          const d = audio.duration;
+          const ms = Number.isFinite(d) && d > 0 ? d * 1000 + 3000 : 45_000;
+          watchdog = window.setTimeout(done, ms);
         };
 
         const attach = (audio: HTMLAudioElement): void => {
           audio.onended = done;
           audio.onerror = done;
+          // 재생 도중 멈춤(장치 변경 등)도 끝으로 본다 — 멈춘 채 기다리면 대화 전체가 서 버린다
+          audio.onpause = () => { if (!audio.ended && audio.currentTime > 0) done(); };
+          audio.onloadedmetadata = () => armWatchdog(audio);
           audio.src = url;
           audio.load(); // 새 src로 로드 (src를 비운 채 load하면 엘리먼트가 에러 상태가 된다)
         };
@@ -204,6 +217,7 @@ export function useStreamingVoice(options: UseStreamingVoiceOptions = {}): UseSt
         const reused = getAudioElement();
         attach(reused);
 
+        armWatchdog(reused);
         reused.play().then(
           () => {
             if (!playedAnythingRef.current && t0Ref.current > 0) {
