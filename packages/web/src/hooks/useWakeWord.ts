@@ -21,29 +21,33 @@ const WAKE_PATTERNS: readonly RegExp[] = [
   /칭커벨/,
 ];
 
-// 답변 중지 키워드 — 사용자가 응답을 끊고 싶을 때
-const DEFAULT_INTERRUPT_PATTERNS: readonly RegExp[] = [
-  /조용히\s*해/,
-  /조용히/,
-  /그만\s*해/,
-  /그만/,
-  /멈춰/,
-  /닥쳐/,
-  /\bstop\b/i,
-  /shut\s*up/i,
-  /be\s*quiet/i,
+// 답변 중지 명령 — "발화 전체가 명령"일 때만 인정한다.
+// 예전에는 문장 어디든 들어 있으면 중지했다: 답변 속 "그만큼"이 스피커로 되들어와 스스로 멈췄다.
+const INTERRUPT_COMMANDS: readonly string[] = [
+  '그만', '그만해', '그만해요', '그만하세요', '그만해줘', '조용히', '조용히해', '조용히해요', '조용히해줘',
+  '멈춰', '멈춰요', '멈춰줘', '닥쳐', '스톱', 'stop', 'stopit', 'shutup', 'bequiet',
 ];
+/** 명령 앞뒤로 붙어도 되는 말 ("팅커벨 그만", "그만 그만") */
+const INTERRUPT_FILLERS = /^(팅커벨|팅커|자|야|어|잠깐|이제)+|(이제|요|좀)+$/g;
+
+function normalizeCommand(text: string): string {
+  return text.toLowerCase().replace(/[\s.,!?~…·'"]/g, '');
+}
 
 function matchesWakeWord(text: string): boolean {
   const cleaned = text.trim().toLowerCase();
   return WAKE_PATTERNS.some((re) => re.test(cleaned));
 }
 
-function matchesInterrupt(text: string, extraPatterns?: readonly RegExp[]): boolean {
+export function matchesInterrupt(text: string, extraPatterns?: readonly RegExp[]): boolean {
+  const compact = normalizeCommand(text);
+  if (compact.length === 0 || compact.length > 12) return false;
+  const core = compact.replace(INTERRUPT_FILLERS, '');
+  if (INTERRUPT_COMMANDS.includes(core)) return true;
+  // "그만그만"처럼 같은 명령 반복
+  if (INTERRUPT_COMMANDS.some((c) => core.length > 0 && core === c.repeat(core.length / c.length))) return true;
   const cleaned = text.trim().toLowerCase();
-  if (DEFAULT_INTERRUPT_PATTERNS.some((re) => re.test(cleaned))) return true;
-  if (extraPatterns && extraPatterns.some((re) => re.test(cleaned))) return true;
-  return false;
+  return Boolean(extraPatterns && extraPatterns.some((re) => re.test(cleaned)));
 }
 
 interface UseWakeWordOptions {
@@ -96,6 +100,7 @@ export function useWakeWord({
   const shouldIgnoreRef = useRef(shouldIgnore);
   const enabledRef = useRef(enabled);
   const restartTimeoutRef = useRef<number | null>(null);
+  const networkFailsRef = useRef(0);
 
   // ref 업데이트
   useEffect(() => {
@@ -189,7 +194,9 @@ export function useWakeWord({
       }
     };
 
+    let lastError: string | null = null;
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      lastError = event.error;
       // 'no-speech', 'audio-capture', 'aborted' 등은 무해 — 자동 재시작
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         // 권한 거부 — 재시작하지 않음
@@ -206,7 +213,11 @@ export function useWakeWord({
       // iOS는 세션 자체가 짧으므로(continuous 미지원) 빠르게 재시작 → "rolling" 청취.
       // Android/데스크톱은 continuous 종료 후 일정 시간 뒤 재시작.
       if (enabledRef.current) {
-        const delay = isIOS ? 60 : 500;
+        // 네트워크 오류(행사장 와이파이·음성 서버 차단)는 0.5초마다 재시작하면 본격 마이크와
+        // 충돌하고 브라우저만 바빠진다 → 연속 실패할수록 늦게(최대 15초) 다시 시도
+        networkFailsRef.current = lastError === 'network' ? networkFailsRef.current + 1 : 0;
+        const backoff = networkFailsRef.current > 0 ? Math.min(15_000, 1000 * 2 ** (networkFailsRef.current - 1)) : 0;
+        const delay = backoff || (isIOS ? 60 : 500);
         restartTimeoutRef.current = window.setTimeout(() => {
           restartTimeoutRef.current = null;
           startRecognition();

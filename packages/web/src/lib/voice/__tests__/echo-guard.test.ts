@@ -81,13 +81,25 @@ describe('EchoGuard — 실제 에코만 차단한다', () => {
     expect(new EchoGuard().isEcho('체온이 높습니다')).toBe(false);
   });
 
-  it('기억은 짧게만 유지된다 — 사용자의 다음 발언까지 잡아먹지 않도록', () => {
+  it('기억은 "문장을 다 읽는 시간 + 잔향 여유"까지만 — 사용자의 다음 발언까지 잡아먹지 않도록', () => {
     let now = 1_000_000;
     const guard = new EchoGuard({ memoryMs: 4000, now: () => now });
     guard.noteSpoken(ANSWER);
     expect(guard.isEcho('수정 적기는 오늘 아침 6시경으로 계산됩니다')).toBe(true);
+    // 읽는 도중(시작 후 5초)에는 문장 뒷부분이 되돌아와도 여전히 에코 — 예전엔 4초 뒤 무방비였다
     now += 5000;
+    expect(guard.isEcho('수정 적기는 오늘 아침 6시경으로 계산됩니다')).toBe(true);
+    // 다 읽고 잔향 여유까지 지나면 잊는다
+    now += 120_000;
     expect(guard.isEcho('수정 적기는 오늘 아침 6시경으로 계산됩니다')).toBe(false);
+  });
+
+  it('방금 말한 문장 속 짧은 조각(자기 이름)이 되돌아오면 에코 — 스스로 호출되지 않게', () => {
+    const guard = new EchoGuard();
+    guard.noteSpoken('안녕하세요, 저는 팅커벨입니다. 무엇을 도와드릴까요?');
+    expect(guard.isEcho('팅커벨')).toBe(true);
+    // 말하지 않은 짧은 명령은 그대로 통과
+    expect(guard.isEcho('그만')).toBe(false);
   });
 
   it('clear로 즉시 잊는다 — 마이크를 사용자에게 여는 순간 호출된다', () => {
