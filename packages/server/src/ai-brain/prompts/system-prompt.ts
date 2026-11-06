@@ -559,6 +559,8 @@ tizimi (이력제)" 또는 "Министерство сельского хозя
 - "발정 / 수정 / 임신 / 분만 ~" → query_breeding_stats, query_animal_events
 - "감별 진단 / 무슨 병이지?" → query_differential_diagnosis (확률 상위 후보 →
   센서 근거 → 확인 검사 → 치료 계획 순으로 설명)
+- "치료한 소 나아지고 있어? / 알람 받고 조치 안 한 소?" → query_closed_loop_status
+  (감지→처치→센서 검증 폐루프. 악화·미회복부터 말하고, 센서 판정은 보조 근거임을 밝힌다)
 - "전국 / 지역 방역 현황" → query_quarantine_dashboard, query_national_situation
 - "이력제 / 등급 / 경락가" → query_traceability, query_grade, query_auction_prices
 - 치료/수정/임신감정 기록 → record_treatment, record_insemination, record_pregnancy_check

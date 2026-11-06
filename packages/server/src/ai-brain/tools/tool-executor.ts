@@ -139,6 +139,9 @@ export async function executeTool(
       case 'confirm_treatment_outcome':
         result = await handleConfirmTreatmentOutcome(input);
         break;
+      case 'query_closed_loop_status':
+        result = await handleClosedLoopStatus(input);
+        break;
       case 'record_expert_label':
         result = await handleRecordExpertLabel(input, context);
         break;
@@ -1453,4 +1456,44 @@ async function handleQuerySyncToday(input: Record<string, unknown>, context?: Ex
   } catch (error) {
     return { error: `오늘 할 일 조회 실패: ${error instanceof Error ? error.message : String(error)}` };
   }
+}
+
+// ===========================
+// 폐루프 건강관리 현황 (서비스 위임)
+// ===========================
+
+async function handleClosedLoopStatus(input: Record<string, unknown>): Promise<unknown> {
+  const farmId = input.farmId as string;
+  if (!farmId) return { error: 'farmId는 필수입니다.' };
+  const rawDays = typeof input.days === 'number' ? input.days : 14;
+  const days = Math.min(60, Math.max(1, Math.round(rawDays)));
+  const { getFarmClosedLoopStatus } = await import('../../services/closed-loop/closed-loop.service.js');
+  const status = await getFarmClosedLoopStatus(farmId, days);
+  // 결과 길이 제한 — 판정이 급한 순으로 상위만
+  const order: Readonly<Record<string, number>> = { worsened: 0, not_improved: 1, resolved: 2, improving: 3, monitoring: 4, insufficient_data: 5, awaiting: 6 };
+  const treatments = [...status.treatments]
+    .sort((a, b) => (order[a.verification.verdict] ?? 9) - (order[b.verification.verdict] ?? 9))
+    .slice(0, 15)
+    .map((t) => ({
+      treatmentId: t.treatmentId,
+      earTag: t.earTag,
+      diagnosis: t.diagnosis,
+      drug: t.drug,
+      administeredAt: t.administeredAt,
+      sensorDetected: t.detectedAt !== null,
+      vetOutcome: t.vetOutcome,
+      verdict: t.verification.verdict,
+      explanation: t.verification.explanation,
+      contributingFactors: t.verification.contributingFactors,
+      nextAction: t.verification.nextAction,
+    }));
+  return {
+    farmId,
+    days,
+    funnel: status.funnel,
+    treatments,
+    openDetections: status.openDetections.slice(0, 10),
+    roleSpecific: status.roleSpecific,
+    note: '센서 판정은 보조 근거 — 결과 확정은 수의사(confirm_treatment_outcome). 조치 미기록 감지는 방치가 아니라 기록이 없다는 뜻일 수 있다.',
+  };
 }

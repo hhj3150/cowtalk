@@ -14,6 +14,7 @@ import { syncHanwooSemenFromPublicApi } from '../services/breeding/semen-seed.se
 import { runBreedingReminders } from '../services/breeding/breeding-reminder.service.js';
 import { syncAllFarmSettings } from '../services/breeding/farm-settings-sync.service.js';
 import { runTreatmentOutcomeCheck } from '../services/vet/treatment-outcome.service.js';
+import { runClosedLoopVerification } from '../services/closed-loop/closed-loop.service.js';
 import { completeAfterSnapshots } from '../services/sovereign-alarm/snapshot/snapshot.service.js';
 import { getDb } from '../config/database.js';
 import { animals, sensorMeasurements } from '../db/schema.js';
@@ -433,6 +434,11 @@ export class PipelineOrchestrator {
     // 치료 결과 추적 배치 (센서 비교 → 회복/악화 자동 판정)
     runTreatmentOutcomeCheck().catch((err) => {
       logger.error({ err }, '[Pipeline] 치료 결과 추적 배치 실패');
+    });
+
+    // 폐루프 센서 검증 (감지→개입→검증 — 질환별 검증 창·기준으로 treatments.details.closedLoop 갱신)
+    runClosedLoopVerification().catch((err) => {
+      logger.error({ err }, '[Pipeline] 폐루프 센서 검증 배치 실패');
     });
 
     // 알람 패턴 스냅샷 완료 (48h 경과 이벤트의 after 데이터 캡처)

@@ -1,7 +1,7 @@
 // 치료 결과 추적 배치 — 6시간 주기
 // 최근 7일 치료 건의 센서 데이터를 비교하여 회복/악화 자동 판정
 
-import { eq, and, gte, desc } from 'drizzle-orm';
+import { eq, and, gte, lt, desc } from 'drizzle-orm';
 import { getDb } from '../../config/database.js';
 import { treatments, healthEvents, sensorDailyAgg, animals, type TreatmentDetails } from '../../db/schema.js';
 import { logger } from '../../lib/logger.js';
@@ -55,10 +55,12 @@ export function assessRecovery(pre: SensorAvg, post: SensorAvg): RecoveryAssessm
 async function loadSensorAvg(
   animalId: string,
   fromDate: Date,
-  _toDate: Date,
+  toDate: Date,
 ): Promise<SensorAvg> {
   const db = getDb();
   const fromStr = fromDate.toISOString().slice(0, 10);
+  // 상한 필수 — 없으면 '치료 전 3일' 기준선에 치료 후 데이터가 섞여 회복 판정이 무뎌진다
+  const toStr = toDate.toISOString().slice(0, 10);
 
   const rows = await db
     .select({ metricType: sensorDailyAgg.metricType, avg: sensorDailyAgg.avg })
@@ -66,6 +68,7 @@ async function loadSensorAvg(
     .where(and(
       eq(sensorDailyAgg.animalId, animalId),
       gte(sensorDailyAgg.date, fromStr),
+      lt(sensorDailyAgg.date, toStr),
     ))
     .orderBy(desc(sensorDailyAgg.date))
     .limit(30);

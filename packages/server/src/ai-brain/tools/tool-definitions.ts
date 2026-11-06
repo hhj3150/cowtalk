@@ -378,6 +378,18 @@ export const TINKERBELL_TOOLS: readonly Anthropic.Tool[] = [
     },
   },
   {
+    name: 'query_closed_loop_status',
+    description: '폐루프 건강관리 현황. smaXtec 건강 감지 → 처치(개입) → 센서 검증 → 수의사 확정까지 루프가 닫혔는지 농장 단위로 보여준다. 감지→개입 연결률, 개입→검증 종결률, 처치별 센서 판정(회복/회복추세/미회복/악화 — 질환별 검증 창·기준), 조치 미기록 감지 목록을 반환한다. "치료한 소들 나아지고 있어?", "알람 받고 조치 안 한 소 있어?" 같은 질문에 쓴다. 센서 판정은 보조 근거이며 확정은 수의사가 한다.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        farmId: { type: 'string', description: '농장 ID (필수)' },
+        days: { type: 'number', description: '조회 기간(일). 기본 14, 최대 60' },
+      },
+      required: ['farmId'],
+    },
+  },
+  {
     name: 'record_expert_label',
     description: '전문가 레이블 기록 (수의사·방역관 전용). 전문가가 특정 개체의 데이터를 보고 내린 진단·방역 판단을 고신뢰 학습 레이블로 기록한다. 최근 AI 알람과 매칭되면 정답 판정(confirmed/modified)으로 event_labels에 저장되어 모델 학습 루프에 직접 들어가고, 매칭 알람이 없으면 임상관찰로 보존된다. 농장주의 추측은 레이블로 삼지 않으므로 농장주는 이 도구에 접근할 수 없다.',
     input_schema: {
