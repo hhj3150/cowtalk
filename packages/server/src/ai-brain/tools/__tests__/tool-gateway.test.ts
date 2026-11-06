@@ -81,7 +81,7 @@ describe('Tool Gateway — 권한 매트릭스 일관성', () => {
 
   describe('도구 정의 — 25개 시연 도구 인벤토리', () => {
     it('정확히 25개 도구가 정의되어 있다 (CLAUDE.md MCP 도구 체계와 일치)', () => {
-      expect(TINKERBELL_TOOLS.length).toBe(25);
+      expect(TINKERBELL_TOOLS.length).toBe(26);
     });
 
     it('모든 도구는 name과 description을 갖는다', () => {

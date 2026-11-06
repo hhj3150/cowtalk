@@ -17,7 +17,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import type { AutomationTrigger, AutomationAction, StoredBreedingSettings } from '@cowtalk/shared';
+import type { AutomationTrigger, AutomationAction, StoredBreedingSettings, LoopVerification } from '@cowtalk/shared';
 
 // ======================================================================
 // A-0. 멀티테넌트
@@ -345,6 +345,8 @@ export interface TreatmentDetails {
   readonly outcomeConfirmedBy?: string;
   readonly sensorEvidencePre?: { readonly temp?: number; readonly rumination?: number; readonly activity?: number };
   readonly sensorEvidencePost?: { readonly temp?: number; readonly rumination?: number; readonly activity?: number };
+  /** 폐루프 센서 검증 (closed-loop.service — 배치가 이 키만 원자적으로 갱신, outcomeStatus 는 건드리지 않음) */
+  readonly closedLoop?: LoopVerification;
 }
 
 export const treatments = pgTable('treatments', {

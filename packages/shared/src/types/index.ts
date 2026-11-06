@@ -21,6 +21,7 @@ export * from './decision-queue.js';
 export * from './ontology.js';
 export * from './farm-index.js';
 export * from './automation.js';
+export * from './closed-loop.js';
 export * from './farm-profit.js';
 export * from './vet-route.js';
 export * from './insemination-route.js';

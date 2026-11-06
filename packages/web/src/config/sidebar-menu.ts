@@ -23,6 +23,7 @@ export const SIDEBAR_MENU: MenuItem[] = [
   { id: 'sensor-cmp',   label: '센서 비교',     href: '/sensor/compare',         icon: 'Activity',        roles: ['master','veterinarian','government_admin'],                                order: 50,  group: 'analytics' },
   { id: 'region-map',   label: '지역 지도',     href: '/regional-map',           icon: 'Map',             roles: ['master','government_admin','quarantine_officer'],                          order: 55,  group: 'analytics' },
   { id: 'epi-dash',     label: '방역 대시보드', href: '/epidemiology/dashboard', icon: 'ShieldAlert',     roles: ['master','government_admin','quarantine_officer'],                          order: 60,  group: 'analytics' },
+  { id: 'closed-loop',  label: '폐루프 건강관리', href: '/closed-loop',          icon: 'Stethoscope',     roles: ['master','farmer','veterinarian'],                                          order: 42,  group: 'core' },
   { id: 'automation',   label: '자동화 룰',     href: '/automation',             icon: 'Zap',             roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 78,  group: 'core' },
   { id: 'alerts',       label: '알림 설정',     href: '/notifications',          icon: 'Bell',            roles: ['master','farmer','veterinarian','government_admin','quarantine_officer'], order: 80,  group: 'core' },
   { id: 'breeding-settings', label: '목장 번식 설정', href: '/settings/breeding', icon: 'Calendar',        roles: ['master','farmer','veterinarian','government_admin'],                       order: 81,  group: 'core' },

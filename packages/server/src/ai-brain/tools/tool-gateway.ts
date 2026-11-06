@@ -52,6 +52,7 @@ export const TOOL_DOMAIN_MAP: Readonly<Record<string, string>> = {
   get_farm_kpis: 'farm',
   query_differential_diagnosis: 'health',
   confirm_treatment_outcome: 'health',
+  query_closed_loop_status: 'health',
   record_expert_label: 'health',
 };
 
@@ -67,7 +68,7 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_conception_stats', 'recommend_insemination_window', 'get_farm_kpis',
     'record_treatment', 'record_insemination', 'record_pregnancy_check',
     'query_grade', 'query_auction_prices', 'query_weather', 'query_sire_info',
-    'query_differential_diagnosis', 'confirm_treatment_outcome',
+    'query_differential_diagnosis', 'confirm_treatment_outcome', 'query_closed_loop_status',
     'schedule_sync_protocol', 'query_sync_today',
   ],
   veterinarian: [
@@ -77,19 +78,19 @@ export const ROLE_TOOL_ACCESS: Readonly<Record<string, readonly string[]>> = {
     'query_conception_stats', 'record_treatment', 'get_farm_kpis',
     'recommend_insemination_window', 'record_insemination', 'record_pregnancy_check',
     'query_grade', 'query_weather', 'query_sire_info',
-    'query_differential_diagnosis', 'confirm_treatment_outcome',
+    'query_differential_diagnosis', 'confirm_treatment_outcome', 'query_closed_loop_status',
     'schedule_sync_protocol', 'query_sync_today',
     'record_expert_label',
   ],
   government_admin: [
     'query_animal', 'query_animal_graph', 'query_farm_summary', 'query_breeding_stats',
-    'query_traceability', 'get_farm_kpis',
+    'query_traceability', 'get_farm_kpis', 'query_closed_loop_status',
     'query_grade', 'query_auction_prices',
     'query_quarantine_dashboard', 'query_national_situation',
   ],
   quarantine_officer: [
     'query_animal', 'query_animal_events', 'query_animal_graph', 'query_farm_summary',
-    'query_sensor_data', 'query_traceability', 'get_farm_kpis',
+    'query_sensor_data', 'query_traceability', 'get_farm_kpis', 'query_closed_loop_status',
     'query_weather',
     'query_quarantine_dashboard', 'query_national_situation',
     'record_expert_label',

@@ -49,6 +49,7 @@ const BreedingCalendarPage = lazy(() => import('@web/pages/breeding/BreedingCale
 const SensorComparePage = lazy(() => import('@web/pages/sensor/SensorComparePage'));
 const SubscriptionPage = lazy(() => import('@web/pages/settings/SubscriptionPage'));
 const AutomationRulesPage = lazy(() => import('@web/pages/settings/AutomationRulesPage'));
+const ClosedLoopPage = lazy(() => import('@web/pages/vet/ClosedLoopPage'));
 const EconomicParametersPage = lazy(() => import('@web/pages/settings/EconomicParametersPage'));
 const BreedingSettingsPage = lazy(() => import('@web/pages/settings/BreedingSettingsPage'));
 const BehaviorPage = lazy(() => import('@web/pages/behavior/BehaviorPage'));
@@ -127,6 +128,7 @@ export function App(): React.JSX.Element {
               <Route path="/notifications" element={<NotificationSettingsPage />} />
               <Route path="/subscription" element={<SubscriptionPage />} />
               <Route path="/automation" element={<AutomationRulesPage />} />
+              <Route path="/closed-loop" element={<ClosedLoopPage />} />
               <Route path="/settings/economics" element={<EconomicParametersPage />} />
               <Route path="/settings/breeding" element={<BreedingSettingsPage />} />
               <Route path="/settings/memory" element={<MemoryPage />} />

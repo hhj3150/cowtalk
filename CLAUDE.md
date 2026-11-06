@@ -422,7 +422,7 @@ DB 영속화:
 
 ## MCP 도구 체계 (2026-04-03 Phase 4 완료)
 
-팅커벨 AI가 사용하는 도구 25개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
+팅커벨 AI가 사용하는 도구 26개. tool-definitions.ts → tool-executor.ts → tool-gateway.ts 3파일 구조.
 
 | 도메인 | 도구명 | 유형 | 설명 |
 |--------|--------|------|------|
@@ -450,6 +450,7 @@ DB 영속화:
 | genetics | query_sire_info | 조회 | 한우 씨수소 정보 (농촌진흥청) |
 | vet | query_differential_diagnosis | 분석 | 감별진단 6개 질병 확률 순위 + 센서 근거 + 확인검사 트리 |
 | vet | confirm_treatment_outcome | 기록 | 치료 결과 추적 (회복/악화/모니터링 센서 비교 판정) |
+| vet | query_closed_loop_status | 조회 | 폐루프 현황 (감지→개입 연결률, 처치별 센서 검증 판정, 조치 미기록 감지) |
 | vet | record_expert_label | 기록 | 전문가 레이블 (수의사·방역관 전용). 대화 중 진단·방역 판단 → event_labels 정답 레이블 |
 
 역할별 접근 권한: tool-gateway.ts의 ROLE_TOOL_ACCESS 참조.
@@ -534,6 +535,30 @@ DB 영속화:
   기억이 블랙박스면 잘못된 기억이 조용히 답변을 오염시킨다
 - API: GET/POST /memory, PATCH/DELETE /memory/:id, POST /memory/decay(관리자)
 - 테스트 66건 (게이트·명시지시·파싱·통합·감쇠·회상·망각·권한경계)
+
+## 폐루프 건강관리 (2026-11-06, Closed-Loop Health Management)
+
+참고: smaXtec 발표(2024-05, TheCattleSite) — 볼루스에 미세기계식 방출 장치를 넣어 센서·AI 판단에 따라
+약물·사료첨가제를 체내에서 개체별로 방출하는 폐루프 시스템 **개발 중** (특허 출원 중, 제약·영양 파트너 모집,
+상용화 일정·수치·안전성 자료 미공개). 그 발표에는 **투여 이후 효과 확인 단계가 없다**.
+
+CowTalk 의 위치: 하드웨어 경쟁이 아니라 **루프를 소프트웨어로 끝까지 닫는다**.
+① 감지(smaXtec 이벤트, 신뢰·재판단 안 함) → ② 개입(치료·보충제·관리) → ③ 센서 검증 → ④ 수의사 확정
+
+- 순수 로직: `services/closed-loop/closed-loop-protocols.ts`(질환 7종 + 일반: 개입 후보·검증 창·회복/악화 기준 단일 원천),
+  `closed-loop-engine.ts`(검증·에피소드 병합·감지↔개입 연결). 테스트 17건
+- 검증 창: 기준선 = 감지 전날까지 3일 / 검증 = 처치 + verifyStartHours 부터 verifyWindowHours / 최근값 = 마지막 2일 평균
+  → "오늘 투여, 오늘 판정" 금지, 처치 후 데이터가 기준선에 섞이지 않음
+- 기준은 실수집 3메트릭(체온·반추·활동)만. 반추·활동은 기준선 대비 비율. 음수량·pH 는 미수집이라 기준 아님
+- 판정: awaiting / monitoring / improving / resolved / not_improved / worsened / insufficient_data.
+  센서 판정은 **보조 근거** — `outcomeStatus` 는 건드리지 않고 수의사가 confirm_treatment_outcome 으로 확정
+- 배치: 파이프라인 일 배치에서 `runClosedLoopVerification()` → `treatments.details.closedLoop` 키만 jsonb 병합(동시 확정 덮어쓰기 방지)
+- API: `GET /closed-loop/farm/:farmId?days=14`(requireFarmAccess) · `GET /closed-loop/protocols` · `POST /closed-loop/verify`(관리자)
+- 화면: `/closed-loop` (농장주·수의사) — 단계별 퍼널, 처치별 판정, 조치 미기록 감지("방치"가 아니라 "기록 없음")
+- 행정 성과지표: 감지→개입 연결률, 개입→검증 종결률 (경기도 제안서의 "알람이 행동·효과로 이어진 비율")
+- 향후: 체내 방출형 볼루스가 상용화되면 개입 채널 `smaxtec_bolus_release` 로 **수신만** 붙인다
+  (현재 매칭 로직 없음 — 실제 API·이벤트 키 확인 전 추정 구현 금지). 후보 표시(◇)는 보충제만, 치료제 자동투여 가설은 두지 않음
+- 기존 `treatment-outcome.service` 의 '치료 전 3일' 기준선에 상한이 없어 치료 후 데이터가 섞이던 문제도 함께 수정
 
 ## 지식재산권 트랙 — 저작권 등록 (2026-09-27 시작, 지속 업그레이드)
 
